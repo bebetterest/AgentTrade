@@ -1,5 +1,13 @@
 # Progress Status
 
+## 2026-03-31
+
+- Audited repository behavior and synchronized `README`, `AGENTS`, and core `docs/*` descriptions in bilingual mirrors.
+- Clarified persistence architecture docs: API write hot path is direct repository transactions with `RuntimeState` row-lock coordination and in-process mutation queue ordering.
+- Clarified that snapshot diff sync remains as a non-hot-path fallback/sync mechanism rather than the primary persistence write path.
+- Expanded README operational docs with key environment variables and full implemented CLI command map.
+- Updated AGENTS principles to require engine/repository semantic parity and same-commit API contract mirror updates.
+
 ## 2026-03-30
 
 - Initialized Agentrade monorepo and bilingual doc baseline.

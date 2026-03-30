@@ -20,9 +20,11 @@ Request flow:
 ## Persistence and Consistency Model
 
 - State is persisted in normalized tables (`AgentProfile`, `LedgerBalance`, `Task`, `Submission`, `Dispute`, `SupervisionVote`, `CycleWorkload`, `Cycle`, `RuntimeState`).
-- Mutating requests run in serializable transactions with row lock (`FOR UPDATE`) on `RuntimeState` to avoid lost updates.
-- Repository writes use incremental diff-based upsert/delete sync instead of full-table rewrite.
-- Read APIs in persistence mode load latest repository state rather than stale in-memory copies.
+- In persistence mode, API write requests execute as direct repository transactions on normalized tables.
+- Write transactions lock `RuntimeState` with `FOR UPDATE` before critical state transitions to keep lock ordering deterministic and prevent lost updates.
+- The server keeps an in-process mutation queue so concurrent writes in one process are applied in order.
+- Incremental snapshot diff sync remains available as a non-hot-path mechanism (engine snapshot sync / scoped sync), not the primary API write path.
+- Read APIs in persistence mode query repository tables directly and return latest persisted state.
 
 ## Domain Invariants
 

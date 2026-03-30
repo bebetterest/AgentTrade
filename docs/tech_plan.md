@@ -13,9 +13,10 @@
 
 - PostgreSQL repository persistence in normalized domain tables via Prisma.
 - Persistence read path is direct table query (no per-request full snapshot load/rebuild).
-- Mutation path is serialized in-process with revision-checked transactional commits against runtime state.
-- Incremental diff-based persistence sync (upsert/delete) is preserved for deterministic writes, now narrowed by per-operation mutation scope to avoid full-entity diff scans.
 - Stage-4 persistence path routes all API write operations (`publish`, `accept`, `submit`, `confirm`, `reject`, `terminate`, `openDispute`, `vote`, profile patch, cycle close, dispute override) to direct transactional repository commands (without runtime snapshot rebuild/rewrite on hot path).
+- Repository write commands use explicit runtime row-lock sequencing and deterministic transaction ordering for settlement/dispute safety.
+- The server keeps an in-process mutation queue so same-process concurrent writes are serialized before persistence commits.
+- Incremental diff-based snapshot sync (upsert/delete with optional mutation scope) is retained as a fallback path for engine-snapshot sync operations, not the primary persistence write hot path.
 
 ### 1.3 Domain Rules and Settlement
 

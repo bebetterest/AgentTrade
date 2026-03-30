@@ -1,0 +1,75 @@
+# Progress Status
+
+## 2026-03-30
+
+- Initialized Agentrade monorepo and bilingual doc baseline.
+- Established architecture and revised dispute/supervision settlement rules.
+- Began backend-first implementation for V1 core lifecycle.
+- Implemented server domain engine with task/submission/dispute/cycle settlement modules.
+- Added supervision one-time participation enforcement and cycle-local workload settlement.
+- Added API routes, rate limiting, SIWE+JWT auth scaffolding, and admin cycle-close endpoints.
+- Added server tests for duplicate vote blocking, delayed dispute settlement, non-carryover, and lifecycle flow.
+- Added read-only Next.js dashboard, CLI commands, skill docs, and Prisma relational contract schema.
+- Added PostgreSQL snapshot persistence (`EngineSnapshot`) with startup restore path.
+- Added Redis-backed rate limiter and in-memory fallback path.
+- Added snapshot restore regression test for dispute single-participation continuity.
+- Refactored persistence mode to row-locked transactional writes and read-through latest snapshot reads.
+- Added Prisma generation flow and root-level Prisma toolchain alignment for schema-at-root setup.
+- Added API integration tests for duplicate supervision vote conflict (`409`) and cycle endpoint behavior.
+- Added cycle query APIs (`/v1/cycles`, `/v1/cycles/active`, `/v1/cycles/:id`) and aligned SDK/CLI coverage.
+- Added transactional normalized-table projection sync from engine snapshots.
+- Extended Prisma schema for task arrays, agent stats fields, and runtime active-cycle state.
+- Switched runtime persistence from snapshot table to fully repository-native normalized tables.
+- Removed `EngineSnapshot` dependency from the application write/read path.
+- Expanded domain/API test coverage for auth boundaries, oversell race, role permissions, cooldown, auto-confirm, and penalty behavior.
+- Added DB-backed repository test suite and persistence-across-restart API tests.
+- Added GitHub Actions CI pipeline with separate quality and persistence jobs.
+- Hardened repository transaction safety with bounded retries on PostgreSQL serialization conflicts (`40001`/`P2034`).
+- Expanded integration stress tests for high-concurrency `runLocked` writes and explicit IP rate-limit (`429`) behavior.
+- Added helper-level deterministic tests for reward allocation, tax/penalty floors, and weighted vote computation.
+- Added rate limiter unit tests for token-bucket refill behavior and `429` middleware response contract.
+- Added persistence stress suite (high-concurrency task acceptance and supervision voting with settlement checks).
+- Expanded CI with a dedicated `stress` job that repeats pressure tests three times for flake detection.
+- Added submission correctness guardrails in domain logic: reject submits after deadline and after task termination/closure.
+- Added engine/API regression tests for post-deadline and post-termination/post-closure submission rejection.
+- Added persistence API regression test for delayed dispute settlement with cycle-local workload accounting and non-carryover verification.
+- Added stress regression test for duplicate supervision participation races (exactly one success, deterministic `409` conflicts).
+- Updated CI persistence job to run twice for flake detection.
+- Hardened auth validation with strict EVM address checks on auth/token subject and challenge expiration handling.
+- Added API tests for invalid-address auth challenge rejection, expired challenge rejection, and invalid token subject rejection.
+- Refactored repository write path from full-table rewrite to incremental diff-based upsert/delete persistence writes.
+- Added repository regression tests to verify no-op sync does not rewrite unchanged rows and removed entities are deleted correctly.
+- Simplified admin override status model by removing `OVERRIDDEN_*` dispute states.
+- Updated admin dispute override behavior: `COMPLETED` resolves immediately, `NOT_COMPLETED` reopens dispute to `OPEN` for supervision.
+- Added engine/API regression tests for new admin override semantics.
+- Hardened task settlement invariants: task closure now uses escrow-derived confirmed slot count for repeatable tasks.
+- Added dispute opening guardrails: only `REJECTED` submissions are disputable, opener must be publisher/worker, and only one `OPEN` dispute is allowed per submission.
+- Removed no-op admin endpoint `POST /v1/admin/cycles/open`.
+- Expanded regression suites: repeatable slot-closure lifecycle, dispute precondition/role/duplicate-open checks, restart persistence checks, and concurrent duplicate-dispute stress validation.
+- Added centralized config limits for task/dispute payload ranges and deadline horizon (`TASK_*`, `DISPUTE_REASON_MAX_LENGTH`).
+- Hardened publish validations for legal time and range checks (future deadline window, valid IANA timezone, safe-integer budget arithmetic).
+- Added regressions for invalid deadline/timezone, out-of-range task options, non-repeatable duplicate confirmation, and AGC overspend rejection.
+- Validated DB-backed suites against Docker Postgres/Redis with repeated runs (persistence 2x, stress 3x) to verify non-flaky behavior.
+- Added stress regression for concurrent high-cost task publishes to prove no AgentCoin overspend under contention.
+- Added reproducible Docker test scripts (`docker:test:db`, `docker:test:stress`, `docker:test:full`) and removed obsolete Compose `version` field warning.
+- Synchronized `README`, `AGENTS`, and `docs/*` with current repository behavior, including route coverage, runtime topology, and bilingual maintenance rules.
+- Expanded API overview coverage to include auth, submissions, agents, ledger, economy params, cycle rewards, and admin bridge export endpoints.
+- Updated roadmap/tech-plan documents to clearly distinguish completed baseline from near-term technical direction.
+- Refactored persistence hot path to remove per-request DB snapshot rebuild: reads now query normalized tables directly, writes commit baseline-to-next diffs with runtime revision conflict retries.
+- Added persistence conflict guard (`RuntimeState.updatedAt`) and in-process mutation queue to avoid stale-baseline overwrite under concurrent write requests.
+- Revalidated with Docker-backed suites after refactor (`repository + persistence-api + stress`), including repeated full pass with all tests green.
+- Added operation-scoped persistence mutation mapping in API write routes so each mutation diffs/commits only affected table groups.
+- Hardened repository sync API with explicit mutation scopes and active-cycle scope guardrail.
+- Revalidated scope-based writes with Docker-backed DB and stress suites (all green, repeated pass included).
+- Implemented stage-3 direct command path for high-frequency persistence writes: `acceptTask`, `submitTask`, `confirmSubmission`, and `voteDispute` now execute as transactional repository operations.
+- Added persistence-side domain guardrails for stage-3 commands (submission cooldown, slot/escrow invariants, duplicate supervision participation, role checks, and reputation/stat/balance updates).
+- Revalidated stage-3 path with Docker-backed `repository + persistence-api + stress` suites and repeated full pass (all green).
+- Completed stage-4 direct command coverage for remaining persistence write APIs: `publishTask`, `rejectSubmission`, `terminateTask`, `openDispute`, profile patch, admin cycle close, and admin dispute override.
+- Added repository internal transaction helpers for direct runtime lock, submission confirmation settlement reuse, dispute evaluation/finalization reuse, and deterministic cycle-id progression.
+- Switched persistence-mode API write routing to direct repository commands end-to-end (hot path no longer uses snapshot-based write sync).
+- Added persistence regression test for profile update restart durability and reran Docker-backed DB/stress suites (`repository + persistence-api + stress`) with all tests passing.
+- Added complex multi-step simulation test at API layer to model realistic multi-party interactions: mixed submission outcomes, delayed dispute across cycles, supervision votes, and final settlement closure.
+- Added persistence simulation test for restart-aware interactive flow: reject -> dispute -> cycle close -> admin reopen -> supervision votes -> admin finalize, with post-restart state continuity checks.
+- Added API idempotency simulation for duplicate confirm requests to ensure single payout and deterministic closed-task state under retried writes.
+- Added API partial-completion termination simulation to validate publish tax, remaining-escrow penalty/refund, multi-worker payout isolation, and cycle pool accounting consistency.
+- Added persistence simulation for single-open-dispute invariants across reopen + restart + finalize phases, including post-finalization disputable-state rejection checks.

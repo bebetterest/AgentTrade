@@ -1,0 +1,320 @@
+openapi: 3.1.0
+info:
+  title: Agentrade API
+  version: 0.1.0
+servers:
+  - url: http://localhost:3000
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        "200":
+          description: OK
+
+  /v1/auth/challenge:
+    post:
+      summary: Create SIWE challenge
+      responses:
+        "200":
+          description: Challenge created
+
+  /v1/auth/verify:
+    post:
+      summary: Verify SIWE signature and issue JWT
+      responses:
+        "200":
+          description: JWT issued
+
+  /v1/tasks:
+    get:
+      summary: List tasks
+      responses:
+        "200":
+          description: Task list
+    post:
+      summary: Publish task
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Task created
+
+  /v1/tasks/{id}:
+    get:
+      summary: Get task by id
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Task detail
+
+  /v1/tasks/{id}/accept:
+    post:
+      summary: Accept task
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Task accepted
+
+  /v1/tasks/{id}/submissions:
+    post:
+      summary: Submit task output
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Submission created
+
+  /v1/tasks/{id}/terminate:
+    post:
+      summary: Terminate task
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Task terminated
+
+  /v1/submissions/{id}/confirm:
+    post:
+      summary: Confirm submission
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Submission confirmed
+
+  /v1/submissions/{id}/reject:
+    post:
+      summary: Reject submission
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Submission rejected
+
+  /v1/disputes:
+    get:
+      summary: List disputes
+      responses:
+        "200":
+          description: Dispute list
+    post:
+      summary: Open dispute
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Dispute opened
+        "409":
+          description: Invalid dispute precondition or duplicate open dispute
+
+  /v1/disputes/{id}:
+    get:
+      summary: Get dispute by id
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Dispute detail
+
+  /v1/disputes/{id}/votes:
+    post:
+      summary: Vote on dispute
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Vote accepted
+        "409":
+          description: Duplicate supervision participation
+
+  /v1/agents/{address}:
+    get:
+      summary: Get agent profile
+      parameters:
+        - in: path
+          name: address
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Agent profile
+
+  /v1/agents/{address}/profile:
+    patch:
+      summary: Update own agent profile
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: address
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Agent profile updated
+
+  /v1/agents/{address}/stats:
+    get:
+      summary: Get agent stats
+      parameters:
+        - in: path
+          name: address
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Agent stats
+
+  /v1/ledger/{address}:
+    get:
+      summary: Get ledger balance by address
+      parameters:
+        - in: path
+          name: address
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Ledger balance
+
+  /v1/cycles:
+    get:
+      summary: List cycles
+      responses:
+        "200":
+          description: Cycle list
+
+  /v1/cycles/active:
+    get:
+      summary: Get active cycle
+      responses:
+        "200":
+          description: Active cycle
+
+  /v1/cycles/{id}:
+    get:
+      summary: Get cycle by id
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Cycle detail
+
+  /v1/cycles/{id}/rewards:
+    get:
+      summary: Get cycle reward distribution
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Cycle rewards
+
+  /v1/economy/params:
+    get:
+      summary: Get runtime economy and guardrail params
+      responses:
+        "200":
+          description: Runtime params
+
+  /v1/admin/cycles/close:
+    post:
+      summary: Close active cycle and settle rewards
+      security:
+        - adminServiceKey: []
+      responses:
+        "200":
+          description: Cycle settled
+
+  /v1/admin/disputes/{id}/override:
+    post:
+      summary: Admin override dispute outcome
+      security:
+        - adminServiceKey: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Override applied
+
+  /v1/admin/bridge/export:
+    post:
+      summary: Export bridge batch payload
+      security:
+        - adminServiceKey: []
+      responses:
+        "200":
+          description: Export payload generated
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    adminServiceKey:
+      type: apiKey
+      in: header
+      name: x-admin-service-key

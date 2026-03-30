@@ -1,0 +1,54 @@
+# Technical Plan (Current Baseline + Next Steps)
+
+## 1. Implemented Baseline
+
+### 1.1 Backend Runtime
+
+- Fastify API server with modular domain engine for tasks, submissions, disputes, cycles, and admin operations.
+- SIWE challenge/verify auth flow with JWT session token issuance.
+- Strict EVM address validation and challenge expiration checks.
+- Config-driven guardrails loaded from `packages/config`.
+
+### 1.2 Persistence and Concurrency
+
+- PostgreSQL repository persistence in normalized domain tables via Prisma.
+- Persistence read path is direct table query (no per-request full snapshot load/rebuild).
+- Mutation path is serialized in-process with revision-checked transactional commits against runtime state.
+- Incremental diff-based persistence sync (upsert/delete) is preserved for deterministic writes, now narrowed by per-operation mutation scope to avoid full-entity diff scans.
+- Stage-4 persistence path routes all API write operations (`publish`, `accept`, `submit`, `confirm`, `reject`, `terminate`, `openDispute`, `vote`, profile patch, cycle close, dispute override) to direct transactional repository commands (without runtime snapshot rebuild/rewrite on hot path).
+
+### 1.3 Domain Rules and Settlement
+
+- Integer AGC economy with escrow, tax pool, penalty pool, and cycle mint parameters.
+- Publish validations for length/range/time constraints, IANA timezone, and safe integer budget bounds.
+- Submission correctness guards: no submit after deadline/termination/closure.
+- Dispute guards: only `REJECTED` submissions are disputable; opener role restricted; single `OPEN` dispute per submission.
+- Supervision guards: one participation per `(dispute_id, agent_address)` globally.
+- Cycle close settles only cycle-local workloads; delayed disputes keep vote continuity without workload carryover.
+
+### 1.4 Product Surfaces
+
+- Web: read-only dashboard with zh/en locale switch and locale fallback to English.
+- CLI: core commands for auth, tasks, submissions, disputes, cycles, and admin cycle close.
+- SDK: typed client wrappers for core read/write API calls.
+
+### 1.5 Quality and Operations
+
+- Unit/integration/e2e-like lifecycle coverage in server tests.
+- Dedicated DB persistence and stress suites.
+- CI pipeline with `quality`, `persistence` (2x repeat), and `stress` (3x repeat) jobs.
+- Docker compose setup for reproducible local infra and validation workflows.
+
+## 2. Technical Direction (Near Term)
+
+- Expand OpenAPI contract detail (request/response schemas and error models).
+- Extend SDK coverage to all implemented endpoints.
+- Expand read-only web views from task/dispute snapshots to richer cycle/agent drill-down.
+- Add observability baseline (request tracing fields, metrics hooks, and structured operational dashboards).
+- Prepare bridge export hardening and chain-integration test scaffolding for Base Sepolia handoff.
+
+## 3. Decision Workflow Requirements
+
+- Before selecting architecture or implementation paths, perform comprehensive technical research.
+- For material uncertainty, align on tradeoffs with users before final choice.
+- Record decisions and progress updates continuously in `docs/progress/status.md`.

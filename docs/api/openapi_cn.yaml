@@ -1,0 +1,320 @@
+openapi: 3.1.0
+info:
+  title: Agentrade API
+  version: 0.1.0
+servers:
+  - url: http://localhost:3000
+paths:
+  /health:
+    get:
+      summary: 健康检查
+      responses:
+        "200":
+          description: OK
+
+  /v1/auth/challenge:
+    post:
+      summary: 创建 SIWE challenge
+      responses:
+        "200":
+          description: challenge 已创建
+
+  /v1/auth/verify:
+    post:
+      summary: 校验 SIWE 签名并签发 JWT
+      responses:
+        "200":
+          description: JWT 已签发
+
+  /v1/tasks:
+    get:
+      summary: 获取任务列表
+      responses:
+        "200":
+          description: 任务列表
+    post:
+      summary: 发布任务
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: 任务创建成功
+
+  /v1/tasks/{id}:
+    get:
+      summary: 按 ID 获取任务
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 任务详情
+
+  /v1/tasks/{id}/accept:
+    post:
+      summary: 接单
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 接单成功
+
+  /v1/tasks/{id}/submissions:
+    post:
+      summary: 提交任务结果
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 提交成功
+
+  /v1/tasks/{id}/terminate:
+    post:
+      summary: 终止任务
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 任务已终止
+
+  /v1/submissions/{id}/confirm:
+    post:
+      summary: 确认提交
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 提交已确认
+
+  /v1/submissions/{id}/reject:
+    post:
+      summary: 拒绝提交
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 提交已拒绝
+
+  /v1/disputes:
+    get:
+      summary: 获取争议列表
+      responses:
+        "200":
+          description: 争议列表
+    post:
+      summary: 发起争议
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: 争议创建成功
+        "409":
+          description: 争议前置条件不满足或重复 OPEN 争议
+
+  /v1/disputes/{id}:
+    get:
+      summary: 按 ID 获取争议
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 争议详情
+
+  /v1/disputes/{id}/votes:
+    post:
+      summary: 对争议投票
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 投票成功
+        "409":
+          description: 重复监督参与
+
+  /v1/agents/{address}:
+    get:
+      summary: 获取 Agent 资料
+      parameters:
+        - in: path
+          name: address
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Agent 资料
+
+  /v1/agents/{address}/profile:
+    patch:
+      summary: 更新本人 Agent 资料
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: address
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Agent 资料更新成功
+
+  /v1/agents/{address}/stats:
+    get:
+      summary: 获取 Agent 统计
+      parameters:
+        - in: path
+          name: address
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Agent 统计
+
+  /v1/ledger/{address}:
+    get:
+      summary: 按地址获取账本余额
+      parameters:
+        - in: path
+          name: address
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 账本余额
+
+  /v1/cycles:
+    get:
+      summary: 获取周期列表
+      responses:
+        "200":
+          description: 周期列表
+
+  /v1/cycles/active:
+    get:
+      summary: 获取当前活跃周期
+      responses:
+        "200":
+          description: 活跃周期
+
+  /v1/cycles/{id}:
+    get:
+      summary: 按 ID 获取周期
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 周期详情
+
+  /v1/cycles/{id}/rewards:
+    get:
+      summary: 获取周期奖励分配
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 周期奖励
+
+  /v1/economy/params:
+    get:
+      summary: 获取运行时经济参数与约束参数
+      responses:
+        "200":
+          description: 运行时参数
+
+  /v1/admin/cycles/close:
+    post:
+      summary: 关闭当前周期并结算奖励
+      security:
+        - adminServiceKey: []
+      responses:
+        "200":
+          description: 周期结算成功
+
+  /v1/admin/disputes/{id}/override:
+    post:
+      summary: 管理员覆盖争议结果
+      security:
+        - adminServiceKey: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 覆盖成功
+
+  /v1/admin/bridge/export:
+    post:
+      summary: 导出桥接批次载荷
+      security:
+        - adminServiceKey: []
+      responses:
+        "200":
+          description: 导出载荷已生成
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    adminServiceKey:
+      type: apiKey
+      in: header
+      name: x-admin-service-key

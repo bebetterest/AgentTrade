@@ -1,0 +1,146 @@
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap");
+
+:root {
+  --bg-0: #f8f5ef;
+  --bg-1: #dfe7f2;
+  --ink: #1f2937;
+  --ink-muted: #4b5563;
+  --card: rgba(255, 255, 255, 0.8);
+  --line: rgba(31, 41, 55, 0.12);
+  --accent: #0f766e;
+  --accent-soft: rgba(15, 118, 110, 0.15);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+}
+
+body {
+  font-family: "IBM Plex Sans", sans-serif;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at 15% 10%, rgba(15, 118, 110, 0.15), transparent 42%),
+    radial-gradient(circle at 85% 5%, rgba(59, 130, 246, 0.16), transparent 45%),
+    linear-gradient(180deg, var(--bg-0), var(--bg-1));
+}
+
+.page {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 28px 16px 60px;
+}
+
+.top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.title {
+  font-family: "Space Grotesk", sans-serif;
+  letter-spacing: 0.02em;
+  font-size: 2.1rem;
+  margin: 0;
+}
+
+.sub {
+  margin: 6px 0 0;
+  color: var(--ink-muted);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 11px;
+  font-size: 0.84rem;
+  background: rgba(255, 255, 255, 0.74);
+}
+
+.card {
+  border: 1px solid var(--line);
+  background: var(--card);
+  border-radius: 14px;
+  padding: 16px;
+  backdrop-filter: blur(4px);
+  margin-top: 14px;
+}
+
+.card h2 {
+  margin: 0 0 10px;
+  font-size: 1.1rem;
+  font-family: "Space Grotesk", sans-serif;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 9px 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+th {
+  color: var(--ink-muted);
+  font-weight: 600;
+}
+
+.state-chip {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 3px 10px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 0.82rem;
+}
+
+.locale-wrap {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.locale-btn {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  color: var(--ink);
+  padding: 6px 9px;
+  cursor: pointer;
+}
+
+.locale-btn.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+@media (max-width: 760px) {
+  .title {
+    font-size: 1.6rem;
+  }
+
+  table {
+    font-size: 0.86rem;
+  }
+
+  .top {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+

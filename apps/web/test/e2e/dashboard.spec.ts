@@ -430,10 +430,26 @@ test.beforeEach(async ({ page }) => {
 
 test("task list supports search/filter/sort and load more", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByTestId("task-card")).toHaveCount(2);
+  const taskCards = page.getByTestId("task-card");
+  await expect(taskCards).toHaveCount(2);
 
-  await page.getByTestId("load-more-tasks").click();
-  await expect(page.getByTestId("task-card")).toHaveCount(3);
+  // The page supports both manual "Load more" and auto-loading via intersection.
+  // In CI the button can be detached while auto-loading completes, so we retry
+  // until either count reaches 3 or a stable click succeeds.
+  await expect(async () => {
+    if (await taskCards.count() >= 3) {
+      return;
+    }
+    const loadMoreButton = page.getByTestId("load-more-tasks");
+    if (await loadMoreButton.count() === 0) {
+      throw new Error("load-more button missing before tasks reached expected count");
+    }
+    await loadMoreButton.click();
+  }).toPass({
+    timeout: 10_000,
+    intervals: [100, 250, 500]
+  });
+  await expect(taskCards).toHaveCount(3);
 
   await page.getByTestId("search-input").fill("alpha");
   await expect(page.getByTestId("task-card")).toHaveCount(1);

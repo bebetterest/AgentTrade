@@ -1,10 +1,12 @@
 import { defaultConfig, type AppConfig } from "@agentrade/config";
 import {
+  ActivityEventType,
   CycleStatus,
   DisputeStatus,
   SubmissionStatus,
   TaskStatus,
   VoteChoice,
+  type ActivityEvent,
   type Address,
   type AgentProfile,
   type Cycle,
@@ -46,6 +48,7 @@ export interface EngineStateSnapshot {
   votesByDisputeAndAgent: Array<[string, string]>;
   cycleWorkloads: CycleWorkload[];
   cycles: Cycle[];
+  activities: ActivityEvent[];
   latestSubmissionByTaskAndAgent: Array<[string, string]>;
 }
 
@@ -64,6 +67,7 @@ export class AgentradeEngine {
   private votesByDisputeAndAgent = new Map<string, string>();
   private cycleWorkloads = new Map<string, CycleWorkload>();
   private cycles = new Map<string, Cycle>();
+  private activities = new Map<string, ActivityEvent>();
   private latestSubmissionByTaskAndAgent = new Map<string, string>();
   private activeCycleId!: string;
 
@@ -120,8 +124,13 @@ export class AgentradeEngine {
       votesByDisputeAndAgent: [...this.votesByDisputeAndAgent.entries()],
       cycleWorkloads: [...this.cycleWorkloads.values()],
       cycles: [...this.cycles.values()],
+      activities: [...this.activities.values()],
       latestSubmissionByTaskAndAgent: [...this.latestSubmissionByTaskAndAgent.entries()]
     };
+  }
+
+  listAgents(): AgentProfile[] {
+    return [...this.profiles.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
 
   listTasks(): Task[] {
@@ -138,6 +147,10 @@ export class AgentradeEngine {
 
   listDisputes(): Dispute[] {
     return [...this.disputes.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  listActivities(): ActivityEvent[] {
+    return [...this.activities.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
 
   getDispute(disputeId: string): Dispute {
@@ -299,6 +312,12 @@ export class AgentradeEngine {
     const publisherProfile = this.requireAgent(input.publisher);
     publisherProfile.stats.tasksPublished += 1;
     this.shiftReputation(input.publisher, "publisher", 1);
+    this.recordActivity({
+      type: ActivityEventType.TASK_PUBLISHED,
+      taskId: task.id,
+      disputeId: null,
+      actor: input.publisher
+    });
     return task;
   }
 
@@ -333,6 +352,12 @@ export class AgentradeEngine {
     task.updatedAt = this.nowIso();
     const profile = this.requireAgent(agent);
     profile.stats.tasksAccepted += 1;
+    this.recordActivity({
+      type: ActivityEventType.TASK_ACCEPTED,
+      taskId: task.id,
+      disputeId: null,
+      actor: agent
+    });
     return task;
   }
 
@@ -400,7 +425,7 @@ export class AgentradeEngine {
     if (task.publisher !== publisher) {
       throw new DomainError("FORBIDDEN", "only the publisher can confirm submission", 403);
     }
-    this.confirmSubmissionInternal(submission, task);
+    this.confirmSubmissionInternal(submission, task, publisher);
     return submission;
   }
 
@@ -445,6 +470,12 @@ export class AgentradeEngine {
     const publisherProfile = this.requireAgent(task.publisher);
     publisherProfile.stats.tasksTerminated += 1;
     this.shiftReputation(task.publisher, "publisher", -1);
+    this.recordActivity({
+      type: ActivityEventType.TASK_TERMINATED,
+      taskId: task.id,
+      disputeId: null,
+      actor: publisher
+    });
     return task;
   }
 
@@ -503,6 +534,12 @@ export class AgentradeEngine {
       updatedAt: now
     };
     this.disputes.set(dispute.id, dispute);
+    this.recordActivity({
+      type: ActivityEventType.DISPUTE_OPENED,
+      taskId: task.id,
+      disputeId: dispute.id,
+      actor: input.opener
+    });
     return dispute;
   }
 
@@ -665,7 +702,7 @@ export class AgentradeEngine {
     const task = this.getTask(dispute.taskId);
     if (outcome === VoteChoice.COMPLETED) {
       if (submission.status !== SubmissionStatus.CONFIRMED) {
-        this.confirmSubmissionInternal(submission, task);
+        this.confirmSubmissionInternal(submission, task, task.publisher);
       }
     }
 
@@ -701,11 +738,11 @@ export class AgentradeEngine {
         task.updatedAt = this.nowIso();
         continue;
       }
-      this.confirmSubmissionInternal(submission, task);
+      this.confirmSubmissionInternal(submission, task, task.publisher);
     }
   }
 
-  private confirmSubmissionInternal(submission: Submission, task: Task): void {
+  private confirmSubmissionInternal(submission: Submission, task: Task, actor: Address): void {
     if (submission.status === SubmissionStatus.CONFIRMED) {
       return;
     }
@@ -748,6 +785,12 @@ export class AgentradeEngine {
     workerProfile.stats.tasksCompleted += 1;
     this.shiftReputation(submission.agent, "worker", 2);
     this.shiftReputation(task.publisher, "publisher", 1);
+    this.recordActivity({
+      type: ActivityEventType.TASK_COMPLETED,
+      taskId: task.id,
+      disputeId: null,
+      actor
+    });
   }
 
   private getConfirmedSlots(task: Task): number {
@@ -809,6 +852,25 @@ export class AgentradeEngine {
       startedAt: this.nowIso(),
       closedAt: null
     };
+  }
+
+  private recordActivity(input: {
+    type: ActivityEventType;
+    taskId: string | null;
+    disputeId: string | null;
+    actor: Address;
+  }): ActivityEvent {
+    const event: ActivityEvent = {
+      id: nanoid(),
+      type: input.type,
+      cycleId: this.activeCycleId,
+      taskId: input.taskId,
+      disputeId: input.disputeId,
+      actor: input.actor,
+      createdAt: this.nowIso()
+    };
+    this.activities.set(event.id, event);
+    return event;
   }
 
   private nowIso(): string {
@@ -892,6 +954,7 @@ export class AgentradeEngine {
     this.votesByDisputeAndAgent = new Map(snapshot.votesByDisputeAndAgent);
     this.cycleWorkloads = new Map(snapshot.cycleWorkloads.map((item) => [item.id, item]));
     this.cycles = new Map(snapshot.cycles.map((item) => [item.id, item]));
+    this.activities = new Map(snapshot.activities.map((item) => [item.id, item]));
     this.latestSubmissionByTaskAndAgent = new Map(snapshot.latestSubmissionByTaskAndAgent);
     this.activeCycleId = snapshot.activeCycleId;
 

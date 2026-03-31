@@ -1196,4 +1196,105 @@ describe("API integration", () => {
     });
     expect(voteAfterOverride.statusCode).toBe(409);
   });
+
+  it("exposes dashboard summary and trend metrics from activity events", async () => {
+    const publisher = addr("dash-pub-1");
+    const worker = addr("dash-worker-1");
+
+    const taskA = await createSingleSlotTask(publisher);
+    await app!.inject({
+      method: "POST",
+      url: `/v1/tasks/${taskA.id}/accept`,
+      headers: { authorization: `Bearer ${bearer(worker)}` }
+    });
+    const submissionA = await app!.inject({
+      method: "POST",
+      url: `/v1/tasks/${taskA.id}/submissions`,
+      headers: { authorization: `Bearer ${bearer(worker)}` },
+      payload: { payloadMd: "done-a" }
+    });
+    const submissionAId = (submissionA.json() as { id: string }).id;
+    await app!.inject({
+      method: "POST",
+      url: `/v1/submissions/${submissionAId}/confirm`,
+      headers: { authorization: `Bearer ${bearer(publisher)}` }
+    });
+
+    const taskB = await createSingleSlotTask(publisher);
+    await app!.inject({
+      method: "POST",
+      url: `/v1/tasks/${taskB.id}/accept`,
+      headers: { authorization: `Bearer ${bearer(worker)}` }
+    });
+    const submissionB = await app!.inject({
+      method: "POST",
+      url: `/v1/tasks/${taskB.id}/submissions`,
+      headers: { authorization: `Bearer ${bearer(worker)}` },
+      payload: { payloadMd: "done-b" }
+    });
+    const submissionBId = (submissionB.json() as { id: string }).id;
+    await rejectSubmission(submissionBId, publisher);
+    await app!.inject({
+      method: "POST",
+      url: "/v1/disputes",
+      headers: { authorization: `Bearer ${bearer(publisher)}` },
+      payload: { taskId: taskB.id, submissionId: submissionBId, reasonMd: "dash dispute" }
+    });
+
+    const summaryRes = await app!.inject({
+      method: "GET",
+      url: "/v1/dashboard/summary?tz=UTC"
+    });
+    expect(summaryRes.statusCode).toBe(200);
+    const summary = summaryRes.json() as {
+      today: { tasksPublished: number; tasksAccepted: number; tasksCompleted: number; disputesOpened: number };
+      currentCycle: { tasksPublished: number; tasksAccepted: number; tasksCompleted: number; disputesOpened: number };
+    };
+    expect(summary.today.tasksPublished).toBeGreaterThanOrEqual(2);
+    expect(summary.today.tasksAccepted).toBeGreaterThanOrEqual(2);
+    expect(summary.today.tasksCompleted).toBeGreaterThanOrEqual(1);
+    expect(summary.today.disputesOpened).toBeGreaterThanOrEqual(1);
+    expect(summary.currentCycle.tasksPublished).toBeGreaterThanOrEqual(2);
+
+    const trendsRes = await app!.inject({
+      method: "GET",
+      url: "/v1/dashboard/trends?tz=UTC&window=7d"
+    });
+    expect(trendsRes.statusCode).toBe(200);
+    const trends = trendsRes.json() as {
+      points: Array<{ tasksPublished: number; tasksAccepted: number; tasksCompleted: number; disputesOpened: number }>;
+    };
+    expect(trends.points.length).toBe(7);
+    const publishedTotal = trends.points.reduce((acc, item) => acc + item.tasksPublished, 0);
+    expect(publishedTotal).toBeGreaterThanOrEqual(2);
+  });
+
+  it("supports agents and activities list read routes", async () => {
+    const publisher = addr("list-pub-1");
+    const worker = addr("list-worker-1");
+    const task = await createSingleSlotTask(publisher);
+    await app!.inject({
+      method: "POST",
+      url: `/v1/tasks/${task.id}/accept`,
+      headers: { authorization: `Bearer ${bearer(worker)}` }
+    });
+
+    const agentsRes = await app!.inject({
+      method: "GET",
+      url: "/v1/agents?activeOnly=true&sort=score&order=desc&limit=10"
+    });
+    expect(agentsRes.statusCode).toBe(200);
+    const agents = agentsRes.json() as { items: Array<{ address: string }>; nextCursor: string | null };
+    expect(Array.isArray(agents.items)).toBe(true);
+    expect(agents.items.length).toBeGreaterThan(0);
+
+    const activitiesRes = await app!.inject({
+      method: "GET",
+      url: `/v1/activities?taskId=${task.id}&order=desc&limit=20`
+    });
+    expect(activitiesRes.statusCode).toBe(200);
+    const activities = activitiesRes.json() as { items: Array<{ type: string }>; nextCursor: string | null };
+    expect(activities.items.some((item) => item.type === "TASK_PUBLISHED")).toBe(true);
+    expect(activities.items.some((item) => item.type === "TASK_ACCEPTED")).toBe(true);
+  });
 });

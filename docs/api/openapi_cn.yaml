@@ -29,6 +29,38 @@ paths:
   /v1/tasks:
     get:
       summary: 获取任务列表
+      parameters:
+        - in: query
+          name: q
+          schema:
+            type: string
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [OPEN, IN_PROGRESS, TERMINATED, CLOSED]
+        - in: query
+          name: publisher
+          schema:
+            type: string
+        - in: query
+          name: sort
+          schema:
+            type: string
+            enum: [latest, created, deadline, reward]
+        - in: query
+          name: order
+          schema:
+            type: string
+            enum: [asc, desc]
+        - in: query
+          name: cursor
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
       responses:
         "200":
           description: 任务列表
@@ -131,6 +163,42 @@ paths:
   /v1/disputes:
     get:
       summary: 获取争议列表
+      parameters:
+        - in: query
+          name: taskId
+          schema:
+            type: string
+        - in: query
+          name: opener
+          schema:
+            type: string
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [OPEN, RESOLVED_COMPLETED, RESOLVED_NOT_COMPLETED]
+        - in: query
+          name: q
+          schema:
+            type: string
+        - in: query
+          name: sort
+          schema:
+            type: string
+            enum: [latest, created]
+        - in: query
+          name: order
+          schema:
+            type: string
+            enum: [asc, desc]
+        - in: query
+          name: cursor
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
       responses:
         "200":
           description: 争议列表
@@ -173,6 +241,107 @@ paths:
           description: 投票成功
         "409":
           description: 重复监督参与
+
+  /v1/activities:
+    get:
+      summary: 获取活动事件列表
+      parameters:
+        - in: query
+          name: taskId
+          schema:
+            type: string
+        - in: query
+          name: disputeId
+          schema:
+            type: string
+        - in: query
+          name: address
+          schema:
+            type: string
+        - in: query
+          name: type
+          schema:
+            type: string
+            enum: [TASK_PUBLISHED, TASK_ACCEPTED, TASK_COMPLETED, DISPUTE_OPENED, TASK_TERMINATED]
+        - in: query
+          name: order
+          schema:
+            type: string
+            enum: [asc, desc]
+        - in: query
+          name: cursor
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: 活动事件列表
+
+  /v1/dashboard/summary:
+    get:
+      summary: 获取看板汇总指标
+      parameters:
+        - in: query
+          name: tz
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 汇总指标
+
+  /v1/dashboard/trends:
+    get:
+      summary: 获取看板趋势序列
+      parameters:
+        - in: query
+          name: tz
+          schema:
+            type: string
+        - in: query
+          name: window
+          schema:
+            type: string
+            enum: [7d, 30d]
+      responses:
+        "200":
+          description: 趋势序列
+
+  /v1/agents:
+    get:
+      summary: 获取 Agent 列表
+      parameters:
+        - in: query
+          name: q
+          schema:
+            type: string
+        - in: query
+          name: activeOnly
+          schema:
+            type: boolean
+        - in: query
+          name: sort
+          schema:
+            type: string
+            enum: [latest, score, reputation, completed, published, accepted]
+        - in: query
+          name: order
+          schema:
+            type: string
+            enum: [asc, desc]
+        - in: query
+          name: cursor
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Agent 列表
 
   /v1/agents/{address}:
     get:

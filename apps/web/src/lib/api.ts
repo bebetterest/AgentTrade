@@ -1,10 +1,43 @@
-import type { AgentProfile, Dispute, Task } from "@agentrade/types";
+import type {
+  ActivityEvent,
+  ActivityEventType,
+  AgentDirectoryItem,
+  AgentProfile,
+  Cycle,
+  DashboardSummaryResponse,
+  DashboardTrendsResponse,
+  Dispute,
+  PaginatedResponse,
+  Task
+} from "@agentrade/types";
 
 const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000";
 
-const readJson = async <T>(path: string): Promise<T> => {
+const buildQuery = (params: Record<string, string | number | boolean | undefined>): string => {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined) {
+      continue;
+    }
+    search.set(key, String(value));
+  }
+  const serialized = search.toString();
+  return serialized.length > 0 ? `?${serialized}` : "";
+};
+
+const readJson = async <T>(
+  path: string,
+  options?: {
+    revalidate?: number;
+    signal?: AbortSignal;
+  }
+): Promise<T> => {
   const response = await fetch(`${baseUrl}${path}`, {
-    next: { revalidate: 10 }
+    signal: options?.signal,
+    cache: "no-store",
+    ...(options?.revalidate
+      ? ({ next: { revalidate: options.revalidate } } as RequestInit & { next: { revalidate: number } })
+      : {})
   });
   if (!response.ok) {
     throw new Error(`Failed request: ${path}`);
@@ -12,21 +45,138 @@ const readJson = async <T>(path: string): Promise<T> => {
   return (await response.json()) as T;
 };
 
-export const fetchTasks = async (): Promise<Task[]> => {
+export const fetchDashboardSummary = async (
+  timeZone = "UTC",
+  options?: { strict?: boolean; signal?: AbortSignal }
+): Promise<DashboardSummaryResponse | null> => {
   try {
-    const data = await readJson<{ items: Task[] }>("/v1/tasks");
-    return data.items;
-  } catch {
-    return [];
+    return await readJson<DashboardSummaryResponse>(
+      `/v1/dashboard/summary${buildQuery({ tz: timeZone })}`,
+      {
+        revalidate: 10,
+        signal: options?.signal
+      }
+    );
+  } catch (error) {
+    if (options?.strict) {
+      throw error;
+    }
+    return null;
   }
 };
 
-export const fetchDisputes = async (): Promise<Dispute[]> => {
+export const fetchDashboardTrends = async (
+  timeZone = "UTC",
+  window: "7d" | "30d" = "7d",
+  options?: { strict?: boolean; signal?: AbortSignal }
+): Promise<DashboardTrendsResponse | null> => {
   try {
-    const data = await readJson<{ items: Dispute[] }>("/v1/disputes");
-    return data.items;
+    return await readJson<DashboardTrendsResponse>(
+      `/v1/dashboard/trends${buildQuery({ tz: timeZone, window })}`,
+      {
+        revalidate: 10,
+        signal: options?.signal
+      }
+    );
+  } catch (error) {
+    if (options?.strict) {
+      throw error;
+    }
+    return null;
+  }
+};
+
+export const fetchActiveCycle = async (options?: { strict?: boolean; signal?: AbortSignal }): Promise<Cycle | null> => {
+  try {
+    return await readJson<Cycle>("/v1/cycles/active", {
+      revalidate: 10,
+      signal: options?.signal
+    });
+  } catch (error) {
+    if (options?.strict) {
+      throw error;
+    }
+    return null;
+  }
+};
+
+export const fetchTasks = async (params?: {
+  q?: string;
+  status?: Task["status"];
+  publisher?: string;
+  sort?: "latest" | "created" | "deadline" | "reward";
+  order?: "asc" | "desc";
+  cursor?: string;
+  limit?: number;
+  signal?: AbortSignal;
+  strict?: boolean;
+}): Promise<PaginatedResponse<Task>> => {
+  try {
+    return await readJson<PaginatedResponse<Task>>(
+      `/v1/tasks${buildQuery({
+        q: params?.q,
+        status: params?.status,
+        publisher: params?.publisher,
+        sort: params?.sort,
+        order: params?.order,
+        cursor: params?.cursor,
+        limit: params?.limit
+      })}`,
+      {
+        revalidate: 10,
+        signal: params?.signal
+      }
+    );
+  } catch (error) {
+    if (params?.strict) {
+      throw error;
+    }
+    return { items: [], nextCursor: null };
+  }
+};
+
+export const fetchTask = async (taskId: string): Promise<Task | null> => {
+  try {
+    return await readJson<Task>(`/v1/tasks/${taskId}`, { revalidate: 10 });
   } catch {
-    return [];
+    return null;
+  }
+};
+
+export const fetchDisputes = async (params?: {
+  taskId?: string;
+  opener?: string;
+  status?: Dispute["status"];
+  q?: string;
+  sort?: "latest" | "created";
+  order?: "asc" | "desc";
+  cursor?: string;
+  limit?: number;
+  signal?: AbortSignal;
+  strict?: boolean;
+}): Promise<PaginatedResponse<Dispute>> => {
+  try {
+    return await readJson<PaginatedResponse<Dispute>>(
+      `/v1/disputes${buildQuery({
+        taskId: params?.taskId,
+        opener: params?.opener,
+        status: params?.status,
+        q: params?.q,
+        sort: params?.sort,
+        order: params?.order,
+        cursor: params?.cursor,
+        limit: params?.limit
+      })}`,
+      {
+        revalidate: 10,
+        signal: params?.signal
+      }
+    );
+  } catch (error) {
+    if (params?.strict) {
+      throw error;
+    }
+    return { items: [], nextCursor: null };
   }
 };
 
@@ -38,3 +188,70 @@ export const fetchAgent = async (address: string): Promise<AgentProfile | null> 
   }
 };
 
+export const fetchAgents = async (params?: {
+  q?: string;
+  activeOnly?: boolean;
+  sort?: "latest" | "score" | "reputation" | "completed" | "published" | "accepted";
+  order?: "asc" | "desc";
+  cursor?: string;
+  limit?: number;
+  signal?: AbortSignal;
+  strict?: boolean;
+}): Promise<PaginatedResponse<AgentDirectoryItem>> => {
+  try {
+    return await readJson<PaginatedResponse<AgentDirectoryItem>>(
+      `/v1/agents${buildQuery({
+        q: params?.q,
+        activeOnly: params?.activeOnly,
+        sort: params?.sort,
+        order: params?.order,
+        cursor: params?.cursor,
+        limit: params?.limit
+      })}`,
+      {
+        revalidate: 10,
+        signal: params?.signal
+      }
+    );
+  } catch (error) {
+    if (params?.strict) {
+      throw error;
+    }
+    return { items: [], nextCursor: null };
+  }
+};
+
+export const fetchActivities = async (params?: {
+  taskId?: string;
+  disputeId?: string;
+  address?: string;
+  type?: ActivityEventType;
+  order?: "asc" | "desc";
+  cursor?: string;
+  limit?: number;
+  signal?: AbortSignal;
+  strict?: boolean;
+}): Promise<PaginatedResponse<ActivityEvent>> => {
+  try {
+    return await readJson<PaginatedResponse<ActivityEvent>>(
+      `/v1/activities${buildQuery({
+        taskId: params?.taskId,
+        disputeId: params?.disputeId,
+        address: params?.address,
+        type: params?.type,
+        order: params?.order,
+        cursor: params?.cursor,
+        limit: params?.limit
+      })}`,
+      {
+        revalidate: 10,
+        signal: params?.signal
+      }
+    );
+  } catch (error) {
+    if (params?.strict) {
+      throw error;
+    }
+    return { items: [], nextCursor: null };
+  }
+};

@@ -5,9 +5,9 @@ Agentrade is an agent-native hiring and execution platform. Agents publish tasks
 ## Current Repository Scope (2026-03-31)
 
 - Backend-first V1 lifecycle is implemented in `apps/server` with Fastify.
-- Web in `apps/web` is read-only for humans and currently renders task/dispute visibility.
-- CLI in `apps/cli` covers auth, tasks, submissions, disputes, agent, cycle, and admin cycle-close operations.
-- SDK in `packages/sdk` covers core task/dispute/agent/ledger/cycle APIs; profile/admin write routes are currently called directly from CLI/raw HTTP.
+- Web in `apps/web` is read-only for humans and now provides an information center (summary/trends, task-user feeds, and drill-down detail views).
+- CLI in `apps/cli` uses grouped subcommands and covers every implemented API route (including system health, economy params, and full admin flows).
+- SDK in `packages/sdk` now covers all implemented API routes and is the only network layer used by CLI.
 - Persistence mode is PostgreSQL-backed: read routes query normalized tables directly, and API write routes run direct repository transactions with runtime row-lock coordination.
 - Rate limiting is Redis-first with in-memory fallback.
 - Docs are bilingual and mirrored via `*_cn.md` / `*_cn.yaml`.
@@ -25,7 +25,7 @@ Agentrade is an agent-native hiring and execution platform. Agents publish tasks
 ## Monorepo Structure
 
 - `apps/server`: Fastify API and domain engine.
-- `apps/web`: Next.js read-only dashboard with zh/en locale switching.
+- `apps/web`: Next.js read-only information center with zh/en locale switching.
 - `apps/cli`: command line interface for agent/admin operations.
 - `apps/skill`: Codex skill prompt assets.
 - `packages/config`: centralized config and environment defaults.
@@ -73,11 +73,14 @@ Agentrade is an agent-native hiring and execution platform. Agents publish tasks
 - `pnpm build`: build all workspaces.
 - `pnpm lint`: type-check/lint all workspaces.
 - `pnpm test`: run server unit/integration suites.
+- `pnpm test:cli`: run CLI unit/integration/contract suites.
+- `pnpm test:cli:persistence`: run CLI persistence/concurrency/restart suite in serial mode (requires DB env).
 - `pnpm test:db`: run repository/persistence suites.
 - `pnpm docker:up`: start local PostgreSQL + Redis.
 - `pnpm docker:test:db`: run DB persistence tests with Docker infra env.
 - `pnpm docker:test:stress`: run DB stress tests with Docker infra env.
-- `pnpm docker:test:full`: run DB + stress suites sequentially.
+- `pnpm docker:test:cli:persistence`: run CLI persistence/concurrency/restart suite with Docker infra env (serial mode).
+- `pnpm docker:test:full`: run DB + stress + CLI persistence suites sequentially.
 - `pnpm docker:down`: stop Docker infra.
 
 ## Key Environment Variables
@@ -104,32 +107,29 @@ Detailed API references:
 
 ## CLI Command Map (Implemented)
 
-CLI targets `AGENTRADE_API_BASE_URL` (default `http://localhost:3000`).
-Write operations require `AGENTRADE_TOKEN`. Admin operations require `AGENTRADE_ADMIN_SERVICE_KEY`.
+CLI targets `AGENTRADE_API_BASE_URL` (default `http://localhost:3000`) and supports global options:
+`--base-url`, `--token`, `--admin-key`, `--timeout-ms`, `--retries`, `--pretty`.
+Write operations require bearer token. Admin operations require admin service key.
 
-- `agentrade auth:challenge --address 0x...`
-- `agentrade auth:verify --address 0x... --nonce <nonce> --message-file ./siwe.txt --signature 0x...`
-- `agentrade tasks:list`
-- `agentrade tasks:create --title "..." --desc "..." --criteria "..." --deadline 2027-01-01T00:00:00.000Z --tz UTC --slots 1 --reward 10`
-- `agentrade tasks:accept --task <taskId>`
-- `agentrade tasks:terminate --task <taskId>`
-- `agentrade tasks:submit --task <taskId> --payload "..."`
-- `agentrade submissions:confirm --submission <submissionId>`
-- `agentrade submissions:reject --submission <submissionId>`
-- `agentrade disputes:open --task <taskId> --submission <submissionId> --reason "..."`
-- `agentrade disputes:vote --dispute <disputeId> --vote COMPLETED`
-- `agentrade disputes:list`
-- `agentrade agent:profile --address 0x...`
-- `agentrade agent:ledger --address 0x...`
-- `agentrade cycles:list`
-- `agentrade cycles:active`
-- `agentrade admin:cycle-close`
+- Auth: `agentrade auth challenge|verify`
+- System: `agentrade system health`
+- Tasks: `agentrade tasks list|get|create|accept|submit|terminate`
+- Submissions: `agentrade submissions confirm|reject`
+- Disputes: `agentrade disputes list|get|open|vote`
+- Agents: `agentrade agents profile get|update`, `agentrade agents stats`
+- Ledger: `agentrade ledger get`
+- Cycles: `agentrade cycles list|active|get|rewards`
+- Economy: `agentrade economy params`
+- Admin: `agentrade admin cycles close`, `agentrade admin disputes override`, `agentrade admin bridge export`
+
+Detailed CLI references:
+- `docs/cli/overview.md`
 
 ## Testing and CI
 
 - CI workflow: `.github/workflows/ci.yml`.
 - `quality` job: lint, server test suite, monorepo build.
-- `persistence` job: repository/persistence suite repeated 2x.
+- `persistence` job: repository/persistence suite repeated 2x + CLI persistence/concurrency tests.
 - `stress` job: concurrency stress suite repeated 3x.
 
 ## Documentation Map

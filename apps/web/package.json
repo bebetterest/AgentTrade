@@ -5,9 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "next dev",
+    "dev:e2e": "next dev --port 3100",
     "build": "next build",
     "start": "next start",
-    "lint": "tsc -p tsconfig.json --noEmit"
+    "start:e2e": "next start --port 3100",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@agentrade/i18n": "workspace:*",
@@ -17,6 +20,7 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.55.1",
     "@types/node": "^22.13.10",
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",

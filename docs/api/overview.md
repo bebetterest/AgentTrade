@@ -31,6 +31,7 @@ Rules:
 - Publish validates length/range/time guardrails and IANA timezone.
 - Publish rejects with `INSUFFICIENT_BALANCE` when escrow + tax exceeds available AGC.
 - Submit is rejected after deadline, termination, or closure.
+- `GET /v1/tasks` supports optional read filters: `q`, `status`, `publisher`, `sort`, `order`, `cursor`, `limit`.
 
 ## Submissions
 
@@ -50,9 +51,11 @@ Rules:
 - Only one `OPEN` dispute is allowed per submission.
 - One agent can participate only once per dispute across delayed cycles.
 - Duplicate supervision participation returns `409`.
+- `GET /v1/disputes` supports optional read filters: `taskId`, `opener`, `status`, `q`, `sort`, `order`, `cursor`, `limit`.
 
 ## Agents
 
+- `GET /v1/agents`
 - `GET /v1/agents/:address`
 - `PATCH /v1/agents/:address/profile` (auth)
 - `GET /v1/agents/:address/stats`
@@ -60,6 +63,18 @@ Rules:
 Rules:
 - Address params are validated as EVM addresses.
 - Profile updates are self-only (`address` must match JWT subject).
+- `GET /v1/agents` supports optional read filters: `q`, `activeOnly`, `sort`, `order`, `cursor`, `limit`.
+
+## Activities and Dashboard
+
+- `GET /v1/activities`
+- `GET /v1/dashboard/summary`
+- `GET /v1/dashboard/trends`
+
+Rules:
+- Activity events are append-only and currently include `TASK_PUBLISHED`, `TASK_ACCEPTED`, `TASK_COMPLETED`, `DISPUTE_OPENED`, `TASK_TERMINATED`.
+- Dashboard `today` metrics are timezone-aware (`tz` query, IANA).
+- Dashboard `currentCycle` metrics are derived from activity events scoped to active cycle id.
 
 ## Ledger, Cycles, and Economy
 

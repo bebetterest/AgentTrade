@@ -4,6 +4,8 @@ import type { AppConfig } from "@agentrade/config";
 import type { EngineStateSnapshot } from "../domain/engine.js";
 import { INITIAL_AGENT_BALANCE } from "../domain/engine.js";
 import {
+  type ActivityEvent,
+  ActivityEventType as DomainActivityEventType,
   type AgentProfile,
   type Cycle,
   type CycleWorkload,
@@ -62,7 +64,8 @@ export type PersistenceMutationScope =
   | "disputes"
   | "votes"
   | "cycleWorkloads"
-  | "cycles";
+  | "cycles"
+  | "activities";
 
 const snapshotItemEquals = <T>(a: T, b: T): boolean => JSON.stringify(a) === JSON.stringify(b);
 
@@ -228,6 +231,16 @@ export class PrismaStateRepository {
   async listDisputesDirect(): Promise<Dispute[]> {
     const disputes = await this.prisma.dispute.findMany({ orderBy: { createdAt: "asc" } });
     return disputes.map((item) => this.mapDispute(item));
+  }
+
+  async listAgentsDirect(): Promise<AgentProfile[]> {
+    const profiles = await this.prisma.agentProfile.findMany({ orderBy: { createdAt: "asc" } });
+    return profiles.map((item) => this.mapAgentProfile(item));
+  }
+
+  async listActivitiesDirect(): Promise<ActivityEvent[]> {
+    const events = await this.prisma.activityEvent.findMany({ orderBy: { createdAt: "asc" } });
+    return events.map((item) => this.mapActivityEvent(item));
   }
 
   async getDisputeDirect(disputeId: string): Promise<Dispute | null> {
@@ -469,6 +482,14 @@ export class PrismaStateRepository {
         publisherReputationDelta: 1,
         tasksPublished: 1
       });
+      await this.appendActivityEventWithTx(tx, {
+        type: DomainActivityEventType.TASK_PUBLISHED,
+        cycleId: runtime.activeCycleId,
+        taskId: created.id,
+        disputeId: null,
+        actor: input.publisher,
+        createdAt: now
+      });
       await this.touchRuntimeStateWithTx(tx);
       return created;
     });
@@ -565,6 +586,14 @@ export class PrismaStateRepository {
         publisherReputationDelta: -1,
         tasksTerminated: 1
       });
+      await this.appendActivityEventWithTx(tx, {
+        type: DomainActivityEventType.TASK_TERMINATED,
+        cycleId: runtime.activeCycleId,
+        taskId: taskRow.id,
+        disputeId: null,
+        actor: publisher,
+        createdAt: now
+      });
       await this.touchRuntimeStateWithTx(tx);
       return updated;
     });
@@ -580,7 +609,7 @@ export class PrismaStateRepository {
     disputeReasonMaxLength: number;
   }): Promise<Dispute> {
     const dispute = await this.prisma.$transaction(async (tx) => {
-      await this.lockRuntimeWithTx(tx);
+      const runtime = await this.lockRuntimeWithTx(tx);
       const now = new Date();
       await this.ensureAgentAndLedgerWithTx(tx, input.opener, now);
       const task = await tx.task.findUnique({ where: { id: input.taskId } });
@@ -643,6 +672,14 @@ export class PrismaStateRepository {
           updatedAt: now
         }
       });
+      await this.appendActivityEventWithTx(tx, {
+        type: DomainActivityEventType.DISPUTE_OPENED,
+        cycleId: runtime.activeCycleId,
+        taskId: task.id,
+        disputeId: created.id,
+        actor: input.opener,
+        createdAt: now
+      });
       await this.touchRuntimeStateWithTx(tx);
       return created;
     });
@@ -697,7 +734,14 @@ export class PrismaStateRepository {
           });
           continue;
         }
-        await this.confirmSubmissionInternalWithTx(tx, submission, task, now);
+        await this.confirmSubmissionInternalWithTx(
+          tx,
+          submission,
+          task,
+          now,
+          runtime.activeCycleId,
+          asAddress(task.publisherAddress)
+        );
       }
 
       const finalizedDisputes: string[] = [];
@@ -706,7 +750,13 @@ export class PrismaStateRepository {
         orderBy: { createdAt: "asc" }
       });
       for (const dispute of openDisputes) {
-        const changed = await this.evaluateDisputeWithTx(tx, dispute.id, config, now);
+        const changed = await this.evaluateDisputeWithTx(
+          tx,
+          dispute.id,
+          config,
+          now,
+          runtime.activeCycleId
+        );
         if (changed) {
           finalizedDisputes.push(dispute.id);
         }
@@ -789,7 +839,7 @@ export class PrismaStateRepository {
     result: "COMPLETED" | "NOT_COMPLETED"
   ): Promise<Dispute> {
     const dispute = await this.prisma.$transaction(async (tx) => {
-      await this.lockRuntimeWithTx(tx);
+      const runtime = await this.lockRuntimeWithTx(tx);
       const now = new Date();
       await tx.$queryRaw`SELECT id FROM "Dispute" WHERE id = ${disputeId} FOR UPDATE`;
       const row = await tx.dispute.findUnique({ where: { id: disputeId } });
@@ -806,7 +856,13 @@ export class PrismaStateRepository {
               updatedAt: now
             }
           });
-          await this.finalizeDisputeWithOutcomeWithTx(tx, disputeId, DomainVoteChoice.COMPLETED, now);
+          await this.finalizeDisputeWithOutcomeWithTx(
+            tx,
+            disputeId,
+            DomainVoteChoice.COMPLETED,
+            now,
+            runtime.activeCycleId
+          );
         }
       } else {
         await tx.dispute.update({
@@ -828,7 +884,7 @@ export class PrismaStateRepository {
   async acceptTaskDirect(taskId: string, agent: Address): Promise<Task> {
     const task = await this.prisma.$transaction(async (tx) => {
       const now = new Date();
-      await this.lockRuntimeWithTx(tx);
+      const runtime = await this.lockRuntimeWithTx(tx);
       await this.ensureAgentAndLedgerWithTx(tx, agent, now);
 
       await tx.$queryRaw`SELECT id FROM "Task" WHERE id = ${taskId} FOR UPDATE`;
@@ -869,6 +925,14 @@ export class PrismaStateRepository {
       });
       await this.applyProfileDeltaWithTx(tx, agent, now, {
         tasksAccepted: 1
+      });
+      await this.appendActivityEventWithTx(tx, {
+        type: DomainActivityEventType.TASK_ACCEPTED,
+        cycleId: runtime.activeCycleId,
+        taskId: taskRow.id,
+        disputeId: null,
+        actor: agent,
+        createdAt: now
       });
       await this.touchRuntimeStateWithTx(tx);
       return updatedTask;
@@ -960,7 +1024,7 @@ export class PrismaStateRepository {
   async confirmSubmissionDirect(submissionId: string, publisher: Address): Promise<Submission> {
     const submission = await this.prisma.$transaction(async (tx) => {
       const now = new Date();
-      await this.lockRuntimeWithTx(tx);
+      const runtime = await this.lockRuntimeWithTx(tx);
       await tx.$queryRaw`SELECT id FROM "Submission" WHERE id = ${submissionId} FOR UPDATE`;
       const submissionRow = await tx.submission.findUnique({ where: { id: submissionId } });
       if (!submissionRow) {
@@ -1007,7 +1071,14 @@ export class PrismaStateRepository {
         throw new DomainError("SUBMISSION_NOT_CONFIRMABLE", "task has no remaining payable slots", 409);
       }
 
-      await this.confirmSubmissionInternalWithTx(tx, submissionRow, taskRow, now);
+      await this.confirmSubmissionInternalWithTx(
+        tx,
+        submissionRow,
+        taskRow,
+        now,
+        runtime.activeCycleId,
+        publisher
+      );
 
       await this.touchRuntimeStateWithTx(tx);
       return tx.submission.findUniqueOrThrow({ where: { id: submissionRow.id } });
@@ -1145,7 +1216,9 @@ export class PrismaStateRepository {
       acceptedAgents: Prisma.JsonValue;
       completedAgents: Prisma.JsonValue;
     },
-    now: Date
+    now: Date,
+    cycleId: string,
+    actor: Address
   ): Promise<void> {
     const submissionStatus = submission.status as DomainSubmissionStatus;
     if (submissionStatus === DomainSubmissionStatus.CONFIRMED) {
@@ -1241,13 +1314,22 @@ export class PrismaStateRepository {
     await this.applyProfileDeltaWithTx(tx, asAddress(task.publisherAddress), now, {
       publisherReputationDelta: 1
     });
+    await this.appendActivityEventWithTx(tx, {
+      type: DomainActivityEventType.TASK_COMPLETED,
+      cycleId,
+      taskId: task.id,
+      disputeId: null,
+      actor,
+      createdAt: now
+    });
   }
 
   private async evaluateDisputeWithTx(
     tx: Prisma.TransactionClient,
     disputeId: string,
     config: AppConfig,
-    now: Date
+    now: Date,
+    cycleId: string
   ): Promise<boolean> {
     const dispute = await tx.dispute.findUnique({ where: { id: disputeId } });
     if (!dispute) {
@@ -1280,7 +1362,13 @@ export class PrismaStateRepository {
         updatedAt: now
       }
     });
-    await this.finalizeDisputeWithOutcomeWithTx(tx, disputeId, DomainVoteChoice.COMPLETED, now);
+    await this.finalizeDisputeWithOutcomeWithTx(
+      tx,
+      disputeId,
+      DomainVoteChoice.COMPLETED,
+      now,
+      cycleId
+    );
     return true;
   }
 
@@ -1288,7 +1376,8 @@ export class PrismaStateRepository {
     tx: Prisma.TransactionClient,
     disputeId: string,
     outcome: DomainVoteChoice,
-    now: Date
+    now: Date,
+    cycleId: string
   ): Promise<void> {
     const dispute = await tx.dispute.findUnique({ where: { id: disputeId } });
     if (!dispute) {
@@ -1304,7 +1393,14 @@ export class PrismaStateRepository {
     }
 
     if (outcome === DomainVoteChoice.COMPLETED && submission.status !== DomainSubmissionStatus.CONFIRMED) {
-      await this.confirmSubmissionInternalWithTx(tx, submission, task, now);
+      await this.confirmSubmissionInternalWithTx(
+        tx,
+        submission,
+        task,
+        now,
+        cycleId,
+        asAddress(task.publisherAddress)
+      );
     }
 
     const votes = await tx.supervisionVote.findMany({ where: { disputeId } });
@@ -1354,6 +1450,7 @@ export class PrismaStateRepository {
     const includeDisputes = !scopeSet || scopeSet.has("disputes");
     const includeVotes = !scopeSet || scopeSet.has("votes");
     const includeCycleWorkloads = !scopeSet || scopeSet.has("cycleWorkloads");
+    const includeActivities = !scopeSet || scopeSet.has("activities");
 
     const cycleDiff = includeCycles
       ? diffByKey(currentSnapshot?.cycles ?? [], nextSnapshot.cycles, (item) => item.id)
@@ -1378,6 +1475,9 @@ export class PrismaStateRepository {
       : { upserts: [], deletes: [] };
     const workloadDiff = includeCycleWorkloads
       ? diffByKey(currentSnapshot?.cycleWorkloads ?? [], nextSnapshot.cycleWorkloads, (item) => item.id)
+      : { upserts: [], deletes: [] };
+    const activityDiff = includeActivities
+      ? diffByKey(currentSnapshot?.activities ?? [], nextSnapshot.activities, (item) => item.id)
       : { upserts: [], deletes: [] };
 
     for (const item of cycleDiff.upserts) {
@@ -1592,8 +1692,34 @@ export class PrismaStateRepository {
       });
     }
 
+    for (const item of activityDiff.upserts) {
+      await tx.activityEvent.upsert({
+        where: { id: item.id },
+        create: {
+          id: item.id,
+          type: item.type,
+          cycleId: item.cycleId,
+          taskId: item.taskId,
+          disputeId: item.disputeId,
+          actorAddress: item.actor,
+          createdAt: toDate(item.createdAt)
+        },
+        update: {
+          type: item.type,
+          cycleId: item.cycleId,
+          taskId: item.taskId,
+          disputeId: item.disputeId,
+          actorAddress: item.actor,
+          createdAt: toDate(item.createdAt)
+        }
+      });
+    }
+
     if (workloadDiff.deletes.length > 0) {
       await tx.cycleWorkload.deleteMany({ where: { id: { in: workloadDiff.deletes } } });
+    }
+    if (activityDiff.deletes.length > 0) {
+      await tx.activityEvent.deleteMany({ where: { id: { in: activityDiff.deletes } } });
     }
     if (voteDiff.deletes.length > 0) {
       await tx.supervisionVote.deleteMany({ where: { id: { in: voteDiff.deletes } } });
@@ -1657,6 +1783,30 @@ export class PrismaStateRepository {
         }
       });
     }
+  }
+
+  private async appendActivityEventWithTx(
+    tx: Prisma.TransactionClient,
+    input: {
+      type: DomainActivityEventType;
+      cycleId: string;
+      taskId: string | null;
+      disputeId: string | null;
+      actor: Address;
+      createdAt: Date;
+    }
+  ): Promise<void> {
+    await tx.activityEvent.create({
+      data: {
+        id: nanoid(),
+        type: input.type,
+        cycleId: input.cycleId,
+        taskId: input.taskId,
+        disputeId: input.disputeId,
+        actorAddress: input.actor,
+        createdAt: input.createdAt
+      }
+    });
   }
 
   private async applyProfileDeltaWithTx(
@@ -1966,6 +2116,26 @@ export class PrismaStateRepository {
     };
   }
 
+  private mapActivityEvent(item: {
+    id: string;
+    type: unknown;
+    cycleId: string;
+    taskId: string | null;
+    disputeId: string | null;
+    actorAddress: string;
+    createdAt: Date;
+  }): ActivityEvent {
+    return {
+      id: item.id,
+      type: item.type as DomainActivityEventType,
+      cycleId: item.cycleId,
+      taskId: item.taskId,
+      disputeId: item.disputeId,
+      actor: asAddress(item.actorAddress),
+      createdAt: toIso(item.createdAt)
+    };
+  }
+
   async close(): Promise<void> {
     await this.prisma.$disconnect();
   }
@@ -2010,7 +2180,7 @@ export class PrismaStateRepository {
       return null;
     }
 
-    const [profiles, balances, tasks, submissions, disputes, votes, cycleWorkloads, cycles] =
+    const [profiles, balances, tasks, submissions, disputes, votes, cycleWorkloads, cycles, activities] =
       await Promise.all([
         tx.agentProfile.findMany(),
         tx.ledgerBalance.findMany(),
@@ -2019,7 +2189,8 @@ export class PrismaStateRepository {
         tx.dispute.findMany(),
         tx.supervisionVote.findMany(),
         tx.cycleWorkload.findMany(),
-        tx.cycle.findMany()
+        tx.cycle.findMany(),
+        tx.activityEvent.findMany()
       ]);
 
     const mappedProfiles = profiles.map((item) => ({
@@ -2120,6 +2291,16 @@ export class PrismaStateRepository {
       closedAt: item.closedAt ? toIso(item.closedAt) : null
     })) satisfies EngineStateSnapshot["cycles"];
 
+    const mappedActivities = activities.map((item) => ({
+      id: item.id,
+      type: item.type as unknown as DomainActivityEventType,
+      cycleId: item.cycleId,
+      taskId: item.taskId,
+      disputeId: item.disputeId,
+      actor: asAddress(item.actorAddress),
+      createdAt: toIso(item.createdAt)
+    })) satisfies EngineStateSnapshot["activities"];
+
     const votesByDisputeAndAgent = mappedVotes.map((item) => [`${item.disputeId}:${item.agent}`, item.id] as [string, string]);
 
     const latestSubmissionByTaskAndAgentMap = new Map<string, { submissionId: string; createdAt: string }>();
@@ -2149,6 +2330,7 @@ export class PrismaStateRepository {
       votesByDisputeAndAgent,
       cycleWorkloads: mappedCycleWorkloads,
       cycles: mappedCycles,
+      activities: mappedActivities,
       latestSubmissionByTaskAndAgent
     };
   }

@@ -5,7 +5,20 @@ import { isAddress as isEvmAddress, verifyMessage } from "viem";
 import { z } from "zod";
 import { nanoid } from "nanoid";
 import { loadConfig } from "@agentrade/config";
-import { VoteChoice, type Address, type AgentProfile, type LedgerBalance } from "@agentrade/types";
+import {
+  ActivityEventType,
+  TaskStatus,
+  VoteChoice,
+  type ActivityEvent,
+  type Address,
+  type AgentDirectoryItem,
+  type AgentProfile,
+  type DashboardMetricSnapshot,
+  type DashboardTrendPoint,
+  type Dispute,
+  type LedgerBalance,
+  type Task
+} from "@agentrade/types";
 import { AgentradeEngine, INITIAL_AGENT_BALANCE } from "./domain/engine.js";
 import { DomainError } from "./domain/errors.js";
 import { HttpError } from "./utils/http-error.js";
@@ -36,6 +49,69 @@ const isValidTimezone = (value: string): boolean => {
   } catch {
     return false;
   }
+};
+
+const toDayKey = (value: string | Date, timeZone: string): string =>
+  new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(typeof value === "string" ? new Date(value) : value);
+
+const countMetrics = (events: ActivityEvent[]): DashboardMetricSnapshot => {
+  const metrics: DashboardMetricSnapshot = {
+    tasksPublished: 0,
+    tasksAccepted: 0,
+    tasksCompleted: 0,
+    disputesOpened: 0
+  };
+  for (const event of events) {
+    if (event.type === ActivityEventType.TASK_PUBLISHED) {
+      metrics.tasksPublished += 1;
+    } else if (event.type === ActivityEventType.TASK_ACCEPTED) {
+      metrics.tasksAccepted += 1;
+    } else if (event.type === ActivityEventType.TASK_COMPLETED) {
+      metrics.tasksCompleted += 1;
+    } else if (event.type === ActivityEventType.DISPUTE_OPENED) {
+      metrics.disputesOpened += 1;
+    }
+  }
+  return metrics;
+};
+
+const parseCursorOffset = (cursor: string | undefined): number => {
+  if (!cursor) {
+    return 0;
+  }
+  const value = Number(cursor);
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new HttpError(400, "invalid cursor");
+  }
+  return value;
+};
+
+const paginateItems = <T>(items: T[], cursor: string | undefined, limit: number) => {
+  const offset = parseCursorOffset(cursor);
+  const boundedLimit = Math.max(1, Math.min(100, limit));
+  const page = items.slice(offset, offset + boundedLimit);
+  const nextOffset = offset + page.length;
+  const nextCursor = nextOffset < items.length ? String(nextOffset) : null;
+  return { items: page, nextCursor };
+};
+
+const toAgentScore = (profile: AgentProfile): number => {
+  const reputationAvg =
+    (profile.reputation.publisher + profile.reputation.worker + profile.reputation.supervisor) / 3;
+  const completionRate =
+    profile.stats.tasksAccepted > 0
+      ? Math.min(1, profile.stats.tasksCompleted / profile.stats.tasksAccepted) * 100
+      : 0;
+  const qualityRate =
+    profile.stats.tasksAccepted > 0
+      ? Math.max(0, 1 - profile.stats.submissionsRejected / profile.stats.tasksAccepted) * 100
+      : 100;
+  return Number((0.45 * reputationAvg + 0.35 * completionRate + 0.2 * qualityRate).toFixed(2));
 };
 
 export const buildApp = async () => {
@@ -164,6 +240,45 @@ export const buildApp = async () => {
     updatedAt: new Date().toISOString()
   });
 
+  const readTasks = async (): Promise<Task[]> => {
+    if (stateRepository) {
+      return stateRepository.listTasksDirect();
+    }
+    return read((engine) => engine.listTasks());
+  };
+
+  const readDisputes = async (): Promise<Dispute[]> => {
+    if (stateRepository) {
+      return stateRepository.listDisputesDirect();
+    }
+    return read((engine) => engine.listDisputes());
+  };
+
+  const readAgents = async (): Promise<AgentProfile[]> => {
+    if (stateRepository) {
+      return stateRepository.listAgentsDirect();
+    }
+    return read((engine) => engine.listAgents());
+  };
+
+  const readActivities = async (): Promise<ActivityEvent[]> => {
+    if (stateRepository) {
+      return stateRepository.listActivitiesDirect();
+    }
+    return read((engine) => engine.listActivities());
+  };
+
+  const readActiveCycle = async () => {
+    if (stateRepository) {
+      const cycle = await stateRepository.getActiveCycleDirect();
+      if (!cycle) {
+        throw new DomainError("CYCLE_NOT_FOUND", "active cycle not found", 404);
+      }
+      return cycle;
+    }
+    return read((engine) => engine.getActiveCycle());
+  };
+
   const challenges = new Map<string, AuthChallenge>();
 
   app.decorate("engine", inMemoryEngine);
@@ -273,11 +388,65 @@ export const buildApp = async () => {
     return { token, expiresIn: "15m" };
   });
 
-  app.get("/v1/tasks", async () => {
-    if (stateRepository) {
-      return { items: await stateRepository.listTasksDirect() };
+  app.get("/v1/tasks", async (request) => {
+    const query = z
+      .object({
+        q: z.string().trim().min(1).optional(),
+        status: z.nativeEnum(TaskStatus).optional(),
+        publisher: z.string().optional(),
+        sort: z.enum(["latest", "created", "deadline", "reward"]).optional(),
+        order: z.enum(["asc", "desc"]).optional(),
+        cursor: z.string().optional(),
+        limit: z.coerce.number().int().min(1).max(100).optional()
+      })
+      .parse(request.query ?? {});
+
+    if (query.publisher && !isAddress(query.publisher)) {
+      throw new HttpError(400, "invalid publisher address");
     }
-    return { items: await read((engine) => engine.listTasks()) };
+
+    let items = await readTasks();
+    if (query.status) {
+      items = items.filter((item) => item.status === query.status);
+    }
+    if (query.publisher) {
+      const publisherLower = query.publisher.toLowerCase();
+      items = items.filter((item) => item.publisher.toLowerCase() === publisherLower);
+    }
+    if (query.q) {
+      const q = query.q.toLowerCase();
+      items = items.filter(
+        (item) =>
+          item.id.toLowerCase().includes(q) ||
+          item.title.toLowerCase().includes(q) ||
+          item.publisher.toLowerCase().includes(q)
+      );
+    }
+
+    const sortKey = query.sort ?? "latest";
+    const order = query.order ?? "desc";
+    items.sort((a, b) => {
+      let delta = 0;
+      if (sortKey === "created") {
+        delta = a.createdAt.localeCompare(b.createdAt);
+      } else if (sortKey === "deadline") {
+        delta = a.deadlineUtc.localeCompare(b.deadlineUtc);
+      } else if (sortKey === "reward") {
+        delta = a.rewardPerSlot - b.rewardPerSlot;
+      } else {
+        delta = a.updatedAt.localeCompare(b.updatedAt);
+      }
+      if (delta === 0) {
+        delta = a.id.localeCompare(b.id);
+      }
+      return order === "asc" ? delta : -delta;
+    });
+
+    if (!query.limit && !query.cursor) {
+      return { items, nextCursor: null };
+    }
+    const page = paginateItems(items, query.cursor, query.limit ?? 20);
+    return page;
   });
   app.get("/v1/tasks/:id", async (request) => {
     const params = z.object({ id: z.string() }).parse(request.params);
@@ -414,11 +583,61 @@ export const buildApp = async () => {
     }
     return mutate((engine) => engine.openDispute({ ...body, opener }), ["disputes"]);
   });
-  app.get("/v1/disputes", async () => {
-    if (stateRepository) {
-      return { items: await stateRepository.listDisputesDirect() };
+  app.get("/v1/disputes", async (request) => {
+    const query = z
+      .object({
+        taskId: z.string().optional(),
+        opener: z.string().optional(),
+        status: z.enum(["OPEN", "RESOLVED_COMPLETED", "RESOLVED_NOT_COMPLETED"]).optional(),
+        q: z.string().trim().min(1).optional(),
+        sort: z.enum(["latest", "created"]).optional(),
+        order: z.enum(["asc", "desc"]).optional(),
+        cursor: z.string().optional(),
+        limit: z.coerce.number().int().min(1).max(100).optional()
+      })
+      .parse(request.query ?? {});
+
+    if (query.opener && !isAddress(query.opener)) {
+      throw new HttpError(400, "invalid opener address");
     }
-    return { items: await read((engine) => engine.listDisputes()) };
+
+    let items = await readDisputes();
+    if (query.taskId) {
+      items = items.filter((item) => item.taskId === query.taskId);
+    }
+    if (query.opener) {
+      const openerLower = query.opener.toLowerCase();
+      items = items.filter((item) => item.opener.toLowerCase() === openerLower);
+    }
+    if (query.status) {
+      items = items.filter((item) => item.status === query.status);
+    }
+    if (query.q) {
+      const q = query.q.toLowerCase();
+      items = items.filter(
+        (item) =>
+          item.id.toLowerCase().includes(q) ||
+          item.taskId.toLowerCase().includes(q) ||
+          item.submissionId.toLowerCase().includes(q) ||
+          item.opener.toLowerCase().includes(q)
+      );
+    }
+
+    const sortKey = query.sort ?? "latest";
+    const order = query.order ?? "desc";
+    items.sort((a, b) => {
+      let delta = sortKey === "created" ? a.createdAt.localeCompare(b.createdAt) : a.updatedAt.localeCompare(b.updatedAt);
+      if (delta === 0) {
+        delta = a.id.localeCompare(b.id);
+      }
+      return order === "asc" ? delta : -delta;
+    });
+
+    if (!query.limit && !query.cursor) {
+      return { items, nextCursor: null };
+    }
+    const page = paginateItems(items, query.cursor, query.limit ?? 20);
+    return page;
   });
   app.get("/v1/disputes/:id", async (request) => {
     const params = z.object({ id: z.string() }).parse(request.params);
@@ -459,6 +678,236 @@ export const buildApp = async () => {
       }
       throw error;
     }
+  });
+
+  app.get("/v1/dashboard/summary", async (request) => {
+    const query = z
+      .object({
+        tz: z.string().default("UTC")
+      })
+      .parse(request.query ?? {});
+    if (!isValidTimezone(query.tz)) {
+      throw new HttpError(400, "invalid timezone");
+    }
+
+    const [activities, activeCycle, tasks, disputes, agents] = await Promise.all([
+      readActivities(),
+      readActiveCycle(),
+      readTasks(),
+      readDisputes(),
+      readAgents()
+    ]);
+    const now = new Date();
+    const todayKey = toDayKey(now, query.tz);
+    const todayEvents = activities.filter((item) => toDayKey(item.createdAt, query.tz) === todayKey);
+    const cycleEvents = activities.filter((item) => item.cycleId === activeCycle.id);
+
+    return {
+      timezone: query.tz,
+      generatedAt: now.toISOString(),
+      activeCycleId: activeCycle.id,
+      today: countMetrics(todayEvents),
+      currentCycle: countMetrics(cycleEvents),
+      totals: {
+        tasks: tasks.length,
+        disputes: disputes.length,
+        agents: agents.length
+      }
+    };
+  });
+
+  app.get("/v1/dashboard/trends", async (request) => {
+    const query = z
+      .object({
+        tz: z.string().default("UTC"),
+        window: z.enum(["7d", "30d"]).default("7d")
+      })
+      .parse(request.query ?? {});
+    if (!isValidTimezone(query.tz)) {
+      throw new HttpError(400, "invalid timezone");
+    }
+
+    const events = await readActivities();
+    const windowSize = query.window === "30d" ? 30 : 7;
+    const now = new Date();
+    const dayKeys: string[] = [];
+    for (let step = 0; dayKeys.length < windowSize && step < windowSize * 3; step += 1) {
+      const key = toDayKey(new Date(now.getTime() - step * 86_400_000), query.tz);
+      if (!dayKeys.includes(key)) {
+        dayKeys.unshift(key);
+      }
+    }
+
+    const pointMap = new Map<string, DashboardTrendPoint>();
+    for (const key of dayKeys) {
+      pointMap.set(key, {
+        bucketStart: `${key}T00:00:00.000Z`,
+        label: key,
+        tasksPublished: 0,
+        tasksAccepted: 0,
+        tasksCompleted: 0,
+        disputesOpened: 0
+      });
+    }
+
+    for (const event of events) {
+      const key = toDayKey(event.createdAt, query.tz);
+      const point = pointMap.get(key);
+      if (!point) {
+        continue;
+      }
+      if (event.type === ActivityEventType.TASK_PUBLISHED) {
+        point.tasksPublished += 1;
+      } else if (event.type === ActivityEventType.TASK_ACCEPTED) {
+        point.tasksAccepted += 1;
+      } else if (event.type === ActivityEventType.TASK_COMPLETED) {
+        point.tasksCompleted += 1;
+      } else if (event.type === ActivityEventType.DISPUTE_OPENED) {
+        point.disputesOpened += 1;
+      }
+    }
+
+    return {
+      timezone: query.tz,
+      generatedAt: now.toISOString(),
+      window: query.window,
+      points: dayKeys.map((key) => pointMap.get(key)!)
+    };
+  });
+
+  app.get("/v1/agents", async (request) => {
+    const query = z
+      .object({
+        q: z.string().trim().min(1).optional(),
+        activeOnly: z
+          .enum(["true", "false"])
+          .transform((value) => value === "true")
+          .optional(),
+        sort: z.enum(["latest", "score", "reputation", "completed", "published", "accepted"]).optional(),
+        order: z.enum(["asc", "desc"]).optional(),
+        cursor: z.string().optional(),
+        limit: z.coerce.number().int().min(1).max(100).optional()
+      })
+      .parse(request.query ?? {});
+
+    const [profiles, activities] = await Promise.all([readAgents(), readActivities()]);
+    const latestActivityByAddress = new Map<string, string>();
+    for (const event of activities) {
+      const prev = latestActivityByAddress.get(event.actor);
+      if (!prev || prev < event.createdAt) {
+        latestActivityByAddress.set(event.actor, event.createdAt);
+      }
+    }
+
+    let items: AgentDirectoryItem[] = profiles.map((profile) => {
+      const latestActivityAt = latestActivityByAddress.get(profile.address) ?? null;
+      const isActive =
+        latestActivityAt !== null ||
+        profile.stats.tasksAccepted > 0 ||
+        profile.stats.tasksPublished > 0 ||
+        profile.stats.tasksCompleted > 0 ||
+        profile.stats.submissionsRejected > 0 ||
+        profile.stats.supervisionVotes > 0;
+      return {
+        ...profile,
+        latestActivityAt,
+        score: toAgentScore(profile),
+        isActive
+      };
+    });
+
+    if (query.activeOnly) {
+      items = items.filter((item) => item.isActive);
+    }
+    if (query.q) {
+      const q = query.q.toLowerCase();
+      items = items.filter(
+        (item) =>
+          item.address.toLowerCase().includes(q) ||
+          item.name.toLowerCase().includes(q) ||
+          item.bio.toLowerCase().includes(q)
+      );
+    }
+
+    const sortKey = query.sort ?? "latest";
+    const order = query.order ?? "desc";
+    items.sort((a, b) => {
+      let delta = 0;
+      if (sortKey === "score") {
+        delta = a.score - b.score;
+      } else if (sortKey === "reputation") {
+        const repA = (a.reputation.publisher + a.reputation.worker + a.reputation.supervisor) / 3;
+        const repB = (b.reputation.publisher + b.reputation.worker + b.reputation.supervisor) / 3;
+        delta = repA - repB;
+      } else if (sortKey === "completed") {
+        delta = a.stats.tasksCompleted - b.stats.tasksCompleted;
+      } else if (sortKey === "published") {
+        delta = a.stats.tasksPublished - b.stats.tasksPublished;
+      } else if (sortKey === "accepted") {
+        delta = a.stats.tasksAccepted - b.stats.tasksAccepted;
+      } else {
+        const left = a.latestActivityAt ?? "";
+        const right = b.latestActivityAt ?? "";
+        delta = left.localeCompare(right);
+      }
+      if (delta === 0) {
+        delta = a.address.localeCompare(b.address);
+      }
+      return order === "asc" ? delta : -delta;
+    });
+
+    if (!query.limit && !query.cursor) {
+      return { items, nextCursor: null };
+    }
+    const page = paginateItems(items, query.cursor, query.limit ?? 20);
+    return page;
+  });
+
+  app.get("/v1/activities", async (request) => {
+    const query = z
+      .object({
+        taskId: z.string().optional(),
+        disputeId: z.string().optional(),
+        address: z.string().optional(),
+        type: z.nativeEnum(ActivityEventType).optional(),
+        order: z.enum(["asc", "desc"]).optional(),
+        cursor: z.string().optional(),
+        limit: z.coerce.number().int().min(1).max(100).optional()
+      })
+      .parse(request.query ?? {});
+    if (query.address && !isAddress(query.address)) {
+      throw new HttpError(400, "invalid address");
+    }
+
+    let items = await readActivities();
+    if (query.taskId) {
+      items = items.filter((item) => item.taskId === query.taskId);
+    }
+    if (query.disputeId) {
+      items = items.filter((item) => item.disputeId === query.disputeId);
+    }
+    if (query.address) {
+      const address = query.address.toLowerCase();
+      items = items.filter((item) => item.actor.toLowerCase() === address);
+    }
+    if (query.type) {
+      items = items.filter((item) => item.type === query.type);
+    }
+
+    const order = query.order ?? "desc";
+    items.sort((a, b) => {
+      let delta = a.createdAt.localeCompare(b.createdAt);
+      if (delta === 0) {
+        delta = a.id.localeCompare(b.id);
+      }
+      return order === "asc" ? delta : -delta;
+    });
+
+    if (!query.limit && !query.cursor) {
+      return { items, nextCursor: null };
+    }
+    const page = paginateItems(items, query.cursor, query.limit ?? 20);
+    return page;
   });
 
   app.get("/v1/agents/:address", async (request) => {

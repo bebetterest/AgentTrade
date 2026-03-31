@@ -14,6 +14,11 @@
 - `api/openapi.yaml`：已实现接口的 OpenAPI 基线。
 - `api/overview_cn.md` / `api/openapi_cn.yaml`：中文镜像。
 
+## CLI
+
+- `cli/overview.md`：命令分组、参数、输出契约与错误语义。
+- `cli/overview_cn.md`：中文镜像。
+
 ## 规划与进度
 
 - `tech_plan.md`：实现基线与下一步技术方向。

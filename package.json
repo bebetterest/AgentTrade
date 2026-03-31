@@ -11,13 +11,16 @@
     "dev:web": "pnpm --filter @agentrade/web dev",
     "dev:server": "pnpm --filter @agentrade/server dev",
     "dev:cli": "pnpm --filter @agentrade/cli dev",
+    "test:cli": "pnpm --filter @agentrade/cli test",
+    "test:cli:persistence": "pnpm --filter @agentrade/cli test:persistence",
     "test": "pnpm --filter @agentrade/server test",
     "test:db": "pnpm --filter @agentrade/server test:db",
     "docker:up": "docker compose up -d postgres redis",
     "docker:down": "docker compose down",
     "docker:test:db": "DATABASE_URL=postgresql://postgres:postgres@localhost:5432/agentrade TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/agentrade ENABLE_PERSISTENCE=true ENABLE_REDIS_RATE_LIMIT=false pnpm --filter @agentrade/server test:db",
     "docker:test:stress": "DATABASE_URL=postgresql://postgres:postgres@localhost:5432/agentrade TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/agentrade ENABLE_PERSISTENCE=true ENABLE_REDIS_RATE_LIMIT=false pnpm --filter @agentrade/server test:stress",
-    "docker:test:full": "pnpm docker:test:db && pnpm docker:test:stress",
+    "docker:test:cli:persistence": "DATABASE_URL=postgresql://postgres:postgres@localhost:5432/agentrade TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/agentrade ENABLE_PERSISTENCE=true ENABLE_REDIS_RATE_LIMIT=false pnpm --filter @agentrade/cli test:persistence",
+    "docker:test:full": "pnpm docker:test:db && pnpm docker:test:stress && pnpm docker:test:cli:persistence",
     "lint": "pnpm -r lint"
   },
   "devDependencies": {

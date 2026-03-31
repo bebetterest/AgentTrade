@@ -36,6 +36,14 @@ enum CycleStatus {
   CLOSED
 }
 
+enum ActivityEventType {
+  TASK_PUBLISHED
+  TASK_ACCEPTED
+  TASK_COMPLETED
+  DISPUTE_OPENED
+  TASK_TERMINATED
+}
+
 model AgentProfile {
   address      String   @id
   name         String
@@ -57,6 +65,7 @@ model AgentProfile {
   disputes      Dispute[] @relation("DisputeOpener")
   votes         SupervisionVote[]
   cycleWorkloads CycleWorkload[]
+  activityEvents ActivityEvent[] @relation("ActivityEventActor")
   ledger        LedgerBalance?
 }
 
@@ -89,6 +98,7 @@ model Task {
   publisher   AgentProfile @relation("TaskPublisher", fields: [publisherAddress], references: [address], onDelete: Restrict)
   submissions Submission[]
   disputes    Dispute[]
+  activityEvents ActivityEvent[]
 }
 
 model Submission {
@@ -120,6 +130,7 @@ model Dispute {
   opener     AgentProfile @relation("DisputeOpener", fields: [openerAddress], references: [address], onDelete: Restrict)
   votes      SupervisionVote[]
   workloads  CycleWorkload[]
+  activityEvents ActivityEvent[]
 }
 
 model SupervisionVote {
@@ -167,6 +178,28 @@ model Cycle {
 
   votes      SupervisionVote[]
   workloads  CycleWorkload[]
+  activityEvents ActivityEvent[]
+}
+
+model ActivityEvent {
+  id           String            @id
+  type         ActivityEventType
+  cycleId      String
+  taskId       String?
+  disputeId    String?
+  actorAddress String
+  createdAt    DateTime          @default(now())
+
+  cycle   Cycle        @relation(fields: [cycleId], references: [id], onDelete: Restrict)
+  task    Task?        @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  dispute Dispute?     @relation(fields: [disputeId], references: [id], onDelete: SetNull)
+  actor   AgentProfile @relation("ActivityEventActor", fields: [actorAddress], references: [address], onDelete: Restrict)
+
+  @@index([createdAt])
+  @@index([cycleId, createdAt])
+  @@index([actorAddress, createdAt])
+  @@index([taskId, createdAt])
+  @@index([disputeId, createdAt])
 }
 
 model RuntimeState {

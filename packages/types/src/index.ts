@@ -30,6 +30,14 @@ export enum CycleStatus {
   CLOSED = "CLOSED"
 }
 
+export enum ActivityEventType {
+  TASK_PUBLISHED = "TASK_PUBLISHED",
+  TASK_ACCEPTED = "TASK_ACCEPTED",
+  TASK_COMPLETED = "TASK_COMPLETED",
+  DISPUTE_OPENED = "DISPUTE_OPENED",
+  TASK_TERMINATED = "TASK_TERMINATED"
+}
+
 export interface ReputationTriple {
   publisher: number;
   worker: number;
@@ -126,10 +134,154 @@ export interface Cycle {
   closedAt: IsoDateString | null;
 }
 
+export interface ActivityEvent {
+  id: string;
+  type: ActivityEventType;
+  cycleId: string;
+  taskId: string | null;
+  disputeId: string | null;
+  actor: Address;
+  createdAt: IsoDateString;
+}
+
+export interface DashboardMetricSnapshot {
+  tasksPublished: number;
+  tasksAccepted: number;
+  tasksCompleted: number;
+  disputesOpened: number;
+}
+
+export interface DashboardSummaryResponse {
+  timezone: string;
+  generatedAt: IsoDateString;
+  activeCycleId: string;
+  today: DashboardMetricSnapshot;
+  currentCycle: DashboardMetricSnapshot;
+  totals: {
+    tasks: number;
+    disputes: number;
+    agents: number;
+  };
+}
+
+export interface DashboardTrendPoint {
+  bucketStart: IsoDateString;
+  label: string;
+  tasksPublished: number;
+  tasksAccepted: number;
+  tasksCompleted: number;
+  disputesOpened: number;
+}
+
+export interface DashboardTrendsResponse {
+  timezone: string;
+  generatedAt: IsoDateString;
+  window: "7d" | "30d";
+  points: DashboardTrendPoint[];
+}
+
+export interface AgentDirectoryItem extends AgentProfile {
+  latestActivityAt: IsoDateString | null;
+  score: number;
+  isActive: boolean;
+}
+
+export interface PaginatedResponse<T> {
+  items: T[];
+  nextCursor: string | null;
+}
+
 export interface LedgerBalance {
   address: Address;
   available: number;
   updatedAt: IsoDateString;
+}
+
+export interface ApiErrorEnvelope {
+  error: string;
+  message?: string;
+  issues?: unknown;
+}
+
+export interface HealthStatus {
+  ok: boolean;
+  service: string;
+}
+
+export interface AuthChallengeResponse {
+  nonce: string;
+  message: string;
+}
+
+export interface AuthVerifyResponse {
+  token: string;
+  expiresIn: string;
+}
+
+export interface VoteDisputeResult {
+  vote: SupervisionVote;
+  workload: CycleWorkload;
+}
+
+export interface CloseCycleResult {
+  closedCycleId: string;
+  openedCycleId: string;
+  rewardPool: number;
+  distributions: Array<{ agent: Address; amount: number }>;
+  finalizedDisputes: string[];
+}
+
+export interface CycleRewardsResponse {
+  cycle: Cycle;
+  workloads: CycleWorkload[];
+}
+
+export interface BridgeExportItem {
+  address: Address;
+  amount: number;
+}
+
+export interface BridgeExportResponse {
+  chain: string;
+  mode: "OFFCHAIN_EXPORT_ONLY";
+  exports: BridgeExportItem[];
+}
+
+export interface EconomyParams {
+  appName: string;
+  host: string;
+  port: number;
+  databaseUrl: string;
+  redisUrl: string;
+  enablePersistence: boolean;
+  enableRedisRateLimit: boolean;
+  jwtSecret: string;
+  adminServiceKey: string;
+  authChallengeTtlMinutes: number;
+  rateLimitPerMinute: number;
+  rateLimitBurst: number;
+  taskTitleMaxLength: number;
+  taskDescriptionMaxLength: number;
+  taskAcceptanceCriteriaMaxLength: number;
+  taskSubmissionPayloadMaxLength: number;
+  disputeReasonMaxLength: number;
+  taskSlotsMax: number;
+  taskRewardPerSlotMax: number;
+  taskDeadlineMaxHours: number;
+  taxRateBps: number;
+  taxMin: number;
+  rewardMin: number;
+  mintPerCycle: number;
+  terminationPenaltyBps: number;
+  submissionTimeoutHours: number;
+  resubmitCooldownMinutes: number;
+  disputeQuorum: number;
+  disputeApprovalBps: number;
+  reputationWeightPublisherBps: number;
+  reputationWeightWorkerBps: number;
+  reputationWeightSupervisorBps: number;
+  bridgeChain: string;
+  bridgeMode: "OFFCHAIN_EXPORT_ONLY";
 }
 
 export interface PublishTaskInput {

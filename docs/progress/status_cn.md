@@ -2,11 +2,35 @@
 
 ## 2026-03-31
 
+- 已完成 Web 信息中心 V1 端到端实现：首页汇总、趋势卡片、Agent 榜单、Task/User 瀑布流、无限滚动、抽屉与独立详情页联动。
+- 已新增 append-only 活动事件模型（`ActivityEvent`），并接入 engine 与持久化仓储写路径，用于支撑统计口径准确性。
+- 已扩展服务端读接口：新增 `/v1/dashboard/summary`、`/v1/dashboard/trends`、`/v1/activities`，并为 tasks/disputes/agents 列表补齐查询能力。
+- 已同步共享契约（`packages/types`）、SDK 客户端方法与 CLI 命令面（新增 `dashboard *`、`activities list`、`agents list`，并扩展 `tasks list`/`disputes list` 查询参数），CLI 契约与文档同步测试已通过。
+- 已同步 API/CLI 文档与 OpenAPI 中英文镜像，并新增模块化进度文件（`docs/progress/web_information_center*.md`）。
+- 已完成本地校验：server lint+tests、sdk lint、cli lint+tests、web lint 全部通过。
+
 - 已按当前仓库实现审计并同步 `README`、`AGENTS` 与核心 `docs/*` 的中英文描述。
 - 已澄清持久化架构文档：API 写热点路径为仓储事务直写，并通过 `RuntimeState` 行锁与进程内写入队列协调并发顺序。
 - 已明确快照差量同步定位为非热点兜底/同步机制，不再作为主要持久化写路径。
 - 已扩展 README 运维说明，补齐关键环境变量与完整 CLI 已实现命令清单。
 - 已更新 AGENTS 原则，要求 engine 与 repository 语义一致，并要求 API 契约文档同提交镜像更新。
+- 已将 CLI 从旧 `resource:action` 风格重构为分组子命令，并补齐到全部已实现 API 路由（含 health/economy/admin override/export）。
+- 已完成 CLI 架构拆分：命令分组、上下文、参数校验、文本输入解析、统一输出与结构化错误模块；成功默认 JSON，失败默认机器可读 JSON。
+- 已新增 CLI 本地预校验（地址/整数/枚举/ISO 时间/双通道输入互斥）以及 bearer/admin 凭证配置校验。
+- 已将 `packages/sdk` 扩展到全接口覆盖，并将 CLI 网络调用统一收敛到 SDK（移除混合裸 `fetch` 路径）。
+- 已在 `packages/types` 增补 auth/health/周期结算/周期奖励/桥接导出/经济参数/投票结果/API 错误包络等共享类型。
+- 已新增 CLI 测试矩阵（`node:test` + `tsx`）：覆盖参数校验、错误契约、SDK 请求组装/重试、CLI 到服务端集成生命周期链路。
+- 已增加 `pnpm test:cli` 并接入 CI `quality` 门禁。
+- 已新增 CLI 专项文档（`docs/cli/overview.md` 及中文镜像）并同步 README CLI 命令树与错误语义说明。
+- 已将仓库内 skill 资产升级为标准化结构，补齐 `agents/openai.yaml` 与 CLI 场景 references。
+- 已强化 CLI 运行时行为：补齐“全局参数前置”场景下的命令路径回填识别、`auth verify` 的 nonce/signature 非空护栏，并在 `--help` 中内置环境变量回退与输出/错误契约说明。
+- 已扩展 CLI 测试覆盖：新增命令契约与行为测试（全命令 method/path/auth/body 映射、help/错误路径断言、context 全局参数护栏），CLI 测试总计 27 项且全部通过。
+- 已升级 CLI 文档与 skill 参考到命令级矩阵、结构化错误分流策略与规模化自动化执行流程，并保持中英文镜像同步。
+- 已新增 CLI 持久化压力测试套件（`apps/cli/test/persistence.stress.test.ts`），覆盖持久化模式并发接单防超卖、重复投票竞争安全与重启可持续读取验证。
+- 已扩展 CLI 持久化压力套件：新增并发高成本发单防超支校验与重复发起争议“单次成功”不变量校验。
+- 已将 CLI 持久化压力覆盖重构为多用例串行执行，并加入显式“非并行”控制，避免共享 DB 资源冲突。
+- 已新增 CLI 持久化测试脚本（`pnpm test:cli:persistence`、`pnpm docker:test:cli:persistence`），并将 `docker:test:full` 扩展为包含 CLI 持久化回归。
+- 已扩展 CI `persistence` 作业：在仓储持久化循环后执行 CLI 持久化并发回归测试。
 
 ## 2026-03-30
 
@@ -81,3 +105,10 @@
 - 已新增 API 幂等性场景测试：模拟发布者重复确认请求，验证重复写入重试下仅发放一次奖励且任务状态确定性关闭。
 - 已新增 API “部分完成后终止”场景测试：覆盖发单税额、剩余托管罚金/退款、多 worker 奖励隔离与周期池统计一致性。
 - 已新增持久化“单 OPEN 争议”跨阶段场景测试：覆盖复议开启 + 重启 + 定案后约束持续有效，并校验定案后 submission 不再可争议。
+- 已新增 CLI 本地预校验：`tasks create --tz` 在发请求前拦截非 IANA 时区输入。
+- 已补充 CLI 行为与鲁棒性测试：时区护栏断言、`5xx` 重试成功、不可重试 `4xx` 禁止重试、超时返回 `NETWORK_ERROR`。
+- 已新增 CLI 文档/skill 契约漂移测试：当命令面或错误契约文档与实现不一致时自动失败。
+- 已扩展 CLI 与 skill 双语参考：补齐时区护栏说明、标准操作配方、质量闸门与契约漂移防护说明，便于自动化 agent 直接执行。
+- 已强化 CLI 持久化压力测试隔离性：改为每次运行使用唯一测试地址，消除“重复执行依赖初始清洁余额/状态”的隐式前提。
+- 已在真实 Postgres（`TEST_DATABASE_URL`）下完成 CLI 全量复验：`npm --prefix apps/cli test` 38/38 全通过，持久化用例全部启用且无 skip。
+- 已新增独立 CI 作业 `cli-full-regression`：在 DB 环境下连续两轮执行完整 CLI 测试（`pnpm --filter @agentrade/cli test`），用于捕获状态泄漏与偶发抖动。

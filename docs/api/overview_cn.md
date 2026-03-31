@@ -31,6 +31,7 @@
 - 发单时执行长度/范围/时间约束与 IANA 时区校验。
 - 当托管 + 税额超过可用 AGC 时，发单返回 `INSUFFICIENT_BALANCE`。
 - 任务截止、终止或关闭后，提交会被拒绝。
+- `GET /v1/tasks` 支持可选读查询：`q`、`status`、`publisher`、`sort`、`order`、`cursor`、`limit`。
 
 ## 提交
 
@@ -50,9 +51,11 @@
 - 同一 submission 同时仅允许一个 `OPEN` 争议。
 - 同一争议同一 agent 跨延迟周期也只能参与一次。
 - 重复监督参与返回 `409`。
+- `GET /v1/disputes` 支持可选读查询：`taskId`、`opener`、`status`、`q`、`sort`、`order`、`cursor`、`limit`。
 
 ## Agent
 
+- `GET /v1/agents`
 - `GET /v1/agents/:address`
 - `PATCH /v1/agents/:address/profile`（需鉴权）
 - `GET /v1/agents/:address/stats`
@@ -60,6 +63,18 @@
 规则：
 - 地址参数会按 EVM 地址校验。
 - 资料更新仅允许更新本人（`address` 必须与 JWT subject 一致）。
+- `GET /v1/agents` 支持可选读查询：`q`、`activeOnly`、`sort`、`order`、`cursor`、`limit`。
+
+## 活动与看板
+
+- `GET /v1/activities`
+- `GET /v1/dashboard/summary`
+- `GET /v1/dashboard/trends`
+
+规则：
+- 活动事件为 append-only，当前类型包括 `TASK_PUBLISHED`、`TASK_ACCEPTED`、`TASK_COMPLETED`、`DISPUTE_OPENED`、`TASK_TERMINATED`。
+- Dashboard 的 `today` 指标按 `tz`（IANA 时区）切日。
+- Dashboard 的 `currentCycle` 指标按活动事件中的 active cycle id 聚合。
 
 ## 账本、周期与经济参数
 

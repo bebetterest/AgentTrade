@@ -14,6 +14,11 @@ Update docs in the same commit as behavior changes.
 - `api/openapi.yaml`: OpenAPI baseline for implemented endpoints.
 - `api/overview_cn.md` / `api/openapi_cn.yaml`: Chinese mirrors.
 
+## CLI
+
+- `cli/overview.md`: command groups, parameters, output contract, and failure semantics.
+- `cli/overview_cn.md`: Chinese mirror.
+
 ## Planning and Progress
 
 - `tech_plan.md`: implementation baseline and next-step technical direction.

@@ -2,11 +2,35 @@
 
 ## 2026-03-31
 
+- Implemented Web Information Center V1 end-to-end: dashboard summary, trend cards, agent leaderboard, task/user masonry feeds, infinite scroll, and drawer/full-page drill-down.
+- Added append-only activity event model (`ActivityEvent`) across engine and persistence repository write paths to support accurate dashboard metrics.
+- Expanded server read APIs with dashboard and activity routes (`/v1/dashboard/summary`, `/v1/dashboard/trends`, `/v1/activities`) and query-capable list routes for tasks/disputes/agents.
+- Updated shared contracts (`packages/types`), SDK client methods, and CLI command surface (added `dashboard *`, `activities list`, `agents list`, enriched `tasks list`/`disputes list` options) with passing CLI contract/docs-sync tests.
+- Updated API and CLI documentation/OpenAPI bilingual mirrors and added dedicated module progress tracker files (`docs/progress/web_information_center*.md`).
+- Revalidated with local checks: server lint+tests, sdk lint, cli lint+tests, web lint all passing.
+
 - Audited repository behavior and synchronized `README`, `AGENTS`, and core `docs/*` descriptions in bilingual mirrors.
 - Clarified persistence architecture docs: API write hot path is direct repository transactions with `RuntimeState` row-lock coordination and in-process mutation queue ordering.
 - Clarified that snapshot diff sync remains as a non-hot-path fallback/sync mechanism rather than the primary persistence write path.
 - Expanded README operational docs with key environment variables and full implemented CLI command map.
 - Updated AGENTS principles to require engine/repository semantic parity and same-commit API contract mirror updates.
+- Rebuilt CLI command surface from legacy `resource:action` style to grouped subcommands with full API route coverage (including health/economy/admin override/export routes).
+- Refactored CLI architecture into command groups, context, validators, text-input resolver, and structured output/error modules; default success output is JSON and default failure output is machine-readable JSON.
+- Introduced CLI local pre-validation for address/integer/enum/ISO-date/input-channel guardrails and explicit config checks for bearer/admin credentials.
+- Expanded `packages/sdk` to full endpoint parity and switched CLI to SDK-only request execution (removed mixed raw `fetch` command paths).
+- Added shared API/client types for auth, health, cycle close, cycle rewards, bridge export, economy params, vote result, and API error envelope in `packages/types`.
+- Added CLI test matrix (`node:test` + `tsx`) covering validation rules, error contract stability, SDK request assembly/retry behavior, and CLI-to-server integration lifecycle flows.
+- Added `pnpm test:cli` script and wired CLI tests into CI `quality` job.
+- Added dedicated CLI docs (`docs/cli/overview.md` + Chinese mirror) and synchronized README CLI sections with the new command tree and runtime/error semantics.
+- Standardized repository skill assets with structured references and `agents/openai.yaml` metadata for CLI-oriented autonomous agent usage.
+- Hardened CLI runtime behavior with stronger command fallback detection (global-option-prefixed argv), explicit non-empty guards for `auth verify` nonce/signature, and built-in help appendix for environment fallback + output/error contract.
+- Expanded CLI test coverage with command-contract and behavior suites (full command method/path/auth/body mapping, help/error-path assertions, context-option guard tests), bringing CLI tests to 27 passing cases.
+- Upgraded CLI operator documentation and skill references to command-level matrices, richer error-branching policy, and robust automation workflow guidance in bilingual mirrors.
+- Added dedicated CLI persistence stress suite (`apps/cli/test/persistence.stress.test.ts`) covering persistence-mode concurrent accept oversell protection, duplicate-vote race safety, and restart durability verification.
+- Expanded CLI persistence stress suite with concurrent high-cost publish overspend protection checks and duplicate dispute-open single-success invariants.
+- Refactored CLI persistence stress coverage into multiple serial test cases with explicit non-parallel execution controls to prevent DB contention conflicts.
+- Added CLI persistence test scripts (`pnpm test:cli:persistence`, `pnpm docker:test:cli:persistence`) and extended `docker:test:full` to include the CLI persistence suite.
+- Extended CI `persistence` job to execute CLI persistence/concurrency regression after repository persistence loops.
 
 ## 2026-03-30
 
@@ -81,3 +105,10 @@
 - Added API idempotency simulation for duplicate confirm requests to ensure single payout and deterministic closed-task state under retried writes.
 - Added API partial-completion termination simulation to validate publish tax, remaining-escrow penalty/refund, multi-worker payout isolation, and cycle pool accounting consistency.
 - Added persistence simulation for single-open-dispute invariants across reopen + restart + finalize phases, including post-finalization disputable-state rejection checks.
+- Added CLI local pre-validation for `tasks create --tz` to reject non-IANA timezones before network requests.
+- Added CLI behavior test for timezone guard plus retry/timeout robustness tests (`5xx` retry success, non-retryable `4xx` no-retry, timeout -> `NETWORK_ERROR`).
+- Added CLI documentation/skill drift guard tests that fail when command surface or error-contract docs fall out of sync with implementation.
+- Expanded CLI and skill references (bilingual) with timezone guard details, canonical operation recipes, quality gates, and contract-drift safeguards for autonomous agents.
+- Hardened CLI persistence stress isolation by generating run-unique test addresses, removing hidden dependence on pre-clean balances/state between repeated suite runs.
+- Revalidated CLI with real Postgres (`TEST_DATABASE_URL`) and confirmed full suite stability: `npm --prefix apps/cli test` now passes 38/38 with persistence tests active (no skips).
+- Added dedicated CI job `cli-full-regression` to run DB-backed full CLI suite twice (`pnpm --filter @agentrade/cli test`) for state-leak/flake detection.

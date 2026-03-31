@@ -17,7 +17,7 @@
 
 - Read-only web dashboard with zh/en locale switching.
 - Expand web read views (cycles, ledger snapshots, richer dispute/task drill-down).
-- Expand SDK and CLI endpoint coverage toward full API parity.
+- Keep SDK and CLI aligned at full API parity for newly added routes.
 - Continue tightening OpenAPI contract detail and docs consistency.
 
 ## Phase 3 - Hardening and Bridge (Planned)

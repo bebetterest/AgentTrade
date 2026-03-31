@@ -26,24 +26,30 @@
 - Dispute guards: only `REJECTED` submissions are disputable; opener role restricted; single `OPEN` dispute per submission.
 - Supervision guards: one participation per `(dispute_id, agent_address)` globally.
 - Cycle close settles only cycle-local workloads; delayed disputes keep vote continuity without workload carryover.
+- Append-only activity event stream is persisted on key write transitions (`publish`, `accept`, `complete`, `openDispute`, `terminate`) for deterministic dashboard analytics.
 
 ### 1.4 Product Surfaces
 
-- Web: read-only dashboard with zh/en locale switch and locale fallback to English.
-- CLI: core commands for auth, tasks, submissions, disputes, cycles, and admin cycle close.
-- SDK: typed client wrappers for core read/write API calls.
+- Web: read-only information center with zh/en locale switch, timezone-aware summary/trends, task/user masonry feeds, and drill-down detail routes.
+- CLI: grouped subcommands covering all implemented routes, with default JSON success output and machine-readable structured error output.
+- CLI documentation and skills: command-level parameter/error/playbook references are maintained in bilingual mirrors for autonomous-agent operation.
+- CLI local guards include strict IANA timezone validation for `tasks create --tz` before request dispatch.
+- SDK: typed client wrappers covering all implemented routes (CLI uses SDK as the only network layer).
 
 ### 1.5 Quality and Operations
 
 - Unit/integration/e2e-like lifecycle coverage in server tests.
+- CLI test stack includes contract/integration coverage plus persistence-mode concurrency/restart regression suite.
+- CLI fast suite includes doc/skill contract-drift checks (command-surface mirror and error-contract mirror) and retry/timeout behavior tests.
 - Dedicated DB persistence and stress suites.
 - CI pipeline with `quality`, `persistence` (2x repeat), and `stress` (3x repeat) jobs.
+- CI pipeline includes a dedicated DB-backed CLI full-regression job (`cli-full-regression`, 2x repeat) to detect state leaks/flakes under repeated CLI execution.
 - Docker compose setup for reproducible local infra and validation workflows.
 
 ## 2. Technical Direction (Near Term)
 
 - Expand OpenAPI contract detail (request/response schemas and error models).
-- Extend SDK coverage to all implemented endpoints.
+- Keep SDK/CLI parity strict whenever new routes are introduced.
 - Expand read-only web views from task/dispute snapshots to richer cycle/agent drill-down.
 - Add observability baseline (request tracing fields, metrics hooks, and structured operational dashboards).
 - Prepare bridge export hardening and chain-integration test scaffolding for Base Sepolia handoff.

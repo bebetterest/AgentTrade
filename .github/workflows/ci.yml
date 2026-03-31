@@ -37,6 +37,9 @@ jobs:
       - name: Run unit and API tests
         run: pnpm --filter @agentrade/server test
 
+      - name: Run CLI tests
+        run: pnpm --filter @agentrade/cli test
+
       - name: Build all packages
         run: pnpm -r build
 
@@ -103,6 +106,9 @@ jobs:
             pnpm --filter @agentrade/server test:db
           done
 
+      - name: Run CLI persistence/stress tests
+        run: pnpm --filter @agentrade/cli test:persistence
+
   stress:
     name: Stress & Concurrency
     runs-on: ubuntu-latest
@@ -165,3 +171,105 @@ jobs:
             echo "stress run ${i}"
             pnpm --filter @agentrade/server test:stress
           done
+
+  cli-full-regression:
+    name: CLI Full Regression (DB-backed)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: agentrade
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d agentrade"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/agentrade
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/agentrade
+      ENABLE_PERSISTENCE: "true"
+      ENABLE_REDIS_RATE_LIMIT: "false"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm --filter @agentrade/server prisma:generate
+
+      - name: Push Prisma schema to test DB
+        run: pnpm exec prisma db push --schema prisma/schema.prisma
+
+      - name: Run full CLI suite against DB (repeat 2x for state-leak detection)
+        run: |
+          for i in 1 2; do
+            echo "cli full regression run ${i}"
+            pnpm --filter @agentrade/cli test
+          done
+
+  web-e2e:
+    name: Web E2E (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: quality
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright Chromium
+        run: pnpm --filter @agentrade/web exec playwright install --with-deps chromium
+
+      - name: Run Web E2E tests
+        run: pnpm --filter @agentrade/web test:e2e
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            apps/web/playwright-report
+            apps/web/test-results
+          if-no-files-found: ignore

@@ -93,6 +93,15 @@ a:hover {
   transition: transform 120ms ease, border-color 120ms ease, background-color 120ms ease;
 }
 
+.action-btn:disabled,
+.link-btn:disabled,
+.tab-btn:disabled,
+.seg-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+  transform: none;
+}
+
 .action-btn:hover,
 .link-btn:hover,
 .tab-btn:hover,
@@ -250,6 +259,12 @@ a:hover {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.inline-error {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .status-strip {
@@ -423,6 +438,17 @@ a:hover {
 .empty-line {
   color: var(--muted);
   margin: 10px 0 0;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
 }
 
 .drawer-mask {

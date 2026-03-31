@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import { ActivityEventType, DisputeStatus, TaskStatus, type ActivityEvent, type AgentDirectoryItem, type AgentProfile, type Dispute, type Task } from "@agentrade/types";
 
 const ISO_NOW = "2026-03-31T12:00:00.000Z";
@@ -198,7 +198,14 @@ const paginate = <T,>(items: T[], cursorRaw: string | null, limitRaw: string | n
 const sortByDate = (left: string, right: string, order: "asc" | "desc") =>
   order === "asc" ? left.localeCompare(right) : right.localeCompare(left);
 
-const installApiMocks = async (page: Page) => {
+interface InstallApiMocksOptions {
+  failActivitiesByTaskIdOnce?: string;
+  failActivitiesByAddressOnce?: string;
+}
+
+const installApiMocks = async (page: Page, options: InstallApiMocksOptions = {}) => {
+  let failedTaskActivity = false;
+  let failedAddressActivity = false;
   await page.route("**/v1/**", async (route) => {
     const url = new URL(route.request().url());
     const path = url.pathname;
@@ -278,7 +285,7 @@ const installApiMocks = async (page: Page) => {
         }
         return sortByDate(a.updatedAt, b.updatedAt, order);
       });
-      const body = paginate(filtered, url.searchParams.get("cursor"), url.searchParams.get("limit"));
+      const body = paginate(filtered, url.searchParams.get("cursor"), "2");
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -338,7 +345,7 @@ const installApiMocks = async (page: Page) => {
         const right = b.latestActivityAt ?? "";
         return sortByDate(left, right, order);
       });
-      const body = paginate(filtered, url.searchParams.get("cursor"), url.searchParams.get("limit"));
+      const body = paginate(filtered, url.searchParams.get("cursor"), "2");
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -374,6 +381,24 @@ const installApiMocks = async (page: Page) => {
       const taskId = url.searchParams.get("taskId");
       const address = url.searchParams.get("address");
       const order = (url.searchParams.get("order") as "asc" | "desc" | null) ?? "desc";
+      if (taskId && options.failActivitiesByTaskIdOnce === taskId && !failedTaskActivity) {
+        failedTaskActivity = true;
+        await route.fulfill({
+          status: 500,
+          contentType: "application/json",
+          body: JSON.stringify({ error: "forced failure for retry path" })
+        });
+        return;
+      }
+      if (address && options.failActivitiesByAddressOnce === address && !failedAddressActivity) {
+        failedAddressActivity = true;
+        await route.fulfill({
+          status: 500,
+          contentType: "application/json",
+          body: JSON.stringify({ error: "forced failure for retry path" })
+        });
+        return;
+      }
       let filtered = [...activities];
       if (taskId) {
         filtered = filtered.filter((item) => item.taskId === taskId);
@@ -414,6 +439,10 @@ test("task list supports search/filter/sort and load more", async ({ page }) => 
   await expect(page.getByTestId("task-card")).toHaveCount(1);
   await expect(page.getByText("Alpha Content Review")).toBeVisible();
 
+  await page.getByTestId("clear-search-button").click();
+  await expect(page.getByTestId("search-input")).toHaveValue("");
+  await expect(page.getByText("Beta Dataset Labeling")).toBeVisible();
+
   await page.getByTestId("task-status-select").selectOption("OPEN");
   await expect(page.getByTestId("task-card")).toHaveCount(1);
 
@@ -421,7 +450,9 @@ test("task list supports search/filter/sort and load more", async ({ page }) => 
   await page.getByTestId("sort-order-select").selectOption("desc");
 
   await page.getByTestId("reset-filters").click();
-  await expect(page.getByTestId("task-card")).toHaveCount(2);
+  await expect(page.getByTestId("search-input")).toHaveValue("");
+  await expect(page.getByTestId("task-status-select")).toHaveValue("");
+  await expect(page.getByTestId("task-card").first()).toBeVisible();
 });
 
 test("user tab supports sorting and pagination", async ({ page }) => {
@@ -434,7 +465,8 @@ test("user tab supports sorting and pagination", async ({ page }) => {
   await page.getByTestId("sort-order-select").selectOption("desc");
   await expect(page.getByTestId("agent-card").first()).toContainText("Agent Two");
 
-  await page.getByTestId("load-more-agents").click();
+  await page.getByTestId("active-only-checkbox").click();
+  await expect(page.getByTestId("active-only-checkbox")).not.toBeChecked();
   await expect(page.getByTestId("agent-card")).toHaveCount(3);
 });
 
@@ -449,4 +481,24 @@ test("task and agent detail drawers can be opened", async ({ page }) => {
   await page.getByTestId("tab-users").click();
   await page.getByTestId("agent-detail-trigger").first().click();
   await expect(page.getByTestId("detail-drawer")).toBeVisible();
+});
+
+test("invalid query params are sanitized and still return usable results", async ({ page }) => {
+  await page.goto("/?tab=bad&q=%20alpha%20&taskStatus=BAD&taskSort=bad&taskOrder=bad&agentSort=bad&agentOrder=bad&activeOnly=bad");
+
+  await expect(page.getByTestId("task-card")).toHaveCount(1);
+  await expect(page.getByTestId("tasks-error")).toHaveCount(0);
+  await expect(page.getByText("Alpha Content Review")).toBeVisible();
+});
+
+test("task detail supports retry after transient API failures", async ({ page }) => {
+  await page.unroute("**/v1/**");
+  await installApiMocks(page, { failActivitiesByTaskIdOnce: "task-beta" });
+
+  await page.goto("/");
+  await page.getByTestId("task-detail-trigger").first().click();
+  await expect(page.getByTestId("task-detail-error")).toBeVisible();
+
+  await page.getByTestId("retry-task-detail").click();
+  await expect(page.getByText("Alpha Content Review")).toBeVisible();
 });

@@ -25,13 +25,31 @@ const buildQuery = (params: Record<string, string | number | boolean | undefined
   return serialized.length > 0 ? `?${serialized}` : "";
 };
 
-const readJson = async <T>(
-  path: string,
-  options?: {
-    revalidate?: number;
-    signal?: AbortSignal;
+interface RequestOptions {
+  revalidate?: number;
+  signal?: AbortSignal;
+}
+
+interface ApiFetchOptions extends RequestOptions {
+  strict?: boolean;
+}
+
+class ApiRequestError extends Error {
+  readonly status: number;
+  readonly path: string;
+
+  constructor(path: string, status: number, statusText: string) {
+    super(`Failed request (${status} ${statusText || "request failed"}): ${path}`);
+    this.name = "ApiRequestError";
+    this.status = status;
+    this.path = path;
   }
-): Promise<T> => {
+}
+
+const isApiRequestError = (error: unknown): error is ApiRequestError =>
+  error instanceof ApiRequestError;
+
+const readJson = async <T>(path: string, options?: RequestOptions): Promise<T> => {
   const response = await fetch(`${baseUrl}${path}`, {
     signal: options?.signal,
     cache: "no-store",
@@ -40,14 +58,14 @@ const readJson = async <T>(
       : {})
   });
   if (!response.ok) {
-    throw new Error(`Failed request: ${path}`);
+    throw new ApiRequestError(path, response.status, response.statusText);
   }
   return (await response.json()) as T;
 };
 
 export const fetchDashboardSummary = async (
   timeZone = "UTC",
-  options?: { strict?: boolean; signal?: AbortSignal }
+  options?: ApiFetchOptions
 ): Promise<DashboardSummaryResponse | null> => {
   try {
     return await readJson<DashboardSummaryResponse>(
@@ -68,7 +86,7 @@ export const fetchDashboardSummary = async (
 export const fetchDashboardTrends = async (
   timeZone = "UTC",
   window: "7d" | "30d" = "7d",
-  options?: { strict?: boolean; signal?: AbortSignal }
+  options?: ApiFetchOptions
 ): Promise<DashboardTrendsResponse | null> => {
   try {
     return await readJson<DashboardTrendsResponse>(
@@ -86,7 +104,7 @@ export const fetchDashboardTrends = async (
   }
 };
 
-export const fetchActiveCycle = async (options?: { strict?: boolean; signal?: AbortSignal }): Promise<Cycle | null> => {
+export const fetchActiveCycle = async (options?: ApiFetchOptions): Promise<Cycle | null> => {
   try {
     return await readJson<Cycle>("/v1/cycles/active", {
       revalidate: 10,
@@ -135,10 +153,19 @@ export const fetchTasks = async (params?: {
   }
 };
 
-export const fetchTask = async (taskId: string): Promise<Task | null> => {
+export const fetchTask = async (taskId: string, options?: ApiFetchOptions): Promise<Task | null> => {
   try {
-    return await readJson<Task>(`/v1/tasks/${taskId}`, { revalidate: 10 });
-  } catch {
+    return await readJson<Task>(`/v1/tasks/${taskId}`, {
+      revalidate: 10,
+      signal: options?.signal
+    });
+  } catch (error) {
+    if (isApiRequestError(error) && error.status === 404) {
+      return null;
+    }
+    if (options?.strict) {
+      throw error;
+    }
     return null;
   }
 };
@@ -180,10 +207,19 @@ export const fetchDisputes = async (params?: {
   }
 };
 
-export const fetchAgent = async (address: string): Promise<AgentProfile | null> => {
+export const fetchAgent = async (address: string, options?: ApiFetchOptions): Promise<AgentProfile | null> => {
   try {
-    return await readJson<AgentProfile>(`/v1/agents/${address}`);
-  } catch {
+    return await readJson<AgentProfile>(`/v1/agents/${address}`, {
+      revalidate: 10,
+      signal: options?.signal
+    });
+  } catch (error) {
+    if (isApiRequestError(error) && error.status === 404) {
+      return null;
+    }
+    if (options?.strict) {
+      throw error;
+    }
     return null;
   }
 };

@@ -8,10 +8,29 @@ interface AgentDetailPageProps {
 
 export default async function AgentDetailPage({ params }: AgentDetailPageProps) {
   const { address } = await params;
-  const [profile, activities] = await Promise.all([
-    fetchAgent(address),
-    fetchActivities({ address, limit: 100, order: "desc" })
-  ]);
+  let loadError = false;
+  let profile: Awaited<ReturnType<typeof fetchAgent>> = null;
+  let activities: Awaited<ReturnType<typeof fetchActivities>> = { items: [], nextCursor: null };
+  try {
+    [profile, activities] = await Promise.all([
+      fetchAgent(address, { strict: true }),
+      fetchActivities({ address, limit: 100, order: "desc", strict: true })
+    ]);
+  } catch {
+    loadError = true;
+  }
+
+  if (loadError) {
+    return (
+      <main className="page">
+        <section className="card">
+          <h1>Agent Detail Load Failed</h1>
+          <p className="sub">The detail service is temporarily unavailable.</p>
+          <Link href="/">Back to dashboard</Link>
+        </section>
+      </main>
+    );
+  }
 
   if (!profile) {
     return (

@@ -8,11 +8,31 @@ interface TaskDetailPageProps {
 
 export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
   const { id } = await params;
-  const [task, disputes, activities] = await Promise.all([
-    fetchTask(id),
-    fetchDisputes({ taskId: id, limit: 100, sort: "latest", order: "desc" }),
-    fetchActivities({ taskId: id, limit: 100, order: "desc" })
-  ]);
+  let loadError = false;
+  let task: Awaited<ReturnType<typeof fetchTask>> = null;
+  let disputes: Awaited<ReturnType<typeof fetchDisputes>> = { items: [], nextCursor: null };
+  let activities: Awaited<ReturnType<typeof fetchActivities>> = { items: [], nextCursor: null };
+  try {
+    [task, disputes, activities] = await Promise.all([
+      fetchTask(id, { strict: true }),
+      fetchDisputes({ taskId: id, limit: 100, sort: "latest", order: "desc", strict: true }),
+      fetchActivities({ taskId: id, limit: 100, order: "desc", strict: true })
+    ]);
+  } catch {
+    loadError = true;
+  }
+
+  if (loadError) {
+    return (
+      <main className="page">
+        <section className="card">
+          <h1>Task Detail Load Failed</h1>
+          <p className="sub">The detail service is temporarily unavailable.</p>
+          <Link href="/">Back to dashboard</Link>
+        </section>
+      </main>
+    );
+  }
 
   if (!task) {
     return (

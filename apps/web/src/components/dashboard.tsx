@@ -28,6 +28,8 @@ import {
   fetchTask,
   fetchTasks
 } from "../lib/api";
+import { DEFAULT_TIMEZONE, formatDateTime, formatDuration, shortAddress, toSparklinePath } from "../lib/dashboard-format";
+import { parseDashboardQuery, sanitizeQueryPatch } from "../lib/dashboard-query";
 import { renderSafeMarkdown } from "../lib/markdown";
 
 interface DashboardProps {
@@ -39,8 +41,14 @@ interface DashboardProps {
   initialActivities: PaginatedResponse<ActivityEvent>;
 }
 
-const DEFAULT_TIMEZONE = "UTC";
 const REFRESH_FEED_LIMIT = 12;
+const SEARCH_DEBOUNCE_MS = 320;
+const TASK_STATUS_FILTERS: TaskStatus[] = [
+  TaskStatus.OPEN,
+  TaskStatus.IN_PROGRESS,
+  TaskStatus.CLOSED,
+  TaskStatus.TERMINATED
+];
 
 const EVENT_LABELS: Record<ActivityEventType, { zh: string; en: string }> = {
   TASK_PUBLISHED: { zh: "发布任务", en: "Task Published" },
@@ -50,55 +58,8 @@ const EVENT_LABELS: Record<ActivityEventType, { zh: string; en: string }> = {
   TASK_TERMINATED: { zh: "任务终止", en: "Task Terminated" }
 };
 
-const shortAddress = (value: string): string =>
-  value.length > 12 ? `${value.slice(0, 6)}...${value.slice(-4)}` : value;
-
-const formatDateTime = (value: string, locale: SupportedLocale, timeZone?: string): string =>
-  new Date(value).toLocaleString(locale === "zh" ? "zh-CN" : "en-US", {
-    timeZone
-  });
-
-const formatDuration = (ms: number, locale: SupportedLocale): string => {
-  if (!Number.isFinite(ms) || ms <= 0) {
-    return locale === "zh" ? "刚刚开始" : "Just started";
-  }
-  const day = Math.floor(ms / (24 * 60 * 60 * 1000));
-  const hour = Math.floor((ms % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
-  const minute = Math.floor((ms % (60 * 60 * 1000)) / (60 * 1000));
-  if (locale === "zh") {
-    if (day > 0) {
-      return `${day}天 ${hour}小时`;
-    }
-    if (hour > 0) {
-      return `${hour}小时 ${minute}分钟`;
-    }
-    return `${Math.max(minute, 1)}分钟`;
-  }
-  if (day > 0) {
-    return `${day}d ${hour}h`;
-  }
-  if (hour > 0) {
-    return `${hour}h ${minute}m`;
-  }
-  return `${Math.max(minute, 1)}m`;
-};
-
-const toNumberList = (items: number[]): string =>
-  items
-    .map((value, index) => `${index === 0 ? "M" : "L"} ${index * 32},${80 - value}`)
-    .join(" ");
-
-const valueToPoints = (values: number[]): number[] => {
-  if (values.length === 0) {
-    return [];
-  }
-  const max = Math.max(...values, 1);
-  return values.map((item) => Math.round((item / max) * 70));
-};
-
 const Sparkline = ({ title, values }: { title: string; values: number[] }) => {
-  const points = valueToPoints(values);
-  const path = toNumberList(points);
+  const path = toSparklinePath(values);
   const latest = values.length > 0 ? values[values.length - 1] : 0;
   return (
     <div className="spark-card">
@@ -145,56 +106,63 @@ export const Dashboard = ({
   const [taskLoadError, setTaskLoadError] = useState(false);
   const [agentLoadError, setAgentLoadError] = useState(false);
   const [feedLoadError, setFeedLoadError] = useState(false);
+  const [taskDetailReloadTick, setTaskDetailReloadTick] = useState(0);
+  const [agentDetailReloadTick, setAgentDetailReloadTick] = useState(0);
 
   const [taskDetail, setTaskDetail] = useState<{
     loading: boolean;
+    error: boolean;
     task: Task | null;
     disputes: Dispute[];
     activities: ActivityEvent[];
   }>({
     loading: false,
+    error: false,
     task: null,
     disputes: [],
     activities: []
   });
   const [agentDetail, setAgentDetail] = useState<{
     loading: boolean;
+    error: boolean;
     profile: AgentProfile | null;
     activities: ActivityEvent[];
   }>({
     loading: false,
+    error: false,
     profile: null,
     activities: []
   });
 
   const taskSentinelRef = useRef<HTMLDivElement | null>(null);
   const agentSentinelRef = useRef<HTMLDivElement | null>(null);
+  const taskQueryKeyRef = useRef("");
+  const agentQueryKeyRef = useRef("");
 
-  const tab = searchParams.get("tab") === "users" ? "users" : "tasks";
-  const q = searchParams.get("q") ?? "";
-  const taskStatus = searchParams.get("taskStatus") as TaskStatus | null;
-  const taskSort = (searchParams.get("taskSort") as "latest" | "created" | "deadline" | "reward" | null) ?? "latest";
-  const taskOrder = (searchParams.get("taskOrder") as "asc" | "desc" | null) ?? "desc";
-  const agentSort = (searchParams.get("agentSort") as
-    | "latest"
-    | "score"
-    | "reputation"
-    | "completed"
-    | "published"
-    | "accepted"
-    | null) ?? "latest";
-  const agentOrder = (searchParams.get("agentOrder") as "asc" | "desc" | null) ?? "desc";
-  const activeOnly = searchParams.get("activeOnly") !== "false";
-  const trendWindow = searchParams.get("trendWindow") === "30d" ? "30d" : "7d";
-  const taskDetailId = searchParams.get("taskDetail");
-  const agentDetailAddress = searchParams.get("agentDetail");
+  const {
+    tab,
+    q,
+    taskStatus,
+    taskSort,
+    taskOrder,
+    agentSort,
+    agentOrder,
+    activeOnly,
+    trendWindow,
+    taskDetailId,
+    agentDetailAddress
+  } = useMemo(() => parseDashboardQuery(searchParams), [searchParams]);
+  const [searchDraft, setSearchDraft] = useState(q);
 
   const taskQueryKey = `${q}|${taskStatus ?? ""}|${taskSort}|${taskOrder}`;
   const agentQueryKey = `${q}|${activeOnly}|${agentSort}|${agentOrder}`;
+  taskQueryKeyRef.current = taskQueryKey;
+  agentQueryKeyRef.current = agentQueryKey;
 
-  const updateQuery = (patch: Record<string, string | null>) => {
+  const updateQuery = useCallback((patch: Record<string, string | null>) => {
+    const sanitizedPatch = sanitizeQueryPatch(patch);
     const next = new URLSearchParams(searchParams.toString());
-    for (const [key, value] of Object.entries(patch)) {
+    for (const [key, value] of Object.entries(sanitizedPatch)) {
       if (value === null || value.trim().length === 0) {
         next.delete(key);
       } else {
@@ -203,22 +171,35 @@ export const Dashboard = ({
     }
     const query = next.toString();
     router.replace(query.length > 0 ? `${pathname}?${query}` : pathname, { scroll: false });
+  }, [pathname, router, searchParams]);
+
+  const openTaskDetail = useCallback((taskId: string) => {
+    updateQuery({ taskDetail: taskId, agentDetail: null });
+  }, [updateQuery]);
+  const openAgentDetail = useCallback((address: string) => {
+    updateQuery({ agentDetail: address, taskDetail: null });
+  }, [updateQuery]);
+  const closeDetail = useCallback(() => {
+    updateQuery({ taskDetail: null, agentDetail: null });
+  }, [updateQuery]);
+
+  const retryTaskDetail = () => {
+    if (taskDetailId) {
+      setTaskDetailReloadTick((prev) => prev + 1);
+    }
   };
 
-  const openTaskDetail = (taskId: string) => {
-    updateQuery({ taskDetail: taskId, agentDetail: null });
-  };
-  const openAgentDetail = (address: string) => {
-    updateQuery({ agentDetail: address, taskDetail: null });
-  };
-  const closeDetail = () => {
-    updateQuery({ taskDetail: null, agentDetail: null });
+  const retryAgentDetail = () => {
+    if (agentDetailAddress) {
+      setAgentDetailReloadTick((prev) => prev + 1);
+    }
   };
 
   const loadMoreTasks = useCallback(async () => {
     if (!tasksData.nextCursor || loadingMoreTasks) {
       return;
     }
+    const expectedQueryKey = taskQueryKey;
     setLoadingMoreTasks(true);
     try {
       const response = await fetchTasks({
@@ -230,9 +211,15 @@ export const Dashboard = ({
         limit: 20,
         strict: true
       });
+      if (taskQueryKeyRef.current !== expectedQueryKey) {
+        return;
+      }
       setTaskLoadError(false);
       setTasksData((prev) => ({
-        items: [...prev.items, ...response.items],
+        items: [
+          ...prev.items,
+          ...response.items.filter((item) => !prev.items.some((prevItem) => prevItem.id === item.id))
+        ],
         nextCursor: response.nextCursor
       }));
     } catch {
@@ -240,12 +227,13 @@ export const Dashboard = ({
     } finally {
       setLoadingMoreTasks(false);
     }
-  }, [loadingMoreTasks, q, taskOrder, taskSort, taskStatus, tasksData.nextCursor]);
+  }, [loadingMoreTasks, q, taskOrder, taskQueryKey, taskSort, taskStatus, tasksData.nextCursor]);
 
   const loadMoreAgents = useCallback(async () => {
     if (!agentsData.nextCursor || loadingMoreAgents) {
       return;
     }
+    const expectedQueryKey = agentQueryKey;
     setLoadingMoreAgents(true);
     try {
       const response = await fetchAgents({
@@ -257,9 +245,15 @@ export const Dashboard = ({
         limit: 20,
         strict: true
       });
+      if (agentQueryKeyRef.current !== expectedQueryKey) {
+        return;
+      }
       setAgentLoadError(false);
       setAgentsData((prev) => ({
-        items: [...prev.items, ...response.items],
+        items: [
+          ...prev.items,
+          ...response.items.filter((item) => !prev.items.some((prevItem) => prevItem.address === item.address))
+        ],
         nextCursor: response.nextCursor
       }));
     } catch {
@@ -267,7 +261,7 @@ export const Dashboard = ({
     } finally {
       setLoadingMoreAgents(false);
     }
-  }, [activeOnly, agentOrder, agentSort, agentsData.nextCursor, loadingMoreAgents, q]);
+  }, [activeOnly, agentOrder, agentQueryKey, agentSort, agentsData.nextCursor, loadingMoreAgents, q]);
 
   const refreshAll = async () => {
     setRefreshing(true);
@@ -337,6 +331,22 @@ export const Dashboard = ({
   }, []);
 
   useEffect(() => {
+    setSearchDraft(q);
+  }, [q]);
+
+  useEffect(() => {
+    if (searchDraft === q) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      updateQuery({ q: searchDraft });
+    }, SEARCH_DEBOUNCE_MS);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [searchDraft, q, updateQuery]);
+
+  useEffect(() => {
     const timer = setInterval(() => {
       setNowMs(Date.now());
     }, 60_000);
@@ -344,6 +354,26 @@ export const Dashboard = ({
       clearInterval(timer);
     };
   }, []);
+
+  useEffect(() => {
+    const opened = Boolean(taskDetailId || agentDetailAddress);
+    if (!opened) {
+      document.body.style.overflow = "";
+      return;
+    }
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeDetail();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [taskDetailId, agentDetailAddress, closeDetail]);
 
   useEffect(() => {
     if (!timeZone) {
@@ -489,55 +519,89 @@ export const Dashboard = ({
 
   useEffect(() => {
     if (!taskDetailId) {
-      setTaskDetail({ loading: false, task: null, disputes: [], activities: [] });
+      setTaskDetail({ loading: false, error: false, task: null, disputes: [], activities: [] });
       return;
     }
     let cancelled = false;
-    setTaskDetail((prev) => ({ ...prev, loading: true }));
+    const controller = new AbortController();
+    setTaskDetail((prev) => ({ ...prev, loading: true, error: false }));
     Promise.all([
-      fetchTask(taskDetailId),
-      fetchDisputes({ taskId: taskDetailId, limit: 50 }),
-      fetchActivities({ taskId: taskDetailId, limit: 50, order: "desc" })
-    ]).then(([task, disputes, activities]) => {
-      if (cancelled) {
-        return;
-      }
-      setTaskDetail({
-        loading: false,
-        task,
-        disputes: disputes.items,
-        activities: activities.items
+      fetchTask(taskDetailId, { signal: controller.signal, strict: true }),
+      fetchDisputes({ taskId: taskDetailId, limit: 50, signal: controller.signal, strict: true }),
+      fetchActivities({ taskId: taskDetailId, limit: 50, order: "desc", signal: controller.signal, strict: true })
+    ])
+      .then(([task, disputes, activities]) => {
+        if (cancelled) {
+          return;
+        }
+        setTaskDetail({
+          loading: false,
+          error: false,
+          task,
+          disputes: disputes.items,
+          activities: activities.items
+        });
+      })
+      .catch(() => {
+        if (cancelled) {
+          return;
+        }
+        setTaskDetail((prev) => ({
+          ...prev,
+          loading: false,
+          error: true
+        }));
       });
-    });
     return () => {
       cancelled = true;
+      controller.abort();
     };
-  }, [taskDetailId]);
+  }, [taskDetailId, taskDetailReloadTick]);
 
   useEffect(() => {
     if (!agentDetailAddress) {
-      setAgentDetail({ loading: false, profile: null, activities: [] });
+      setAgentDetail({ loading: false, error: false, profile: null, activities: [] });
       return;
     }
     let cancelled = false;
-    setAgentDetail((prev) => ({ ...prev, loading: true }));
+    const controller = new AbortController();
+    setAgentDetail((prev) => ({ ...prev, loading: true, error: false }));
     Promise.all([
-      fetchAgent(agentDetailAddress),
-      fetchActivities({ address: agentDetailAddress, limit: 50, order: "desc" })
-    ]).then(([profile, activities]) => {
-      if (cancelled) {
-        return;
-      }
-      setAgentDetail({
-        loading: false,
-        profile,
-        activities: activities.items
+      fetchAgent(agentDetailAddress, { signal: controller.signal, strict: true }),
+      fetchActivities({
+        address: agentDetailAddress,
+        limit: 50,
+        order: "desc",
+        signal: controller.signal,
+        strict: true
+      })
+    ])
+      .then(([profile, activities]) => {
+        if (cancelled) {
+          return;
+        }
+        setAgentDetail({
+          loading: false,
+          error: false,
+          profile,
+          activities: activities.items
+        });
+      })
+      .catch(() => {
+        if (cancelled) {
+          return;
+        }
+        setAgentDetail((prev) => ({
+          ...prev,
+          loading: false,
+          error: true
+        }));
       });
-    });
     return () => {
       cancelled = true;
+      controller.abort();
     };
-  }, [agentDetailAddress]);
+  }, [agentDetailAddress, agentDetailReloadTick]);
 
   const trendPublished = useMemo(
     () => trends?.points.map((item) => item.tasksPublished) ?? [],
@@ -570,6 +634,13 @@ export const Dashboard = ({
   }, [tasksData.items]);
   const hasTaskFilters = q.trim().length > 0 || Boolean(taskStatus);
   const hasAgentFilters = q.trim().length > 0 || !activeOnly;
+  const clearSearch = () => {
+    setSearchDraft("");
+    updateQuery({ q: null });
+  };
+  const commitSearch = () => {
+    updateQuery({ q: searchDraft });
+  };
   const resetFilters = () => {
     if (tab === "tasks") {
       updateQuery({
@@ -607,14 +678,14 @@ export const Dashboard = ({
 
       <section className="toolbar">
         <span className="badge">{timeZone}</span>
-        <button className="action-btn" data-testid="refresh-button" onClick={refreshAll} disabled={refreshing}>
+        <button type="button" className="action-btn" data-testid="refresh-button" onClick={refreshAll} disabled={refreshing}>
           {refreshing ? (locale === "zh" ? "刷新中..." : "Refreshing...") : locale === "zh" ? "手动刷新" : "Refresh"}
         </button>
       </section>
       {overviewError ? (
         <section className="card alert-card" data-testid="overview-error">
           <p>{locale === "zh" ? "概览模块拉取失败，请重试。" : "Overview modules failed to load. Try refresh."}</p>
-          <button className="action-btn" onClick={refreshAll}>
+          <button type="button" className="action-btn" onClick={refreshAll}>
             {locale === "zh" ? "重试" : "Retry"}
           </button>
         </section>
@@ -669,7 +740,7 @@ export const Dashboard = ({
         <article className="card feed-card">
           <div className="section-head">
             <h2>{locale === "zh" ? "实时事件流" : "Live Activity"}</h2>
-            <button className="link-btn" onClick={refreshAll} disabled={refreshing}>
+            <button type="button" className="link-btn" onClick={refreshAll} disabled={refreshing}>
               {locale === "zh" ? "刷新" : "Reload"}
             </button>
           </div>
@@ -680,7 +751,7 @@ export const Dashboard = ({
           ) : null}
           <div className="feed-list">
             {activityFeed.map((item) => (
-              <button key={item.id} className="feed-item" onClick={() => openByActivity(item)}>
+              <button type="button" key={item.id} className="feed-item" onClick={() => openByActivity(item)}>
                 <div className="feed-main">
                   <span className={`event-chip event-${item.type.toLowerCase()}`}>
                     {EVENT_LABELS[item.type][locale]}
@@ -701,16 +772,18 @@ export const Dashboard = ({
         <div className="section-head">
           <h2>{locale === "zh" ? "趋势" : "Trend"}</h2>
           <div className="segmented">
-            <button
-              className={`seg-btn ${trendWindow === "7d" ? "active" : ""}`}
-              onClick={() => updateQuery({ trendWindow: "7d" })}
-            >
+              <button
+                type="button"
+                className={`seg-btn ${trendWindow === "7d" ? "active" : ""}`}
+                onClick={() => updateQuery({ trendWindow: "7d" })}
+              >
               7D
             </button>
-            <button
-              className={`seg-btn ${trendWindow === "30d" ? "active" : ""}`}
-              onClick={() => updateQuery({ trendWindow: "30d" })}
-            >
+              <button
+                type="button"
+                className={`seg-btn ${trendWindow === "30d" ? "active" : ""}`}
+                onClick={() => updateQuery({ trendWindow: "30d" })}
+              >
               30D
             </button>
           </div>
@@ -730,7 +803,7 @@ export const Dashboard = ({
         </div>
         <div className="leader-list">
           {leaders.map((item, index) => (
-            <button key={item.address} className="leader-row" onClick={() => openAgentDetail(item.address)}>
+            <button type="button" key={item.address} className="leader-row" onClick={() => openAgentDetail(item.address)}>
               <span>{index + 1}. {item.name || shortAddress(item.address)}</span>
               <strong>{item.score}</strong>
             </button>
@@ -741,6 +814,7 @@ export const Dashboard = ({
       <section className="card">
         <div className="tabs">
           <button
+            type="button"
             className={`tab-btn ${tab === "tasks" ? "active" : ""}`}
             data-testid="tab-tasks"
             onClick={() => updateQuery({ tab: "tasks", agentDetail: null, taskDetail: null })}
@@ -748,6 +822,7 @@ export const Dashboard = ({
             Task
           </button>
           <button
+            type="button"
             className={`tab-btn ${tab === "users" ? "active" : ""}`}
             data-testid="tab-users"
             onClick={() => updateQuery({ tab: "users", agentDetail: null, taskDetail: null })}
@@ -757,12 +832,27 @@ export const Dashboard = ({
         </div>
 
         <div className="filter-row">
+          <label className="sr-only" htmlFor="dashboard-search-input">
+            {locale === "zh" ? "搜索" : "Search"}
+          </label>
           <input
+            id="dashboard-search-input"
             data-testid="search-input"
-            value={q}
-            onChange={(event) => updateQuery({ q: event.target.value, cursor: null })}
+            value={searchDraft}
+            onChange={(event) => setSearchDraft(event.target.value)}
+            onBlur={commitSearch}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                commitSearch();
+              }
+            }}
             placeholder={locale === "zh" ? "搜索标题、地址..." : "Search title, address..."}
           />
+          {searchDraft.length > 0 ? (
+            <button type="button" className="link-btn" data-testid="clear-search-button" onClick={clearSearch}>
+              {locale === "zh" ? "清除" : "Clear"}
+            </button>
+          ) : null}
           {tab === "tasks" ? (
             <>
               <select
@@ -791,6 +881,7 @@ export const Dashboard = ({
             <>
               <label className="switch-line">
                 <input
+                  data-testid="active-only-checkbox"
                   type="checkbox"
                   checked={activeOnly}
                   onChange={(event) => updateQuery({ activeOnly: event.target.checked ? "true" : "false" })}
@@ -819,7 +910,7 @@ export const Dashboard = ({
             <option value="desc">{locale === "zh" ? "降序" : "Desc"}</option>
             <option value="asc">{locale === "zh" ? "升序" : "Asc"}</option>
           </select>
-          <button className="action-btn" data-testid="reset-filters" onClick={resetFilters}>
+          <button type="button" className="action-btn" data-testid="reset-filters" onClick={resetFilters}>
             {locale === "zh" ? "重置筛选" : "Reset"}
           </button>
         </div>
@@ -828,15 +919,17 @@ export const Dashboard = ({
             <button
               className={`status-pill ${taskStatus ? "" : "active"}`}
               data-testid="status-pill-all"
+              type="button"
               onClick={() => updateQuery({ taskStatus: null })}
             >
               {locale === "zh" ? "全部" : "All"} ({tasksData.items.length})
             </button>
-            {(["OPEN", "IN_PROGRESS", "CLOSED", "TERMINATED"] as TaskStatus[]).map((status) => (
+            {TASK_STATUS_FILTERS.map((status) => (
               <button
                 key={status}
                 className={`status-pill ${taskStatus === status ? "active" : ""}`}
                 data-testid={`status-pill-${status.toLowerCase()}`}
+                type="button"
                 onClick={() => updateQuery({ taskStatus: status })}
               >
                 {status} ({taskStatusCounts[status] ?? 0})
@@ -848,9 +941,14 @@ export const Dashboard = ({
         {tab === "tasks" ? (
           <>
             {taskLoadError ? (
-              <p className="empty-line" data-testid="tasks-error">
-                {locale === "zh" ? "任务列表加载失败，请重试。" : "Task list failed to load. Retry with refresh."}
-              </p>
+              <div className="inline-error" data-testid="tasks-error">
+                <p className="empty-line">
+                  {locale === "zh" ? "任务列表加载失败，请重试。" : "Task list failed to load. Retry with refresh."}
+                </p>
+                <button type="button" className="link-btn" onClick={refreshAll}>
+                  {locale === "zh" ? "重试" : "Retry"}
+                </button>
+              </div>
             ) : null}
             {loadingTasks ? <p className="empty-line">{locale === "zh" ? "加载中..." : "Loading..."}</p> : null}
             <div className="masonry-grid">
@@ -863,7 +961,7 @@ export const Dashboard = ({
                   <p>{locale === "zh" ? "槽位" : "Slots"}: {task.completedAgents.length}/{task.slotsTotal}</p>
                   <p>{locale === "zh" ? "截止" : "Deadline"}: {formatDateTime(task.deadlineUtc, locale, timeZone)}</p>
                   <div className="card-actions">
-                    <button className="link-btn" data-testid="task-detail-trigger" onClick={() => openTaskDetail(task.id)}>
+                    <button type="button" className="link-btn" data-testid="task-detail-trigger" onClick={() => openTaskDetail(task.id)}>
                       {locale === "zh" ? "详情" : "Details"}
                     </button>
                     <Link href={`/tasks/${task.id}`}>{locale === "zh" ? "完整页" : "Full page"}</Link>
@@ -885,7 +983,7 @@ export const Dashboard = ({
             <div ref={taskSentinelRef} className="sentinel" />
             {loadingMoreTasks ? <p className="empty-line">{locale === "zh" ? "加载更多..." : "Loading more..."}</p> : null}
             {tasksData.nextCursor && !loadingMoreTasks ? (
-              <button className="action-btn more-btn" data-testid="load-more-tasks" onClick={() => void loadMoreTasks()}>
+              <button type="button" className="action-btn more-btn" data-testid="load-more-tasks" onClick={() => void loadMoreTasks()}>
                 {locale === "zh" ? "加载更多任务" : "Load more tasks"}
               </button>
             ) : null}
@@ -893,9 +991,14 @@ export const Dashboard = ({
         ) : (
           <>
             {agentLoadError ? (
-              <p className="empty-line" data-testid="agents-error">
-                {locale === "zh" ? "Agent 列表加载失败，请重试。" : "Agent list failed to load. Retry with refresh."}
-              </p>
+              <div className="inline-error" data-testid="agents-error">
+                <p className="empty-line">
+                  {locale === "zh" ? "Agent 列表加载失败，请重试。" : "Agent list failed to load. Retry with refresh."}
+                </p>
+                <button type="button" className="link-btn" onClick={refreshAll}>
+                  {locale === "zh" ? "重试" : "Retry"}
+                </button>
+              </div>
             ) : null}
             {loadingAgents ? <p className="empty-line">{locale === "zh" ? "加载中..." : "Loading..."}</p> : null}
             <div className="masonry-grid">
@@ -907,7 +1010,7 @@ export const Dashboard = ({
                   <p>{locale === "zh" ? "发布/接单/完成" : "Pub/Acc/Done"}: {agent.stats.tasksPublished}/{agent.stats.tasksAccepted}/{agent.stats.tasksCompleted}</p>
                   <p>{locale === "zh" ? "最新活动" : "Latest"}: {agent.latestActivityAt ? formatDateTime(agent.latestActivityAt, locale, timeZone) : "-"}</p>
                   <div className="card-actions">
-                    <button className="link-btn" data-testid="agent-detail-trigger" onClick={() => openAgentDetail(agent.address)}>
+                    <button type="button" className="link-btn" data-testid="agent-detail-trigger" onClick={() => openAgentDetail(agent.address)}>
                       {locale === "zh" ? "详情" : "Details"}
                     </button>
                     <Link href={`/agents/${agent.address}`}>{locale === "zh" ? "完整页" : "Full page"}</Link>
@@ -929,7 +1032,7 @@ export const Dashboard = ({
             <div ref={agentSentinelRef} className="sentinel" />
             {loadingMoreAgents ? <p className="empty-line">{locale === "zh" ? "加载更多..." : "Loading more..."}</p> : null}
             {agentsData.nextCursor && !loadingMoreAgents ? (
-              <button className="action-btn more-btn" data-testid="load-more-agents" onClick={() => void loadMoreAgents()}>
+              <button type="button" className="action-btn more-btn" data-testid="load-more-agents" onClick={() => void loadMoreAgents()}>
                 {locale === "zh" ? "加载更多 Agent" : "Load more agents"}
               </button>
             ) : null}
@@ -939,16 +1042,31 @@ export const Dashboard = ({
 
       {taskDetailId || agentDetailAddress ? (
         <section className="drawer-mask" onClick={closeDetail}>
-          <aside className="drawer" data-testid="detail-drawer" onClick={(event) => event.stopPropagation()}>
+          <aside
+            className="drawer"
+            data-testid="detail-drawer"
+            role="dialog"
+            aria-modal="true"
+            onClick={(event) => event.stopPropagation()}
+          >
             <div className="section-head">
               <h2>{locale === "zh" ? "详情" : "Details"}</h2>
-              <button className="link-btn" onClick={closeDetail}>
+              <button type="button" className="link-btn" onClick={closeDetail}>
                 {locale === "zh" ? "关闭" : "Close"}
               </button>
             </div>
             {taskDetailId ? (
               taskDetail.loading ? (
                 <p className="empty-line">{locale === "zh" ? "加载中..." : "Loading..."}</p>
+              ) : taskDetail.error ? (
+                <div className="inline-error" data-testid="task-detail-error">
+                  <p className="empty-line">
+                    {locale === "zh" ? "任务详情加载失败，请重试。" : "Task details failed to load. Retry."}
+                  </p>
+                  <button type="button" className="link-btn" data-testid="retry-task-detail" onClick={retryTaskDetail}>
+                    {locale === "zh" ? "重试" : "Retry"}
+                  </button>
+                </div>
               ) : taskDetail.task ? (
                 <div className="detail-block">
                   <h3>{taskDetail.task.title}</h3>
@@ -974,6 +1092,15 @@ export const Dashboard = ({
               )
             ) : agentDetail.loading ? (
               <p className="empty-line">{locale === "zh" ? "加载中..." : "Loading..."}</p>
+            ) : agentDetail.error ? (
+              <div className="inline-error" data-testid="agent-detail-error">
+                <p className="empty-line">
+                  {locale === "zh" ? "Agent 详情加载失败，请重试。" : "Agent details failed to load. Retry."}
+                </p>
+                <button type="button" className="link-btn" data-testid="retry-agent-detail" onClick={retryAgentDetail}>
+                  {locale === "zh" ? "重试" : "Retry"}
+                </button>
+              </div>
             ) : agentDetail.profile ? (
               <div className="detail-block">
                 <h3>{agentDetail.profile.name || shortAddress(agentDetail.profile.address)}</h3>

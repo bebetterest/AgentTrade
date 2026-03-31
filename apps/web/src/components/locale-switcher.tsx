@@ -27,13 +27,22 @@ export const LocaleSwitcher = ({ onChange }: LocaleSwitcherProps) => {
 
   return (
     <div className="locale-wrap">
-      <button className={`locale-btn ${locale === "en" ? "active" : ""}`} onClick={() => setAndPersist("en")}>
+      <button
+        type="button"
+        aria-label="Switch language to English"
+        className={`locale-btn ${locale === "en" ? "active" : ""}`}
+        onClick={() => setAndPersist("en")}
+      >
         EN
       </button>
-      <button className={`locale-btn ${locale === "zh" ? "active" : ""}`} onClick={() => setAndPersist("zh")}>
+      <button
+        type="button"
+        aria-label="切换语言到中文"
+        className={`locale-btn ${locale === "zh" ? "active" : ""}`}
+        onClick={() => setAndPersist("zh")}
+      >
         中文
       </button>
     </div>
   );
 };
-

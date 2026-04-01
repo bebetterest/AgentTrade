@@ -1,0 +1,15 @@
+.git
+.github
+.next
+.pnpm-store
+node_modules
+dist
+coverage
+*.log
+*.tmp
+*.swp
+
+**/.next
+**/node_modules
+**/dist
+**/coverage

@@ -3,14 +3,18 @@ WORKDIR /app
 RUN corepack enable
 
 FROM base AS deps
-COPY package.json pnpm-workspace.yaml tsconfig.base.json ./
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json ./
 COPY apps/server/package.json apps/server/package.json
 COPY packages/config/package.json packages/config/package.json
 COPY packages/types/package.json packages/types/package.json
-RUN pnpm install --filter @agentrade/server... --frozen-lockfile=false
+COPY prisma/schema.prisma prisma/schema.prisma
+RUN pnpm install --filter @agentrade/server... --frozen-lockfile
 
 FROM deps AS build
 COPY . .
+RUN pnpm --filter @agentrade/config build
+RUN pnpm --filter @agentrade/types build
+RUN pnpm --filter @agentrade/server prisma:generate
 RUN pnpm --filter @agentrade/server build
 
 FROM node:22-alpine AS runtime
@@ -18,7 +22,11 @@ WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=build /app/apps/server/dist ./apps/server/dist
 COPY --from=build /app/apps/server/package.json ./apps/server/package.json
+COPY --from=build /app/apps/server/node_modules ./apps/server/node_modules
+COPY --from=build /app/packages/config ./packages/config
+COPY --from=build /app/packages/types ./packages/types
+COPY --from=build /app/prisma ./prisma
 COPY --from=build /app/node_modules ./node_modules
+RUN node -e "const fs = require('node:fs'); for (const name of ['config', 'types']) { const path = '/app/packages/' + name + '/package.json'; const pkg = JSON.parse(fs.readFileSync(path, 'utf8')); pkg.main = 'dist/index.js'; pkg.types = 'dist/index.d.ts'; pkg.exports = './dist/index.js'; fs.writeFileSync(path, JSON.stringify(pkg, null, 2)); }"
 EXPOSE 3000
-CMD ["node", "apps/server/dist/index.js"]
-
+CMD ["sh", "-c", "node_modules/.bin/prisma db push --schema prisma/schema.prisma && node apps/server/dist/src/index.js"]

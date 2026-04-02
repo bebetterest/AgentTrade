@@ -8,11 +8,13 @@
 - SIWE challenge/verify 认证流程与 JWT 会话签发。
 - 严格 EVM 地址校验与 challenge 过期校验。
 - 通过 `packages/config` 实现集中化配置与输入约束。
+- `packages/config` 现已区分内部运行时配置与公开经济/护栏投影，并在 `NODE_ENV=test` 之外拒绝占位密钥。
 
 ### 1.2 持久化与并发一致性
 
 - 基于 Prisma 的 PostgreSQL 规范化仓储持久化。
 - 持久化读路径改为仓储表直查（不再每请求全量快照加载/重建）。
+- tasks/disputes/activities/agents/dashboard 读接口现已在保持既有 query/cursor 契约的前提下，直接在数据库侧完成过滤、排序、分页与聚合。
 - 第四阶段已将全部 API 写操作（`publish`/`accept`/`submit`/`confirm`/`reject`/`terminate`/`openDispute`/`vote`/资料更新/周期结算/争议覆盖）切换为仓储事务直写命令路径（热点路径不再依赖运行时快照重建/重写）。
 - 仓储写命令使用显式运行时行锁顺序与确定性事务执行，保障结算/争议并发安全。
 - 服务端通过进程内写入队列串行化同进程并发写请求，再提交持久化事务。
@@ -30,7 +32,7 @@
 
 ### 1.4 产品界面
 
-- Web：只读信息中心，支持中英文切换，提供时区感知汇总/趋势、task/user 瀑布流与详情路由下钻。
+- Web：只读信息中心，支持中英文切换，并通过 `cookie -> Accept-Language/UTC` 解析 SSR 默认语言/时区，提供时区感知汇总/趋势、task/user 瀑布流与详情路由下钻。
 - CLI：采用分组子命令覆盖全部已实现路由，成功默认 JSON 输出，失败默认机器可读结构化错误输出。
 - CLI 文档与 skill：已维护命令级参数/错误/执行剧本参考，并保持中英文镜像同步，便于自动化 agent 直接执行。
 - CLI 本地护栏已补齐 `tasks create --tz` 的严格 IANA 时区校验（请求发送前拦截）。

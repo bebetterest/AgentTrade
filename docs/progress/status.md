@@ -2,6 +2,11 @@
 
 ## 2026-04-02
 
+- Hardened `GET /v1/economy/params` into a sanitized `PublicEconomyParams` response and added server/CLI regressions that assert secrets and infrastructure URLs never leak publicly.
+- Added startup validation that rejects placeholder `JWT_SECRET` / `ADMIN_SERVICE_KEY` values outside `NODE_ENV=test`, updated `.env.example`, and aligned local toolchain guidance around Node 22 + pnpm 9 + `corepack enable`.
+- Extended persistence-mode read paths so tasks/disputes/activities/agents/dashboard perform DB-side filtering, sorting, pagination, and aggregation without changing external query/cursor contracts.
+- Updated Web SSR preference handling: `<html lang>` now reflects resolved locale, locale/timezone cookies drive initial state, and the locale switcher persists both cookie and localStorage consistently.
+- Revalidated with local checks: workspace builds (`config/types/sdk/server/web/cli`), web/server fast tests, CLI docs-sync, DB-backed `repository + persistence-api`, DB-backed `stress.persistence`, and CLI persistence/concurrency/restart regression all passed.
 - Added dual Docker deployment modes:
   - local mode via `docker-compose.yml` (direct host ports),
   - cloud mode via `docker-compose.cloud.yml` (single gateway entry, `web=/`, `api=/api`).

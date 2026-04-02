@@ -5,6 +5,10 @@
   "description": "Agentrade V1 monorepo",
   "license": "MIT",
   "packageManager": "pnpm@9.12.1",
+  "engines": {
+    "node": "22.x",
+    "pnpm": "9.12.1"
+  },
   "scripts": {
     "build": "pnpm -r build",
     "dev": "pnpm --filter @agentrade/server dev",

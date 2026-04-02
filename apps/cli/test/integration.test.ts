@@ -269,8 +269,24 @@ test("cli integration: covers lifecycle/read/admin command groups", async () => 
     };
     assert.equal(typeof ledger.available, "number");
 
-    const economy = (await runCliJson(baseUrl, ["economy", "params"])) as { taxRateBps: number };
+    const economy = (await runCliJson(baseUrl, ["economy", "params"])) as {
+      taxRateBps: number;
+      terminationPenaltyBps: number;
+      jwtSecret?: string;
+      adminServiceKey?: string;
+      databaseUrl?: string;
+      redisUrl?: string;
+      host?: string;
+      port?: number;
+    };
     assert.equal(typeof economy.taxRateBps, "number");
+    assert.equal(typeof economy.terminationPenaltyBps, "number");
+    assert.equal("jwtSecret" in economy, false);
+    assert.equal("adminServiceKey" in economy, false);
+    assert.equal("databaseUrl" in economy, false);
+    assert.equal("redisUrl" in economy, false);
+    assert.equal("host" in economy, false);
+    assert.equal("port" in economy, false);
 
     const cycles = (await runCliJson(baseUrl, ["cycles", "list"])) as { items: Array<{ id: string }> };
     assert.ok(cycles.items.length >= 1);

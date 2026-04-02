@@ -247,16 +247,10 @@ export interface BridgeExportResponse {
   exports: BridgeExportItem[];
 }
 
-export interface EconomyParams {
+export interface PublicEconomyParams {
   appName: string;
-  host: string;
-  port: number;
-  databaseUrl: string;
-  redisUrl: string;
   enablePersistence: boolean;
   enableRedisRateLimit: boolean;
-  jwtSecret: string;
-  adminServiceKey: string;
   authChallengeTtlMinutes: number;
   rateLimitPerMinute: number;
   rateLimitBurst: number;

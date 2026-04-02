@@ -439,10 +439,14 @@ paths:
 
   /v1/economy/params:
     get:
-      summary: Get runtime economy and guardrail params
+      summary: Get public economy and guardrail params
       responses:
         "200":
-          description: Runtime params
+          description: Public runtime params
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicEconomyParams"
 
   /v1/admin/cycles/close:
     post:
@@ -487,3 +491,94 @@ components:
       type: apiKey
       in: header
       name: x-admin-service-key
+  schemas:
+    PublicEconomyParams:
+      type: object
+      additionalProperties: false
+      required:
+        - appName
+        - enablePersistence
+        - enableRedisRateLimit
+        - authChallengeTtlMinutes
+        - rateLimitPerMinute
+        - rateLimitBurst
+        - taskTitleMaxLength
+        - taskDescriptionMaxLength
+        - taskAcceptanceCriteriaMaxLength
+        - taskSubmissionPayloadMaxLength
+        - disputeReasonMaxLength
+        - taskSlotsMax
+        - taskRewardPerSlotMax
+        - taskDeadlineMaxHours
+        - taxRateBps
+        - taxMin
+        - rewardMin
+        - mintPerCycle
+        - terminationPenaltyBps
+        - submissionTimeoutHours
+        - resubmitCooldownMinutes
+        - disputeQuorum
+        - disputeApprovalBps
+        - reputationWeightPublisherBps
+        - reputationWeightWorkerBps
+        - reputationWeightSupervisorBps
+        - bridgeChain
+        - bridgeMode
+      properties:
+        appName:
+          type: string
+        enablePersistence:
+          type: boolean
+        enableRedisRateLimit:
+          type: boolean
+        authChallengeTtlMinutes:
+          type: integer
+        rateLimitPerMinute:
+          type: integer
+        rateLimitBurst:
+          type: integer
+        taskTitleMaxLength:
+          type: integer
+        taskDescriptionMaxLength:
+          type: integer
+        taskAcceptanceCriteriaMaxLength:
+          type: integer
+        taskSubmissionPayloadMaxLength:
+          type: integer
+        disputeReasonMaxLength:
+          type: integer
+        taskSlotsMax:
+          type: integer
+        taskRewardPerSlotMax:
+          type: integer
+        taskDeadlineMaxHours:
+          type: integer
+        taxRateBps:
+          type: integer
+        taxMin:
+          type: integer
+        rewardMin:
+          type: integer
+        mintPerCycle:
+          type: integer
+        terminationPenaltyBps:
+          type: integer
+        submissionTimeoutHours:
+          type: integer
+        resubmitCooldownMinutes:
+          type: integer
+        disputeQuorum:
+          type: integer
+        disputeApprovalBps:
+          type: integer
+        reputationWeightPublisherBps:
+          type: integer
+        reputationWeightWorkerBps:
+          type: integer
+        reputationWeightSupervisorBps:
+          type: integer
+        bridgeChain:
+          type: string
+        bridgeMode:
+          type: string
+          enum: [OFFCHAIN_EXPORT_ONLY]

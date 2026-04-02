@@ -35,6 +35,38 @@ export interface AppConfig {
   bridgeMode: "OFFCHAIN_EXPORT_ONLY";
 }
 
+export type PublicEconomyParams = Pick<
+  AppConfig,
+  | "appName"
+  | "enablePersistence"
+  | "enableRedisRateLimit"
+  | "authChallengeTtlMinutes"
+  | "rateLimitPerMinute"
+  | "rateLimitBurst"
+  | "taskTitleMaxLength"
+  | "taskDescriptionMaxLength"
+  | "taskAcceptanceCriteriaMaxLength"
+  | "taskSubmissionPayloadMaxLength"
+  | "disputeReasonMaxLength"
+  | "taskSlotsMax"
+  | "taskRewardPerSlotMax"
+  | "taskDeadlineMaxHours"
+  | "taxRateBps"
+  | "taxMin"
+  | "rewardMin"
+  | "mintPerCycle"
+  | "terminationPenaltyBps"
+  | "submissionTimeoutHours"
+  | "resubmitCooldownMinutes"
+  | "disputeQuorum"
+  | "disputeApprovalBps"
+  | "reputationWeightPublisherBps"
+  | "reputationWeightWorkerBps"
+  | "reputationWeightSupervisorBps"
+  | "bridgeChain"
+  | "bridgeMode"
+>;
+
 const envNumber = (key: string, fallback: number): number => {
   const raw = process.env[key];
   if (!raw) {
@@ -64,6 +96,33 @@ const envBoolean = (key: string, fallback: boolean): boolean => {
   return fallback;
 };
 
+const PLACEHOLDER_VALUES = {
+  JWT_SECRET: "replace-this-secret",
+  ADMIN_SERVICE_KEY: "replace-this-admin-key"
+} as const;
+
+const assertRuntimeConfig = (config: AppConfig): void => {
+  if (process.env.NODE_ENV === "test") {
+    return;
+  }
+
+  if (
+    config.jwtSecret.trim().length === 0 ||
+    config.jwtSecret === PLACEHOLDER_VALUES.JWT_SECRET
+  ) {
+    throw new Error("invalid runtime config: JWT_SECRET must be set to a non-placeholder value");
+  }
+
+  if (
+    config.adminServiceKey.trim().length === 0 ||
+    config.adminServiceKey === PLACEHOLDER_VALUES.ADMIN_SERVICE_KEY
+  ) {
+    throw new Error(
+      "invalid runtime config: ADMIN_SERVICE_KEY must be set to a non-placeholder value"
+    );
+  }
+};
+
 export const defaultConfig: AppConfig = {
   appName: "Agentrade",
   host: "0.0.0.0",
@@ -72,8 +131,8 @@ export const defaultConfig: AppConfig = {
   redisUrl: "redis://localhost:6379",
   enablePersistence: true,
   enableRedisRateLimit: true,
-  jwtSecret: "replace-this-secret",
-  adminServiceKey: "replace-this-admin-key",
+  jwtSecret: PLACEHOLDER_VALUES.JWT_SECRET,
+  adminServiceKey: PLACEHOLDER_VALUES.ADMIN_SERVICE_KEY,
   authChallengeTtlMinutes: 10,
   rateLimitPerMinute: 60,
   rateLimitBurst: 10,
@@ -101,63 +160,117 @@ export const defaultConfig: AppConfig = {
   bridgeMode: "OFFCHAIN_EXPORT_ONLY"
 };
 
-export const loadConfig = (): AppConfig => ({
-  appName: envString("APP_NAME", defaultConfig.appName),
-  host: envString("HOST", defaultConfig.host),
-  port: envNumber("PORT", defaultConfig.port),
-  databaseUrl: envString("DATABASE_URL", defaultConfig.databaseUrl),
-  redisUrl: envString("REDIS_URL", defaultConfig.redisUrl),
-  enablePersistence: envBoolean("ENABLE_PERSISTENCE", defaultConfig.enablePersistence),
-  enableRedisRateLimit: envBoolean("ENABLE_REDIS_RATE_LIMIT", defaultConfig.enableRedisRateLimit),
-  jwtSecret: envString("JWT_SECRET", defaultConfig.jwtSecret),
-  adminServiceKey: envString("ADMIN_SERVICE_KEY", defaultConfig.adminServiceKey),
-  authChallengeTtlMinutes: envNumber(
-    "AUTH_CHALLENGE_TTL_MINUTES",
-    defaultConfig.authChallengeTtlMinutes
-  ),
-  rateLimitPerMinute: envNumber("RATE_LIMIT_PER_MINUTE", defaultConfig.rateLimitPerMinute),
-  rateLimitBurst: envNumber("RATE_LIMIT_BURST", defaultConfig.rateLimitBurst),
-  taskTitleMaxLength: envNumber("TASK_TITLE_MAX_LENGTH", defaultConfig.taskTitleMaxLength),
-  taskDescriptionMaxLength: envNumber(
-    "TASK_DESCRIPTION_MAX_LENGTH",
-    defaultConfig.taskDescriptionMaxLength
-  ),
-  taskAcceptanceCriteriaMaxLength: envNumber(
-    "TASK_ACCEPTANCE_CRITERIA_MAX_LENGTH",
-    defaultConfig.taskAcceptanceCriteriaMaxLength
-  ),
-  taskSubmissionPayloadMaxLength: envNumber(
-    "TASK_SUBMISSION_PAYLOAD_MAX_LENGTH",
-    defaultConfig.taskSubmissionPayloadMaxLength
-  ),
-  disputeReasonMaxLength: envNumber("DISPUTE_REASON_MAX_LENGTH", defaultConfig.disputeReasonMaxLength),
-  taskSlotsMax: envNumber("TASK_SLOTS_MAX", defaultConfig.taskSlotsMax),
-  taskRewardPerSlotMax: envNumber(
-    "TASK_REWARD_PER_SLOT_MAX",
-    defaultConfig.taskRewardPerSlotMax
-  ),
-  taskDeadlineMaxHours: envNumber("TASK_DEADLINE_MAX_HOURS", defaultConfig.taskDeadlineMaxHours),
-  taxRateBps: envNumber("TAX_RATE_BPS", defaultConfig.taxRateBps),
-  taxMin: envNumber("TAX_MIN", defaultConfig.taxMin),
-  rewardMin: envNumber("REWARD_MIN", defaultConfig.rewardMin),
-  mintPerCycle: envNumber("MINT_PER_CYCLE", defaultConfig.mintPerCycle),
-  terminationPenaltyBps: envNumber("TERMINATION_PENALTY_BPS", defaultConfig.terminationPenaltyBps),
-  submissionTimeoutHours: envNumber("SUBMISSION_TIMEOUT_HOURS", defaultConfig.submissionTimeoutHours),
-  resubmitCooldownMinutes: envNumber("RESUBMIT_COOLDOWN_MINUTES", defaultConfig.resubmitCooldownMinutes),
-  disputeQuorum: envNumber("DISPUTE_QUORUM", defaultConfig.disputeQuorum),
-  disputeApprovalBps: envNumber("DISPUTE_APPROVAL_BPS", defaultConfig.disputeApprovalBps),
-  reputationWeightPublisherBps: envNumber(
-    "REPUTATION_WEIGHT_PUBLISHER_BPS",
-    defaultConfig.reputationWeightPublisherBps
-  ),
-  reputationWeightWorkerBps: envNumber(
-    "REPUTATION_WEIGHT_WORKER_BPS",
-    defaultConfig.reputationWeightWorkerBps
-  ),
-  reputationWeightSupervisorBps: envNumber(
-    "REPUTATION_WEIGHT_SUPERVISOR_BPS",
-    defaultConfig.reputationWeightSupervisorBps
-  ),
-  bridgeChain: envString("BRIDGE_CHAIN", defaultConfig.bridgeChain),
-  bridgeMode: "OFFCHAIN_EXPORT_ONLY"
+export const toPublicEconomyParams = (config: AppConfig): PublicEconomyParams => ({
+  appName: config.appName,
+  enablePersistence: config.enablePersistence,
+  enableRedisRateLimit: config.enableRedisRateLimit,
+  authChallengeTtlMinutes: config.authChallengeTtlMinutes,
+  rateLimitPerMinute: config.rateLimitPerMinute,
+  rateLimitBurst: config.rateLimitBurst,
+  taskTitleMaxLength: config.taskTitleMaxLength,
+  taskDescriptionMaxLength: config.taskDescriptionMaxLength,
+  taskAcceptanceCriteriaMaxLength: config.taskAcceptanceCriteriaMaxLength,
+  taskSubmissionPayloadMaxLength: config.taskSubmissionPayloadMaxLength,
+  disputeReasonMaxLength: config.disputeReasonMaxLength,
+  taskSlotsMax: config.taskSlotsMax,
+  taskRewardPerSlotMax: config.taskRewardPerSlotMax,
+  taskDeadlineMaxHours: config.taskDeadlineMaxHours,
+  taxRateBps: config.taxRateBps,
+  taxMin: config.taxMin,
+  rewardMin: config.rewardMin,
+  mintPerCycle: config.mintPerCycle,
+  terminationPenaltyBps: config.terminationPenaltyBps,
+  submissionTimeoutHours: config.submissionTimeoutHours,
+  resubmitCooldownMinutes: config.resubmitCooldownMinutes,
+  disputeQuorum: config.disputeQuorum,
+  disputeApprovalBps: config.disputeApprovalBps,
+  reputationWeightPublisherBps: config.reputationWeightPublisherBps,
+  reputationWeightWorkerBps: config.reputationWeightWorkerBps,
+  reputationWeightSupervisorBps: config.reputationWeightSupervisorBps,
+  bridgeChain: config.bridgeChain,
+  bridgeMode: config.bridgeMode
 });
+
+export const loadConfig = (): AppConfig => {
+  const config: AppConfig = {
+    appName: envString("APP_NAME", defaultConfig.appName),
+    host: envString("HOST", defaultConfig.host),
+    port: envNumber("PORT", defaultConfig.port),
+    databaseUrl: envString("DATABASE_URL", defaultConfig.databaseUrl),
+    redisUrl: envString("REDIS_URL", defaultConfig.redisUrl),
+    enablePersistence: envBoolean("ENABLE_PERSISTENCE", defaultConfig.enablePersistence),
+    enableRedisRateLimit: envBoolean(
+      "ENABLE_REDIS_RATE_LIMIT",
+      defaultConfig.enableRedisRateLimit
+    ),
+    jwtSecret: envString("JWT_SECRET", defaultConfig.jwtSecret),
+    adminServiceKey: envString("ADMIN_SERVICE_KEY", defaultConfig.adminServiceKey),
+    authChallengeTtlMinutes: envNumber(
+      "AUTH_CHALLENGE_TTL_MINUTES",
+      defaultConfig.authChallengeTtlMinutes
+    ),
+    rateLimitPerMinute: envNumber("RATE_LIMIT_PER_MINUTE", defaultConfig.rateLimitPerMinute),
+    rateLimitBurst: envNumber("RATE_LIMIT_BURST", defaultConfig.rateLimitBurst),
+    taskTitleMaxLength: envNumber("TASK_TITLE_MAX_LENGTH", defaultConfig.taskTitleMaxLength),
+    taskDescriptionMaxLength: envNumber(
+      "TASK_DESCRIPTION_MAX_LENGTH",
+      defaultConfig.taskDescriptionMaxLength
+    ),
+    taskAcceptanceCriteriaMaxLength: envNumber(
+      "TASK_ACCEPTANCE_CRITERIA_MAX_LENGTH",
+      defaultConfig.taskAcceptanceCriteriaMaxLength
+    ),
+    taskSubmissionPayloadMaxLength: envNumber(
+      "TASK_SUBMISSION_PAYLOAD_MAX_LENGTH",
+      defaultConfig.taskSubmissionPayloadMaxLength
+    ),
+    disputeReasonMaxLength: envNumber(
+      "DISPUTE_REASON_MAX_LENGTH",
+      defaultConfig.disputeReasonMaxLength
+    ),
+    taskSlotsMax: envNumber("TASK_SLOTS_MAX", defaultConfig.taskSlotsMax),
+    taskRewardPerSlotMax: envNumber(
+      "TASK_REWARD_PER_SLOT_MAX",
+      defaultConfig.taskRewardPerSlotMax
+    ),
+    taskDeadlineMaxHours: envNumber(
+      "TASK_DEADLINE_MAX_HOURS",
+      defaultConfig.taskDeadlineMaxHours
+    ),
+    taxRateBps: envNumber("TAX_RATE_BPS", defaultConfig.taxRateBps),
+    taxMin: envNumber("TAX_MIN", defaultConfig.taxMin),
+    rewardMin: envNumber("REWARD_MIN", defaultConfig.rewardMin),
+    mintPerCycle: envNumber("MINT_PER_CYCLE", defaultConfig.mintPerCycle),
+    terminationPenaltyBps: envNumber(
+      "TERMINATION_PENALTY_BPS",
+      defaultConfig.terminationPenaltyBps
+    ),
+    submissionTimeoutHours: envNumber(
+      "SUBMISSION_TIMEOUT_HOURS",
+      defaultConfig.submissionTimeoutHours
+    ),
+    resubmitCooldownMinutes: envNumber(
+      "RESUBMIT_COOLDOWN_MINUTES",
+      defaultConfig.resubmitCooldownMinutes
+    ),
+    disputeQuorum: envNumber("DISPUTE_QUORUM", defaultConfig.disputeQuorum),
+    disputeApprovalBps: envNumber("DISPUTE_APPROVAL_BPS", defaultConfig.disputeApprovalBps),
+    reputationWeightPublisherBps: envNumber(
+      "REPUTATION_WEIGHT_PUBLISHER_BPS",
+      defaultConfig.reputationWeightPublisherBps
+    ),
+    reputationWeightWorkerBps: envNumber(
+      "REPUTATION_WEIGHT_WORKER_BPS",
+      defaultConfig.reputationWeightWorkerBps
+    ),
+    reputationWeightSupervisorBps: envNumber(
+      "REPUTATION_WEIGHT_SUPERVISOR_BPS",
+      defaultConfig.reputationWeightSupervisorBps
+    ),
+    bridgeChain: envString("BRIDGE_CHAIN", defaultConfig.bridgeChain),
+    bridgeMode: "OFFCHAIN_EXPORT_ONLY"
+  };
+
+  assertRuntimeConfig(config);
+  return config;
+};

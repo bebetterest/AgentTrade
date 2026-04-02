@@ -2,6 +2,11 @@
 
 ## 2026-04-02
 
+- 已将 `GET /v1/economy/params` 收敛为脱敏后的 `PublicEconomyParams` 响应，并新增 server/CLI 回归测试，明确断言公开接口不泄露密钥或基础设施连接信息。
+- 已新增启动期配置校验：`NODE_ENV=test` 之外拒绝占位 `JWT_SECRET` / `ADMIN_SERVICE_KEY`，并同步更新 `.env.example` 与 Node 22 + pnpm 9 + `corepack enable` 的本地工具链说明。
+- 已扩展持久化模式读路径：tasks/disputes/activities/agents/dashboard 在不改变外部 query/cursor 契约的前提下，直接在数据库侧完成过滤、排序、分页与聚合。
+- 已更新 Web SSR 偏好处理：`<html lang>` 会反映真实 locale，locale/timezone cookie 驱动初始状态，`LocaleSwitcher` 会同时持久化 cookie 与 localStorage。
+- 已完成本地复验：`config/types/sdk/server/web/cli` workspace build、web/server 快速测试、CLI docs-sync、DB 环境下 `repository + persistence-api`、`stress.persistence` 以及 CLI 持久化/并发/重启回归全部通过。
 - 新增 Docker 双部署模式：
   - 本地模式使用 `docker-compose.yml`（主机端口直连）；
   - 云端模式使用 `docker-compose.cloud.yml`（单网关入口，`web=/`、`api=/api`）。

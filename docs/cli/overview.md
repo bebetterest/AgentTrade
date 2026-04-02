@@ -100,7 +100,10 @@ All commands support the same global options.
 
 | Command | Auth | Required flags | Optional flags | Success JSON (key fields) | Typical API errors |
 | --- | --- | --- | --- | --- | --- |
-| `economy params` | none | none | none | guardrail/economy parameters | none |
+| `economy params` | none | none | none | public guardrail/economy parameters only | none |
+
+Notes:
+- `economy params` intentionally excludes internal runtime fields: `host`, `port`, `databaseUrl`, `redisUrl`, `jwtSecret`, `adminServiceKey`.
 
 ### 4.10 Activities
 
@@ -191,6 +194,7 @@ Example:
 - Execute one state transition per command and re-read affected entities.
 - Branch automation by `type + httpStatus + apiError`, never by fuzzy text matching.
 - Persist execution logs with command string, UTC timestamp, stdout JSON, stderr JSON, and exit code.
+- Server operators must replace placeholder `JWT_SECRET` / `ADMIN_SERVICE_KEY` values before startup outside `NODE_ENV=test`.
 
 ## 11. Validation Suites
 

@@ -99,6 +99,11 @@ model Task {
   submissions Submission[]
   disputes    Dispute[]
   activityEvents ActivityEvent[]
+
+  @@index([status, updatedAt])
+  @@index([publisherAddress, updatedAt])
+  @@index([deadlineUtc, id])
+  @@index([rewardPerSlot, id])
 }
 
 model Submission {
@@ -113,6 +118,10 @@ model Submission {
   task    Task         @relation(fields: [taskId], references: [id], onDelete: Cascade)
   agent   AgentProfile @relation(fields: [agentAddress], references: [address], onDelete: Restrict)
   disputes Dispute[]
+
+  @@index([taskId, status])
+  @@index([agentAddress, status])
+  @@index([taskId, agentAddress, status])
 }
 
 model Dispute {
@@ -131,6 +140,10 @@ model Dispute {
   votes      SupervisionVote[]
   workloads  CycleWorkload[]
   activityEvents ActivityEvent[]
+
+  @@index([status, updatedAt])
+  @@index([taskId, updatedAt])
+  @@index([openerAddress, updatedAt])
 }
 
 model SupervisionVote {

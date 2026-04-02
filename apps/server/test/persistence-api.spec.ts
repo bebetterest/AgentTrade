@@ -783,4 +783,248 @@ runDbSuite("API persistence mode", () => {
     expect(taskAfter.status).toBe("CLOSED");
     expect(taskAfter.rewardEscrowRemaining).toBe(0);
   });
+
+  it("serves filtered persistence-mode list reads and dashboard aggregates directly from DB queries", async () => {
+    const publisherA = addr("persist-read-a");
+    const publisherB = addr("persist-read-b");
+    const worker = addr("persist-read-worker");
+    const supervisor = addr("persist-read-supervisor");
+    const inactive = addr("persist-read-idle");
+
+    const createTask = async (publisher: Address, title: string, rewardPerSlot: number) => {
+      const response = await app!.inject({
+        method: "POST",
+        url: "/v1/tasks",
+        headers: { authorization: `Bearer ${bearer(publisher)}` },
+        payload: {
+          title,
+          descriptionMd: "desc",
+          acceptanceCriteria: "criteria",
+          deadlineUtc: futureDeadline(),
+          displayTimezone: "UTC",
+          slotsTotal: 1,
+          rewardPerSlot,
+          allowRepeatCompletionsBySameAgent: false
+        }
+      });
+      expect(response.statusCode).toBe(200);
+      return response.json() as { id: string };
+    };
+
+    const alpha = await createTask(publisherA, "alpha-open", 5);
+    const beta = await createTask(publisherA, "beta-dispute", 20);
+    const delta = await createTask(publisherA, "delta-terminated", 30);
+    const gamma = await createTask(publisherB, "gamma-closed", 40);
+
+    const acceptBetaRes = await app!.inject({
+      method: "POST",
+      url: `/v1/tasks/${beta.id}/accept`,
+      headers: { authorization: `Bearer ${bearer(worker)}` }
+    });
+    expect(acceptBetaRes.statusCode).toBe(200);
+
+    const betaSubmissionRes = await app!.inject({
+      method: "POST",
+      url: `/v1/tasks/${beta.id}/submissions`,
+      headers: { authorization: `Bearer ${bearer(worker)}` },
+      payload: { payloadMd: "beta result" }
+    });
+    expect(betaSubmissionRes.statusCode).toBe(200);
+    const betaSubmission = betaSubmissionRes.json() as { id: string };
+    await rejectSubmission(betaSubmission.id, publisherA);
+
+    const disputeRes = await app!.inject({
+      method: "POST",
+      url: "/v1/disputes",
+      headers: { authorization: `Bearer ${bearer(publisherA)}` },
+      payload: {
+        taskId: beta.id,
+        submissionId: betaSubmission.id,
+        reasonMd: "beta review"
+      }
+    });
+    expect(disputeRes.statusCode).toBe(200);
+    const dispute = disputeRes.json() as { id: string };
+
+    const voteRes = await app!.inject({
+      method: "POST",
+      url: `/v1/disputes/${dispute.id}/votes`,
+      headers: { authorization: `Bearer ${bearer(supervisor)}` },
+      payload: { vote: VoteChoice.COMPLETED }
+    });
+    expect(voteRes.statusCode).toBe(200);
+
+    const acceptGammaRes = await app!.inject({
+      method: "POST",
+      url: `/v1/tasks/${gamma.id}/accept`,
+      headers: { authorization: `Bearer ${bearer(worker)}` }
+    });
+    expect(acceptGammaRes.statusCode).toBe(200);
+
+    const gammaSubmissionRes = await app!.inject({
+      method: "POST",
+      url: `/v1/tasks/${gamma.id}/submissions`,
+      headers: { authorization: `Bearer ${bearer(worker)}` },
+      payload: { payloadMd: "gamma result" }
+    });
+    expect(gammaSubmissionRes.statusCode).toBe(200);
+    const gammaSubmission = gammaSubmissionRes.json() as { id: string };
+
+    const confirmGammaRes = await app!.inject({
+      method: "POST",
+      url: `/v1/submissions/${gammaSubmission.id}/confirm`,
+      headers: { authorization: `Bearer ${bearer(publisherB)}` }
+    });
+    expect(confirmGammaRes.statusCode).toBe(200);
+
+    const terminateDeltaRes = await app!.inject({
+      method: "POST",
+      url: `/v1/tasks/${delta.id}/terminate`,
+      headers: { authorization: `Bearer ${bearer(publisherA)}` }
+    });
+    expect(terminateDeltaRes.statusCode).toBe(200);
+
+    const inactiveProfileRes = await app!.inject({
+      method: "PATCH",
+      url: `/v1/agents/${inactive}/profile`,
+      headers: { authorization: `Bearer ${bearer(inactive)}` },
+      payload: {
+        name: "DormantReader"
+      }
+    });
+    expect(inactiveProfileRes.statusCode).toBe(200);
+
+    const tasksPageOneRes = await app!.inject({
+      method: "GET",
+      url: `/v1/tasks?publisher=${publisherA}&sort=reward&order=desc&limit=2`
+    });
+    expect(tasksPageOneRes.statusCode).toBe(200);
+    const tasksPageOne = tasksPageOneRes.json() as {
+      items: Array<{ id: string }>;
+      nextCursor: string | null;
+    };
+    expect(tasksPageOne.items.map((item) => item.id)).toEqual([delta.id, beta.id]);
+    expect(tasksPageOne.nextCursor).toBe("2");
+
+    const tasksPageTwoRes = await app!.inject({
+      method: "GET",
+      url: `/v1/tasks?publisher=${publisherA}&sort=reward&order=desc&limit=2&cursor=${tasksPageOne.nextCursor}`
+    });
+    expect(tasksPageTwoRes.statusCode).toBe(200);
+    const tasksPageTwo = tasksPageTwoRes.json() as {
+      items: Array<{ id: string }>;
+      nextCursor: string | null;
+    };
+    expect(tasksPageTwo.items.map((item) => item.id)).toEqual([alpha.id]);
+    expect(tasksPageTwo.nextCursor).toBeNull();
+
+    const alphaFilterRes = await app!.inject({
+      method: "GET",
+      url: "/v1/tasks?q=alpha&status=OPEN&limit=10"
+    });
+    expect(alphaFilterRes.statusCode).toBe(200);
+    const alphaFilter = alphaFilterRes.json() as {
+      items: Array<{ id: string }>;
+    };
+    expect(alphaFilter.items.map((item) => item.id)).toEqual([alpha.id]);
+
+    const disputesListRes = await app!.inject({
+      method: "GET",
+      url: `/v1/disputes?taskId=${beta.id}&status=OPEN&opener=${publisherA}&limit=10`
+    });
+    expect(disputesListRes.statusCode).toBe(200);
+    const disputesList = disputesListRes.json() as {
+      items: Array<{ id: string }>;
+      nextCursor: string | null;
+    };
+    expect(disputesList.items.map((item) => item.id)).toEqual([dispute.id]);
+    expect(disputesList.nextCursor).toBeNull();
+
+    const activitiesPageOneRes = await app!.inject({
+      method: "GET",
+      url: `/v1/activities?taskId=${beta.id}&order=asc&limit=2`
+    });
+    expect(activitiesPageOneRes.statusCode).toBe(200);
+    const activitiesPageOne = activitiesPageOneRes.json() as {
+      items: Array<{ type: string }>;
+      nextCursor: string | null;
+    };
+    expect(activitiesPageOne.items.map((item) => item.type)).toEqual([
+      "TASK_PUBLISHED",
+      "TASK_ACCEPTED"
+    ]);
+    expect(activitiesPageOne.nextCursor).toBe("2");
+
+    const activitiesPageTwoRes = await app!.inject({
+      method: "GET",
+      url: `/v1/activities?taskId=${beta.id}&order=asc&limit=2&cursor=${activitiesPageOne.nextCursor}`
+    });
+    expect(activitiesPageTwoRes.statusCode).toBe(200);
+    const activitiesPageTwo = activitiesPageTwoRes.json() as {
+      items: Array<{ type: string }>;
+      nextCursor: string | null;
+    };
+    expect(activitiesPageTwo.items.map((item) => item.type)).toEqual(["DISPUTE_OPENED"]);
+    expect(activitiesPageTwo.nextCursor).toBeNull();
+
+    const dormantAgentsRes = await app!.inject({
+      method: "GET",
+      url: "/v1/agents?q=DormantReader&activeOnly=false&limit=10"
+    });
+    expect(dormantAgentsRes.statusCode).toBe(200);
+    const dormantAgents = dormantAgentsRes.json() as {
+      items: Array<{ address: string; isActive: boolean; name: string }>;
+    };
+    expect(dormantAgents.items).toHaveLength(1);
+    expect(dormantAgents.items[0]).toMatchObject({
+      address: inactive,
+      name: "DormantReader",
+      isActive: false
+    });
+
+    const summaryRes = await app!.inject({
+      method: "GET",
+      url: "/v1/dashboard/summary?tz=UTC"
+    });
+    expect(summaryRes.statusCode).toBe(200);
+    const summary = summaryRes.json() as {
+      currentCycle: {
+        tasksPublished: number;
+        tasksAccepted: number;
+        tasksCompleted: number;
+        disputesOpened: number;
+      };
+      totals: { tasks: number; disputes: number; agents: number };
+    };
+    expect(summary.currentCycle).toEqual({
+      tasksPublished: 4,
+      tasksAccepted: 2,
+      tasksCompleted: 1,
+      disputesOpened: 1
+    });
+    expect(summary.totals).toEqual({
+      tasks: 4,
+      disputes: 1,
+      agents: 5
+    });
+
+    const trendsRes = await app!.inject({
+      method: "GET",
+      url: "/v1/dashboard/trends?tz=UTC&window=7d"
+    });
+    expect(trendsRes.statusCode).toBe(200);
+    const trends = trendsRes.json() as {
+      points: Array<{
+        tasksPublished: number;
+        tasksAccepted: number;
+        tasksCompleted: number;
+        disputesOpened: number;
+      }>;
+    };
+    expect(trends.points).toHaveLength(7);
+    expect(trends.points.reduce((sum, item) => sum + item.tasksPublished, 0)).toBe(4);
+    expect(trends.points.reduce((sum, item) => sum + item.tasksAccepted, 0)).toBe(2);
+    expect(trends.points.reduce((sum, item) => sum + item.tasksCompleted, 0)).toBe(1);
+    expect(trends.points.reduce((sum, item) => sum + item.disputesOpened, 0)).toBe(1);
+  });
 });

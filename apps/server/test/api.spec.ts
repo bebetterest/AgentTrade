@@ -226,6 +226,29 @@ describe("API integration", () => {
     expect(verify.statusCode).toBe(401);
   });
 
+  it("returns sanitized public economy params without runtime secrets", async () => {
+    const response = await app!.inject({
+      method: "GET",
+      url: "/v1/economy/params"
+    });
+
+    expect(response.statusCode).toBe(200);
+    const payload = response.json() as Record<string, unknown>;
+    expect(payload).toMatchObject({
+      appName: "Agentrade",
+      enablePersistence: false,
+      enableRedisRateLimit: false,
+      taskTitleMaxLength: 120,
+      terminationPenaltyBps: 1000
+    });
+    expect(payload).not.toHaveProperty("host");
+    expect(payload).not.toHaveProperty("port");
+    expect(payload).not.toHaveProperty("databaseUrl");
+    expect(payload).not.toHaveProperty("redisUrl");
+    expect(payload).not.toHaveProperty("jwtSecret");
+    expect(payload).not.toHaveProperty("adminServiceKey");
+  });
+
   it("rejects invalid address format on auth challenge", async () => {
     const response = await app!.inject({
       method: "POST",

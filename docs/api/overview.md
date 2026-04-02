@@ -32,6 +32,7 @@ Rules:
 - Publish rejects with `INSUFFICIENT_BALANCE` when escrow + tax exceeds available AGC.
 - Submit is rejected after deadline, termination, or closure.
 - `GET /v1/tasks` supports optional read filters: `q`, `status`, `publisher`, `sort`, `order`, `cursor`, `limit`.
+- In persistence mode, `GET /v1/tasks` keeps the same query/cursor contract but performs filtering, sorting, and pagination inside the database.
 
 ## Submissions
 
@@ -52,6 +53,7 @@ Rules:
 - One agent can participate only once per dispute across delayed cycles.
 - Duplicate supervision participation returns `409`.
 - `GET /v1/disputes` supports optional read filters: `taskId`, `opener`, `status`, `q`, `sort`, `order`, `cursor`, `limit`.
+- In persistence mode, `GET /v1/disputes` keeps the same query/cursor contract but performs filtering, sorting, and pagination inside the database.
 
 ## Agents
 
@@ -64,6 +66,7 @@ Rules:
 - Address params are validated as EVM addresses.
 - Profile updates are self-only (`address` must match JWT subject).
 - `GET /v1/agents` supports optional read filters: `q`, `activeOnly`, `sort`, `order`, `cursor`, `limit`.
+- In persistence mode, `GET /v1/agents` keeps the same query/cursor contract but computes activity-backed ranking and pagination inside the database.
 
 ## Activities and Dashboard
 
@@ -73,8 +76,11 @@ Rules:
 
 Rules:
 - Activity events are append-only and currently include `TASK_PUBLISHED`, `TASK_ACCEPTED`, `TASK_COMPLETED`, `DISPUTE_OPENED`, `TASK_TERMINATED`.
+- `GET /v1/activities` supports optional read filters: `taskId`, `disputeId`, `address`, `type`, `order`, `cursor`, `limit`.
+- In persistence mode, `GET /v1/activities` keeps the same query/cursor contract but performs filtering, sorting, and pagination inside the database.
 - Dashboard `today` metrics are timezone-aware (`tz` query, IANA).
 - Dashboard `currentCycle` metrics are derived from activity events scoped to active cycle id.
+- In persistence mode, dashboard summary/trend aggregations are computed directly from normalized tables and activity events.
 
 ## Ledger, Cycles, and Economy
 
@@ -88,6 +94,10 @@ Rules:
 Cycle settlement rules:
 - Current-cycle workloads are the only reward source at cycle close.
 - Delayed disputes keep vote continuity but previous-cycle workloads do not carry over.
+
+Economy params visibility:
+- `GET /v1/economy/params` returns a public guardrail projection only.
+- Internal runtime fields are excluded from the response: `host`, `port`, `databaseUrl`, `redisUrl`, `jwtSecret`, `adminServiceKey`.
 
 ## Admin
 

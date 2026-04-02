@@ -1,8 +1,8 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { defaultConfig } from "@agentrade/config";
 import type { Address } from "@agentrade/types";
-import { VoteChoice } from "@agentrade/types";
+import { ActivityEventType, DisputeStatus, TaskStatus, VoteChoice } from "@agentrade/types";
 import { AgentradeEngine } from "../src/domain/engine.js";
 import { MutableClock } from "../src/utils/time.js";
 import { PrismaStateRepository } from "../src/infra/state-repository.js";
@@ -16,6 +16,10 @@ runDbSuite("PrismaStateRepository", () => {
 
   beforeAll(async () => {
     repo = new PrismaStateRepository(TEST_DB_URL!);
+  });
+
+  beforeEach(async () => {
+    await repo.sync(new AgentradeEngine(defaultConfig).toSnapshot());
   });
 
   afterAll(async () => {
@@ -156,5 +160,284 @@ runDbSuite("PrismaStateRepository", () => {
     const loaded = await repo.load();
     expect(loaded).not.toBeNull();
     expect(loaded!.tasks).toHaveLength(0);
+  });
+
+  it("queries tasks, disputes, and activities with DB-side filters, sorting, and pagination", async () => {
+    const clock = new MutableClock(new Date("2026-03-30T08:00:00.000Z"));
+    const engine = new AgentradeEngine(defaultConfig, clock);
+    const publisherA = addr("query-a");
+    const publisherB = addr("query-b");
+    const worker = addr("query-worker");
+    const deadline = () => new Date(clock.now().getTime() + 72 * 3_600_000).toISOString();
+
+    const alpha = engine.publishTask({
+      publisher: publisherA,
+      title: "alpha-open",
+      descriptionMd: "desc",
+      acceptanceCriteria: "ok",
+      deadlineUtc: deadline(),
+      displayTimezone: "UTC",
+      slotsTotal: 1,
+      rewardPerSlot: 70,
+      allowRepeatCompletionsBySameAgent: false
+    });
+    clock.advanceMinutes(1);
+
+    const beta = engine.publishTask({
+      publisher: publisherA,
+      title: "beta-dispute",
+      descriptionMd: "desc",
+      acceptanceCriteria: "ok",
+      deadlineUtc: deadline(),
+      displayTimezone: "UTC",
+      slotsTotal: 1,
+      rewardPerSlot: 20,
+      allowRepeatCompletionsBySameAgent: false
+    });
+    clock.advanceMinutes(1);
+
+    const gamma = engine.publishTask({
+      publisher: publisherB,
+      title: "gamma-closed",
+      descriptionMd: "desc",
+      acceptanceCriteria: "ok",
+      deadlineUtc: deadline(),
+      displayTimezone: "UTC",
+      slotsTotal: 1,
+      rewardPerSlot: 40,
+      allowRepeatCompletionsBySameAgent: false
+    });
+    clock.advanceMinutes(1);
+
+    const delta = engine.publishTask({
+      publisher: publisherA,
+      title: "delta-terminated",
+      descriptionMd: "desc",
+      acceptanceCriteria: "ok",
+      deadlineUtc: deadline(),
+      displayTimezone: "UTC",
+      slotsTotal: 1,
+      rewardPerSlot: 10,
+      allowRepeatCompletionsBySameAgent: false
+    });
+
+    engine.acceptTask(beta.id, worker);
+    clock.advanceMinutes(31);
+    const betaSubmission = engine.submitTask(beta.id, worker, "beta-result");
+    engine.rejectSubmission(betaSubmission.id, publisherA);
+    const dispute = engine.openDispute({
+      taskId: beta.id,
+      submissionId: betaSubmission.id,
+      opener: publisherA,
+      reasonMd: "beta-review"
+    });
+
+    clock.advanceMinutes(1);
+    engine.acceptTask(gamma.id, worker);
+    clock.advanceMinutes(31);
+    const gammaSubmission = engine.submitTask(gamma.id, worker, "gamma-result");
+    engine.confirmSubmission(gammaSubmission.id, publisherB);
+
+    clock.advanceMinutes(1);
+    engine.terminateTask(delta.id, publisherA);
+
+    await repo.sync(engine.toSnapshot());
+
+    const publisherPageOne = await repo.queryTasksDirect({
+      publisher: publisherA,
+      sort: "reward",
+      order: "desc",
+      offset: 0,
+      limit: 2,
+      paged: true
+    });
+    expect(publisherPageOne.items.map((item) => item.id)).toEqual([alpha.id, beta.id]);
+    expect(publisherPageOne.nextCursor).toBe("2");
+
+    const publisherPageTwo = await repo.queryTasksDirect({
+      publisher: publisherA,
+      sort: "reward",
+      order: "desc",
+      offset: 2,
+      limit: 2,
+      paged: true
+    });
+    expect(publisherPageTwo.items.map((item) => item.id)).toEqual([delta.id]);
+    expect(publisherPageTwo.nextCursor).toBeNull();
+
+    const alphaOnly = await repo.queryTasksDirect({
+      q: "alpha",
+      status: TaskStatus.OPEN,
+      sort: "latest",
+      order: "desc",
+      offset: 0,
+      limit: 20,
+      paged: true
+    });
+    expect(alphaOnly.items.map((item) => item.id)).toEqual([alpha.id]);
+
+    const disputes = await repo.queryDisputesDirect({
+      taskId: beta.id,
+      opener: publisherA,
+      status: DisputeStatus.OPEN,
+      sort: "latest",
+      order: "desc",
+      offset: 0,
+      limit: 10,
+      paged: true
+    });
+    expect(disputes.items.map((item) => item.id)).toEqual([dispute.id]);
+    expect(disputes.nextCursor).toBeNull();
+
+    const betaActivityPageOne = await repo.queryActivitiesDirect({
+      taskId: beta.id,
+      order: "asc",
+      offset: 0,
+      limit: 2,
+      paged: true
+    });
+    expect(betaActivityPageOne.items.map((item) => item.type)).toEqual([
+      ActivityEventType.TASK_PUBLISHED,
+      ActivityEventType.TASK_ACCEPTED
+    ]);
+    expect(betaActivityPageOne.nextCursor).toBe("2");
+
+    const betaActivityPageTwo = await repo.queryActivitiesDirect({
+      taskId: beta.id,
+      order: "asc",
+      offset: 2,
+      limit: 2,
+      paged: true
+    });
+    expect(betaActivityPageTwo.items.map((item) => item.type)).toEqual([
+      ActivityEventType.DISPUTE_OPENED
+    ]);
+    expect(betaActivityPageTwo.nextCursor).toBeNull();
+  });
+
+  it("queries agents and dashboard aggregates directly from normalized tables", async () => {
+    const now = new Date();
+    const currentUtcDay = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 8, 0, 0, 0)
+    );
+    const clock = new MutableClock(currentUtcDay);
+    const engine = new AgentradeEngine(defaultConfig, clock);
+    const publisherA = addr("agent-a");
+    const publisherB = addr("agent-b");
+    const worker = addr("agent-worker");
+    const supervisor = addr("agent-supervisor");
+    const inactive = addr("agent-idle");
+    const deadline = () => new Date(clock.now().getTime() + 72 * 3_600_000).toISOString();
+
+    const alpha = engine.publishTask({
+      publisher: publisherA,
+      title: "agent-alpha",
+      descriptionMd: "desc",
+      acceptanceCriteria: "ok",
+      deadlineUtc: deadline(),
+      displayTimezone: "UTC",
+      slotsTotal: 1,
+      rewardPerSlot: 20,
+      allowRepeatCompletionsBySameAgent: false
+    });
+    clock.advanceMinutes(1);
+
+    const beta = engine.publishTask({
+      publisher: publisherA,
+      title: "agent-beta",
+      descriptionMd: "desc",
+      acceptanceCriteria: "ok",
+      deadlineUtc: deadline(),
+      displayTimezone: "UTC",
+      slotsTotal: 1,
+      rewardPerSlot: 30,
+      allowRepeatCompletionsBySameAgent: false
+    });
+    clock.advanceMinutes(1);
+
+    const gamma = engine.publishTask({
+      publisher: publisherB,
+      title: "agent-gamma",
+      descriptionMd: "desc",
+      acceptanceCriteria: "ok",
+      deadlineUtc: deadline(),
+      displayTimezone: "UTC",
+      slotsTotal: 1,
+      rewardPerSlot: 40,
+      allowRepeatCompletionsBySameAgent: false
+    });
+
+    engine.acceptTask(beta.id, worker);
+    clock.advanceMinutes(31);
+    const betaSubmission = engine.submitTask(beta.id, worker, "beta-result");
+    engine.rejectSubmission(betaSubmission.id, publisherA);
+    const dispute = engine.openDispute({
+      taskId: beta.id,
+      submissionId: betaSubmission.id,
+      opener: publisherA,
+      reasonMd: "agent-review"
+    });
+    engine.voteDispute({
+      disputeId: dispute.id,
+      agent: supervisor,
+      vote: VoteChoice.COMPLETED
+    });
+
+    clock.advanceMinutes(1);
+    engine.acceptTask(gamma.id, worker);
+    clock.advanceMinutes(31);
+    const gammaSubmission = engine.submitTask(gamma.id, worker, "gamma-result");
+    engine.confirmSubmission(gammaSubmission.id, publisherB);
+
+    await repo.sync(engine.toSnapshot());
+    await repo.updateAgentProfileDirect(inactive, { name: "Dormant", bio: "idle profile" });
+
+    const dormantAgents = await repo.queryAgentsDirect({
+      q: "Dormant",
+      activeOnly: false,
+      sort: "latest",
+      order: "desc",
+      offset: 0,
+      limit: 10,
+      paged: true
+    });
+    expect(dormantAgents.items).toHaveLength(1);
+    expect(dormantAgents.items[0].address).toBe(inactive);
+    expect(dormantAgents.items[0].isActive).toBe(false);
+
+    const activeAgents = await repo.queryAgentsDirect({
+      activeOnly: true,
+      sort: "completed",
+      order: "desc",
+      offset: 0,
+      limit: 10,
+      paged: true
+    });
+    expect(activeAgents.items[0].address).toBe(worker);
+    expect(activeAgents.items.some((item) => item.address === inactive)).toBe(false);
+
+    const summary = await repo.getDashboardSummaryDirect("UTC");
+    expect(summary.timezone).toBe("UTC");
+    expect(summary.activeCycleId).toBe("cycle-1");
+    expect(summary.today).toEqual({
+      tasksPublished: 3,
+      tasksAccepted: 2,
+      tasksCompleted: 1,
+      disputesOpened: 1
+    });
+    expect(summary.currentCycle).toEqual(summary.today);
+    expect(summary.totals).toEqual({
+      tasks: 3,
+      disputes: 1,
+      agents: 5
+    });
+
+    const trends = await repo.getDashboardTrendsDirect("UTC", "7d");
+    expect(trends.window).toBe("7d");
+    expect(trends.points).toHaveLength(7);
+    expect(trends.points.reduce((sum, item) => sum + item.tasksPublished, 0)).toBe(3);
+    expect(trends.points.reduce((sum, item) => sum + item.tasksAccepted, 0)).toBe(2);
+    expect(trends.points.reduce((sum, item) => sum + item.tasksCompleted, 0)).toBe(1);
+    expect(trends.points.reduce((sum, item) => sum + item.disputesOpened, 0)).toBe(1);
   });
 });

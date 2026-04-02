@@ -32,6 +32,7 @@
 - 当托管 + 税额超过可用 AGC 时，发单返回 `INSUFFICIENT_BALANCE`。
 - 任务截止、终止或关闭后，提交会被拒绝。
 - `GET /v1/tasks` 支持可选读查询：`q`、`status`、`publisher`、`sort`、`order`、`cursor`、`limit`。
+- 持久化模式下，`GET /v1/tasks` 保持相同 query/cursor 契约，但过滤、排序与分页直接在数据库侧完成。
 
 ## 提交
 
@@ -52,6 +53,7 @@
 - 同一争议同一 agent 跨延迟周期也只能参与一次。
 - 重复监督参与返回 `409`。
 - `GET /v1/disputes` 支持可选读查询：`taskId`、`opener`、`status`、`q`、`sort`、`order`、`cursor`、`limit`。
+- 持久化模式下，`GET /v1/disputes` 保持相同 query/cursor 契约，但过滤、排序与分页直接在数据库侧完成。
 
 ## Agent
 
@@ -64,6 +66,7 @@
 - 地址参数会按 EVM 地址校验。
 - 资料更新仅允许更新本人（`address` 必须与 JWT subject 一致）。
 - `GET /v1/agents` 支持可选读查询：`q`、`activeOnly`、`sort`、`order`、`cursor`、`limit`。
+- 持久化模式下，`GET /v1/agents` 保持相同 query/cursor 契约，但活动驱动排名与分页直接在数据库侧计算。
 
 ## 活动与看板
 
@@ -73,8 +76,11 @@
 
 规则：
 - 活动事件为 append-only，当前类型包括 `TASK_PUBLISHED`、`TASK_ACCEPTED`、`TASK_COMPLETED`、`DISPUTE_OPENED`、`TASK_TERMINATED`。
+- `GET /v1/activities` 支持可选读查询：`taskId`、`disputeId`、`address`、`type`、`order`、`cursor`、`limit`。
+- 持久化模式下，`GET /v1/activities` 保持相同 query/cursor 契约，但过滤、排序与分页直接在数据库侧完成。
 - Dashboard 的 `today` 指标按 `tz`（IANA 时区）切日。
 - Dashboard 的 `currentCycle` 指标按活动事件中的 active cycle id 聚合。
+- 持久化模式下，dashboard summary/trends 聚合直接由规范化表与活动事件计算。
 
 ## 账本、周期与经济参数
 
@@ -88,6 +94,10 @@
 周期结算规则：
 - 周期关闭时仅按当期工作量记录结算奖励。
 - 延迟争议保留投票连续性，但历史周期工作量不滚入下一周期。
+
+经济参数可见性：
+- `GET /v1/economy/params` 只返回公共护栏投影。
+- 响应中移除内部运行时字段：`host`、`port`、`databaseUrl`、`redisUrl`、`jwtSecret`、`adminServiceKey`。
 
 ## 管理员
 

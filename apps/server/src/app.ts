@@ -4,9 +4,10 @@ import jwt from "jsonwebtoken";
 import { isAddress as isEvmAddress, verifyMessage } from "viem";
 import { z } from "zod";
 import { nanoid } from "nanoid";
-import { loadConfig } from "@agentrade/config";
+import { loadConfig, toPublicEconomyParams } from "@agentrade/config";
 import {
   ActivityEventType,
+  DisputeStatus,
   TaskStatus,
   VoteChoice,
   type ActivityEvent,
@@ -405,6 +406,19 @@ export const buildApp = async () => {
       throw new HttpError(400, "invalid publisher address");
     }
 
+    if (stateRepository) {
+      return stateRepository.queryTasksDirect({
+        q: query.q,
+        status: query.status,
+        publisher: query.publisher as Address | undefined,
+        sort: query.sort ?? "latest",
+        order: query.order ?? "desc",
+        offset: parseCursorOffset(query.cursor),
+        limit: query.limit ?? 20,
+        paged: Boolean(query.limit || query.cursor)
+      });
+    }
+
     let items = await readTasks();
     if (query.status) {
       items = items.filter((item) => item.status === query.status);
@@ -588,7 +602,7 @@ export const buildApp = async () => {
       .object({
         taskId: z.string().optional(),
         opener: z.string().optional(),
-        status: z.enum(["OPEN", "RESOLVED_COMPLETED", "RESOLVED_NOT_COMPLETED"]).optional(),
+        status: z.nativeEnum(DisputeStatus).optional(),
         q: z.string().trim().min(1).optional(),
         sort: z.enum(["latest", "created"]).optional(),
         order: z.enum(["asc", "desc"]).optional(),
@@ -599,6 +613,20 @@ export const buildApp = async () => {
 
     if (query.opener && !isAddress(query.opener)) {
       throw new HttpError(400, "invalid opener address");
+    }
+
+    if (stateRepository) {
+      return stateRepository.queryDisputesDirect({
+        taskId: query.taskId,
+        opener: query.opener as Address | undefined,
+        status: query.status,
+        q: query.q,
+        sort: query.sort ?? "latest",
+        order: query.order ?? "desc",
+        offset: parseCursorOffset(query.cursor),
+        limit: query.limit ?? 20,
+        paged: Boolean(query.limit || query.cursor)
+      });
     }
 
     let items = await readDisputes();
@@ -690,6 +718,10 @@ export const buildApp = async () => {
       throw new HttpError(400, "invalid timezone");
     }
 
+    if (stateRepository) {
+      return stateRepository.getDashboardSummaryDirect(query.tz);
+    }
+
     const [activities, activeCycle, tasks, disputes, agents] = await Promise.all([
       readActivities(),
       readActiveCycle(),
@@ -725,6 +757,10 @@ export const buildApp = async () => {
       .parse(request.query ?? {});
     if (!isValidTimezone(query.tz)) {
       throw new HttpError(400, "invalid timezone");
+    }
+
+    if (stateRepository) {
+      return stateRepository.getDashboardTrendsDirect(query.tz, query.window);
     }
 
     const events = await readActivities();
@@ -789,6 +825,18 @@ export const buildApp = async () => {
         limit: z.coerce.number().int().min(1).max(100).optional()
       })
       .parse(request.query ?? {});
+
+    if (stateRepository) {
+      return stateRepository.queryAgentsDirect({
+        q: query.q,
+        activeOnly: query.activeOnly,
+        sort: query.sort ?? "latest",
+        order: query.order ?? "desc",
+        offset: parseCursorOffset(query.cursor),
+        limit: query.limit ?? 20,
+        paged: Boolean(query.limit || query.cursor)
+      });
+    }
 
     const [profiles, activities] = await Promise.all([readAgents(), readActivities()]);
     const latestActivityByAddress = new Map<string, string>();
@@ -877,6 +925,19 @@ export const buildApp = async () => {
       .parse(request.query ?? {});
     if (query.address && !isAddress(query.address)) {
       throw new HttpError(400, "invalid address");
+    }
+
+    if (stateRepository) {
+      return stateRepository.queryActivitiesDirect({
+        taskId: query.taskId,
+        disputeId: query.disputeId,
+        address: query.address as Address | undefined,
+        type: query.type,
+        order: query.order ?? "desc",
+        offset: parseCursorOffset(query.cursor),
+        limit: query.limit ?? 20,
+        paged: Boolean(query.limit || query.cursor)
+      });
     }
 
     let items = await readActivities();
@@ -1001,7 +1062,7 @@ export const buildApp = async () => {
     }
     return read((engine) => engine.getCycle(params.id));
   });
-  app.get("/v1/economy/params", async () => read((engine) => engine.getConfig()));
+  app.get("/v1/economy/params", async () => toPublicEconomyParams(config));
 
   app.post("/v1/admin/cycles/close", { preHandler: [app.requireAdmin] }, async () => {
     if (stateRepository) {

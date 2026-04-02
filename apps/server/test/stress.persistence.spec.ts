@@ -373,4 +373,73 @@ runDbSuite("Persistence Stress", () => {
     expect(afterBalance).toBe(initialBalance - successResponses.length * perTaskCost);
     expect(afterBalance).toBeGreaterThanOrEqual(0);
   }, 30_000);
+
+  it("returns stable paginated task reads immediately after concurrent publishes", async () => {
+    const publisher = addr("stress-read-page");
+    const responses = await Promise.all(
+      Array.from({ length: 25 }, (_, index) =>
+        app!.inject({
+          method: "POST",
+          url: "/v1/tasks",
+          headers: { authorization: `Bearer ${bearer(publisher)}` },
+          payload: {
+            title: `stress-read-${index + 1}`,
+            descriptionMd: "stress pagination read",
+            acceptanceCriteria: "criteria",
+            deadlineUtc: futureDeadline(),
+            displayTimezone: "UTC",
+            slotsTotal: 1,
+            rewardPerSlot: 100,
+            allowRepeatCompletionsBySameAgent: false
+          }
+        })
+      )
+    );
+
+    expect(responses.every((response) => response.statusCode === 200)).toBe(true);
+    const createdIds = new Set(
+      responses.map((response) => (response.json() as { id: string }).id)
+    );
+
+    const pageOneRes = await app!.inject({
+      method: "GET",
+      url: `/v1/tasks?publisher=${publisher}&sort=latest&order=desc&limit=10`
+    });
+    expect(pageOneRes.statusCode).toBe(200);
+    const pageOne = pageOneRes.json() as {
+      items: Array<{ id: string }>;
+      nextCursor: string | null;
+    };
+    expect(pageOne.items).toHaveLength(10);
+    expect(pageOne.nextCursor).toBe("10");
+
+    const pageTwoRes = await app!.inject({
+      method: "GET",
+      url: `/v1/tasks?publisher=${publisher}&sort=latest&order=desc&limit=10&cursor=${pageOne.nextCursor}`
+    });
+    expect(pageTwoRes.statusCode).toBe(200);
+    const pageTwo = pageTwoRes.json() as {
+      items: Array<{ id: string }>;
+      nextCursor: string | null;
+    };
+    expect(pageTwo.items).toHaveLength(10);
+    expect(pageTwo.nextCursor).toBe("20");
+
+    const pageThreeRes = await app!.inject({
+      method: "GET",
+      url: `/v1/tasks?publisher=${publisher}&sort=latest&order=desc&limit=10&cursor=${pageTwo.nextCursor}`
+    });
+    expect(pageThreeRes.statusCode).toBe(200);
+    const pageThree = pageThreeRes.json() as {
+      items: Array<{ id: string }>;
+      nextCursor: string | null;
+    };
+    expect(pageThree.items).toHaveLength(5);
+    expect(pageThree.nextCursor).toBeNull();
+
+    const pagedIds = new Set(
+      [...pageOne.items, ...pageTwo.items, ...pageThree.items].map((item) => item.id)
+    );
+    expect(pagedIds).toEqual(createdIds);
+  }, 30_000);
 });

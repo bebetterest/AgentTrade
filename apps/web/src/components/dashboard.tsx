@@ -1,8 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
-import { messages, resolveLocale, type SupportedLocale } from "@agentrade/i18n";
+import { messages, type SupportedLocale } from "@agentrade/i18n";
 import type {
   ActivityEvent,
   Cycle,
@@ -14,8 +13,13 @@ import type {
   PaginatedResponse,
   Task
 } from "@agentrade/types";
-import { ActivityEventType, TaskStatus } from "@agentrade/types";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { AgentDetailDrawer } from "./dashboard/agent-detail-drawer";
+import { AgentListPanel } from "./dashboard/agent-list-panel";
+import { ActivityFeed } from "./dashboard/activity-feed";
+import { OverviewPanels } from "./dashboard/overview-panels";
+import { TaskDetailDrawer } from "./dashboard/task-detail-drawer";
+import { TaskListPanel } from "./dashboard/task-list-panel";
 import { LocaleSwitcher } from "./locale-switcher";
 import {
   fetchActivities,
@@ -28,69 +32,47 @@ import {
   fetchTask,
   fetchTasks
 } from "../lib/api";
-import { DEFAULT_TIMEZONE, formatDateTime, formatDuration, shortAddress, toSparklinePath } from "../lib/dashboard-format";
+import { DEFAULT_TIMEZONE, formatDuration } from "../lib/dashboard-format";
 import { parseDashboardQuery, sanitizeQueryPatch } from "../lib/dashboard-query";
-import { renderSafeMarkdown } from "../lib/markdown";
+import { TIMEZONE_COOKIE_NAME, buildPreferenceCookie } from "../lib/request-context";
 
 interface DashboardProps {
+  initialLocale: SupportedLocale;
+  initialTimeZone: string;
   initialSummary: DashboardSummaryResponse | null;
   initialTrends: DashboardTrendsResponse | null;
   initialTasks: PaginatedResponse<Task>;
   initialAgents: PaginatedResponse<AgentDirectoryItem>;
+  initialLeaders: AgentDirectoryItem[];
   initialActiveCycle: Cycle | null;
   initialActivities: PaginatedResponse<ActivityEvent>;
 }
 
 const REFRESH_FEED_LIMIT = 12;
 const SEARCH_DEBOUNCE_MS = 320;
-const TASK_STATUS_FILTERS: TaskStatus[] = [
-  TaskStatus.OPEN,
-  TaskStatus.IN_PROGRESS,
-  TaskStatus.CLOSED,
-  TaskStatus.TERMINATED
-];
-
-const EVENT_LABELS: Record<ActivityEventType, { zh: string; en: string }> = {
-  TASK_PUBLISHED: { zh: "发布任务", en: "Task Published" },
-  TASK_ACCEPTED: { zh: "接单", en: "Task Accepted" },
-  TASK_COMPLETED: { zh: "任务完成", en: "Task Completed" },
-  DISPUTE_OPENED: { zh: "发起争议", en: "Dispute Opened" },
-  TASK_TERMINATED: { zh: "任务终止", en: "Task Terminated" }
-};
-
-const Sparkline = ({ title, values }: { title: string; values: number[] }) => {
-  const path = toSparklinePath(values);
-  const latest = values.length > 0 ? values[values.length - 1] : 0;
-  return (
-    <div className="spark-card">
-      <p className="spark-title">{title}</p>
-      <p className="spark-value">{latest}</p>
-      <svg viewBox="0 0 220 90" className="spark-svg" aria-hidden="true">
-        <path d={path} />
-      </svg>
-    </div>
-  );
-};
 
 export const Dashboard = ({
+  initialLocale,
+  initialTimeZone,
   initialSummary,
   initialTrends,
   initialTasks,
   initialAgents,
+  initialLeaders,
   initialActiveCycle,
   initialActivities
 }: DashboardProps) => {
-  const [locale, setLocale] = useState<SupportedLocale>("en");
+  const [locale, setLocale] = useState<SupportedLocale>(initialLocale);
   const t = messages[locale];
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [timeZone, setTimeZone] = useState(DEFAULT_TIMEZONE);
+  const [timeZone, setTimeZone] = useState(initialTimeZone);
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   const [summary, setSummary] = useState<DashboardSummaryResponse | null>(initialSummary);
   const [trends, setTrends] = useState<DashboardTrendsResponse | null>(initialTrends);
-  const [leaders, setLeaders] = useState<AgentDirectoryItem[]>(initialAgents.items.slice(0, 5));
+  const [leaders, setLeaders] = useState<AgentDirectoryItem[]>(initialLeaders);
   const [activeCycle, setActiveCycle] = useState<Cycle | null>(initialActiveCycle);
   const [activityFeed, setActivityFeed] = useState<ActivityEvent[]>(initialActivities.items.slice(0, REFRESH_FEED_LIMIT));
 
@@ -323,12 +305,13 @@ export const Dashboard = ({
   };
 
   useEffect(() => {
-    const saved = localStorage.getItem("agentrade.locale") ?? undefined;
-    const detected = resolveLocale(navigator.language, saved);
-    setLocale(detected);
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || DEFAULT_TIMEZONE;
-    setTimeZone(tz);
-  }, []);
+    const detectedTimeZone =
+      Intl.DateTimeFormat().resolvedOptions().timeZone || DEFAULT_TIMEZONE;
+    document.cookie = buildPreferenceCookie(TIMEZONE_COOKIE_NAME, detectedTimeZone);
+    if (detectedTimeZone !== initialTimeZone) {
+      setTimeZone(detectedTimeZone);
+    }
+  }, [initialTimeZone]);
 
   useEffect(() => {
     setSearchDraft(q);
@@ -673,7 +656,7 @@ export const Dashboard = ({
           <h1 className="title">{t.appTitle}</h1>
           <p className="sub">{t.readOnlyNotice}</p>
         </div>
-        <LocaleSwitcher onChange={setLocale} />
+        <LocaleSwitcher initialLocale={initialLocale} onChange={setLocale} />
       </section>
 
       <section className="toolbar">
@@ -691,124 +674,33 @@ export const Dashboard = ({
         </section>
       ) : null}
 
-      <section className="summary-grid">
-        <div className="card metric-card">
-          <h2>{locale === "zh" ? "当日统计" : "Today"}</h2>
-          <div className="metric-line"><span>{locale === "zh" ? "发布" : "Published"}</span><strong>{summary?.today.tasksPublished ?? 0}</strong></div>
-          <div className="metric-line"><span>{locale === "zh" ? "接单" : "Accepted"}</span><strong>{summary?.today.tasksAccepted ?? 0}</strong></div>
-          <div className="metric-line"><span>{locale === "zh" ? "完成" : "Completed"}</span><strong>{summary?.today.tasksCompleted ?? 0}</strong></div>
-          <div className="metric-line"><span>{locale === "zh" ? "争议" : "Disputes"}</span><strong>{summary?.today.disputesOpened ?? 0}</strong></div>
-        </div>
-        <div className="card metric-card">
-          <h2>{locale === "zh" ? "本周期统计" : "Current Cycle"}</h2>
-          <div className="metric-line"><span>{locale === "zh" ? "发布" : "Published"}</span><strong>{summary?.currentCycle.tasksPublished ?? 0}</strong></div>
-          <div className="metric-line"><span>{locale === "zh" ? "接单" : "Accepted"}</span><strong>{summary?.currentCycle.tasksAccepted ?? 0}</strong></div>
-          <div className="metric-line"><span>{locale === "zh" ? "完成" : "Completed"}</span><strong>{summary?.currentCycle.tasksCompleted ?? 0}</strong></div>
-          <div className="metric-line"><span>{locale === "zh" ? "争议" : "Disputes"}</span><strong>{summary?.currentCycle.disputesOpened ?? 0}</strong></div>
-        </div>
-        <div className="card metric-card">
-          <h2>{locale === "zh" ? "总量" : "Totals"}</h2>
-          <div className="metric-line"><span>{locale === "zh" ? "任务" : "Tasks"}</span><strong>{summary?.totals.tasks ?? 0}</strong></div>
-          <div className="metric-line"><span>{locale === "zh" ? "争议" : "Disputes"}</span><strong>{summary?.totals.disputes ?? 0}</strong></div>
-          <div className="metric-line"><span>{locale === "zh" ? "Agent" : "Agents"}</span><strong>{summary?.totals.agents ?? 0}</strong></div>
-        </div>
-      </section>
+      <OverviewPanels
+        locale={locale}
+        timeZone={timeZone}
+        summary={summary}
+        activeCycle={activeCycle}
+        cycleUptime={cycleUptime}
+        trendWindow={trendWindow}
+        trendPublished={trendPublished}
+        trendAccepted={trendAccepted}
+        trendCompleted={trendCompleted}
+        trendDisputes={trendDisputes}
+        leaders={leaders}
+        onTrendWindowChange={(window) => updateQuery({ trendWindow: window })}
+        onOpenAgentDetail={openAgentDetail}
+      />
 
       <section className="insight-grid">
-        <article className="card cycle-card">
-          <div className="section-head">
-            <h2>{locale === "zh" ? "周期状态" : "Cycle Status"}</h2>
-            <span className="badge">{summary?.activeCycleId ?? activeCycle?.id ?? "-"}</span>
-          </div>
-          <div className="metric-line">
-            <span>{locale === "zh" ? "状态" : "Status"}</span>
-            <strong>{activeCycle?.status ?? "-"}</strong>
-          </div>
-          <div className="metric-line">
-            <span>{locale === "zh" ? "开始时间" : "Started At"}</span>
-            <strong>{activeCycle ? formatDateTime(activeCycle.startedAt, locale, timeZone) : "-"}</strong>
-          </div>
-          <div className="metric-line">
-            <span>{locale === "zh" ? "运行时长" : "Uptime"}</span>
-            <strong>{cycleUptime}</strong>
-          </div>
-          <div className="metric-line">
-            <span>{locale === "zh" ? "数据更新时间" : "Generated At"}</span>
-            <strong>{summary ? formatDateTime(summary.generatedAt, locale, timeZone) : "-"}</strong>
-          </div>
-        </article>
-        <article className="card feed-card">
-          <div className="section-head">
-            <h2>{locale === "zh" ? "实时事件流" : "Live Activity"}</h2>
-            <button type="button" className="link-btn" onClick={refreshAll} disabled={refreshing}>
-              {locale === "zh" ? "刷新" : "Reload"}
-            </button>
-          </div>
-          {feedLoadError ? (
-            <p className="empty-line" data-testid="feed-error">
-              {locale === "zh" ? "事件流加载失败，请刷新重试。" : "Activity stream failed to load. Refresh to retry."}
-            </p>
-          ) : null}
-          <div className="feed-list">
-            {activityFeed.map((item) => (
-              <button type="button" key={item.id} className="feed-item" onClick={() => openByActivity(item)}>
-                <div className="feed-main">
-                  <span className={`event-chip event-${item.type.toLowerCase()}`}>
-                    {EVENT_LABELS[item.type][locale]}
-                  </span>
-                  <span className="feed-time">{formatDateTime(item.createdAt, locale, timeZone)}</span>
-                </div>
-                <span className="feed-actor">{shortAddress(item.actor)}</span>
-              </button>
-            ))}
-            {activityFeed.length === 0 ? (
-              <p className="empty-line">{loadingFeed ? (locale === "zh" ? "加载中..." : "Loading...") : locale === "zh" ? "暂无事件" : "No activity yet"}</p>
-            ) : null}
-          </div>
-        </article>
-      </section>
-
-      <section className="card">
-        <div className="section-head">
-          <h2>{locale === "zh" ? "趋势" : "Trend"}</h2>
-          <div className="segmented">
-              <button
-                type="button"
-                className={`seg-btn ${trendWindow === "7d" ? "active" : ""}`}
-                onClick={() => updateQuery({ trendWindow: "7d" })}
-              >
-              7D
-            </button>
-              <button
-                type="button"
-                className={`seg-btn ${trendWindow === "30d" ? "active" : ""}`}
-                onClick={() => updateQuery({ trendWindow: "30d" })}
-              >
-              30D
-            </button>
-          </div>
-        </div>
-        <div className="spark-grid">
-          <Sparkline title={locale === "zh" ? "发布" : "Published"} values={trendPublished} />
-          <Sparkline title={locale === "zh" ? "接单" : "Accepted"} values={trendAccepted} />
-          <Sparkline title={locale === "zh" ? "完成" : "Completed"} values={trendCompleted} />
-          <Sparkline title={locale === "zh" ? "争议" : "Disputes"} values={trendDisputes} />
-        </div>
-      </section>
-
-      <section className="card">
-        <div className="section-head">
-          <h2>{locale === "zh" ? "Agent 榜单" : "Agent Leaderboard"}</h2>
-          <Link href="/?tab=users">{locale === "zh" ? "查看全部" : "See all"}</Link>
-        </div>
-        <div className="leader-list">
-          {leaders.map((item, index) => (
-            <button type="button" key={item.address} className="leader-row" onClick={() => openAgentDetail(item.address)}>
-              <span>{index + 1}. {item.name || shortAddress(item.address)}</span>
-              <strong>{item.score}</strong>
-            </button>
-          ))}
-        </div>
+        <ActivityFeed
+          locale={locale}
+          timeZone={timeZone}
+          refreshing={refreshing}
+          feedLoadError={feedLoadError}
+          loadingFeed={loadingFeed}
+          activityFeed={activityFeed}
+          onRefresh={refreshAll}
+          onOpenByActivity={openByActivity}
+        />
       </section>
 
       <section className="card">
@@ -915,128 +807,38 @@ export const Dashboard = ({
           </button>
         </div>
         {tab === "tasks" ? (
-          <div className="status-strip">
-            <button
-              className={`status-pill ${taskStatus ? "" : "active"}`}
-              data-testid="status-pill-all"
-              type="button"
-              onClick={() => updateQuery({ taskStatus: null })}
-            >
-              {locale === "zh" ? "全部" : "All"} ({tasksData.items.length})
-            </button>
-            {TASK_STATUS_FILTERS.map((status) => (
-              <button
-                key={status}
-                className={`status-pill ${taskStatus === status ? "active" : ""}`}
-                data-testid={`status-pill-${status.toLowerCase()}`}
-                type="button"
-                onClick={() => updateQuery({ taskStatus: status })}
-              >
-                {status} ({taskStatusCounts[status] ?? 0})
-              </button>
-            ))}
-          </div>
-        ) : null}
-
-        {tab === "tasks" ? (
-          <>
-            {taskLoadError ? (
-              <div className="inline-error" data-testid="tasks-error">
-                <p className="empty-line">
-                  {locale === "zh" ? "任务列表加载失败，请重试。" : "Task list failed to load. Retry with refresh."}
-                </p>
-                <button type="button" className="link-btn" onClick={refreshAll}>
-                  {locale === "zh" ? "重试" : "Retry"}
-                </button>
-              </div>
-            ) : null}
-            {loadingTasks ? <p className="empty-line">{locale === "zh" ? "加载中..." : "Loading..."}</p> : null}
-            <div className="masonry-grid">
-              {tasksData.items.map((task) => (
-                <article key={task.id} className="masonry-card" data-testid="task-card">
-                  <h3>{task.title}</h3>
-                  <p className="muted">{shortAddress(task.publisher)}</p>
-                  <span className="state-chip">{task.status}</span>
-                  <p>{locale === "zh" ? "奖励" : "Reward"}: {task.rewardPerSlot} AGC</p>
-                  <p>{locale === "zh" ? "槽位" : "Slots"}: {task.completedAgents.length}/{task.slotsTotal}</p>
-                  <p>{locale === "zh" ? "截止" : "Deadline"}: {formatDateTime(task.deadlineUtc, locale, timeZone)}</p>
-                  <div className="card-actions">
-                    <button type="button" className="link-btn" data-testid="task-detail-trigger" onClick={() => openTaskDetail(task.id)}>
-                      {locale === "zh" ? "详情" : "Details"}
-                    </button>
-                    <Link href={`/tasks/${task.id}`}>{locale === "zh" ? "完整页" : "Full page"}</Link>
-                  </div>
-                </article>
-              ))}
-            </div>
-            {tasksData.items.length === 0 && !loadingTasks ? (
-              <p className="empty-line" data-testid="tasks-empty">
-                {hasTaskFilters
-                  ? locale === "zh"
-                    ? "筛选后暂无任务"
-                    : "No tasks match current filters"
-                  : locale === "zh"
-                    ? "暂无任务"
-                    : "No tasks"}
-              </p>
-            ) : null}
-            <div ref={taskSentinelRef} className="sentinel" />
-            {loadingMoreTasks ? <p className="empty-line">{locale === "zh" ? "加载更多..." : "Loading more..."}</p> : null}
-            {tasksData.nextCursor && !loadingMoreTasks ? (
-              <button type="button" className="action-btn more-btn" data-testid="load-more-tasks" onClick={() => void loadMoreTasks()}>
-                {locale === "zh" ? "加载更多任务" : "Load more tasks"}
-              </button>
-            ) : null}
-          </>
+          <TaskListPanel
+            locale={locale}
+            timeZone={timeZone}
+            tasks={tasksData.items}
+            taskStatus={taskStatus}
+            taskStatusCounts={taskStatusCounts}
+            hasTaskFilters={hasTaskFilters}
+            loadingTasks={loadingTasks}
+            loadingMoreTasks={loadingMoreTasks}
+            taskLoadError={taskLoadError}
+            nextCursor={tasksData.nextCursor}
+            taskSentinelRef={taskSentinelRef}
+            onOpenTaskDetail={openTaskDetail}
+            onSetTaskStatus={(status) => updateQuery({ taskStatus: status })}
+            onRefresh={refreshAll}
+            onLoadMore={() => void loadMoreTasks()}
+          />
         ) : (
-          <>
-            {agentLoadError ? (
-              <div className="inline-error" data-testid="agents-error">
-                <p className="empty-line">
-                  {locale === "zh" ? "Agent 列表加载失败，请重试。" : "Agent list failed to load. Retry with refresh."}
-                </p>
-                <button type="button" className="link-btn" onClick={refreshAll}>
-                  {locale === "zh" ? "重试" : "Retry"}
-                </button>
-              </div>
-            ) : null}
-            {loadingAgents ? <p className="empty-line">{locale === "zh" ? "加载中..." : "Loading..."}</p> : null}
-            <div className="masonry-grid">
-              {agentsData.items.map((agent) => (
-                <article key={agent.address} className="masonry-card" data-testid="agent-card">
-                  <h3>{agent.name || shortAddress(agent.address)}</h3>
-                  <p className="muted">{shortAddress(agent.address)}</p>
-                  <p>{locale === "zh" ? "综合分" : "Score"}: {agent.score}</p>
-                  <p>{locale === "zh" ? "发布/接单/完成" : "Pub/Acc/Done"}: {agent.stats.tasksPublished}/{agent.stats.tasksAccepted}/{agent.stats.tasksCompleted}</p>
-                  <p>{locale === "zh" ? "最新活动" : "Latest"}: {agent.latestActivityAt ? formatDateTime(agent.latestActivityAt, locale, timeZone) : "-"}</p>
-                  <div className="card-actions">
-                    <button type="button" className="link-btn" data-testid="agent-detail-trigger" onClick={() => openAgentDetail(agent.address)}>
-                      {locale === "zh" ? "详情" : "Details"}
-                    </button>
-                    <Link href={`/agents/${agent.address}`}>{locale === "zh" ? "完整页" : "Full page"}</Link>
-                  </div>
-                </article>
-              ))}
-            </div>
-            {agentsData.items.length === 0 && !loadingAgents ? (
-              <p className="empty-line" data-testid="agents-empty">
-                {hasAgentFilters
-                  ? locale === "zh"
-                    ? "筛选后暂无 Agent"
-                    : "No agents match current filters"
-                  : locale === "zh"
-                    ? "暂无 Agent"
-                    : "No agents"}
-              </p>
-            ) : null}
-            <div ref={agentSentinelRef} className="sentinel" />
-            {loadingMoreAgents ? <p className="empty-line">{locale === "zh" ? "加载更多..." : "Loading more..."}</p> : null}
-            {agentsData.nextCursor && !loadingMoreAgents ? (
-              <button type="button" className="action-btn more-btn" data-testid="load-more-agents" onClick={() => void loadMoreAgents()}>
-                {locale === "zh" ? "加载更多 Agent" : "Load more agents"}
-              </button>
-            ) : null}
-          </>
+          <AgentListPanel
+            locale={locale}
+            timeZone={timeZone}
+            agents={agentsData.items}
+            hasAgentFilters={hasAgentFilters}
+            loadingAgents={loadingAgents}
+            loadingMoreAgents={loadingMoreAgents}
+            agentLoadError={agentLoadError}
+            nextCursor={agentsData.nextCursor}
+            agentSentinelRef={agentSentinelRef}
+            onOpenAgentDetail={openAgentDetail}
+            onRefresh={refreshAll}
+            onLoadMore={() => void loadMoreAgents()}
+          />
         )}
       </section>
 
@@ -1056,73 +858,19 @@ export const Dashboard = ({
               </button>
             </div>
             {taskDetailId ? (
-              taskDetail.loading ? (
-                <p className="empty-line">{locale === "zh" ? "加载中..." : "Loading..."}</p>
-              ) : taskDetail.error ? (
-                <div className="inline-error" data-testid="task-detail-error">
-                  <p className="empty-line">
-                    {locale === "zh" ? "任务详情加载失败，请重试。" : "Task details failed to load. Retry."}
-                  </p>
-                  <button type="button" className="link-btn" data-testid="retry-task-detail" onClick={retryTaskDetail}>
-                    {locale === "zh" ? "重试" : "Retry"}
-                  </button>
-                </div>
-              ) : taskDetail.task ? (
-                <div className="detail-block">
-                  <h3>{taskDetail.task.title}</h3>
-                  <span className="state-chip">{taskDetail.task.status}</span>
-                  <div className="markdown">{renderSafeMarkdown(taskDetail.task.descriptionMd)}</div>
-                  <h4>{locale === "zh" ? "关联争议" : "Related disputes"}</h4>
-                  <ul>
-                    {taskDetail.disputes.map((item) => (
-                      <li key={item.id}>{item.id} · {item.status}</li>
-                    ))}
-                  </ul>
-                  <h4>{locale === "zh" ? "事件时间线" : "Activity timeline"}</h4>
-                  <ul>
-                    {taskDetail.activities.map((item) => (
-                      <li key={item.id}>
-                        {EVENT_LABELS[item.type][locale]} · {formatDateTime(item.createdAt, locale, timeZone)}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : (
-                <p className="empty-line">{locale === "zh" ? "任务不存在" : "Task not found"}</p>
-              )
-            ) : agentDetail.loading ? (
-              <p className="empty-line">{locale === "zh" ? "加载中..." : "Loading..."}</p>
-            ) : agentDetail.error ? (
-              <div className="inline-error" data-testid="agent-detail-error">
-                <p className="empty-line">
-                  {locale === "zh" ? "Agent 详情加载失败，请重试。" : "Agent details failed to load. Retry."}
-                </p>
-                <button type="button" className="link-btn" data-testid="retry-agent-detail" onClick={retryAgentDetail}>
-                  {locale === "zh" ? "重试" : "Retry"}
-                </button>
-              </div>
-            ) : agentDetail.profile ? (
-              <div className="detail-block">
-                <h3>{agentDetail.profile.name || shortAddress(agentDetail.profile.address)}</h3>
-                <p className="muted">{agentDetail.profile.address}</p>
-                <div className="markdown">{renderSafeMarkdown(agentDetail.profile.bio || "-")}</div>
-                <h4>{locale === "zh" ? "统计" : "Stats"}</h4>
-                <ul>
-                  <li>{locale === "zh" ? "发布" : "Published"}: {agentDetail.profile.stats.tasksPublished}</li>
-                  <li>{locale === "zh" ? "接单" : "Accepted"}: {agentDetail.profile.stats.tasksAccepted}</li>
-                  <li>{locale === "zh" ? "完成" : "Completed"}: {agentDetail.profile.stats.tasksCompleted}</li>
-                </ul>
-                <h4>{locale === "zh" ? "事件时间线" : "Activity timeline"}</h4>
-                <ul>
-                  {agentDetail.activities.map((item) => (
-                    <li key={item.id}>
-                      {EVENT_LABELS[item.type][locale]} · {formatDateTime(item.createdAt, locale, timeZone)}
-                    </li>
-                  ))}
-                </ul>
-              </div>
+              <TaskDetailDrawer
+                locale={locale}
+                timeZone={timeZone}
+                taskDetail={taskDetail}
+                onRetry={retryTaskDetail}
+              />
             ) : (
-              <p className="empty-line">{locale === "zh" ? "Agent 不存在" : "Agent not found"}</p>
+              <AgentDetailDrawer
+                locale={locale}
+                timeZone={timeZone}
+                agentDetail={agentDetail}
+                onRetry={retryAgentDetail}
+              />
             )}
           </aside>
         </section>

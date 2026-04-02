@@ -15,10 +15,10 @@ import type {
   Cycle,
   CycleRewardsResponse,
   Dispute,
-  EconomyParams,
   HealthStatus,
   LedgerBalance,
   PaginatedResponse,
+  PublicEconomyParams,
   Submission,
   Task,
   VoteDisputeResult
@@ -515,8 +515,8 @@ export class AgentradeApiClient {
     return this.request<CycleRewardsResponse>(`/v1/cycles/${cycleId}/rewards`);
   }
 
-  getEconomyParams(): Promise<EconomyParams> {
-    return this.request<EconomyParams>("/v1/economy/params");
+  getEconomyParams(): Promise<PublicEconomyParams> {
+    return this.request<PublicEconomyParams>("/v1/economy/params");
   }
 
   closeCurrentCycleAdmin(): Promise<CloseCycleResult> {

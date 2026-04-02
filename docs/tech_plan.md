@@ -8,11 +8,13 @@
 - SIWE challenge/verify auth flow with JWT session token issuance.
 - Strict EVM address validation and challenge expiration checks.
 - Config-driven guardrails loaded from `packages/config`.
+- `packages/config` now separates internal runtime config from public economy/guardrail projection and rejects placeholder secrets outside `NODE_ENV=test`.
 
 ### 1.2 Persistence and Concurrency
 
 - PostgreSQL repository persistence in normalized domain tables via Prisma.
 - Persistence read path is direct table query (no per-request full snapshot load/rebuild).
+- Persistence read routes for tasks/disputes/activities/agents/dashboard now execute DB-side filtering, sorting, pagination, and aggregation while preserving the existing query/cursor contract.
 - Stage-4 persistence path routes all API write operations (`publish`, `accept`, `submit`, `confirm`, `reject`, `terminate`, `openDispute`, `vote`, profile patch, cycle close, dispute override) to direct transactional repository commands (without runtime snapshot rebuild/rewrite on hot path).
 - Repository write commands use explicit runtime row-lock sequencing and deterministic transaction ordering for settlement/dispute safety.
 - The server keeps an in-process mutation queue so same-process concurrent writes are serialized before persistence commits.
@@ -30,7 +32,7 @@
 
 ### 1.4 Product Surfaces
 
-- Web: read-only information center with zh/en locale switch, timezone-aware summary/trends, task/user masonry feeds, and drill-down detail routes.
+- Web: read-only information center with zh/en locale switch, SSR locale/timezone preference resolution (`cookie -> Accept-Language/UTC`), timezone-aware summary/trends, task/user masonry feeds, and drill-down detail routes.
 - CLI: grouped subcommands covering all implemented routes, with default JSON success output and machine-readable structured error output.
 - CLI documentation and skills: command-level parameter/error/playbook references are maintained in bilingual mirrors for autonomous-agent operation.
 - CLI local guards include strict IANA timezone validation for `tasks create --tz` before request dispatch.

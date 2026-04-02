@@ -5,14 +5,20 @@ import type { EngineStateSnapshot } from "../domain/engine.js";
 import { INITIAL_AGENT_BALANCE } from "../domain/engine.js";
 import {
   type ActivityEvent,
+  type AgentDirectoryItem,
   ActivityEventType as DomainActivityEventType,
   type AgentProfile,
   type Cycle,
   type CycleWorkload,
   CycleStatus as DomainCycleStatus,
+  type DashboardMetricSnapshot,
+  type DashboardSummaryResponse,
+  type DashboardTrendPoint,
+  type DashboardTrendsResponse,
   type Dispute,
   DisputeStatus as DomainDisputeStatus,
   type LedgerBalance,
+  type PaginatedResponse,
   type Submission,
   SubmissionStatus as DomainSubmissionStatus,
   type SupervisionVote,
@@ -50,6 +56,88 @@ const asStringArray = (value: Prisma.JsonValue): string[] => {
 
 const asAddressArray = (value: Prisma.JsonValue): Address[] =>
   asStringArray(value).map((item) => asAddress(item));
+
+type SortOrder = "asc" | "desc";
+type TaskListSort = "latest" | "created" | "deadline" | "reward";
+type DisputeListSort = "latest" | "created";
+type AgentListSort = "latest" | "score" | "reputation" | "completed" | "published" | "accepted";
+
+interface TaskListQuery {
+  q?: string;
+  status?: DomainTaskStatus;
+  publisher?: Address;
+  sort: TaskListSort;
+  order: SortOrder;
+  offset: number;
+  limit: number;
+  paged: boolean;
+}
+
+interface DisputeListQuery {
+  taskId?: string;
+  opener?: Address;
+  status?: DomainDisputeStatus;
+  q?: string;
+  sort: DisputeListSort;
+  order: SortOrder;
+  offset: number;
+  limit: number;
+  paged: boolean;
+}
+
+interface AgentListQuery {
+  q?: string;
+  activeOnly?: boolean;
+  sort: AgentListSort;
+  order: SortOrder;
+  offset: number;
+  limit: number;
+  paged: boolean;
+}
+
+interface ActivityListQuery {
+  taskId?: string;
+  disputeId?: string;
+  address?: Address;
+  type?: DomainActivityEventType;
+  order: SortOrder;
+  offset: number;
+  limit: number;
+  paged: boolean;
+}
+
+interface AgentDirectoryRow {
+  address: string;
+  name: string;
+  bio: string;
+  publisherRep: number;
+  workerRep: number;
+  supervisorRep: number;
+  tasksPublishedCount: number;
+  tasksAcceptedCount: number;
+  tasksCompletedCount: number;
+  tasksTerminatedCount: number;
+  submissionsRejectedCount: number;
+  supervisionVotesCount: number;
+  createdAt: Date;
+  updatedAt: Date;
+  latestActivityAt: Date | null;
+  reputationAverage: number | Prisma.Decimal | string;
+  score: number | Prisma.Decimal | string;
+  isActive: boolean;
+}
+
+interface DashboardMetricRow {
+  tasksPublished: number | bigint | Prisma.Decimal | string | null;
+  tasksAccepted: number | bigint | Prisma.Decimal | string | null;
+  tasksCompleted: number | bigint | Prisma.Decimal | string | null;
+  disputesOpened: number | bigint | Prisma.Decimal | string | null;
+}
+
+interface DashboardTrendRow extends DashboardMetricRow {
+  label: string;
+  bucketStart: string;
+}
 
 interface SnapshotDiff<T> {
   upserts: T[];
@@ -93,6 +181,35 @@ const diffByKey = <T>(
   }
 
   return { upserts, deletes };
+};
+
+const escapeLikePattern = (value: string): string => value.replace(/[\\%_]/g, "\\$&");
+
+const toNumber = (value: unknown): number => {
+  if (typeof value === "number") {
+    return value;
+  }
+  if (typeof value === "bigint") {
+    return Number(value);
+  }
+  if (value instanceof Prisma.Decimal) {
+    return value.toNumber();
+  }
+  return Number(value ?? 0);
+};
+
+const buildPaginatedResponse = <T>(
+  items: T[],
+  offset: number,
+  limit: number
+): PaginatedResponse<T> => {
+  if (items.length > limit) {
+    return {
+      items: items.slice(0, limit),
+      nextCursor: String(offset + limit)
+    };
+  }
+  return { items, nextCursor: null };
 };
 
 export class PersistenceConflictError extends Error {
@@ -223,6 +340,50 @@ export class PrismaStateRepository {
     return tasks.map((item) => this.mapTask(item));
   }
 
+  async queryTasksDirect(query: TaskListQuery): Promise<PaginatedResponse<Task>> {
+    const where: Prisma.TaskWhereInput = {
+      status: query.status,
+      publisherAddress: query.publisher
+        ? {
+            equals: query.publisher,
+            mode: "insensitive"
+          }
+        : undefined,
+      OR: query.q
+        ? [
+            { id: { contains: query.q, mode: "insensitive" } },
+            { title: { contains: query.q, mode: "insensitive" } },
+            { publisherAddress: { contains: query.q, mode: "insensitive" } }
+          ]
+        : undefined
+    };
+
+    const orderBy: Prisma.TaskOrderByWithRelationInput[] =
+      query.sort === "created"
+        ? [{ createdAt: query.order }, { id: query.order }]
+        : query.sort === "deadline"
+          ? [{ deadlineUtc: query.order }, { id: query.order }]
+          : query.sort === "reward"
+            ? [{ rewardPerSlot: query.order }, { id: query.order }]
+            : [{ updatedAt: query.order }, { id: query.order }];
+
+    const tasks = await this.prisma.task.findMany({
+      where,
+      orderBy,
+      ...(query.paged
+        ? {
+            skip: query.offset,
+            take: query.limit + 1
+          }
+        : {})
+    });
+
+    const mapped = tasks.map((item) => this.mapTask(item));
+    return query.paged
+      ? buildPaginatedResponse(mapped, query.offset, query.limit)
+      : { items: mapped, nextCursor: null };
+  }
+
   async getTaskDirect(taskId: string): Promise<Task | null> {
     const task = await this.prisma.task.findUnique({ where: { id: taskId } });
     return task ? this.mapTask(task) : null;
@@ -233,14 +394,195 @@ export class PrismaStateRepository {
     return disputes.map((item) => this.mapDispute(item));
   }
 
+  async queryDisputesDirect(query: DisputeListQuery): Promise<PaginatedResponse<Dispute>> {
+    const where: Prisma.DisputeWhereInput = {
+      taskId: query.taskId,
+      status: query.status,
+      openerAddress: query.opener
+        ? {
+            equals: query.opener,
+            mode: "insensitive"
+          }
+        : undefined,
+      OR: query.q
+        ? [
+            { id: { contains: query.q, mode: "insensitive" } },
+            { taskId: { contains: query.q, mode: "insensitive" } },
+            { submissionId: { contains: query.q, mode: "insensitive" } },
+            { openerAddress: { contains: query.q, mode: "insensitive" } }
+          ]
+        : undefined
+    };
+
+    const orderBy: Prisma.DisputeOrderByWithRelationInput[] =
+      query.sort === "created"
+        ? [{ createdAt: query.order }, { id: query.order }]
+        : [{ updatedAt: query.order }, { id: query.order }];
+
+    const disputes = await this.prisma.dispute.findMany({
+      where,
+      orderBy,
+      ...(query.paged
+        ? {
+            skip: query.offset,
+            take: query.limit + 1
+          }
+        : {})
+    });
+
+    const mapped = disputes.map((item) => this.mapDispute(item));
+    return query.paged
+      ? buildPaginatedResponse(mapped, query.offset, query.limit)
+      : { items: mapped, nextCursor: null };
+  }
+
   async listAgentsDirect(): Promise<AgentProfile[]> {
     const profiles = await this.prisma.agentProfile.findMany({ orderBy: { createdAt: "asc" } });
     return profiles.map((item) => this.mapAgentProfile(item));
   }
 
+  async queryAgentsDirect(query: AgentListQuery): Promise<PaginatedResponse<AgentDirectoryItem>> {
+    const whereClauses: Prisma.Sql[] = [];
+    if (query.activeOnly) {
+      whereClauses.push(Prisma.sql`ranked."isActive" = true`);
+    }
+    if (query.q) {
+      const pattern = `%${escapeLikePattern(query.q)}%`;
+      whereClauses.push(
+        Prisma.sql`(
+          ranked.address ILIKE ${pattern} ESCAPE '\'
+          OR ranked.name ILIKE ${pattern} ESCAPE '\'
+          OR ranked.bio ILIKE ${pattern} ESCAPE '\'
+        )`
+      );
+    }
+
+    const whereSql =
+      whereClauses.length > 0
+        ? Prisma.sql`WHERE ${Prisma.join(whereClauses, " AND ")}`
+        : Prisma.empty;
+    const directionSql = Prisma.raw(query.order.toUpperCase());
+    const nullsSql = Prisma.raw(query.order === "asc" ? "NULLS FIRST" : "NULLS LAST");
+    const orderBySql =
+      query.sort === "score"
+        ? Prisma.sql`ORDER BY ranked.score ${directionSql}, ranked.address ${directionSql}`
+        : query.sort === "reputation"
+          ? Prisma.sql`ORDER BY ranked."reputationAverage" ${directionSql}, ranked.address ${directionSql}`
+          : query.sort === "completed"
+            ? Prisma.sql`ORDER BY ranked."tasksCompletedCount" ${directionSql}, ranked.address ${directionSql}`
+            : query.sort === "published"
+              ? Prisma.sql`ORDER BY ranked."tasksPublishedCount" ${directionSql}, ranked.address ${directionSql}`
+              : query.sort === "accepted"
+                ? Prisma.sql`ORDER BY ranked."tasksAcceptedCount" ${directionSql}, ranked.address ${directionSql}`
+                : Prisma.sql`ORDER BY ranked."latestActivityAt" ${directionSql} ${nullsSql}, ranked.address ${directionSql}`;
+    const paginationSql = query.paged
+      ? Prisma.sql`LIMIT ${query.limit + 1} OFFSET ${query.offset}`
+      : Prisma.empty;
+
+    const rows = await this.prisma.$queryRaw<AgentDirectoryRow[]>(Prisma.sql`
+      SELECT *
+      FROM (
+        SELECT
+          ap.address,
+          ap.name,
+          ap.bio,
+          ap."publisherRep" AS "publisherRep",
+          ap."workerRep" AS "workerRep",
+          ap."supervisorRep" AS "supervisorRep",
+          ap."tasksPublishedCount" AS "tasksPublishedCount",
+          ap."tasksAcceptedCount" AS "tasksAcceptedCount",
+          ap."tasksCompletedCount" AS "tasksCompletedCount",
+          ap."tasksTerminatedCount" AS "tasksTerminatedCount",
+          ap."submissionsRejectedCount" AS "submissionsRejectedCount",
+          ap."supervisionVotesCount" AS "supervisionVotesCount",
+          ap."createdAt" AS "createdAt",
+          ap."updatedAt" AS "updatedAt",
+          MAX(ae."createdAt") AS "latestActivityAt",
+          ((ap."publisherRep" + ap."workerRep" + ap."supervisorRep") / 3.0) AS "reputationAverage",
+          ROUND(
+            (
+              0.45 * ((ap."publisherRep" + ap."workerRep" + ap."supervisorRep") / 3.0)
+              + 0.35 * CASE
+                WHEN ap."tasksAcceptedCount" > 0 THEN LEAST(1.0, ap."tasksCompletedCount"::float / ap."tasksAcceptedCount") * 100
+                ELSE 0
+              END
+              + 0.2 * CASE
+                WHEN ap."tasksAcceptedCount" > 0 THEN GREATEST(0.0, 1.0 - ap."submissionsRejectedCount"::float / ap."tasksAcceptedCount") * 100
+                ELSE 100
+              END
+            )::numeric,
+            2
+          ) AS score,
+          (
+            MAX(ae."createdAt") IS NOT NULL
+            OR ap."tasksAcceptedCount" > 0
+            OR ap."tasksPublishedCount" > 0
+            OR ap."tasksCompletedCount" > 0
+            OR ap."submissionsRejectedCount" > 0
+            OR ap."supervisionVotesCount" > 0
+          ) AS "isActive"
+        FROM "AgentProfile" ap
+        LEFT JOIN "ActivityEvent" ae ON ae."actorAddress" = ap.address
+        GROUP BY
+          ap.address,
+          ap.name,
+          ap.bio,
+          ap."publisherRep",
+          ap."workerRep",
+          ap."supervisorRep",
+          ap."tasksPublishedCount",
+          ap."tasksAcceptedCount",
+          ap."tasksCompletedCount",
+          ap."tasksTerminatedCount",
+          ap."submissionsRejectedCount",
+          ap."supervisionVotesCount",
+          ap."createdAt",
+          ap."updatedAt"
+      ) ranked
+      ${whereSql}
+      ${orderBySql}
+      ${paginationSql}
+    `);
+
+    const mapped = rows.map((item) => this.mapAgentDirectoryItem(item));
+    return query.paged
+      ? buildPaginatedResponse(mapped, query.offset, query.limit)
+      : { items: mapped, nextCursor: null };
+  }
+
   async listActivitiesDirect(): Promise<ActivityEvent[]> {
     const events = await this.prisma.activityEvent.findMany({ orderBy: { createdAt: "asc" } });
     return events.map((item) => this.mapActivityEvent(item));
+  }
+
+  async queryActivitiesDirect(query: ActivityListQuery): Promise<PaginatedResponse<ActivityEvent>> {
+    const where: Prisma.ActivityEventWhereInput = {
+      taskId: query.taskId,
+      disputeId: query.disputeId,
+      type: query.type,
+      actorAddress: query.address
+        ? {
+            equals: query.address,
+            mode: "insensitive"
+          }
+        : undefined
+    };
+
+    const events = await this.prisma.activityEvent.findMany({
+      where,
+      orderBy: [{ createdAt: query.order }, { id: query.order }],
+      ...(query.paged
+        ? {
+            skip: query.offset,
+            take: query.limit + 1
+          }
+        : {})
+    });
+
+    const mapped = events.map((item) => this.mapActivityEvent(item));
+    return query.paged
+      ? buildPaginatedResponse(mapped, query.offset, query.limit)
+      : { items: mapped, nextCursor: null };
   }
 
   async getDisputeDirect(disputeId: string): Promise<Dispute | null> {
@@ -300,6 +642,96 @@ export class PrismaStateRepository {
       return null;
     }
     return this.getCycleDirect(runtime.activeCycleId);
+  }
+
+  async getDashboardSummaryDirect(timeZone: string): Promise<DashboardSummaryResponse> {
+    const [activeCycle, today, totals, currentCycle] = await Promise.all([
+      this.getActiveCycleDirect(),
+      this.queryActivityMetrics(
+        Prisma.sql`WHERE timezone(${timeZone}, "createdAt")::date = timezone(${timeZone}, CURRENT_TIMESTAMP)::date`
+      ),
+      Promise.all([
+        this.prisma.task.count(),
+        this.prisma.dispute.count(),
+        this.prisma.agentProfile.count()
+      ]),
+      this.getActiveCycleDirect().then((cycle) =>
+        this.queryActivityMetrics(
+          cycle ? Prisma.sql`WHERE "cycleId" = ${cycle.id}` : Prisma.sql`WHERE 1 = 0`
+        )
+      )
+    ]);
+
+    if (!activeCycle) {
+      throw new Error("active cycle is unavailable");
+    }
+
+    return {
+      timezone: timeZone,
+      generatedAt: new Date().toISOString(),
+      activeCycleId: activeCycle.id,
+      today,
+      currentCycle,
+      totals: {
+        tasks: totals[0],
+        disputes: totals[1],
+        agents: totals[2]
+      }
+    };
+  }
+
+  async getDashboardTrendsDirect(
+    timeZone: string,
+    window: "7d" | "30d"
+  ): Promise<DashboardTrendsResponse> {
+    const windowSize = window === "30d" ? 30 : 7;
+    const rows = await this.prisma.$queryRaw<DashboardTrendRow[]>(Prisma.sql`
+      WITH day_series AS (
+        SELECT generate_series(
+          date_trunc('day', timezone(${timeZone}, CURRENT_TIMESTAMP)) - (${windowSize - 1} * interval '1 day'),
+          date_trunc('day', timezone(${timeZone}, CURRENT_TIMESTAMP)),
+          interval '1 day'
+        ) AS local_day
+      ),
+      activity_counts AS (
+        SELECT
+          date_trunc('day', timezone(${timeZone}, "createdAt")) AS local_day,
+          COUNT(*) FILTER (WHERE type = CAST(${DomainActivityEventType.TASK_PUBLISHED} AS "ActivityEventType")) AS "tasksPublished",
+          COUNT(*) FILTER (WHERE type = CAST(${DomainActivityEventType.TASK_ACCEPTED} AS "ActivityEventType")) AS "tasksAccepted",
+          COUNT(*) FILTER (WHERE type = CAST(${DomainActivityEventType.TASK_COMPLETED} AS "ActivityEventType")) AS "tasksCompleted",
+          COUNT(*) FILTER (WHERE type = CAST(${DomainActivityEventType.DISPUTE_OPENED} AS "ActivityEventType")) AS "disputesOpened"
+        FROM "ActivityEvent"
+        WHERE timezone(${timeZone}, "createdAt") >=
+          date_trunc('day', timezone(${timeZone}, CURRENT_TIMESTAMP)) - (${windowSize - 1} * interval '1 day')
+        GROUP BY 1
+      )
+      SELECT
+        to_char(ds.local_day, 'YYYY-MM-DD') AS label,
+        to_char(ds.local_day, 'YYYY-MM-DD') || 'T00:00:00.000Z' AS "bucketStart",
+        COALESCE(ac."tasksPublished", 0) AS "tasksPublished",
+        COALESCE(ac."tasksAccepted", 0) AS "tasksAccepted",
+        COALESCE(ac."tasksCompleted", 0) AS "tasksCompleted",
+        COALESCE(ac."disputesOpened", 0) AS "disputesOpened"
+      FROM day_series ds
+      LEFT JOIN activity_counts ac ON ac.local_day = ds.local_day
+      ORDER BY ds.local_day ASC
+    `);
+
+    const points: DashboardTrendPoint[] = rows.map((item) => ({
+      bucketStart: item.bucketStart,
+      label: item.label,
+      tasksPublished: toNumber(item.tasksPublished),
+      tasksAccepted: toNumber(item.tasksAccepted),
+      tasksCompleted: toNumber(item.tasksCompleted),
+      disputesOpened: toNumber(item.disputesOpened)
+    }));
+
+    return {
+      timezone: timeZone,
+      generatedAt: new Date().toISOString(),
+      window,
+      points
+    };
   }
 
   async getCycleRewardsDirect(cycleId: string): Promise<{ cycle: Cycle; workloads: CycleWorkload[] } | null> {
@@ -2133,6 +2565,52 @@ export class PrismaStateRepository {
       disputeId: item.disputeId,
       actor: asAddress(item.actorAddress),
       createdAt: toIso(item.createdAt)
+    };
+  }
+
+  private mapAgentDirectoryItem(item: AgentDirectoryRow): AgentDirectoryItem {
+    return {
+      address: asAddress(item.address),
+      name: item.name,
+      bio: item.bio,
+      reputation: {
+        publisher: item.publisherRep,
+        worker: item.workerRep,
+        supervisor: item.supervisorRep
+      },
+      stats: {
+        tasksPublished: item.tasksPublishedCount,
+        tasksAccepted: item.tasksAcceptedCount,
+        tasksCompleted: item.tasksCompletedCount,
+        tasksTerminated: item.tasksTerminatedCount,
+        submissionsRejected: item.submissionsRejectedCount,
+        supervisionVotes: item.supervisionVotesCount
+      },
+      createdAt: toIso(item.createdAt),
+      updatedAt: toIso(item.updatedAt),
+      latestActivityAt: item.latestActivityAt ? toIso(item.latestActivityAt) : null,
+      score: toNumber(item.score),
+      isActive: item.isActive
+    };
+  }
+
+  private async queryActivityMetrics(whereSql: Prisma.Sql): Promise<DashboardMetricSnapshot> {
+    const rows = await this.prisma.$queryRaw<DashboardMetricRow[]>(Prisma.sql`
+      SELECT
+        COUNT(*) FILTER (WHERE type = CAST(${DomainActivityEventType.TASK_PUBLISHED} AS "ActivityEventType")) AS "tasksPublished",
+        COUNT(*) FILTER (WHERE type = CAST(${DomainActivityEventType.TASK_ACCEPTED} AS "ActivityEventType")) AS "tasksAccepted",
+        COUNT(*) FILTER (WHERE type = CAST(${DomainActivityEventType.TASK_COMPLETED} AS "ActivityEventType")) AS "tasksCompleted",
+        COUNT(*) FILTER (WHERE type = CAST(${DomainActivityEventType.DISPUTE_OPENED} AS "ActivityEventType")) AS "disputesOpened"
+      FROM "ActivityEvent"
+      ${whereSql}
+    `);
+
+    const row = rows[0];
+    return {
+      tasksPublished: toNumber(row?.tasksPublished),
+      tasksAccepted: toNumber(row?.tasksAccepted),
+      tasksCompleted: toNumber(row?.tasksCompleted),
+      disputesOpened: toNumber(row?.disputesOpened)
     };
   }
 

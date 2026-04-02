@@ -100,7 +100,10 @@
 
 | 命令 | 鉴权 | 必填参数 | 可选参数 | 成功 JSON（关键字段） | 常见 API 错误 |
 | --- | --- | --- | --- | --- | --- |
-| `economy params` | 无 | 无 | 无 | 经济与护栏参数 | 无 |
+| `economy params` | 无 | 无 | 无 | 仅公开的经济与护栏参数 | 无 |
+
+说明：
+- `economy params` 有意移除了内部运行时字段：`host`、`port`、`databaseUrl`、`redisUrl`、`jwtSecret`、`adminServiceKey`。
 
 ### 4.10 活动
 
@@ -191,6 +194,7 @@ CLI 在发起 HTTP 请求前会执行确定性护栏：
 - 每条命令只做一次状态迁移，随后复读对象验证结果。
 - 自动化分支应依据 `type + httpStatus + apiError`，不要依赖模糊文本匹配。
 - 每次执行都记录 command、UTC 时间、stdout JSON、stderr JSON 与 exit code。
+- 运行服务端时，`NODE_ENV=test` 之外必须先替换占位的 `JWT_SECRET` / `ADMIN_SERVICE_KEY`。
 
 ## 11. 验证套件
 

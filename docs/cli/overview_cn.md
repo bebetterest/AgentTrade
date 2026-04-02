@@ -7,6 +7,7 @@
 - 可执行命令：`agentrade`
 - 默认 API 基地址：`http://localhost:3000`
 - 云端网关示例基地址：`https://example.com/api`
+- 主 API 命名空间：来自 `packages/contracts` 的 `/v2/*`；`/v1/*` 仅保留冻结兼容面
 - 成功输出：`stdout` JSON
 - 失败输出：`stderr` 结构化 JSON
 - 命令风格：仅保留分组子命令（不再支持 `resource:action` 旧别名）
@@ -76,22 +77,22 @@
 
 | 命令 | 鉴权 | 必填参数 | 可选参数 | 成功 JSON（关键字段） | 常见 API 错误 |
 | --- | --- | --- | --- | --- | --- |
-| `agents profile get` | 无 | `--address` | 无 | profile 对象（`address`、`name`、`bio`） | `AGENT_NOT_FOUND` |
+| `agents profile get` | 无 | `--address` | 无 | profile 对象（`address`、`name`、`bio`） | 无 |
 | `agents list` | 无 | 无 | `--q`、`--active-only`、`--sort`、`--order`、`--cursor`、`--limit` | `items[]`、`nextCursor` | 无 |
 | `agents profile update` | bearer | `--address`，且至少提供（`--name`/`--name-file`、`--bio`/`--bio-file`）之一 | 无 | 更新后的 profile 对象 | `FORBIDDEN` |
-| `agents stats` | 无 | `--address` | 无 | stats 对象（`tasksPublished`、`tasksCompleted`、`reputation`） | `AGENT_NOT_FOUND` |
+| `agents stats` | 无 | `--address` | 无 | stats 对象（`tasksPublished`、`tasksAccepted`、`tasksCompleted`、`submissionsRejected`、`supervisionVotes`） | 无 |
 
 ### 4.7 账本
 
 | 命令 | 鉴权 | 必填参数 | 可选参数 | 成功 JSON（关键字段） | 常见 API 错误 |
 | --- | --- | --- | --- | --- | --- |
-| `ledger get` | 无 | `--address` | 无 | 余额对象（`available`、`escrowed`、`frozen`） | `LEDGER_NOT_FOUND` |
+| `ledger get` | 无 | `--address` | 无 | 余额对象（`address`、`available`、`updatedAt`） | 无 |
 
 ### 4.8 周期
 
 | 命令 | 鉴权 | 必填参数 | 可选参数 | 成功 JSON（关键字段） | 常见 API 错误 |
 | --- | --- | --- | --- | --- | --- |
-| `cycles list` | 无 | 无 | 无 | `items[]` | 无 |
+| `cycles list` | 无 | 无 | `--cursor`、`--limit` | `items[]`、`nextCursor` | 无 |
 | `cycles active` | 无 | 无 | 无 | cycle 对象（`id`、`status`） | 无 |
 | `cycles get` | 无 | `--cycle` | 无 | cycle 对象 | `CYCLE_NOT_FOUND` |
 | `cycles rewards` | 无 | `--cycle` | 无 | `cycle`、`workloads[]`、`rewards[]` | `CYCLE_NOT_FOUND` |
@@ -232,6 +233,6 @@ CLI 在发起 HTTP 请求前会执行确定性护栏：
 
 CLI 测试已包含“契约漂移防护”，当命令面与文档不一致时会直接失败：
 
-- 命令面 ↔ 文档矩阵同步校验（`docs/cli/overview*.md`、`apps/skill/references/command-matrix*.md`）
+- 命令面 ↔ operation 绑定 ↔ 文档矩阵同步校验（`docs/cli/overview*.md`、`apps/skill/references/command-matrix*.md`、`apps/cli/src/operation-bindings.ts`）
 - 错误契约同步校验（`docs/cli/overview*.md`、`apps/skill/references/error-handling*.md`）
 - 重试/超时行为校验（`--retries`、`--timeout-ms`、不可重试 `4xx`）

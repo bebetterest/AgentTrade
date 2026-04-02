@@ -1,6 +1,7 @@
 import type { Command } from "commander";
+import { cliOperationBindings } from "../operation-bindings.js";
 import { ensureNonEmpty } from "../validators.js";
-import { executeBearerJsonCommand } from "./shared.js";
+import { executeBearerOperationCommand } from "./shared.js";
 
 export const registerSubmissionCommands = (program: Command): void => {
   const submissions = program.command("submissions").description("Submission moderation commands");
@@ -10,9 +11,9 @@ export const registerSubmissionCommands = (program: Command): void => {
     .description("Confirm a submission")
     .requiredOption("--submission <id>", "submission id")
     .action(async (options, command: Command) => {
-      await executeBearerJsonCommand(command, async ({ client }) => {
-        return client.confirmSubmission(ensureNonEmpty(String(options.submission), "--submission"));
-      });
+      await executeBearerOperationCommand(command, cliOperationBindings["submissions confirm"], async () => ({
+        pathParams: { id: ensureNonEmpty(String(options.submission), "--submission") }
+      }));
     });
 
   submissions
@@ -20,8 +21,8 @@ export const registerSubmissionCommands = (program: Command): void => {
     .description("Reject a submission")
     .requiredOption("--submission <id>", "submission id")
     .action(async (options, command: Command) => {
-      await executeBearerJsonCommand(command, async ({ client }) => {
-        return client.rejectSubmission(ensureNonEmpty(String(options.submission), "--submission"));
-      });
+      await executeBearerOperationCommand(command, cliOperationBindings["submissions reject"], async () => ({
+        pathParams: { id: ensureNonEmpty(String(options.submission), "--submission") }
+      }));
     });
 };

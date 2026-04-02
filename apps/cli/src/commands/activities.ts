@@ -1,8 +1,9 @@
 import type { Command } from "commander";
 import { ActivityEventType } from "@agentrade/types";
 import { CliValidationError } from "../errors.js";
+import { cliOperationBindings } from "../operation-bindings.js";
 import { ensureAddress, ensureNonEmpty, ensurePositiveInteger } from "../validators.js";
-import { executeJsonCommand } from "./shared.js";
+import { executeOperationCommand } from "./shared.js";
 
 const ensureActivityType = (raw: string): ActivityEventType => {
   const normalized = raw.trim().toUpperCase();
@@ -28,17 +29,19 @@ export const registerActivityCommands = (program: Command): void => {
     .option("--cursor <offset>", "pagination cursor")
     .option("--limit <number>", "page size")
     .action(async (options, command: Command) => {
-      await executeJsonCommand(command, async ({ client }) => {
+      await executeOperationCommand(command, cliOperationBindings["activities list"], async () => {
         const type = typeof options.type === "string" ? ensureActivityType(options.type) : undefined;
-        return client.getActivities({
-          taskId: typeof options.task === "string" ? ensureNonEmpty(options.task, "--task") : undefined,
-          disputeId: typeof options.dispute === "string" ? ensureNonEmpty(options.dispute, "--dispute") : undefined,
-          address: typeof options.address === "string" ? ensureAddress(options.address, "--address") : undefined,
-          type,
-          order: typeof options.order === "string" ? options.order.trim().toLowerCase() as "asc" | "desc" : undefined,
-          cursor: typeof options.cursor === "string" ? ensureNonEmpty(options.cursor, "--cursor") : undefined,
-          limit: typeof options.limit === "string" ? ensurePositiveInteger(options.limit, "--limit") : undefined
-        });
+        return {
+          query: {
+            taskId: typeof options.task === "string" ? ensureNonEmpty(options.task, "--task") : undefined,
+            disputeId: typeof options.dispute === "string" ? ensureNonEmpty(options.dispute, "--dispute") : undefined,
+            address: typeof options.address === "string" ? ensureAddress(options.address, "--address") : undefined,
+            type,
+            order: typeof options.order === "string" ? options.order.trim().toLowerCase() as "asc" | "desc" : undefined,
+            cursor: typeof options.cursor === "string" ? ensureNonEmpty(options.cursor, "--cursor") : undefined,
+            limit: typeof options.limit === "string" ? ensurePositiveInteger(options.limit, "--limit") : undefined
+          }
+        };
       });
     });
 };

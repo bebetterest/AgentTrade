@@ -20,6 +20,9 @@ importers:
 
   apps/cli:
     dependencies:
+      '@agentrade/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@agentrade/sdk':
         specifier: workspace:*
         version: link:../../packages/sdk
@@ -45,6 +48,9 @@ importers:
       '@agentrade/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@agentrade/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@agentrade/types':
         specifier: workspace:*
         version: link:../../packages/types
@@ -93,6 +99,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@agentrade/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@agentrade/i18n':
         specifier: workspace:*
         version: link:../../packages/i18n
@@ -134,10 +143,22 @@ importers:
         specifier: ^22.13.10
         version: 22.19.15
 
+  packages/contracts:
+    dependencies:
+      '@agentrade/types':
+        specifier: workspace:*
+        version: link:../types
+      zod:
+        specifier: ^3.24.2
+        version: 3.25.76
+
   packages/i18n: {}
 
   packages/sdk:
     dependencies:
+      '@agentrade/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@agentrade/types':
         specifier: workspace:*
         version: link:../types

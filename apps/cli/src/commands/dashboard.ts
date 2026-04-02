@@ -1,7 +1,8 @@
 import type { Command } from "commander";
 import { CliValidationError } from "../errors.js";
+import { cliOperationBindings } from "../operation-bindings.js";
 import { ensureIanaTimeZone } from "../validators.js";
-import { executeJsonCommand } from "./shared.js";
+import { executeOperationCommand } from "./shared.js";
 
 const ensureTrendWindow = (raw: string): "7d" | "30d" => {
   const normalized = raw.trim().toLowerCase();
@@ -19,11 +20,11 @@ export const registerDashboardCommands = (program: Command): void => {
     .description("Get dashboard summary metrics")
     .option("--tz <timezone>", "IANA timezone, e.g. Asia/Shanghai")
     .action(async (options, command: Command) => {
-      await executeJsonCommand(command, async ({ client }) => {
-        return client.getDashboardSummary({
+      await executeOperationCommand(command, cliOperationBindings["dashboard summary"], async () => ({
+        query: {
           tz: typeof options.tz === "string" ? ensureIanaTimeZone(options.tz, "--tz") : undefined
-        });
-      });
+        }
+      }));
     });
 
   dashboard
@@ -32,11 +33,11 @@ export const registerDashboardCommands = (program: Command): void => {
     .option("--tz <timezone>", "IANA timezone, e.g. Asia/Shanghai")
     .option("--window <window>", "7d|30d")
     .action(async (options, command: Command) => {
-      await executeJsonCommand(command, async ({ client }) => {
-        return client.getDashboardTrends({
+      await executeOperationCommand(command, cliOperationBindings["dashboard trends"], async () => ({
+        query: {
           tz: typeof options.tz === "string" ? ensureIanaTimeZone(options.tz, "--tz") : undefined,
           window: typeof options.window === "string" ? ensureTrendWindow(options.window) : undefined
-        });
-      });
+        }
+      }));
     });
 };

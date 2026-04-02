@@ -34,7 +34,15 @@ export default async function HomePage() {
     fetchActivities({ limit: 12, order: "desc" })
   ]);
   return (
-    <Suspense fallback={<main className="page"><section className="card">Loading dashboard...</section></main>}>
+    <Suspense
+      fallback={
+        <main className="page">
+          <section className="card">
+            {requestPreferences.locale === "zh" ? "加载看板中..." : "Loading dashboard..."}
+          </section>
+        </main>
+      }
+    >
       <Dashboard
         initialLocale={requestPreferences.locale}
         initialTimeZone={requestPreferences.timeZone}

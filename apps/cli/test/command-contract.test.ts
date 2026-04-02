@@ -76,6 +76,146 @@ test("cli command contract: method/path/auth/body coverage for all command group
   const addressA = "0x1111111111111111111111111111111111111111";
   const addressB = "0x2222222222222222222222222222222222222222";
   const deadline = "2027-01-01T00:00:00.000Z";
+  const now = "2026-04-02T08:00:00.000Z";
+
+  const taskPayload = {
+    id: "task-1",
+    publisher: addressA,
+    title: "contract-task",
+    descriptionMd: "desc-from-file",
+    acceptanceCriteria: "criteria-from-file",
+    status: "OPEN",
+    deadlineUtc: deadline,
+    displayTimezone: "UTC",
+    slotsTotal: 2,
+    rewardPerSlot: 7,
+    allowRepeatCompletionsBySameAgent: true,
+    taxAmount: 1,
+    rewardEscrowRemaining: 14,
+    acceptedAgents: [],
+    completedAgents: [],
+    createdAt: now,
+    updatedAt: now
+  };
+  const submissionPayload = {
+    id: "submission-1",
+    taskId: "task-1",
+    agent: addressB,
+    payloadMd: "payload-from-file",
+    status: "SUBMITTED",
+    createdAt: now,
+    updatedAt: now
+  };
+  const disputePayload = {
+    id: "dispute-1",
+    taskId: "task-1",
+    submissionId: "submission-1",
+    opener: addressA,
+    reasonMd: "reason-from-file",
+    status: "OPEN",
+    createdAt: now,
+    updatedAt: now
+  };
+  const voteResultPayload = {
+    vote: {
+      id: "vote-1",
+      disputeId: "dispute-1",
+      agent: addressB,
+      vote: "COMPLETED",
+      weightSnapshot: 50,
+      createdCycleId: "cycle-1",
+      createdAt: now
+    },
+    workload: {
+      id: "workload-1",
+      cycleId: "cycle-1",
+      disputeId: "dispute-1",
+      agent: addressB,
+      workload: 1,
+      createdAt: now,
+      settledAt: null
+    }
+  };
+  const agentProfilePayload = {
+    address: addressA,
+    name: "Agent A",
+    bio: "bio-inline",
+    reputation: {
+      publisher: 50,
+      worker: 50,
+      supervisor: 50
+    },
+    stats: {
+      tasksPublished: 1,
+      tasksAccepted: 1,
+      tasksCompleted: 1,
+      tasksTerminated: 0,
+      submissionsRejected: 0,
+      supervisionVotes: 0
+    },
+    createdAt: now,
+    updatedAt: now
+  };
+  const agentDirectoryPayload = {
+    ...agentProfilePayload,
+    latestActivityAt: now,
+    score: 75,
+    isActive: true
+  };
+  const dashboardSummaryPayload = {
+    timezone: "Asia/Shanghai",
+    generatedAt: now,
+    activeCycleId: "cycle-1",
+    today: { tasksPublished: 1, tasksAccepted: 0, tasksCompleted: 0, disputesOpened: 0 },
+    currentCycle: { tasksPublished: 1, tasksAccepted: 0, tasksCompleted: 0, disputesOpened: 0 },
+    totals: { tasks: 1, disputes: 1, agents: 1 }
+  };
+  const cyclePayload = {
+    id: "cycle-1",
+    status: "OPEN",
+    mintedAmount: 0,
+    taxPool: 0,
+    penaltyPool: 0,
+    startedAt: now,
+    closedAt: null
+  };
+  const closeCyclePayload = {
+    closedCycleId: "cycle-1",
+    openedCycleId: "cycle-2",
+    rewardPool: 0,
+    distributions: [],
+    finalizedDisputes: []
+  };
+  const publicEconomyPayload = {
+    appName: "Agentrade",
+    enablePersistence: true,
+    enableRedisRateLimit: false,
+    authChallengeTtlMinutes: 10,
+    rateLimitPerMinute: 100,
+    rateLimitBurst: 200,
+    taskTitleMaxLength: 120,
+    taskDescriptionMaxLength: 20000,
+    taskAcceptanceCriteriaMaxLength: 8000,
+    taskSubmissionPayloadMaxLength: 20000,
+    disputeReasonMaxLength: 4000,
+    taskSlotsMax: 100,
+    taskRewardPerSlotMax: 1000000,
+    taskDeadlineMaxHours: 4320,
+    taxRateBps: 500,
+    taxMin: 1,
+    rewardMin: 1,
+    mintPerCycle: 1000,
+    terminationPenaltyBps: 1000,
+    submissionTimeoutHours: 24,
+    resubmitCooldownMinutes: 30,
+    disputeQuorum: 3,
+    disputeApprovalBps: 5000,
+    reputationWeightPublisherBps: 3334,
+    reputationWeightWorkerBps: 3333,
+    reputationWeightSupervisorBps: 3333,
+    bridgeChain: "base-sepolia",
+    bridgeMode: "OFFCHAIN_EXPORT_ONLY"
+  };
 
   const tmpDir = mkdtempSync(join(tmpdir(), "agentrade-cli-contract-"));
   const messageFile = join(tmpDir, "message.md");
@@ -109,104 +249,123 @@ test("cli command contract: method/path/auth/body coverage for all command group
     response.setHeader("content-type", "application/json");
 
     switch (routeKey) {
-      case "GET /health":
+      case "GET /v2/system/health":
         response.end(JSON.stringify({ ok: true, service: "mock-agentrade" }));
         return;
-      case "POST /v1/auth/challenge":
+      case "POST /v2/auth/challenge":
         response.end(JSON.stringify({ nonce: "nonce-1", message: "mock-message" }));
         return;
-      case "POST /v1/auth/verify":
-        response.end(JSON.stringify({ token: "jwt-token" }));
+      case "POST /v2/auth/verify":
+        response.end(JSON.stringify({ token: "jwt-token", expiresIn: "15m" }));
         return;
-      case "GET /v1/tasks":
-        response.end(JSON.stringify({ items: [] }));
-        return;
-      case `GET /v1/tasks?q=task&status=OPEN&publisher=${addressA}&sort=reward&order=asc&cursor=2&limit=5`:
+      case "GET /v2/tasks":
         response.end(JSON.stringify({ items: [], nextCursor: null }));
         return;
-      case "GET /v1/tasks/task-1":
-        response.end(JSON.stringify({ id: "task-1", status: "OPEN" }));
-        return;
-      case "POST /v1/tasks":
-        response.end(JSON.stringify({ id: "task-created" }));
-        return;
-      case "POST /v1/tasks/task-1/accept":
-        response.end(JSON.stringify({ id: "task-1", status: "IN_PROGRESS" }));
-        return;
-      case "POST /v1/tasks/task-1/submissions":
-        response.end(JSON.stringify({ id: "submission-1" }));
-        return;
-      case "POST /v1/tasks/task-1/terminate":
-        response.end(JSON.stringify({ id: "task-1", status: "TERMINATED" }));
-        return;
-      case "POST /v1/submissions/submission-1/confirm":
-        response.end(JSON.stringify({ id: "submission-1", status: "CONFIRMED" }));
-        return;
-      case "POST /v1/submissions/submission-1/reject":
-        response.end(JSON.stringify({ id: "submission-1", status: "REJECTED" }));
-        return;
-      case "GET /v1/disputes":
-        response.end(JSON.stringify({ items: [] }));
-        return;
-      case `GET /v1/disputes?taskId=task-1&opener=${addressA}&status=OPEN&q=dispute&sort=created&order=asc&cursor=1&limit=3`:
+      case `GET /v2/tasks?q=task&status=OPEN&publisher=${addressA}&sort=reward&order=asc&cursor=2&limit=5`:
         response.end(JSON.stringify({ items: [], nextCursor: null }));
         return;
-      case "GET /v1/disputes/dispute-1":
-        response.end(JSON.stringify({ id: "dispute-1" }));
+      case "GET /v2/tasks/task-1":
+        response.end(JSON.stringify(taskPayload));
         return;
-      case "POST /v1/disputes":
-        response.end(JSON.stringify({ id: "dispute-opened" }));
+      case "POST /v2/tasks":
+        response.end(JSON.stringify({ ...taskPayload, id: "task-created" }));
         return;
-      case "POST /v1/disputes/dispute-1/votes":
-        response.end(JSON.stringify({ disputeId: "dispute-1", vote: "COMPLETED" }));
+      case "POST /v2/tasks/task-1/accept":
+        response.end(JSON.stringify({ ...taskPayload, status: "IN_PROGRESS" }));
         return;
-      case `GET /v1/agents/${addressA}`:
-        response.end(JSON.stringify({ address: addressA }));
+      case "POST /v2/tasks/task-1/submissions":
+        response.end(JSON.stringify(submissionPayload));
         return;
-      case `GET /v1/agents?q=agent&activeOnly=true&sort=score&order=asc&cursor=4&limit=6`:
+      case "POST /v2/tasks/task-1/terminate":
+        response.end(JSON.stringify({ ...taskPayload, status: "TERMINATED" }));
+        return;
+      case "POST /v2/submissions/submission-1/confirm":
+        response.end(JSON.stringify({ ...submissionPayload, status: "CONFIRMED" }));
+        return;
+      case "POST /v2/submissions/submission-1/reject":
+        response.end(JSON.stringify({ ...submissionPayload, status: "REJECTED" }));
+        return;
+      case "GET /v2/disputes":
         response.end(JSON.stringify({ items: [], nextCursor: null }));
         return;
-      case `PATCH /v1/agents/${addressA}/profile`:
-        response.end(JSON.stringify({ address: addressA }));
-        return;
-      case `GET /v1/agents/${addressA}/stats`:
-        response.end(JSON.stringify({ tasksPublished: 1 }));
-        return;
-      case `GET /v1/activities?taskId=task-1&disputeId=dispute-1&address=${addressA}&type=TASK_COMPLETED&order=asc&cursor=2&limit=4`:
+      case `GET /v2/disputes?taskId=task-1&opener=${addressA}&status=OPEN&q=dispute&sort=created&order=asc&cursor=1&limit=3`:
         response.end(JSON.stringify({ items: [], nextCursor: null }));
         return;
-      case "GET /v1/dashboard/summary?tz=Asia%2FShanghai":
-        response.end(JSON.stringify({ today: {}, currentCycle: {}, totals: {} }));
+      case "GET /v2/disputes/dispute-1":
+        response.end(JSON.stringify(disputePayload));
         return;
-      case "GET /v1/dashboard/trends?tz=Asia%2FShanghai&window=30d":
-        response.end(JSON.stringify({ window: "30d", points: [] }));
+      case "POST /v2/disputes":
+        response.end(JSON.stringify({ ...disputePayload, id: "dispute-opened" }));
         return;
-      case `GET /v1/ledger/${addressA}`:
-        response.end(JSON.stringify({ available: 10 }));
+      case "POST /v2/disputes/dispute-1/votes":
+        response.end(JSON.stringify(voteResultPayload));
         return;
-      case "GET /v1/cycles":
-        response.end(JSON.stringify({ items: [{ id: "cycle-1" }] }));
+      case `GET /v2/agents/${addressA}`:
+        response.end(JSON.stringify(agentProfilePayload));
         return;
-      case "GET /v1/cycles/active":
-        response.end(JSON.stringify({ id: "cycle-1" }));
+      case `GET /v2/agents?q=agent&activeOnly=true&sort=score&order=asc&cursor=4&limit=6`:
+        response.end(JSON.stringify({ items: [agentDirectoryPayload], nextCursor: null }));
         return;
-      case "GET /v1/cycles/cycle-1":
-        response.end(JSON.stringify({ id: "cycle-1" }));
+      case `PATCH /v2/agents/${addressA}/profile`:
+        response.end(JSON.stringify(agentProfilePayload));
         return;
-      case "GET /v1/cycles/cycle-1/rewards":
-        response.end(JSON.stringify({ cycle: { id: "cycle-1" }, workloads: [] }));
+      case `GET /v2/agents/${addressA}/stats`:
+        response.end(JSON.stringify(agentProfilePayload.stats));
         return;
-      case "GET /v1/economy/params":
-        response.end(JSON.stringify({ taxRateBps: 500 }));
+      case `GET /v2/activities?taskId=task-1&disputeId=dispute-1&address=${addressA}&type=TASK_COMPLETED&order=asc&cursor=2&limit=4`:
+        response.end(JSON.stringify({ items: [], nextCursor: null }));
         return;
-      case "POST /v1/admin/cycles/close":
-        response.end(JSON.stringify({ closedCycleId: "cycle-1", openedCycleId: "cycle-2" }));
+      case "GET /v2/dashboard/summary?tz=Asia%2FShanghai":
+        response.end(JSON.stringify(dashboardSummaryPayload));
         return;
-      case "POST /v1/admin/disputes/dispute-1/override":
-        response.end(JSON.stringify({ id: "dispute-1", status: "RESOLVED" }));
+      case "GET /v2/dashboard/trends?tz=Asia%2FShanghai&window=30d":
+        response.end(
+          JSON.stringify({
+            timezone: "Asia/Shanghai",
+            generatedAt: now,
+            window: "30d",
+            points: []
+          })
+        );
         return;
-      case "POST /v1/admin/bridge/export":
-        response.end(JSON.stringify({ exports: [{ address: addressA }, { address: addressB }] }));
+      case `GET /v2/ledger/${addressA}`:
+        response.end(JSON.stringify({ address: addressA, available: 10, updatedAt: now }));
+        return;
+      case "GET /v2/cycles":
+        response.end(JSON.stringify({ items: [cyclePayload], nextCursor: null }));
+        return;
+      case "GET /v2/cycles?cursor=1&limit=2":
+        response.end(JSON.stringify({ items: [cyclePayload], nextCursor: null }));
+        return;
+      case "GET /v2/cycles/active":
+        response.end(JSON.stringify(cyclePayload));
+        return;
+      case "GET /v2/cycles/cycle-1":
+        response.end(JSON.stringify(cyclePayload));
+        return;
+      case "GET /v2/cycles/cycle-1/rewards":
+        response.end(JSON.stringify({ cycle: cyclePayload, workloads: [] }));
+        return;
+      case "GET /v2/economy/params":
+        response.end(JSON.stringify(publicEconomyPayload));
+        return;
+      case "POST /v2/admin/cycles/close":
+        response.end(JSON.stringify(closeCyclePayload));
+        return;
+      case "POST /v2/admin/disputes/dispute-1/override":
+        response.end(JSON.stringify({ ...disputePayload, status: "RESOLVED_COMPLETED" }));
+        return;
+      case "POST /v2/admin/bridge/export":
+        response.end(
+          JSON.stringify({
+            chain: "base-sepolia",
+            mode: "OFFCHAIN_EXPORT_ONLY",
+            exports: [
+              { address: addressA, amount: 1 },
+              { address: addressB, amount: 2 }
+            ]
+          })
+        );
         return;
       default:
         response.statusCode = 404;
@@ -269,11 +428,11 @@ test("cli command contract: method/path/auth/body coverage for all command group
   };
 
   try {
-    await runAndAssert(["--pretty", "system", "health"], { method: "GET", url: "/health", auth: "none" }, { pretty: true });
+    await runAndAssert(["--pretty", "system", "health"], { method: "GET", url: "/v2/system/health", auth: "none" }, { pretty: true });
 
     await runAndAssert(["auth", "challenge", "--address", addressA], {
       method: "POST",
-      url: "/v1/auth/challenge",
+        url: "/v2/auth/challenge",
       auth: "none",
       body: { address: addressA }
     });
@@ -293,7 +452,7 @@ test("cli command contract: method/path/auth/body coverage for all command group
       ],
       {
         method: "POST",
-        url: "/v1/auth/verify",
+        url: "/v2/auth/verify",
         auth: "none",
         body: {
           address: addressA,
@@ -304,7 +463,7 @@ test("cli command contract: method/path/auth/body coverage for all command group
       }
     );
 
-    await runAndAssert(["tasks", "list"], { method: "GET", url: "/v1/tasks", auth: "none" });
+    await runAndAssert(["tasks", "list"], { method: "GET", url: "/v2/tasks", auth: "none" });
     await runAndAssert(
       [
         "tasks",
@@ -326,11 +485,11 @@ test("cli command contract: method/path/auth/body coverage for all command group
       ],
       {
         method: "GET",
-        url: `/v1/tasks?q=task&status=OPEN&publisher=${addressA}&sort=reward&order=asc&cursor=2&limit=5`,
+        url: `/v2/tasks?q=task&status=OPEN&publisher=${addressA}&sort=reward&order=asc&cursor=2&limit=5`,
         auth: "none"
       }
     );
-    await runAndAssert(["tasks", "get", "--task", "task-1"], { method: "GET", url: "/v1/tasks/task-1", auth: "none" });
+    await runAndAssert(["tasks", "get", "--task", "task-1"], { method: "GET", url: "/v2/tasks/task-1", auth: "none" });
 
     await runAndAssert(
       [
@@ -354,7 +513,7 @@ test("cli command contract: method/path/auth/body coverage for all command group
       ],
       {
         method: "POST",
-        url: "/v1/tasks",
+        url: "/v2/tasks",
         auth: "bearer",
         body: {
           title: "contract-task",
@@ -371,33 +530,33 @@ test("cli command contract: method/path/auth/body coverage for all command group
 
     await runAndAssert(["tasks", "accept", "--task", "task-1"], {
       method: "POST",
-      url: "/v1/tasks/task-1/accept",
+      url: "/v2/tasks/task-1/accept",
       auth: "bearer"
     });
     await runAndAssert(["tasks", "submit", "--task", "task-1", "--payload-file", payloadFile], {
       method: "POST",
-      url: "/v1/tasks/task-1/submissions",
+      url: "/v2/tasks/task-1/submissions",
       auth: "bearer",
       body: { payloadMd: "payload-from-file" }
     });
     await runAndAssert(["tasks", "terminate", "--task", "task-1"], {
       method: "POST",
-      url: "/v1/tasks/task-1/terminate",
+      url: "/v2/tasks/task-1/terminate",
       auth: "bearer"
     });
 
     await runAndAssert(["submissions", "confirm", "--submission", "submission-1"], {
       method: "POST",
-      url: "/v1/submissions/submission-1/confirm",
+      url: "/v2/submissions/submission-1/confirm",
       auth: "bearer"
     });
     await runAndAssert(["submissions", "reject", "--submission", "submission-1"], {
       method: "POST",
-      url: "/v1/submissions/submission-1/reject",
+      url: "/v2/submissions/submission-1/reject",
       auth: "bearer"
     });
 
-    await runAndAssert(["disputes", "list"], { method: "GET", url: "/v1/disputes", auth: "none" });
+    await runAndAssert(["disputes", "list"], { method: "GET", url: "/v2/disputes", auth: "none" });
     await runAndAssert(
       [
         "disputes",
@@ -421,13 +580,13 @@ test("cli command contract: method/path/auth/body coverage for all command group
       ],
       {
         method: "GET",
-        url: `/v1/disputes?taskId=task-1&opener=${addressA}&status=OPEN&q=dispute&sort=created&order=asc&cursor=1&limit=3`,
+        url: `/v2/disputes?taskId=task-1&opener=${addressA}&status=OPEN&q=dispute&sort=created&order=asc&cursor=1&limit=3`,
         auth: "none"
       }
     );
     await runAndAssert(["disputes", "get", "--dispute", "dispute-1"], {
       method: "GET",
-      url: "/v1/disputes/dispute-1",
+      url: "/v2/disputes/dispute-1",
       auth: "none"
     });
     await runAndAssert(
@@ -443,7 +602,7 @@ test("cli command contract: method/path/auth/body coverage for all command group
       ],
       {
         method: "POST",
-        url: "/v1/disputes",
+        url: "/v2/disputes",
         auth: "bearer",
         body: {
           taskId: "task-1",
@@ -454,14 +613,14 @@ test("cli command contract: method/path/auth/body coverage for all command group
     );
     await runAndAssert(["disputes", "vote", "--dispute", "dispute-1", "--vote", "COMPLETED"], {
       method: "POST",
-      url: "/v1/disputes/dispute-1/votes",
+      url: "/v2/disputes/dispute-1/votes",
       auth: "bearer",
       body: { vote: "COMPLETED" }
     });
 
     await runAndAssert(["agents", "profile", "get", "--address", addressA], {
       method: "GET",
-      url: `/v1/agents/${addressA}`,
+      url: `/v2/agents/${addressA}`,
       auth: "none"
     });
     await runAndAssert(
@@ -482,7 +641,7 @@ test("cli command contract: method/path/auth/body coverage for all command group
       ],
       {
         method: "GET",
-        url: "/v1/agents?q=agent&activeOnly=true&sort=score&order=asc&cursor=4&limit=6",
+        url: "/v2/agents?q=agent&activeOnly=true&sort=score&order=asc&cursor=4&limit=6",
         auth: "none"
       }
     );
@@ -490,37 +649,42 @@ test("cli command contract: method/path/auth/body coverage for all command group
       ["agents", "profile", "update", "--address", addressA, "--name-file", nameFile, "--bio", "bio-inline"],
       {
         method: "PATCH",
-        url: `/v1/agents/${addressA}/profile`,
+        url: `/v2/agents/${addressA}/profile`,
         auth: "bearer",
         body: { name: "name-from-file", bio: "bio-inline" }
       }
     );
     await runAndAssert(["agents", "stats", "--address", addressA], {
       method: "GET",
-      url: `/v1/agents/${addressA}/stats`,
+      url: `/v2/agents/${addressA}/stats`,
       auth: "none"
     });
 
     await runAndAssert(["ledger", "get", "--address", addressA], {
       method: "GET",
-      url: `/v1/ledger/${addressA}`,
+      url: `/v2/ledger/${addressA}`,
       auth: "none"
     });
 
-    await runAndAssert(["cycles", "list"], { method: "GET", url: "/v1/cycles", auth: "none" });
-    await runAndAssert(["cycles", "active"], { method: "GET", url: "/v1/cycles/active", auth: "none" });
+    await runAndAssert(["cycles", "list"], { method: "GET", url: "/v2/cycles", auth: "none" });
+    await runAndAssert(["cycles", "list", "--cursor", "1", "--limit", "2"], {
+      method: "GET",
+      url: "/v2/cycles?cursor=1&limit=2",
+      auth: "none"
+    });
+    await runAndAssert(["cycles", "active"], { method: "GET", url: "/v2/cycles/active", auth: "none" });
     await runAndAssert(["cycles", "get", "--cycle", "cycle-1"], {
       method: "GET",
-      url: "/v1/cycles/cycle-1",
+      url: "/v2/cycles/cycle-1",
       auth: "none"
     });
     await runAndAssert(["cycles", "rewards", "--cycle", "cycle-1"], {
       method: "GET",
-      url: "/v1/cycles/cycle-1/rewards",
+      url: "/v2/cycles/cycle-1/rewards",
       auth: "none"
     });
 
-    await runAndAssert(["economy", "params"], { method: "GET", url: "/v1/economy/params", auth: "none" });
+    await runAndAssert(["economy", "params"], { method: "GET", url: "/v2/economy/params", auth: "none" });
     await runAndAssert(
       [
         "activities",
@@ -542,35 +706,35 @@ test("cli command contract: method/path/auth/body coverage for all command group
       ],
       {
         method: "GET",
-        url: `/v1/activities?taskId=task-1&disputeId=dispute-1&address=${addressA}&type=TASK_COMPLETED&order=asc&cursor=2&limit=4`,
+        url: `/v2/activities?taskId=task-1&disputeId=dispute-1&address=${addressA}&type=TASK_COMPLETED&order=asc&cursor=2&limit=4`,
         auth: "none"
       }
     );
     await runAndAssert(["dashboard", "summary", "--tz", "Asia/Shanghai"], {
       method: "GET",
-      url: "/v1/dashboard/summary?tz=Asia%2FShanghai",
+      url: "/v2/dashboard/summary?tz=Asia%2FShanghai",
       auth: "none"
     });
     await runAndAssert(["dashboard", "trends", "--tz", "Asia/Shanghai", "--window", "30d"], {
       method: "GET",
-      url: "/v1/dashboard/trends?tz=Asia%2FShanghai&window=30d",
+      url: "/v2/dashboard/trends?tz=Asia%2FShanghai&window=30d",
       auth: "none"
     });
 
     await runAndAssert(["admin", "cycles", "close"], {
       method: "POST",
-      url: "/v1/admin/cycles/close",
+      url: "/v2/admin/cycles/close",
       auth: "admin"
     });
     await runAndAssert(["admin", "disputes", "override", "--dispute", "dispute-1", "--result", "NOT_COMPLETED"], {
       method: "POST",
-      url: "/v1/admin/disputes/dispute-1/override",
+      url: "/v2/admin/disputes/dispute-1/override",
       auth: "admin",
       body: { result: "NOT_COMPLETED" }
     });
     await runAndAssert(["admin", "bridge", "export", "--addresses-file", addressesFile], {
       method: "POST",
-      url: "/v1/admin/bridge/export",
+      url: "/v2/admin/bridge/export",
       auth: "admin",
       body: { addresses: [addressA, addressB] }
     });

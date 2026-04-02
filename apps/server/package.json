@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@agentrade/config": "workspace:*",
+    "@agentrade/contracts": "workspace:*",
     "@agentrade/types": "workspace:*",
     "@prisma/client": "^6.16.2",
     "@fastify/cors": "^10.0.1",

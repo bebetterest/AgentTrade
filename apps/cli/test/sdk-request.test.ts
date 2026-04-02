@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { TaskStatus } from "@agentrade/types";
 import { AgentradeApiClient, ApiClientError } from "@agentrade/sdk";
 
 interface RecordedCall {
@@ -7,11 +8,31 @@ interface RecordedCall {
   init?: RequestInit;
 }
 
+const taskFixture = {
+  id: "task-1",
+  publisher: "0x1111111111111111111111111111111111111111",
+  title: "Fixture Task",
+  descriptionMd: "desc",
+  acceptanceCriteria: "criteria",
+  status: TaskStatus.IN_PROGRESS,
+  deadlineUtc: "2027-01-01T00:00:00.000Z",
+  displayTimezone: "UTC",
+  slotsTotal: 1,
+  rewardPerSlot: 5,
+  allowRepeatCompletionsBySameAgent: false,
+  taxAmount: 1,
+  rewardEscrowRemaining: 5,
+  acceptedAgents: [],
+  completedAgents: [],
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-01T00:00:00.000Z"
+};
+
 test("sdk request assembly: headers/body/auth", async () => {
   const calls: RecordedCall[] = [];
   const fetchImpl: typeof fetch = async (input, init) => {
     calls.push({ input: String(input), init });
-    return new Response(JSON.stringify({ id: "task-1" }), {
+    return new Response(JSON.stringify(taskFixture), {
       status: 200,
       headers: { "content-type": "application/json" }
     });
@@ -28,7 +49,7 @@ test("sdk request assembly: headers/body/auth", async () => {
   await client.acceptTask("task-1");
 
   assert.equal(calls.length, 1);
-  assert.equal(calls[0].input, "http://localhost:3000/v1/tasks/task-1/accept");
+  assert.equal(calls[0].input, "http://localhost:3000/v2/tasks/task-1/accept");
   assert.equal(calls[0].init?.method, "POST");
   assert.equal((calls[0].init?.headers as Record<string, string>).authorization, "Bearer token-123");
 });
@@ -43,7 +64,7 @@ test("sdk retries 5xx then succeeds", async () => {
         headers: { "content-type": "application/json" }
       });
     }
-    return new Response(JSON.stringify({ items: [] }), {
+    return new Response(JSON.stringify({ items: [], nextCursor: null }), {
       status: 200,
       headers: { "content-type": "application/json" }
     });
@@ -57,7 +78,7 @@ test("sdk retries 5xx then succeeds", async () => {
   });
 
   const data = await client.getTasks();
-  assert.deepEqual(data, { items: [] });
+  assert.deepEqual(data, { items: [], nextCursor: null });
   assert.equal(attempt, 2);
 });
 

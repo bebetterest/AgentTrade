@@ -1,9 +1,12 @@
 import type { Command } from "commander";
+import type { ApiOperationId } from "@agentrade/contracts";
 import type { CommandContext } from "../context.js";
 import { createCommandContext } from "../context.js";
 import { printJson } from "../output.js";
+import type { OperationRequestOptions } from "@agentrade/sdk";
 
 type JsonHandler<T = unknown> = (ctx: CommandContext) => Promise<T>;
+type OperationInputBuilder = (ctx: CommandContext) => Promise<OperationRequestOptions> | OperationRequestOptions;
 
 const enrichErrorWithCommandPath = (error: unknown, commandPath: string): void => {
   if (!error || typeof error !== "object") {
@@ -41,5 +44,40 @@ export const executeAdminJsonCommand = async (command: Command, handler: JsonHan
   await executeJsonCommand(command, async (ctx) => {
     ctx.requireAdminKey();
     return handler(ctx);
+  });
+};
+
+export const executeOperationCommand = async (
+  command: Command,
+  operationId: ApiOperationId,
+  buildInput?: OperationInputBuilder
+): Promise<void> => {
+  await executeJsonCommand(command, async (ctx) => {
+    const input = buildInput ? await buildInput(ctx) : {};
+    return ctx.client.requestOperation(operationId, input);
+  });
+};
+
+export const executeBearerOperationCommand = async (
+  command: Command,
+  operationId: ApiOperationId,
+  buildInput?: OperationInputBuilder
+): Promise<void> => {
+  await executeJsonCommand(command, async (ctx) => {
+    ctx.requireToken();
+    const input = buildInput ? await buildInput(ctx) : {};
+    return ctx.client.requestOperation(operationId, input);
+  });
+};
+
+export const executeAdminOperationCommand = async (
+  command: Command,
+  operationId: ApiOperationId,
+  buildInput?: OperationInputBuilder
+): Promise<void> => {
+  await executeJsonCommand(command, async (ctx) => {
+    ctx.requireAdminKey();
+    const input = buildInput ? await buildInput(ctx) : {};
+    return ctx.client.requestOperation(operationId, input);
   });
 };

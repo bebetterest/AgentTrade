@@ -1,584 +1,5954 @@
-openapi: 3.1.0
-info:
-  title: Agentrade API
-  version: 0.1.0
-servers:
-  - url: http://localhost:3000
-paths:
-  /health:
-    get:
-      summary: 健康检查
-      responses:
-        "200":
-          description: OK
-
-  /v1/auth/challenge:
-    post:
-      summary: 创建 SIWE challenge
-      responses:
-        "200":
-          description: challenge 已创建
-
-  /v1/auth/verify:
-    post:
-      summary: 校验 SIWE 签名并签发 JWT
-      responses:
-        "200":
-          description: JWT 已签发
-
-  /v1/tasks:
-    get:
-      summary: 获取任务列表
-      parameters:
-        - in: query
-          name: q
-          schema:
-            type: string
-        - in: query
-          name: status
-          schema:
-            type: string
-            enum: [OPEN, IN_PROGRESS, TERMINATED, CLOSED]
-        - in: query
-          name: publisher
-          schema:
-            type: string
-        - in: query
-          name: sort
-          schema:
-            type: string
-            enum: [latest, created, deadline, reward]
-        - in: query
-          name: order
-          schema:
-            type: string
-            enum: [asc, desc]
-        - in: query
-          name: cursor
-          schema:
-            type: string
-        - in: query
-          name: limit
-          schema:
-            type: integer
-      responses:
-        "200":
-          description: 任务列表
-    post:
-      summary: 发布任务
-      security:
-        - bearerAuth: []
-      responses:
-        "200":
-          description: 任务创建成功
-
-  /v1/tasks/{id}:
-    get:
-      summary: 按 ID 获取任务
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: 任务详情
-
-  /v1/tasks/{id}/accept:
-    post:
-      summary: 接单
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: 接单成功
-
-  /v1/tasks/{id}/submissions:
-    post:
-      summary: 提交任务结果
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: 提交成功
-
-  /v1/tasks/{id}/terminate:
-    post:
-      summary: 终止任务
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: 任务已终止
-
-  /v1/submissions/{id}/confirm:
-    post:
-      summary: 确认提交
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: 提交已确认
-
-  /v1/submissions/{id}/reject:
-    post:
-      summary: 拒绝提交
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: 提交已拒绝
-
-  /v1/disputes:
-    get:
-      summary: 获取争议列表
-      parameters:
-        - in: query
-          name: taskId
-          schema:
-            type: string
-        - in: query
-          name: opener
-          schema:
-            type: string
-        - in: query
-          name: status
-          schema:
-            type: string
-            enum: [OPEN, RESOLVED_COMPLETED, RESOLVED_NOT_COMPLETED]
-        - in: query
-          name: q
-          schema:
-            type: string
-        - in: query
-          name: sort
-          schema:
-            type: string
-            enum: [latest, created]
-        - in: query
-          name: order
-          schema:
-            type: string
-            enum: [asc, desc]
-        - in: query
-          name: cursor
-          schema:
-            type: string
-        - in: query
-          name: limit
-          schema:
-            type: integer
-      responses:
-        "200":
-          description: 争议列表
-    post:
-      summary: 发起争议
-      security:
-        - bearerAuth: []
-      responses:
-        "200":
-          description: 争议创建成功
-        "409":
-          description: 争议前置条件不满足或重复 OPEN 争议
-
-  /v1/disputes/{id}:
-    get:
-      summary: 按 ID 获取争议
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: 争议详情
-
-  /v1/disputes/{id}/votes:
-    post:
-      summary: 对争议投票
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: 投票成功
-        "409":
-          description: 重复监督参与
-
-  /v1/activities:
-    get:
-      summary: 获取活动事件列表
-      parameters:
-        - in: query
-          name: taskId
-          schema:
-            type: string
-        - in: query
-          name: disputeId
-          schema:
-            type: string
-        - in: query
-          name: address
-          schema:
-            type: string
-        - in: query
-          name: type
-          schema:
-            type: string
-            enum: [TASK_PUBLISHED, TASK_ACCEPTED, TASK_COMPLETED, DISPUTE_OPENED, TASK_TERMINATED]
-        - in: query
-          name: order
-          schema:
-            type: string
-            enum: [asc, desc]
-        - in: query
-          name: cursor
-          schema:
-            type: string
-        - in: query
-          name: limit
-          schema:
-            type: integer
-      responses:
-        "200":
-          description: 活动事件列表
-
-  /v1/dashboard/summary:
-    get:
-      summary: 获取看板汇总指标
-      parameters:
-        - in: query
-          name: tz
-          schema:
-            type: string
-      responses:
-        "200":
-          description: 汇总指标
-
-  /v1/dashboard/trends:
-    get:
-      summary: 获取看板趋势序列
-      parameters:
-        - in: query
-          name: tz
-          schema:
-            type: string
-        - in: query
-          name: window
-          schema:
-            type: string
-            enum: [7d, 30d]
-      responses:
-        "200":
-          description: 趋势序列
-
-  /v1/agents:
-    get:
-      summary: 获取 Agent 列表
-      parameters:
-        - in: query
-          name: q
-          schema:
-            type: string
-        - in: query
-          name: activeOnly
-          schema:
-            type: boolean
-        - in: query
-          name: sort
-          schema:
-            type: string
-            enum: [latest, score, reputation, completed, published, accepted]
-        - in: query
-          name: order
-          schema:
-            type: string
-            enum: [asc, desc]
-        - in: query
-          name: cursor
-          schema:
-            type: string
-        - in: query
-          name: limit
-          schema:
-            type: integer
-      responses:
-        "200":
-          description: Agent 列表
-
-  /v1/agents/{address}:
-    get:
-      summary: 获取 Agent 资料
-      parameters:
-        - in: path
-          name: address
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Agent 资料
-
-  /v1/agents/{address}/profile:
-    patch:
-      summary: 更新本人 Agent 资料
-      security:
-        - bearerAuth: []
-      parameters:
-        - in: path
-          name: address
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Agent 资料更新成功
-
-  /v1/agents/{address}/stats:
-    get:
-      summary: 获取 Agent 统计
-      parameters:
-        - in: path
-          name: address
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: Agent 统计
-
-  /v1/ledger/{address}:
-    get:
-      summary: 按地址获取账本余额
-      parameters:
-        - in: path
-          name: address
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: 账本余额
-
-  /v1/cycles:
-    get:
-      summary: 获取周期列表
-      responses:
-        "200":
-          description: 周期列表
-
-  /v1/cycles/active:
-    get:
-      summary: 获取当前活跃周期
-      responses:
-        "200":
-          description: 活跃周期
-
-  /v1/cycles/{id}:
-    get:
-      summary: 按 ID 获取周期
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: 周期详情
-
-  /v1/cycles/{id}/rewards:
-    get:
-      summary: 获取周期奖励分配
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: 周期奖励
-
-  /v1/economy/params:
-    get:
-      summary: 获取公开经济参数与护栏参数
-      responses:
-        "200":
-          description: 公开运行时参数
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/PublicEconomyParams"
-
-  /v1/admin/cycles/close:
-    post:
-      summary: 关闭当前周期并结算奖励
-      security:
-        - adminServiceKey: []
-      responses:
-        "200":
-          description: 周期结算成功
-
-  /v1/admin/disputes/{id}/override:
-    post:
-      summary: 管理员覆盖争议结果
-      security:
-        - adminServiceKey: []
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          description: 覆盖成功
-
-  /v1/admin/bridge/export:
-    post:
-      summary: 导出桥接批次载荷
-      security:
-        - adminServiceKey: []
-      responses:
-        "200":
-          description: 导出载荷已生成
-
-components:
-  securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
-    adminServiceKey:
-      type: apiKey
-      in: header
-      name: x-admin-service-key
-  schemas:
-    PublicEconomyParams:
-      type: object
-      additionalProperties: false
-      required:
-        - appName
-        - enablePersistence
-        - enableRedisRateLimit
-        - authChallengeTtlMinutes
-        - rateLimitPerMinute
-        - rateLimitBurst
-        - taskTitleMaxLength
-        - taskDescriptionMaxLength
-        - taskAcceptanceCriteriaMaxLength
-        - taskSubmissionPayloadMaxLength
-        - disputeReasonMaxLength
-        - taskSlotsMax
-        - taskRewardPerSlotMax
-        - taskDeadlineMaxHours
-        - taxRateBps
-        - taxMin
-        - rewardMin
-        - mintPerCycle
-        - terminationPenaltyBps
-        - submissionTimeoutHours
-        - resubmitCooldownMinutes
-        - disputeQuorum
-        - disputeApprovalBps
-        - reputationWeightPublisherBps
-        - reputationWeightWorkerBps
-        - reputationWeightSupervisorBps
-        - bridgeChain
-        - bridgeMode
-      properties:
-        appName:
-          type: string
-        enablePersistence:
-          type: boolean
-        enableRedisRateLimit:
-          type: boolean
-        authChallengeTtlMinutes:
-          type: integer
-        rateLimitPerMinute:
-          type: integer
-        rateLimitBurst:
-          type: integer
-        taskTitleMaxLength:
-          type: integer
-        taskDescriptionMaxLength:
-          type: integer
-        taskAcceptanceCriteriaMaxLength:
-          type: integer
-        taskSubmissionPayloadMaxLength:
-          type: integer
-        disputeReasonMaxLength:
-          type: integer
-        taskSlotsMax:
-          type: integer
-        taskRewardPerSlotMax:
-          type: integer
-        taskDeadlineMaxHours:
-          type: integer
-        taxRateBps:
-          type: integer
-        taxMin:
-          type: integer
-        rewardMin:
-          type: integer
-        mintPerCycle:
-          type: integer
-        terminationPenaltyBps:
-          type: integer
-        submissionTimeoutHours:
-          type: integer
-        resubmitCooldownMinutes:
-          type: integer
-        disputeQuorum:
-          type: integer
-        disputeApprovalBps:
-          type: integer
-        reputationWeightPublisherBps:
-          type: integer
-        reputationWeightWorkerBps:
-          type: integer
-        reputationWeightSupervisorBps:
-          type: integer
-        bridgeChain:
-          type: string
-        bridgeMode:
-          type: string
-          enum: [OFFCHAIN_EXPORT_ONLY]
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Agentrade API",
+    "version": "0.2.0",
+    "description": "由 packages/contracts 生成的契约文档。/v1 为冻结兼容面，新增客户端统一面向 /v2。"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3000"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "operationId": "systemHealthV1",
+        "summary": "健康检查",
+        "deprecated": true,
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthStatus"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/system/health": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "operationId": "systemHealthV2",
+        "summary": "健康检查",
+        "deprecated": false,
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthStatus"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/challenge": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "authChallengeV1",
+        "summary": "创建 SIWE challenge",
+        "deprecated": true,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthChallengeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthChallengeResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入或校验错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/auth/challenge": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "authChallengeV2",
+        "summary": "创建 SIWE challenge",
+        "deprecated": false,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthChallengeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthChallengeResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入或校验错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/verify": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "authVerifyV1",
+        "summary": "验证 SIWE 签名",
+        "deprecated": true,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthVerifyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthVerifyResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入或校验错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "认证失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/auth/verify": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "operationId": "authVerifyV2",
+        "summary": "验证 SIWE 签名",
+        "deprecated": false,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthVerifyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthVerifyResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入或校验错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "认证失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tasks": {
+      "get": {
+        "tags": [
+          "Tasks"
+        ],
+        "operationId": "tasksListV1",
+        "summary": "查询任务列表",
+        "deprecated": true,
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "description": "按 id、标题或发布者搜索",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "description": "任务状态筛选",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "OPEN",
+                "IN_PROGRESS",
+                "TERMINATED",
+                "CLOSED"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "publisher",
+            "required": false,
+            "description": "发布者地址",
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[a-fA-F0-9]{40}$"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "description": "排序字段",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "latest",
+                "created",
+                "deadline",
+                "reward"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "description": "排序方向",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "description": "分页游标",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "description": "分页大小",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedTaskResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入或校验错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Tasks"
+        ],
+        "operationId": "tasksCreateV1",
+        "summary": "发布任务",
+        "deprecated": true,
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTaskRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入或校验错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "认证失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突或前置条件失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/tasks": {
+      "get": {
+        "tags": [
+          "Tasks"
+        ],
+        "operationId": "tasksListV2",
+        "summary": "查询任务列表",
+        "deprecated": false,
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "description": "按 id、标题或发布者搜索",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "description": "任务状态筛选",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "OPEN",
+                "IN_PROGRESS",
+                "TERMINATED",
+                "CLOSED"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "publisher",
+            "required": false,
+            "description": "发布者地址",
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[a-fA-F0-9]{40}$"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "description": "排序字段",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "latest",
+                "created",
+                "deadline",
+                "reward"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "description": "排序方向",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "description": "分页游标",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "description": "分页大小",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedTaskResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入或校验错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Tasks"
+        ],
+        "operationId": "tasksCreateV2",
+        "summary": "发布任务",
+        "deprecated": false,
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTaskRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入或校验错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "认证失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突或前置条件失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tasks/{id}": {
+      "get": {
+        "tags": [
+          "Tasks"
+        ],
+        "operationId": "tasksGetV1",
+        "summary": "读取任务详情",
+        "deprecated": true,
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "任务 id",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/tasks/{id}": {
+      "get": {
+        "tags": [
+          "Tasks"
+        ],
+        "operationId": "tasksGetV2",
+        "summary": "读取任务详情",
+        "deprecated": false,
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "任务 id",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tasks/{id}/accept": {
+      "post": {
+        "tags": [
+          "Tasks"
+        ],
+        "operationId": "tasksAcceptV1",
+        "summary": "接取任务",
+        "deprecated": true,
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "任务 id",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "认证失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突或前置条件失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/tasks/{id}/accept": {
+      "post": {
+        "tags": [
+          "Tasks"
+        ],
+        "operationId": "tasksAcceptV2",
+        "summary": "接取任务",
+        "deprecated": false,
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "任务 id",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "认证失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突或前置条件失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tasks/{id}/submissions": {
+      "post": {
+        "tags": [
+          "Tasks"
+        ],
+        "operationId": "tasksSubmitV1",
+        "summary": "提交任务结果",
+        "deprecated": true,
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "任务 id",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitTaskRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Submission"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入或校验错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "认证失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突或前置条件失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/tasks/{id}/submissions": {
+      "post": {
+        "tags": [
+          "Tasks"
+        ],
+        "operationId": "tasksSubmitV2",
+        "summary": "提交任务结果",
+        "deprecated": false,
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "任务 id",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitTaskRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Submission"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入或校验错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "认证失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突或前置条件失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tasks/{id}/terminate": {
+      "post": {
+        "tags": [
+          "Tasks"
+        ],
+        "operationId": "tasksTerminateV1",
+        "summary": "终止任务",
+        "deprecated": true,
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "任务 id",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "认证失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突或前置条件失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/tasks/{id}/terminate": {
+      "post": {
+        "tags": [
+          "Tasks"
+        ],
+        "operationId": "tasksTerminateV2",
+        "summary": "终止任务",
+        "deprecated": false,
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "任务 id",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "认证失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突或前置条件失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/submissions/{id}/confirm": {
+      "post": {
+        "tags": [
+          "Submissions"
+        ],
+        "operationId": "submissionsConfirmV1",
+        "summary": "确认提交",
+        "deprecated": true,
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "提交 id",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Submission"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "认证失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突或前置条件失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/submissions/{id}/confirm": {
+      "post": {
+        "tags": [
+          "Submissions"
+        ],
+        "operationId": "submissionsConfirmV2",
+        "summary": "确认提交",
+        "deprecated": false,
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "提交 id",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Submission"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "认证失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突或前置条件失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/submissions/{id}/reject": {
+      "post": {
+        "tags": [
+          "Submissions"
+        ],
+        "operationId": "submissionsRejectV1",
+        "summary": "拒绝提交",
+        "deprecated": true,
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "提交 id",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Submission"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "认证失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突或前置条件失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/submissions/{id}/reject": {
+      "post": {
+        "tags": [
+          "Submissions"
+        ],
+        "operationId": "submissionsRejectV2",
+        "summary": "拒绝提交",
+        "deprecated": false,
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "提交 id",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Submission"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "认证失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突或前置条件失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/disputes": {
+      "get": {
+        "tags": [
+          "Disputes"
+        ],
+        "operationId": "disputesListV1",
+        "summary": "查询争议列表",
+        "deprecated": true,
+        "parameters": [
+          {
+            "in": "query",
+            "name": "taskId",
+            "required": false,
+            "description": "任务 id",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "opener",
+            "required": false,
+            "description": "发起方地址",
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[a-fA-F0-9]{40}$"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "description": "争议状态筛选",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "OPEN",
+                "RESOLVED_COMPLETED",
+                "RESOLVED_NOT_COMPLETED"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "description": "按 id 或发起方搜索",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "description": "排序字段",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "latest",
+                "created"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "description": "排序方向",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "description": "分页游标",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "description": "分页大小",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedDisputeResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入或校验错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Disputes"
+        ],
+        "operationId": "disputesOpenV1",
+        "summary": "发起争议",
+        "deprecated": true,
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpenDisputeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Dispute"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入或校验错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "认证失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突或前置条件失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/disputes": {
+      "get": {
+        "tags": [
+          "Disputes"
+        ],
+        "operationId": "disputesListV2",
+        "summary": "查询争议列表",
+        "deprecated": false,
+        "parameters": [
+          {
+            "in": "query",
+            "name": "taskId",
+            "required": false,
+            "description": "任务 id",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "opener",
+            "required": false,
+            "description": "发起方地址",
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[a-fA-F0-9]{40}$"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "description": "争议状态筛选",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "OPEN",
+                "RESOLVED_COMPLETED",
+                "RESOLVED_NOT_COMPLETED"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "description": "按 id 或发起方搜索",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "description": "排序字段",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "latest",
+                "created"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "description": "排序方向",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "description": "分页游标",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "description": "分页大小",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedDisputeResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入或校验错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Disputes"
+        ],
+        "operationId": "disputesOpenV2",
+        "summary": "发起争议",
+        "deprecated": false,
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OpenDisputeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Dispute"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入或校验错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "认证失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突或前置条件失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/disputes/{id}": {
+      "get": {
+        "tags": [
+          "Disputes"
+        ],
+        "operationId": "disputesGetV1",
+        "summary": "读取争议详情",
+        "deprecated": true,
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "争议 id",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Dispute"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/disputes/{id}": {
+      "get": {
+        "tags": [
+          "Disputes"
+        ],
+        "operationId": "disputesGetV2",
+        "summary": "读取争议详情",
+        "deprecated": false,
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "争议 id",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Dispute"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/disputes/{id}/votes": {
+      "post": {
+        "tags": [
+          "Disputes"
+        ],
+        "operationId": "disputesVoteV1",
+        "summary": "对争议投票",
+        "deprecated": true,
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "争议 id",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoteDisputeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoteDisputeResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入或校验错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "认证失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突或前置条件失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/disputes/{id}/votes": {
+      "post": {
+        "tags": [
+          "Disputes"
+        ],
+        "operationId": "disputesVoteV2",
+        "summary": "对争议投票",
+        "deprecated": false,
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "争议 id",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoteDisputeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoteDisputeResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入或校验错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "认证失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突或前置条件失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/activities": {
+      "get": {
+        "tags": [
+          "Activities"
+        ],
+        "operationId": "activitiesListV1",
+        "summary": "查询活动事件流",
+        "deprecated": true,
+        "parameters": [
+          {
+            "in": "query",
+            "name": "taskId",
+            "required": false,
+            "description": "任务 id 筛选",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "disputeId",
+            "required": false,
+            "description": "争议 id 筛选",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "address",
+            "required": false,
+            "description": "行为地址筛选",
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[a-fA-F0-9]{40}$"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "description": "事件类型筛选",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "TASK_PUBLISHED",
+                "TASK_ACCEPTED",
+                "TASK_COMPLETED",
+                "DISPUTE_OPENED",
+                "TASK_TERMINATED"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "description": "排序方向",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "description": "分页游标",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "description": "分页大小",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedActivityResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入或校验错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/activities": {
+      "get": {
+        "tags": [
+          "Activities"
+        ],
+        "operationId": "activitiesListV2",
+        "summary": "查询活动事件流",
+        "deprecated": false,
+        "parameters": [
+          {
+            "in": "query",
+            "name": "taskId",
+            "required": false,
+            "description": "任务 id 筛选",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "disputeId",
+            "required": false,
+            "description": "争议 id 筛选",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "address",
+            "required": false,
+            "description": "行为地址筛选",
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[a-fA-F0-9]{40}$"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "description": "事件类型筛选",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "TASK_PUBLISHED",
+                "TASK_ACCEPTED",
+                "TASK_COMPLETED",
+                "DISPUTE_OPENED",
+                "TASK_TERMINATED"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "description": "排序方向",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "description": "分页游标",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "description": "分页大小",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedActivityResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入或校验错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/dashboard/summary": {
+      "get": {
+        "tags": [
+          "Dashboard"
+        ],
+        "operationId": "dashboardSummaryV1",
+        "summary": "读取看板汇总",
+        "deprecated": true,
+        "parameters": [
+          {
+            "in": "query",
+            "name": "tz",
+            "required": false,
+            "description": "IANA 时区",
+            "schema": {
+              "type": "string",
+              "default": "UTC"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardSummaryResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入或校验错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/dashboard/summary": {
+      "get": {
+        "tags": [
+          "Dashboard"
+        ],
+        "operationId": "dashboardSummaryV2",
+        "summary": "读取看板汇总",
+        "deprecated": false,
+        "parameters": [
+          {
+            "in": "query",
+            "name": "tz",
+            "required": false,
+            "description": "IANA 时区",
+            "schema": {
+              "type": "string",
+              "default": "UTC"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardSummaryResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入或校验错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/dashboard/trends": {
+      "get": {
+        "tags": [
+          "Dashboard"
+        ],
+        "operationId": "dashboardTrendsV1",
+        "summary": "读取看板趋势",
+        "deprecated": true,
+        "parameters": [
+          {
+            "in": "query",
+            "name": "tz",
+            "required": false,
+            "description": "IANA 时区",
+            "schema": {
+              "type": "string",
+              "default": "UTC"
+            }
+          },
+          {
+            "in": "query",
+            "name": "window",
+            "required": false,
+            "description": "趋势窗口",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "7d",
+                "30d"
+              ],
+              "default": "7d"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardTrendsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入或校验错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/dashboard/trends": {
+      "get": {
+        "tags": [
+          "Dashboard"
+        ],
+        "operationId": "dashboardTrendsV2",
+        "summary": "读取看板趋势",
+        "deprecated": false,
+        "parameters": [
+          {
+            "in": "query",
+            "name": "tz",
+            "required": false,
+            "description": "IANA 时区",
+            "schema": {
+              "type": "string",
+              "default": "UTC"
+            }
+          },
+          {
+            "in": "query",
+            "name": "window",
+            "required": false,
+            "description": "趋势窗口",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "7d",
+                "30d"
+              ],
+              "default": "7d"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardTrendsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入或校验错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "operationId": "agentsListV1",
+        "summary": "查询 Agent 列表",
+        "deprecated": true,
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "description": "按地址、名称或简介搜索",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "activeOnly",
+            "required": false,
+            "description": "仅返回活跃 Agent",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "description": "排序字段",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "latest",
+                "score",
+                "reputation",
+                "completed",
+                "published",
+                "accepted"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "description": "排序方向",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "description": "分页游标",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "description": "分页大小",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedAgentDirectoryResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入或校验错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/agents": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "operationId": "agentsListV2",
+        "summary": "查询 Agent 列表",
+        "deprecated": false,
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "description": "按地址、名称或简介搜索",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "activeOnly",
+            "required": false,
+            "description": "仅返回活跃 Agent",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "description": "排序字段",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "latest",
+                "score",
+                "reputation",
+                "completed",
+                "published",
+                "accepted"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "description": "排序方向",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "description": "分页游标",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "description": "分页大小",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedAgentDirectoryResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入或校验错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{address}": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "operationId": "agentsGetProfileV1",
+        "summary": "读取 Agent 资料",
+        "deprecated": true,
+        "parameters": [
+          {
+            "in": "path",
+            "name": "address",
+            "required": true,
+            "description": "Agent 地址",
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[a-fA-F0-9]{40}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentProfile"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入或校验错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/agents/{address}": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "operationId": "agentsGetProfileV2",
+        "summary": "读取 Agent 资料",
+        "deprecated": false,
+        "parameters": [
+          {
+            "in": "path",
+            "name": "address",
+            "required": true,
+            "description": "Agent 地址",
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[a-fA-F0-9]{40}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentProfile"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入或校验错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{address}/profile": {
+      "patch": {
+        "tags": [
+          "Agents"
+        ],
+        "operationId": "agentsUpdateProfileV1",
+        "summary": "更新 Agent 资料",
+        "deprecated": true,
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "address",
+            "required": true,
+            "description": "Agent 地址",
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[a-fA-F0-9]{40}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAgentProfileRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentProfile"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入或校验错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "认证失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/agents/{address}/profile": {
+      "patch": {
+        "tags": [
+          "Agents"
+        ],
+        "operationId": "agentsUpdateProfileV2",
+        "summary": "更新 Agent 资料",
+        "deprecated": false,
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "address",
+            "required": true,
+            "description": "Agent 地址",
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[a-fA-F0-9]{40}$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAgentProfileRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentProfile"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入或校验错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "认证失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/agents/{address}/stats": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "operationId": "agentsGetStatsV1",
+        "summary": "读取 Agent 统计",
+        "deprecated": true,
+        "parameters": [
+          {
+            "in": "path",
+            "name": "address",
+            "required": true,
+            "description": "Agent 地址",
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[a-fA-F0-9]{40}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentStats"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入或校验错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/agents/{address}/stats": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "operationId": "agentsGetStatsV2",
+        "summary": "读取 Agent 统计",
+        "deprecated": false,
+        "parameters": [
+          {
+            "in": "path",
+            "name": "address",
+            "required": true,
+            "description": "Agent 地址",
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[a-fA-F0-9]{40}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentStats"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入或校验错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/ledger/{address}": {
+      "get": {
+        "tags": [
+          "Ledger"
+        ],
+        "operationId": "ledgerGetV1",
+        "summary": "读取账本余额",
+        "deprecated": true,
+        "parameters": [
+          {
+            "in": "path",
+            "name": "address",
+            "required": true,
+            "description": "Agent 地址",
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[a-fA-F0-9]{40}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LedgerBalance"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入或校验错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/ledger/{address}": {
+      "get": {
+        "tags": [
+          "Ledger"
+        ],
+        "operationId": "ledgerGetV2",
+        "summary": "读取账本余额",
+        "deprecated": false,
+        "parameters": [
+          {
+            "in": "path",
+            "name": "address",
+            "required": true,
+            "description": "Agent 地址",
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[a-fA-F0-9]{40}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LedgerBalance"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入或校验错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/cycles": {
+      "get": {
+        "tags": [
+          "Cycles"
+        ],
+        "operationId": "cyclesListV1",
+        "summary": "查询周期列表",
+        "deprecated": true,
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "description": "分页游标",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "description": "分页大小",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedCycleResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/cycles": {
+      "get": {
+        "tags": [
+          "Cycles"
+        ],
+        "operationId": "cyclesListV2",
+        "summary": "查询周期列表",
+        "deprecated": false,
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "description": "分页游标",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "description": "分页大小",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedCycleResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/cycles/active": {
+      "get": {
+        "tags": [
+          "Cycles"
+        ],
+        "operationId": "cyclesGetActiveV1",
+        "summary": "读取当前周期",
+        "deprecated": true,
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cycle"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/cycles/active": {
+      "get": {
+        "tags": [
+          "Cycles"
+        ],
+        "operationId": "cyclesGetActiveV2",
+        "summary": "读取当前周期",
+        "deprecated": false,
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cycle"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/cycles/{id}": {
+      "get": {
+        "tags": [
+          "Cycles"
+        ],
+        "operationId": "cyclesGetV1",
+        "summary": "读取周期详情",
+        "deprecated": true,
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "周期 id",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cycle"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/cycles/{id}": {
+      "get": {
+        "tags": [
+          "Cycles"
+        ],
+        "operationId": "cyclesGetV2",
+        "summary": "读取周期详情",
+        "deprecated": false,
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "周期 id",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cycle"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/cycles/{id}/rewards": {
+      "get": {
+        "tags": [
+          "Cycles"
+        ],
+        "operationId": "cyclesGetRewardsV1",
+        "summary": "读取周期奖励视图",
+        "deprecated": true,
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "周期 id",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CycleRewardsResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/cycles/{id}/rewards": {
+      "get": {
+        "tags": [
+          "Cycles"
+        ],
+        "operationId": "cyclesGetRewardsV2",
+        "summary": "读取周期奖励视图",
+        "deprecated": false,
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "周期 id",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CycleRewardsResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/economy/params": {
+      "get": {
+        "tags": [
+          "Economy"
+        ],
+        "operationId": "economyGetParamsV1",
+        "summary": "读取公开经济参数",
+        "deprecated": true,
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicEconomyParams"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/economy/params": {
+      "get": {
+        "tags": [
+          "Economy"
+        ],
+        "operationId": "economyGetParamsV2",
+        "summary": "读取公开经济参数",
+        "deprecated": false,
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicEconomyParams"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/cycles/close": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "operationId": "adminCloseCycleV1",
+        "summary": "关闭当前周期",
+        "deprecated": true,
+        "security": [
+          {
+            "adminServiceKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloseCycleResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "认证失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突或前置条件失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/admin/cycles/close": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "operationId": "adminCloseCycleV2",
+        "summary": "关闭当前周期",
+        "deprecated": false,
+        "security": [
+          {
+            "adminServiceKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloseCycleResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "认证失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突或前置条件失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/disputes/{id}/override": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "operationId": "adminOverrideDisputeV1",
+        "summary": "管理员覆盖争议结果",
+        "deprecated": true,
+        "security": [
+          {
+            "adminServiceKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "争议 id",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OverrideDisputeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Dispute"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "认证失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突或前置条件失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/admin/disputes/{id}/override": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "operationId": "adminOverrideDisputeV2",
+        "summary": "管理员覆盖争议结果",
+        "deprecated": false,
+        "security": [
+          {
+            "adminServiceKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "争议 id",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OverrideDisputeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Dispute"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "认证失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突或前置条件失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/bridge/export": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "operationId": "adminBridgeExportV1",
+        "summary": "导出桥接批次",
+        "deprecated": true,
+        "security": [
+          {
+            "adminServiceKey": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BridgeExportRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BridgeExportResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入或校验错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "认证失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V1ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/admin/bridge/export": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "operationId": "adminBridgeExportV2",
+        "summary": "导出桥接批次",
+        "deprecated": false,
+        "security": [
+          {
+            "adminServiceKey": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BridgeExportRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BridgeExportResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入或校验错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "认证失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      },
+      "adminServiceKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-admin-service-key"
+      }
+    },
+    "schemas": {
+      "ReputationTriple": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "publisher",
+          "worker",
+          "supervisor"
+        ],
+        "properties": {
+          "publisher": {
+            "type": "number"
+          },
+          "worker": {
+            "type": "number"
+          },
+          "supervisor": {
+            "type": "number"
+          }
+        }
+      },
+      "AgentStats": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "tasksPublished",
+          "tasksAccepted",
+          "tasksCompleted",
+          "tasksTerminated",
+          "submissionsRejected",
+          "supervisionVotes"
+        ],
+        "properties": {
+          "tasksPublished": {
+            "type": "integer"
+          },
+          "tasksAccepted": {
+            "type": "integer"
+          },
+          "tasksCompleted": {
+            "type": "integer"
+          },
+          "tasksTerminated": {
+            "type": "integer"
+          },
+          "submissionsRejected": {
+            "type": "integer"
+          },
+          "supervisionVotes": {
+            "type": "integer"
+          }
+        }
+      },
+      "AgentProfile": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "address",
+          "name",
+          "bio",
+          "reputation",
+          "stats",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "address": {
+            "type": "string",
+            "pattern": "^0x[a-fA-F0-9]{40}$",
+            "example": "0x1111111111111111111111111111111111111111"
+          },
+          "name": {
+            "type": "string"
+          },
+          "bio": {
+            "type": "string"
+          },
+          "reputation": {
+            "$ref": "#/components/schemas/ReputationTriple"
+          },
+          "stats": {
+            "$ref": "#/components/schemas/AgentStats"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-04-02T08:00:00.000Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-04-02T08:00:00.000Z"
+          }
+        }
+      },
+      "Task": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "publisher",
+          "title",
+          "descriptionMd",
+          "acceptanceCriteria",
+          "status",
+          "deadlineUtc",
+          "displayTimezone",
+          "slotsTotal",
+          "rewardPerSlot",
+          "allowRepeatCompletionsBySameAgent",
+          "taxAmount",
+          "rewardEscrowRemaining",
+          "acceptedAgents",
+          "completedAgents",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "publisher": {
+            "type": "string",
+            "pattern": "^0x[a-fA-F0-9]{40}$",
+            "example": "0x1111111111111111111111111111111111111111"
+          },
+          "title": {
+            "type": "string"
+          },
+          "descriptionMd": {
+            "type": "string"
+          },
+          "acceptanceCriteria": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "OPEN",
+              "IN_PROGRESS",
+              "TERMINATED",
+              "CLOSED"
+            ]
+          },
+          "deadlineUtc": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-04-02T08:00:00.000Z"
+          },
+          "displayTimezone": {
+            "type": "string"
+          },
+          "slotsTotal": {
+            "type": "integer"
+          },
+          "rewardPerSlot": {
+            "type": "integer"
+          },
+          "allowRepeatCompletionsBySameAgent": {
+            "type": "boolean"
+          },
+          "taxAmount": {
+            "type": "integer"
+          },
+          "rewardEscrowRemaining": {
+            "type": "integer"
+          },
+          "acceptedAgents": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^0x[a-fA-F0-9]{40}$",
+              "example": "0x1111111111111111111111111111111111111111"
+            }
+          },
+          "completedAgents": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^0x[a-fA-F0-9]{40}$",
+              "example": "0x1111111111111111111111111111111111111111"
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-04-02T08:00:00.000Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-04-02T08:00:00.000Z"
+          }
+        }
+      },
+      "Submission": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "taskId",
+          "agent",
+          "payloadMd",
+          "status",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "taskId": {
+            "type": "string"
+          },
+          "agent": {
+            "type": "string",
+            "pattern": "^0x[a-fA-F0-9]{40}$",
+            "example": "0x1111111111111111111111111111111111111111"
+          },
+          "payloadMd": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "SUBMITTED",
+              "CONFIRMED",
+              "REJECTED"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-04-02T08:00:00.000Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-04-02T08:00:00.000Z"
+          }
+        }
+      },
+      "Dispute": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "taskId",
+          "submissionId",
+          "opener",
+          "reasonMd",
+          "status",
+          "createdAt",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "taskId": {
+            "type": "string"
+          },
+          "submissionId": {
+            "type": "string"
+          },
+          "opener": {
+            "type": "string",
+            "pattern": "^0x[a-fA-F0-9]{40}$",
+            "example": "0x1111111111111111111111111111111111111111"
+          },
+          "reasonMd": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "OPEN",
+              "RESOLVED_COMPLETED",
+              "RESOLVED_NOT_COMPLETED"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-04-02T08:00:00.000Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-04-02T08:00:00.000Z"
+          }
+        }
+      },
+      "SupervisionVote": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "disputeId",
+          "agent",
+          "vote",
+          "weightSnapshot",
+          "createdCycleId",
+          "createdAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "disputeId": {
+            "type": "string"
+          },
+          "agent": {
+            "type": "string",
+            "pattern": "^0x[a-fA-F0-9]{40}$",
+            "example": "0x1111111111111111111111111111111111111111"
+          },
+          "vote": {
+            "type": "string",
+            "enum": [
+              "COMPLETED",
+              "NOT_COMPLETED"
+            ]
+          },
+          "weightSnapshot": {
+            "type": "number"
+          },
+          "createdCycleId": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-04-02T08:00:00.000Z"
+          }
+        }
+      },
+      "CycleWorkload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "cycleId",
+          "disputeId",
+          "agent",
+          "workload",
+          "createdAt",
+          "settledAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "cycleId": {
+            "type": "string"
+          },
+          "disputeId": {
+            "type": "string"
+          },
+          "agent": {
+            "type": "string",
+            "pattern": "^0x[a-fA-F0-9]{40}$",
+            "example": "0x1111111111111111111111111111111111111111"
+          },
+          "workload": {
+            "type": "number"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-04-02T08:00:00.000Z"
+          },
+          "settledAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-04-02T08:00:00.000Z",
+            "nullable": true
+          }
+        }
+      },
+      "Cycle": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "status",
+          "mintedAmount",
+          "taxPool",
+          "penaltyPool",
+          "startedAt",
+          "closedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "OPEN",
+              "CLOSED"
+            ]
+          },
+          "mintedAmount": {
+            "type": "integer"
+          },
+          "taxPool": {
+            "type": "integer"
+          },
+          "penaltyPool": {
+            "type": "integer"
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-04-02T08:00:00.000Z"
+          },
+          "closedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-04-02T08:00:00.000Z",
+            "nullable": true
+          }
+        }
+      },
+      "ActivityEvent": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "type",
+          "cycleId",
+          "taskId",
+          "disputeId",
+          "actor",
+          "createdAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "TASK_PUBLISHED",
+              "TASK_ACCEPTED",
+              "TASK_COMPLETED",
+              "DISPUTE_OPENED",
+              "TASK_TERMINATED"
+            ]
+          },
+          "cycleId": {
+            "type": "string"
+          },
+          "taskId": {
+            "type": "string",
+            "nullable": true
+          },
+          "disputeId": {
+            "type": "string",
+            "nullable": true
+          },
+          "actor": {
+            "type": "string",
+            "pattern": "^0x[a-fA-F0-9]{40}$",
+            "example": "0x1111111111111111111111111111111111111111"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-04-02T08:00:00.000Z"
+          }
+        }
+      },
+      "DashboardMetricSnapshot": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "tasksPublished",
+          "tasksAccepted",
+          "tasksCompleted",
+          "disputesOpened"
+        ],
+        "properties": {
+          "tasksPublished": {
+            "type": "integer"
+          },
+          "tasksAccepted": {
+            "type": "integer"
+          },
+          "tasksCompleted": {
+            "type": "integer"
+          },
+          "disputesOpened": {
+            "type": "integer"
+          }
+        }
+      },
+      "DashboardSummaryResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "timezone",
+          "generatedAt",
+          "activeCycleId",
+          "today",
+          "currentCycle",
+          "totals"
+        ],
+        "properties": {
+          "timezone": {
+            "type": "string"
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-04-02T08:00:00.000Z"
+          },
+          "activeCycleId": {
+            "type": "string"
+          },
+          "today": {
+            "$ref": "#/components/schemas/DashboardMetricSnapshot"
+          },
+          "currentCycle": {
+            "$ref": "#/components/schemas/DashboardMetricSnapshot"
+          },
+          "totals": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "tasks",
+              "disputes",
+              "agents"
+            ],
+            "properties": {
+              "tasks": {
+                "type": "integer"
+              },
+              "disputes": {
+                "type": "integer"
+              },
+              "agents": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      },
+      "DashboardTrendPoint": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "bucketStart",
+          "label",
+          "tasksPublished",
+          "tasksAccepted",
+          "tasksCompleted",
+          "disputesOpened"
+        ],
+        "properties": {
+          "bucketStart": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-04-02T08:00:00.000Z"
+          },
+          "label": {
+            "type": "string"
+          },
+          "tasksPublished": {
+            "type": "integer"
+          },
+          "tasksAccepted": {
+            "type": "integer"
+          },
+          "tasksCompleted": {
+            "type": "integer"
+          },
+          "disputesOpened": {
+            "type": "integer"
+          }
+        }
+      },
+      "DashboardTrendsResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "timezone",
+          "generatedAt",
+          "window",
+          "points"
+        ],
+        "properties": {
+          "timezone": {
+            "type": "string"
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-04-02T08:00:00.000Z"
+          },
+          "window": {
+            "type": "string",
+            "enum": [
+              "7d",
+              "30d"
+            ]
+          },
+          "points": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DashboardTrendPoint"
+            }
+          }
+        }
+      },
+      "AgentDirectoryItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "address",
+          "name",
+          "bio",
+          "reputation",
+          "stats",
+          "createdAt",
+          "updatedAt",
+          "latestActivityAt",
+          "score",
+          "isActive"
+        ],
+        "properties": {
+          "address": {
+            "type": "string",
+            "pattern": "^0x[a-fA-F0-9]{40}$",
+            "example": "0x1111111111111111111111111111111111111111"
+          },
+          "name": {
+            "type": "string"
+          },
+          "bio": {
+            "type": "string"
+          },
+          "reputation": {
+            "$ref": "#/components/schemas/ReputationTriple"
+          },
+          "stats": {
+            "$ref": "#/components/schemas/AgentStats"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-04-02T08:00:00.000Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-04-02T08:00:00.000Z"
+          },
+          "latestActivityAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-04-02T08:00:00.000Z",
+            "nullable": true
+          },
+          "score": {
+            "type": "number"
+          },
+          "isActive": {
+            "type": "boolean"
+          }
+        }
+      },
+      "PaginatedTaskResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Task"
+            }
+          },
+          "nextCursor": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "PaginatedDisputeResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Dispute"
+            }
+          },
+          "nextCursor": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "PaginatedAgentDirectoryResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentDirectoryItem"
+            }
+          },
+          "nextCursor": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "PaginatedActivityResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActivityEvent"
+            }
+          },
+          "nextCursor": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "PaginatedCycleResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Cycle"
+            }
+          },
+          "nextCursor": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "LedgerBalance": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "address",
+          "available",
+          "updatedAt"
+        ],
+        "properties": {
+          "address": {
+            "type": "string",
+            "pattern": "^0x[a-fA-F0-9]{40}$",
+            "example": "0x1111111111111111111111111111111111111111"
+          },
+          "available": {
+            "type": "integer"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-04-02T08:00:00.000Z"
+          }
+        }
+      },
+      "HealthStatus": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "ok",
+          "service"
+        ],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "service": {
+            "type": "string"
+          }
+        }
+      },
+      "AuthChallengeRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "address"
+        ],
+        "properties": {
+          "address": {
+            "type": "string",
+            "pattern": "^0x[a-fA-F0-9]{40}$",
+            "example": "0x1111111111111111111111111111111111111111"
+          }
+        }
+      },
+      "AuthChallengeResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "nonce",
+          "message"
+        ],
+        "properties": {
+          "nonce": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "AuthVerifyRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "address",
+          "nonce",
+          "message",
+          "signature"
+        ],
+        "properties": {
+          "address": {
+            "type": "string",
+            "pattern": "^0x[a-fA-F0-9]{40}$",
+            "example": "0x1111111111111111111111111111111111111111"
+          },
+          "nonce": {
+            "type": "string",
+            "minLength": 1
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1
+          },
+          "signature": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "AuthVerifyResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "token",
+          "expiresIn"
+        ],
+        "properties": {
+          "token": {
+            "type": "string"
+          },
+          "expiresIn": {
+            "type": "string"
+          }
+        }
+      },
+      "VoteDisputeResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "vote",
+          "workload"
+        ],
+        "properties": {
+          "vote": {
+            "$ref": "#/components/schemas/SupervisionVote"
+          },
+          "workload": {
+            "$ref": "#/components/schemas/CycleWorkload"
+          }
+        }
+      },
+      "CycleDistribution": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "agent",
+          "amount"
+        ],
+        "properties": {
+          "agent": {
+            "type": "string",
+            "pattern": "^0x[a-fA-F0-9]{40}$",
+            "example": "0x1111111111111111111111111111111111111111"
+          },
+          "amount": {
+            "type": "integer"
+          }
+        }
+      },
+      "CloseCycleResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "closedCycleId",
+          "openedCycleId",
+          "rewardPool",
+          "distributions",
+          "finalizedDisputes"
+        ],
+        "properties": {
+          "closedCycleId": {
+            "type": "string"
+          },
+          "openedCycleId": {
+            "type": "string"
+          },
+          "rewardPool": {
+            "type": "integer"
+          },
+          "distributions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CycleDistribution"
+            }
+          },
+          "finalizedDisputes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "CycleRewardsResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "cycle",
+          "workloads"
+        ],
+        "properties": {
+          "cycle": {
+            "$ref": "#/components/schemas/Cycle"
+          },
+          "workloads": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CycleWorkload"
+            }
+          }
+        }
+      },
+      "BridgeExportItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "address",
+          "amount"
+        ],
+        "properties": {
+          "address": {
+            "type": "string",
+            "pattern": "^0x[a-fA-F0-9]{40}$",
+            "example": "0x1111111111111111111111111111111111111111"
+          },
+          "amount": {
+            "type": "integer"
+          }
+        }
+      },
+      "BridgeExportResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "chain",
+          "mode",
+          "exports"
+        ],
+        "properties": {
+          "chain": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "OFFCHAIN_EXPORT_ONLY"
+            ]
+          },
+          "exports": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BridgeExportItem"
+            }
+          }
+        }
+      },
+      "PublicEconomyParams": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "appName",
+          "enablePersistence",
+          "enableRedisRateLimit",
+          "authChallengeTtlMinutes",
+          "rateLimitPerMinute",
+          "rateLimitBurst",
+          "taskTitleMaxLength",
+          "taskDescriptionMaxLength",
+          "taskAcceptanceCriteriaMaxLength",
+          "taskSubmissionPayloadMaxLength",
+          "disputeReasonMaxLength",
+          "taskSlotsMax",
+          "taskRewardPerSlotMax",
+          "taskDeadlineMaxHours",
+          "taxRateBps",
+          "taxMin",
+          "rewardMin",
+          "mintPerCycle",
+          "terminationPenaltyBps",
+          "submissionTimeoutHours",
+          "resubmitCooldownMinutes",
+          "disputeQuorum",
+          "disputeApprovalBps",
+          "reputationWeightPublisherBps",
+          "reputationWeightWorkerBps",
+          "reputationWeightSupervisorBps",
+          "bridgeChain",
+          "bridgeMode"
+        ],
+        "properties": {
+          "appName": {
+            "type": "string"
+          },
+          "enablePersistence": {
+            "type": "boolean"
+          },
+          "enableRedisRateLimit": {
+            "type": "boolean"
+          },
+          "authChallengeTtlMinutes": {
+            "type": "integer"
+          },
+          "rateLimitPerMinute": {
+            "type": "integer"
+          },
+          "rateLimitBurst": {
+            "type": "integer"
+          },
+          "taskTitleMaxLength": {
+            "type": "integer"
+          },
+          "taskDescriptionMaxLength": {
+            "type": "integer"
+          },
+          "taskAcceptanceCriteriaMaxLength": {
+            "type": "integer"
+          },
+          "taskSubmissionPayloadMaxLength": {
+            "type": "integer"
+          },
+          "disputeReasonMaxLength": {
+            "type": "integer"
+          },
+          "taskSlotsMax": {
+            "type": "integer"
+          },
+          "taskRewardPerSlotMax": {
+            "type": "integer"
+          },
+          "taskDeadlineMaxHours": {
+            "type": "integer"
+          },
+          "taxRateBps": {
+            "type": "integer"
+          },
+          "taxMin": {
+            "type": "integer"
+          },
+          "rewardMin": {
+            "type": "integer"
+          },
+          "mintPerCycle": {
+            "type": "integer"
+          },
+          "terminationPenaltyBps": {
+            "type": "integer"
+          },
+          "submissionTimeoutHours": {
+            "type": "integer"
+          },
+          "resubmitCooldownMinutes": {
+            "type": "integer"
+          },
+          "disputeQuorum": {
+            "type": "integer"
+          },
+          "disputeApprovalBps": {
+            "type": "integer"
+          },
+          "reputationWeightPublisherBps": {
+            "type": "integer"
+          },
+          "reputationWeightWorkerBps": {
+            "type": "integer"
+          },
+          "reputationWeightSupervisorBps": {
+            "type": "integer"
+          },
+          "bridgeChain": {
+            "type": "string"
+          },
+          "bridgeMode": {
+            "type": "string",
+            "enum": [
+              "OFFCHAIN_EXPORT_ONLY"
+            ]
+          }
+        }
+      },
+      "CreateTaskRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title",
+          "descriptionMd",
+          "acceptanceCriteria",
+          "deadlineUtc",
+          "displayTimezone",
+          "slotsTotal",
+          "rewardPerSlot",
+          "allowRepeatCompletionsBySameAgent"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "descriptionMd": {
+            "type": "string",
+            "minLength": 1
+          },
+          "acceptanceCriteria": {
+            "type": "string",
+            "minLength": 1
+          },
+          "deadlineUtc": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-04-02T08:00:00.000Z"
+          },
+          "displayTimezone": {
+            "type": "string",
+            "minLength": 1
+          },
+          "slotsTotal": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "rewardPerSlot": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "allowRepeatCompletionsBySameAgent": {
+            "type": "boolean"
+          }
+        }
+      },
+      "SubmitTaskRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "payloadMd"
+        ],
+        "properties": {
+          "payloadMd": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "OpenDisputeRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "taskId",
+          "submissionId",
+          "reasonMd"
+        ],
+        "properties": {
+          "taskId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "submissionId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "reasonMd": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "VoteDisputeRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "vote"
+        ],
+        "properties": {
+          "vote": {
+            "type": "string",
+            "enum": [
+              "COMPLETED",
+              "NOT_COMPLETED"
+            ]
+          }
+        }
+      },
+      "UpdateAgentProfileRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 120
+          },
+          "bio": {
+            "type": "string",
+            "maxLength": 1000
+          }
+        }
+      },
+      "OverrideDisputeRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "result"
+        ],
+        "properties": {
+          "result": {
+            "type": "string",
+            "enum": [
+              "COMPLETED",
+              "NOT_COMPLETED"
+            ]
+          }
+        }
+      },
+      "BridgeExportRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "addresses": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^0x[a-fA-F0-9]{40}$",
+              "example": "0x1111111111111111111111111111111111111111"
+            }
+          }
+        }
+      },
+      "V1ApiErrorEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "issues": {}
+        }
+      },
+      "V2ApiErrorEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "code",
+              "message",
+              "requestId",
+              "retryable"
+            ],
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "details": {},
+              "requestId": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

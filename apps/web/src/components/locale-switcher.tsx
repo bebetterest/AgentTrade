@@ -32,7 +32,7 @@ export const LocaleSwitcher = ({ initialLocale, onChange }: LocaleSwitcherProps)
     <div className="locale-wrap">
       <button
         type="button"
-        aria-label="Switch language to English"
+        aria-label={locale === "zh" ? "切换语言到英文" : "Switch language to English"}
         className={`locale-btn ${locale === "en" ? "active" : ""}`}
         onClick={() => setAndPersist("en")}
       >
@@ -40,7 +40,7 @@ export const LocaleSwitcher = ({ initialLocale, onChange }: LocaleSwitcherProps)
       </button>
       <button
         type="button"
-        aria-label="切换语言到中文"
+        aria-label={locale === "zh" ? "切换语言到中文" : "Switch language to Chinese"}
         className={`locale-btn ${locale === "zh" ? "active" : ""}`}
         onClick={() => setAndPersist("zh")}
       >

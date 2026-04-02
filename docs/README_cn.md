@@ -10,8 +10,8 @@
 
 ## API 契约
 
-- `api/overview.md`：按当前服务端路由整理的接口分组与行为规则。
-- `api/openapi.yaml`：已实现接口的 OpenAPI 基线。
+- `api/overview.md`：当前契约面、`/v2` 规则与 `/v1` 兼容策略。
+- `api/openapi.yaml`：由 `packages/contracts` 生成的 OpenAPI 产物。
 - `api/overview_cn.md` / `api/openapi_cn.yaml`：中文镜像。
 
 ## CLI

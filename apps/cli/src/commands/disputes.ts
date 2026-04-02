@@ -1,8 +1,9 @@
 import type { Command } from "commander";
 import type { Dispute } from "@agentrade/types";
+import { cliOperationBindings } from "../operation-bindings.js";
 import { ensureAddress, ensureNonEmpty, ensurePositiveInteger, ensureVoteChoice } from "../validators.js";
 import { resolveTextInput } from "../text-input.js";
-import { executeBearerJsonCommand, executeJsonCommand } from "./shared.js";
+import { executeBearerOperationCommand, executeOperationCommand } from "./shared.js";
 
 export const registerDisputeCommands = (program: Command): void => {
   const disputes = program.command("disputes").description("Dispute and supervision commands");
@@ -19,8 +20,8 @@ export const registerDisputeCommands = (program: Command): void => {
     .option("--cursor <offset>", "pagination cursor")
     .option("--limit <number>", "page size")
     .action(async (options, command: Command) => {
-      await executeJsonCommand(command, async ({ client }) =>
-        client.getDisputes({
+      await executeOperationCommand(command, cliOperationBindings["disputes list"], async () => ({
+        query: {
           taskId: typeof options.task === "string" ? ensureNonEmpty(options.task, "--task") : undefined,
           opener: typeof options.opener === "string" ? ensureAddress(options.opener, "--opener") : undefined,
           status: typeof options.status === "string" ? options.status.trim().toUpperCase() as Dispute["status"] : undefined,
@@ -29,8 +30,8 @@ export const registerDisputeCommands = (program: Command): void => {
           order: typeof options.order === "string" ? options.order.trim().toLowerCase() as "asc" | "desc" : undefined,
           cursor: typeof options.cursor === "string" ? ensureNonEmpty(options.cursor, "--cursor") : undefined,
           limit: typeof options.limit === "string" ? ensurePositiveInteger(options.limit, "--limit") : undefined
-        })
-      );
+        }
+      }));
     });
 
   disputes
@@ -38,9 +39,9 @@ export const registerDisputeCommands = (program: Command): void => {
     .description("Get dispute details")
     .requiredOption("--dispute <id>", "dispute id")
     .action(async (options, command: Command) => {
-      await executeJsonCommand(command, async ({ client }) => {
-        return client.getDispute(ensureNonEmpty(String(options.dispute), "--dispute"));
-      });
+      await executeOperationCommand(command, cliOperationBindings["disputes get"], async () => ({
+        pathParams: { id: ensureNonEmpty(String(options.dispute), "--dispute") }
+      }));
     });
 
   disputes
@@ -51,17 +52,19 @@ export const registerDisputeCommands = (program: Command): void => {
     .option("--reason <markdown>", "reason markdown")
     .option("--reason-file <path>", "file containing dispute reason markdown")
     .action(async (options, command: Command) => {
-      await executeBearerJsonCommand(command, async ({ client }) => {
+      await executeBearerOperationCommand(command, cliOperationBindings["disputes open"], async () => {
         const reasonMd = resolveTextInput({
           inlineValue: options.reason,
           filePath: options.reasonFile,
           fieldName: "reason"
         });
-        return client.openDispute({
-          taskId: ensureNonEmpty(String(options.task), "--task"),
-          submissionId: ensureNonEmpty(String(options.submission), "--submission"),
-          reasonMd: String(reasonMd)
-        });
+        return {
+          body: {
+            taskId: ensureNonEmpty(String(options.task), "--task"),
+            submissionId: ensureNonEmpty(String(options.submission), "--submission"),
+            reasonMd: String(reasonMd)
+          }
+        };
       });
     });
 
@@ -71,10 +74,11 @@ export const registerDisputeCommands = (program: Command): void => {
     .requiredOption("--dispute <id>", "dispute id")
     .requiredOption("--vote <choice>", "COMPLETED or NOT_COMPLETED")
     .action(async (options, command: Command) => {
-      await executeBearerJsonCommand(command, async ({ client }) => {
-        return client.voteDispute(ensureNonEmpty(String(options.dispute), "--dispute"), {
+      await executeBearerOperationCommand(command, cliOperationBindings["disputes vote"], async () => ({
+        pathParams: { id: ensureNonEmpty(String(options.dispute), "--dispute") },
+        body: {
           vote: ensureVoteChoice(String(options.vote))
-        });
-      });
+        }
+      }));
     });
 };

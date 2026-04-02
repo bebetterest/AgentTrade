@@ -1,3 +1,4 @@
+import { buildOperationPath, getApiOperation } from "@agentrade/contracts";
 import type {
   ActivityEvent,
   ActivityEventType,
@@ -18,18 +19,6 @@ const runtimeBaseUrl = trimTrailingSlash(
     ? (process.env.INTERNAL_API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000")
     : (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000")
 );
-
-const buildQuery = (params: Record<string, string | number | boolean | undefined>): string => {
-  const search = new URLSearchParams();
-  for (const [key, value] of Object.entries(params)) {
-    if (value === undefined) {
-      continue;
-    }
-    search.set(key, String(value));
-  }
-  const serialized = search.toString();
-  return serialized.length > 0 ? `?${serialized}` : "";
-};
 
 interface RequestOptions {
   revalidate?: number;
@@ -55,7 +44,19 @@ class ApiRequestError extends Error {
 const isApiRequestError = (error: unknown): error is ApiRequestError =>
   error instanceof ApiRequestError;
 
-const readJson = async <T>(path: string, options?: RequestOptions): Promise<T> => {
+const readOperationJson = async <T>(
+  operationId: Parameters<typeof getApiOperation>[0],
+  input: {
+    pathParams?: Record<string, string>;
+    query?: Record<string, string | number | boolean | undefined>;
+  } = {},
+  options?: RequestOptions
+): Promise<T> => {
+  const operation = getApiOperation(operationId);
+  const path = buildOperationPath(operation, {
+    pathParams: input.pathParams,
+    query: input.query
+  });
   const response = await fetch(`${runtimeBaseUrl}${path}`, {
     signal: options?.signal,
     cache: "no-store",
@@ -66,7 +67,8 @@ const readJson = async <T>(path: string, options?: RequestOptions): Promise<T> =
   if (!response.ok) {
     throw new ApiRequestError(path, response.status, response.statusText);
   }
-  return (await response.json()) as T;
+  const payload = (await response.json()) as unknown;
+  return operation.responseSchema.parse(payload) as T;
 };
 
 export const fetchDashboardSummary = async (
@@ -74,8 +76,11 @@ export const fetchDashboardSummary = async (
   options?: ApiFetchOptions
 ): Promise<DashboardSummaryResponse | null> => {
   try {
-    return await readJson<DashboardSummaryResponse>(
-      `/v1/dashboard/summary${buildQuery({ tz: timeZone })}`,
+    return await readOperationJson<DashboardSummaryResponse>(
+      "dashboardSummaryV2",
+      {
+        query: { tz: timeZone }
+      },
       {
         revalidate: 10,
         signal: options?.signal
@@ -95,8 +100,11 @@ export const fetchDashboardTrends = async (
   options?: ApiFetchOptions
 ): Promise<DashboardTrendsResponse | null> => {
   try {
-    return await readJson<DashboardTrendsResponse>(
-      `/v1/dashboard/trends${buildQuery({ tz: timeZone, window })}`,
+    return await readOperationJson<DashboardTrendsResponse>(
+      "dashboardTrendsV2",
+      {
+        query: { tz: timeZone, window }
+      },
       {
         revalidate: 10,
         signal: options?.signal
@@ -112,7 +120,7 @@ export const fetchDashboardTrends = async (
 
 export const fetchActiveCycle = async (options?: ApiFetchOptions): Promise<Cycle | null> => {
   try {
-    return await readJson<Cycle>("/v1/cycles/active", {
+    return await readOperationJson<Cycle>("cyclesGetActiveV2", {}, {
       revalidate: 10,
       signal: options?.signal
     });
@@ -136,16 +144,19 @@ export const fetchTasks = async (params?: {
   strict?: boolean;
 }): Promise<PaginatedResponse<Task>> => {
   try {
-    return await readJson<PaginatedResponse<Task>>(
-      `/v1/tasks${buildQuery({
-        q: params?.q,
-        status: params?.status,
-        publisher: params?.publisher,
-        sort: params?.sort,
-        order: params?.order,
-        cursor: params?.cursor,
-        limit: params?.limit
-      })}`,
+    return await readOperationJson<PaginatedResponse<Task>>(
+      "tasksListV2",
+      {
+        query: {
+          q: params?.q,
+          status: params?.status,
+          publisher: params?.publisher,
+          sort: params?.sort,
+          order: params?.order,
+          cursor: params?.cursor,
+          limit: params?.limit
+        }
+      },
       {
         revalidate: 10,
         signal: params?.signal
@@ -161,10 +172,14 @@ export const fetchTasks = async (params?: {
 
 export const fetchTask = async (taskId: string, options?: ApiFetchOptions): Promise<Task | null> => {
   try {
-    return await readJson<Task>(`/v1/tasks/${taskId}`, {
-      revalidate: 10,
-      signal: options?.signal
-    });
+    return await readOperationJson<Task>(
+      "tasksGetV2",
+      { pathParams: { id: taskId } },
+      {
+        revalidate: 10,
+        signal: options?.signal
+      }
+    );
   } catch (error) {
     if (isApiRequestError(error) && error.status === 404) {
       return null;
@@ -189,17 +204,20 @@ export const fetchDisputes = async (params?: {
   strict?: boolean;
 }): Promise<PaginatedResponse<Dispute>> => {
   try {
-    return await readJson<PaginatedResponse<Dispute>>(
-      `/v1/disputes${buildQuery({
-        taskId: params?.taskId,
-        opener: params?.opener,
-        status: params?.status,
-        q: params?.q,
-        sort: params?.sort,
-        order: params?.order,
-        cursor: params?.cursor,
-        limit: params?.limit
-      })}`,
+    return await readOperationJson<PaginatedResponse<Dispute>>(
+      "disputesListV2",
+      {
+        query: {
+          taskId: params?.taskId,
+          opener: params?.opener,
+          status: params?.status,
+          q: params?.q,
+          sort: params?.sort,
+          order: params?.order,
+          cursor: params?.cursor,
+          limit: params?.limit
+        }
+      },
       {
         revalidate: 10,
         signal: params?.signal
@@ -215,10 +233,14 @@ export const fetchDisputes = async (params?: {
 
 export const fetchAgent = async (address: string, options?: ApiFetchOptions): Promise<AgentProfile | null> => {
   try {
-    return await readJson<AgentProfile>(`/v1/agents/${address}`, {
-      revalidate: 10,
-      signal: options?.signal
-    });
+    return await readOperationJson<AgentProfile>(
+      "agentsGetProfileV2",
+      { pathParams: { address } },
+      {
+        revalidate: 10,
+        signal: options?.signal
+      }
+    );
   } catch (error) {
     if (isApiRequestError(error) && error.status === 404) {
       return null;
@@ -241,15 +263,18 @@ export const fetchAgents = async (params?: {
   strict?: boolean;
 }): Promise<PaginatedResponse<AgentDirectoryItem>> => {
   try {
-    return await readJson<PaginatedResponse<AgentDirectoryItem>>(
-      `/v1/agents${buildQuery({
-        q: params?.q,
-        activeOnly: params?.activeOnly,
-        sort: params?.sort,
-        order: params?.order,
-        cursor: params?.cursor,
-        limit: params?.limit
-      })}`,
+    return await readOperationJson<PaginatedResponse<AgentDirectoryItem>>(
+      "agentsListV2",
+      {
+        query: {
+          q: params?.q,
+          activeOnly: params?.activeOnly,
+          sort: params?.sort,
+          order: params?.order,
+          cursor: params?.cursor,
+          limit: params?.limit
+        }
+      },
       {
         revalidate: 10,
         signal: params?.signal
@@ -275,16 +300,19 @@ export const fetchActivities = async (params?: {
   strict?: boolean;
 }): Promise<PaginatedResponse<ActivityEvent>> => {
   try {
-    return await readJson<PaginatedResponse<ActivityEvent>>(
-      `/v1/activities${buildQuery({
-        taskId: params?.taskId,
-        disputeId: params?.disputeId,
-        address: params?.address,
-        type: params?.type,
-        order: params?.order,
-        cursor: params?.cursor,
-        limit: params?.limit
-      })}`,
+    return await readOperationJson<PaginatedResponse<ActivityEvent>>(
+      "activitiesListV2",
+      {
+        query: {
+          taskId: params?.taskId,
+          disputeId: params?.disputeId,
+          address: params?.address,
+          type: params?.type,
+          order: params?.order,
+          cursor: params?.cursor,
+          limit: params?.limit
+        }
+      },
       {
         revalidate: 10,
         signal: params?.signal

@@ -10,8 +10,8 @@ Update docs in the same commit as behavior changes.
 
 ## API Contracts
 
-- `api/overview.md`: endpoint groups and behavior rules mapped to current server routes.
-- `api/openapi.yaml`: OpenAPI baseline for implemented endpoints.
+- `api/overview.md`: current contract surface, `/v2` rules, and `/v1` compatibility policy.
+- `api/openapi.yaml`: generated OpenAPI artifact from `packages/contracts`.
 - `api/overview_cn.md` / `api/openapi_cn.yaml`: Chinese mirrors.
 
 ## CLI

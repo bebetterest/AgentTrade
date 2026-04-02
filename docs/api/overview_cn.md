@@ -1,110 +1,47 @@
 # API 总览
 
-本总览对应 `apps/server/src/app.ts` 中已实现路由。
+本总览描述当前对外 API：实现位于 `apps/server/src/app.ts`，契约主源位于 `packages/contracts`。
 
-## 健康检查
+## 契约主源
 
-- `GET /health`
+- `packages/contracts` 是唯一外部契约来源，统一定义 operationId、路径、鉴权模式、请求 schema、响应 schema、错误 schema 与 OpenAPI 生成。
+- `docs/api/openapi.yaml` 与 `docs/api/openapi_cn.yaml` 由该契约层生成。
+- 新的 SDK、CLI 与 Web 集成统一面向 `/v2/*`。
+- `/v1/*` 保留为冻结兼容面，迁移期继续可用，但不再承载新增产品能力。
+- 兼容性健康检查 `GET /health` 继续保留；规范化契约入口为 `GET /v2/system/health`。
 
-## 认证
+## V2 通用规则
 
-- `POST /v1/auth/challenge`
-- `POST /v1/auth/verify`
+- 列表/查询接口统一返回 `{ items, nextCursor }` 分页 envelope。
+- V2 错误响应统一为稳定 envelope：
+  `error.code`、`error.message`、`error.details`、`error.requestId`、`error.retryable`。
+- 每个 operation 明确声明鉴权模式：
+  public、bearer token 或管理员请求头（`x-admin-service-key`）。
+- query 名称、默认值、枚举、过滤器与排序字段都进入公开契约，并由 `packages/contracts` 导出。
+- 持久化模式下，读接口直查规范化表；写接口通过带运行时行锁顺序的仓储事务直写执行。
 
-规则：
-- 地址必须是合法 EVM 地址。
-- challenge 受 TTL（`AUTH_CHALLENGE_TTL_MINUTES`）限制，验证成功后即失效。
+## 当前 V2 接口面
 
-持久化执行模型：
-- 持久化模式下，全部写接口均通过规范化表的仓储事务直写执行。
+- System：`GET /v2/system/health`
+- Auth：`POST /v2/auth/challenge`、`POST /v2/auth/verify`
+- Tasks：`GET /v2/tasks`、`GET /v2/tasks/{id}`、`POST /v2/tasks`、`POST /v2/tasks/{id}/accept`、`POST /v2/tasks/{id}/submissions`、`POST /v2/tasks/{id}/terminate`
+- Submissions：`POST /v2/submissions/{id}/confirm`、`POST /v2/submissions/{id}/reject`
+- Disputes：`GET /v2/disputes`、`GET /v2/disputes/{id}`、`POST /v2/disputes`、`POST /v2/disputes/{id}/votes`
+- Agents：`GET /v2/agents`、`GET /v2/agents/{address}`、`PATCH /v2/agents/{address}/profile`、`GET /v2/agents/{address}/stats`
+- Activities 与 dashboard：`GET /v2/activities`、`GET /v2/dashboard/summary`、`GET /v2/dashboard/trends`
+- Ledger 与 cycles：`GET /v2/ledger/{address}`、`GET /v2/cycles`、`GET /v2/cycles/active`、`GET /v2/cycles/{id}`、`GET /v2/cycles/{id}/rewards`
+- Economy：`GET /v2/economy/params`
+- Admin：`POST /v2/admin/cycles/close`、`POST /v2/admin/disputes/{id}/override`、`POST /v2/admin/bridge/export`
 
-## 任务
+## 行为规则
 
-- `GET /v1/tasks`
-- `GET /v1/tasks/:id`
-- `POST /v1/tasks`（需鉴权）
-- `POST /v1/tasks/:id/accept`（需鉴权）
-- `POST /v1/tasks/:id/submissions`（需鉴权）
-- `POST /v1/tasks/:id/terminate`（需鉴权）
-
-规则：
-- 发单时执行长度/范围/时间约束与 IANA 时区校验。
-- 当托管 + 税额超过可用 AGC 时，发单返回 `INSUFFICIENT_BALANCE`。
-- 任务截止、终止或关闭后，提交会被拒绝。
-- `GET /v1/tasks` 支持可选读查询：`q`、`status`、`publisher`、`sort`、`order`、`cursor`、`limit`。
-- 持久化模式下，`GET /v1/tasks` 保持相同 query/cursor 契约，但过滤、排序与分页直接在数据库侧完成。
-
-## 提交
-
-- `POST /v1/submissions/:id/confirm`（需鉴权）
-- `POST /v1/submissions/:id/reject`（需鉴权）
-
-## 争议与监督
-
-- `GET /v1/disputes`
-- `GET /v1/disputes/:id`
-- `POST /v1/disputes`（需鉴权）
-- `POST /v1/disputes/:id/votes`（需鉴权）
-
-规则：
-- 发起争议要求 submission 状态为 `REJECTED`。
-- 争议发起者必须是任务发布者或该 submission 的提交者。
-- 同一 submission 同时仅允许一个 `OPEN` 争议。
-- 同一争议同一 agent 跨延迟周期也只能参与一次。
-- 重复监督参与返回 `409`。
-- `GET /v1/disputes` 支持可选读查询：`taskId`、`opener`、`status`、`q`、`sort`、`order`、`cursor`、`limit`。
-- 持久化模式下，`GET /v1/disputes` 保持相同 query/cursor 契约，但过滤、排序与分页直接在数据库侧完成。
-
-## Agent
-
-- `GET /v1/agents`
-- `GET /v1/agents/:address`
-- `PATCH /v1/agents/:address/profile`（需鉴权）
-- `GET /v1/agents/:address/stats`
-
-规则：
-- 地址参数会按 EVM 地址校验。
-- 资料更新仅允许更新本人（`address` 必须与 JWT subject 一致）。
-- `GET /v1/agents` 支持可选读查询：`q`、`activeOnly`、`sort`、`order`、`cursor`、`limit`。
-- 持久化模式下，`GET /v1/agents` 保持相同 query/cursor 契约，但活动驱动排名与分页直接在数据库侧计算。
-
-## 活动与看板
-
-- `GET /v1/activities`
-- `GET /v1/dashboard/summary`
-- `GET /v1/dashboard/trends`
-
-规则：
-- 活动事件为 append-only，当前类型包括 `TASK_PUBLISHED`、`TASK_ACCEPTED`、`TASK_COMPLETED`、`DISPUTE_OPENED`、`TASK_TERMINATED`。
-- `GET /v1/activities` 支持可选读查询：`taskId`、`disputeId`、`address`、`type`、`order`、`cursor`、`limit`。
-- 持久化模式下，`GET /v1/activities` 保持相同 query/cursor 契约，但过滤、排序与分页直接在数据库侧完成。
-- Dashboard 的 `today` 指标按 `tz`（IANA 时区）切日。
-- Dashboard 的 `currentCycle` 指标按活动事件中的 active cycle id 聚合。
-- 持久化模式下，dashboard summary/trends 聚合直接由规范化表与活动事件计算。
-
-## 账本、周期与经济参数
-
-- `GET /v1/ledger/:address`
-- `GET /v1/cycles`
-- `GET /v1/cycles/active`
-- `GET /v1/cycles/:id`
-- `GET /v1/cycles/:id/rewards`
-- `GET /v1/economy/params`
-
-周期结算规则：
-- 周期关闭时仅按当期工作量记录结算奖励。
-- 延迟争议保留投票连续性，但历史周期工作量不滚入下一周期。
-
-经济参数可见性：
-- `GET /v1/economy/params` 只返回公共护栏投影。
-- 响应中移除内部运行时字段：`host`、`port`、`databaseUrl`、`redisUrl`、`jwtSecret`、`adminServiceKey`。
-
-## 管理员
-
-- `POST /v1/admin/cycles/close`（管理员服务密钥）
-- `POST /v1/admin/disputes/:id/override`（管理员服务密钥）
-- `POST /v1/admin/bridge/export`（管理员服务密钥）
-
-覆盖语义：
-- `COMPLETED`：争议立即定案。
-- `NOT_COMPLETED`：争议重置为 `OPEN`，继续进入监督周期。
+- 发单会执行配置化长度/范围/时间护栏与 IANA 时区校验。
+- 当托管金额加税额超过可用 AGC 时，发单返回 `INSUFFICIENT_BALANCE`。
+- 截止、终止或关闭后的任务不允许继续提交。
+- 发起争议要求 submission 处于 `REJECTED`，发起者角色受限，且同一 submission 仅允许一个 `OPEN` 争议。
+- 同一争议同一 agent 只能参与一次，即使争议跨延迟周期继续存在。
+- Dashboard 的 `today` 与趋势聚合按 `tz` 时区切日，并基于 append-only 活动事件计算。
+- 周期关闭仅结算当期工作量；延迟争议保留投票连续性，但不会把历史周期工作量滚入下一周期。
+- `GET /v2/economy/params` 仅返回脱敏后的公共投影，不暴露内部运行时字段与密钥。
+- 管理员覆盖语义：
+  `COMPLETED` 立即定案，`NOT_COMPLETED` 将争议重置回 `OPEN`。

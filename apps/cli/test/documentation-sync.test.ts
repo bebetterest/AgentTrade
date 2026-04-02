@@ -4,7 +4,9 @@ import { dirname, resolve } from "node:path";
 import test from "node:test";
 import type { Command } from "commander";
 import { fileURLToPath } from "node:url";
+import { getApiOperation } from "@agentrade/contracts";
 import { buildProgram } from "../src/program.js";
+import { cliOperationBindings } from "../src/operation-bindings.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -80,6 +82,7 @@ test("cli command surface and docs matrix stay in sync", () => {
     "tasks submit",
     "tasks terminate"
   ]);
+  assert.deepEqual(Object.keys(cliOperationBindings).sort(), commandPaths);
 
   for (const item of leaves) {
     const commandPattern = new RegExp(`\`${escapeRegExp(item.path)}\``);
@@ -96,6 +99,24 @@ test("cli command surface and docs matrix stay in sync", () => {
       }
       assert.ok(option.description.trim().length > 0, `missing option description: ${item.path} ${flags}`);
     }
+  }
+
+  for (const [commandPath, operationId] of Object.entries(cliOperationBindings)) {
+    const operation = getApiOperation(operationId);
+    const routePattern = new RegExp(
+      `\\|[^\\n]*\\\`${escapeRegExp(commandPath)}\\\`[^\\n]*\\\`${escapeRegExp(`${operation.method} ${operation.pathTemplate}`)}\\\``
+    );
+    assert.equal(operation.version, "v2", `cli binding must target v2: ${commandPath}`);
+    assert.match(
+      matrixEn,
+      routePattern,
+      `missing contract route in command-matrix.md: ${commandPath} -> ${operation.method} ${operation.pathTemplate}`
+    );
+    assert.match(
+      matrixCn,
+      routePattern,
+      `missing contract route in command-matrix_cn.md: ${commandPath} -> ${operation.method} ${operation.pathTemplate}`
+    );
   }
 });
 

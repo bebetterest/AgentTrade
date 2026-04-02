@@ -1,3 +1,9 @@
+import {
+  buildOperationPath,
+  getApiOperation,
+  type ApiAuthMode,
+  type ApiOperationId
+} from "@agentrade/contracts";
 import type {
   ActivityEvent,
   ActivityEventType,
@@ -5,15 +11,14 @@ import type {
   Address,
   AgentProfile,
   AgentStats,
-  ApiErrorEnvelope,
   AuthChallengeResponse,
   AuthVerifyResponse,
-  DashboardSummaryResponse,
-  DashboardTrendsResponse,
   BridgeExportResponse,
   CloseCycleResult,
   Cycle,
   CycleRewardsResponse,
+  DashboardSummaryResponse,
+  DashboardTrendsResponse,
   Dispute,
   HealthStatus,
   LedgerBalance,
@@ -34,11 +39,20 @@ export interface ApiClientOptions {
   fetchImpl?: typeof fetch;
 }
 
-export interface ApiRequestOptions {
-  method?: "GET" | "POST" | "PATCH";
+export interface OperationRequestOptions {
+  pathParams?: Record<string, string | number>;
+  query?: Record<string, string | number | boolean | undefined | null>;
   body?: unknown;
-  headers?: Record<string, string>;
-  auth?: "none" | "bearer" | "admin";
+  timeoutMs?: number;
+  retries?: number;
+  auth?: ApiAuthMode;
+}
+
+interface RawRequestOptions {
+  method: "GET" | "POST" | "PATCH";
+  path: string;
+  auth: ApiAuthMode;
+  body?: unknown;
   timeoutMs?: number;
   retries?: number;
 }
@@ -83,19 +97,31 @@ const retryDelayMs = (attempt: number): number => Math.min(1000, 100 * 2 ** (att
 const isAbortError = (error: unknown): boolean =>
   error instanceof Error && error.name === "AbortError";
 
-const parseApiError = (body: unknown): ApiErrorEnvelope | null => {
+const parseApiError = (
+  body: unknown
+): { code: string; message?: string; details?: unknown } | null => {
   if (!body || typeof body !== "object") {
     return null;
   }
   const envelope = body as Record<string, unknown>;
-  if (typeof envelope.error !== "string") {
-    return null;
+  if (typeof envelope.error === "string") {
+    return {
+      code: envelope.error,
+      message: typeof envelope.message === "string" ? envelope.message : undefined,
+      details: envelope.issues
+    };
   }
-  return {
-    error: envelope.error,
-    message: typeof envelope.message === "string" ? envelope.message : undefined,
-    issues: envelope.issues
-  };
+  if (envelope.error && typeof envelope.error === "object") {
+    const nested = envelope.error as Record<string, unknown>;
+    if (typeof nested.code === "string") {
+      return {
+        code: nested.code,
+        message: typeof nested.message === "string" ? nested.message : undefined,
+        details: nested.details
+      };
+    }
+  }
+  return null;
 };
 
 const parseResponseBody = async (response: Response): Promise<unknown> => {
@@ -120,18 +146,6 @@ const parseResponseBody = async (response: Response): Promise<unknown> => {
 const hasHeader = (headers: Record<string, string>, key: string): boolean => {
   const lower = key.toLowerCase();
   return Object.keys(headers).some((header) => header.toLowerCase() === lower);
-};
-
-const buildQueryString = (params: Record<string, string | number | boolean | undefined>): string => {
-  const search = new URLSearchParams();
-  for (const [key, value] of Object.entries(params)) {
-    if (value === undefined) {
-      continue;
-    }
-    search.set(key, String(value));
-  }
-  const serialized = search.toString();
-  return serialized.length > 0 ? `?${serialized}` : "";
 };
 
 export class AgentradeApiClient {
@@ -167,7 +181,7 @@ export class AgentradeApiClient {
     this.retries = retries;
   }
 
-  private resolveAuthHeaders(auth: ApiRequestOptions["auth"]): Record<string, string> {
+  private resolveAuthHeaders(auth: ApiAuthMode): Record<string, string> {
     if (auth === "bearer") {
       if (!this.token) {
         throw new ApiClientError("missing bearer token for authenticated request", {
@@ -187,8 +201,7 @@ export class AgentradeApiClient {
     return {};
   }
 
-  private async request<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
-    const method = options.method ?? "GET";
+  private async requestRaw<T>(options: RawRequestOptions): Promise<T> {
     const retries = Math.max(0, options.retries ?? this.retries);
     const maxAttempts = retries + 1;
     const timeoutMs = Math.max(1, options.timeoutMs ?? this.timeoutMs);
@@ -200,23 +213,22 @@ export class AgentradeApiClient {
       const timer = setTimeout(() => controller.abort(), timeoutMs);
 
       try {
-        const authHeaders = this.resolveAuthHeaders(options.auth ?? "none");
-        const baseHeaders: Record<string, string> = {
-          ...authHeaders,
-          ...(options.headers ?? {})
+        const authHeaders = this.resolveAuthHeaders(options.auth);
+        const headers: Record<string, string> = {
+          ...authHeaders
         };
 
         let body: string | undefined;
         if (options.body !== undefined) {
           body = JSON.stringify(options.body);
-          if (!hasHeader(baseHeaders, "content-type")) {
-            baseHeaders["content-type"] = "application/json";
+          if (!hasHeader(headers, "content-type")) {
+            headers["content-type"] = "application/json";
           }
         }
 
-        const response = await this.fetchImpl(`${this.baseUrl}${path}`, {
-          method,
-          headers: baseHeaders,
+        const response = await this.fetchImpl(`${this.baseUrl}${options.path}`, {
+          method: options.method,
+          headers,
           body,
           signal: controller.signal
         });
@@ -236,8 +248,8 @@ export class AgentradeApiClient {
             envelope?.message ?? `HTTP ${response.status} request failed`,
             {
               httpStatus: response.status,
-              apiError: envelope?.error ?? null,
-              issues: envelope?.issues ?? null,
+              apiError: envelope?.code ?? null,
+              issues: envelope?.details ?? null,
               retryable,
               responseBody: payload
             }
@@ -252,12 +264,10 @@ export class AgentradeApiClient {
 
         const retryable = isAbortError(error) || error instanceof TypeError;
         lastError = error;
-
         if (retryable && attempt < maxAttempts) {
           await sleep(retryDelayMs(attempt));
           continue;
         }
-
         throw new ApiClientError(
           error instanceof Error ? error.message : "network request failed",
           {
@@ -270,23 +280,37 @@ export class AgentradeApiClient {
       }
     }
 
-    throw new ApiClientError(
-      lastError instanceof Error ? lastError.message : "request failed",
-      {
-        retryable: false
-      }
-    );
+    throw new ApiClientError(lastError instanceof Error ? lastError.message : "request failed", {
+      retryable: false
+    });
+  }
+
+  async requestOperation<T>(
+    operationId: ApiOperationId,
+    input: OperationRequestOptions = {}
+  ): Promise<T> {
+    const operation = getApiOperation(operationId);
+    const path = buildOperationPath(operation, {
+      pathParams: input.pathParams,
+      query: input.query
+    });
+    const payload = await this.requestRaw<unknown>({
+      method: operation.method,
+      path,
+      auth: input.auth ?? operation.auth,
+      body: input.body,
+      timeoutMs: input.timeoutMs,
+      retries: input.retries
+    });
+    return operation.responseSchema.parse(payload) as T;
   }
 
   health(): Promise<HealthStatus> {
-    return this.request<HealthStatus>("/health");
+    return this.requestOperation<HealthStatus>("systemHealthV2");
   }
 
   authChallenge(payload: { address: Address }): Promise<AuthChallengeResponse> {
-    return this.request<AuthChallengeResponse>("/v1/auth/challenge", {
-      method: "POST",
-      body: payload
-    });
+    return this.requestOperation<AuthChallengeResponse>("authChallengeV2", { body: payload });
   }
 
   authVerify(payload: {
@@ -295,10 +319,7 @@ export class AgentradeApiClient {
     message: string;
     signature: string;
   }): Promise<AuthVerifyResponse> {
-    return this.request<AuthVerifyResponse>("/v1/auth/verify", {
-      method: "POST",
-      body: payload
-    });
+    return this.requestOperation<AuthVerifyResponse>("authVerifyV2", { body: payload });
   }
 
   getTasks(params?: {
@@ -310,20 +331,13 @@ export class AgentradeApiClient {
     cursor?: string;
     limit?: number;
   }): Promise<PaginatedResponse<Task>> {
-    const query = buildQueryString({
-      q: params?.q,
-      status: params?.status,
-      publisher: params?.publisher,
-      sort: params?.sort,
-      order: params?.order,
-      cursor: params?.cursor,
-      limit: params?.limit
-    });
-    return this.request<PaginatedResponse<Task>>(`/v1/tasks${query}`);
+    return this.requestOperation<PaginatedResponse<Task>>("tasksListV2", { query: params });
   }
 
   getTask(taskId: string): Promise<Task> {
-    return this.request<Task>(`/v1/tasks/${taskId}`);
+    return this.requestOperation<Task>("tasksGetV2", {
+      pathParams: { id: taskId }
+    });
   }
 
   createTask(payload: {
@@ -336,46 +350,39 @@ export class AgentradeApiClient {
     rewardPerSlot: number;
     allowRepeatCompletionsBySameAgent: boolean;
   }): Promise<Task> {
-    return this.request<Task>("/v1/tasks", {
-      method: "POST",
-      auth: "bearer",
+    return this.requestOperation<Task>("tasksCreateV2", {
       body: payload
     });
   }
 
   acceptTask(taskId: string): Promise<Task> {
-    return this.request<Task>(`/v1/tasks/${taskId}/accept`, {
-      method: "POST",
-      auth: "bearer"
+    return this.requestOperation<Task>("tasksAcceptV2", {
+      pathParams: { id: taskId }
     });
   }
 
   submitTask(taskId: string, payload: { payloadMd: string }): Promise<Submission> {
-    return this.request<Submission>(`/v1/tasks/${taskId}/submissions`, {
-      method: "POST",
-      auth: "bearer",
+    return this.requestOperation<Submission>("tasksSubmitV2", {
+      pathParams: { id: taskId },
       body: payload
     });
   }
 
   terminateTask(taskId: string): Promise<Task> {
-    return this.request<Task>(`/v1/tasks/${taskId}/terminate`, {
-      method: "POST",
-      auth: "bearer"
+    return this.requestOperation<Task>("tasksTerminateV2", {
+      pathParams: { id: taskId }
     });
   }
 
   confirmSubmission(submissionId: string): Promise<Submission> {
-    return this.request<Submission>(`/v1/submissions/${submissionId}/confirm`, {
-      method: "POST",
-      auth: "bearer"
+    return this.requestOperation<Submission>("submissionsConfirmV2", {
+      pathParams: { id: submissionId }
     });
   }
 
   rejectSubmission(submissionId: string): Promise<Submission> {
-    return this.request<Submission>(`/v1/submissions/${submissionId}/reject`, {
-      method: "POST",
-      auth: "bearer"
+    return this.requestOperation<Submission>("submissionsRejectV2", {
+      pathParams: { id: submissionId }
     });
   }
 
@@ -389,21 +396,15 @@ export class AgentradeApiClient {
     cursor?: string;
     limit?: number;
   }): Promise<PaginatedResponse<Dispute>> {
-    const query = buildQueryString({
-      taskId: params?.taskId,
-      opener: params?.opener,
-      status: params?.status,
-      q: params?.q,
-      sort: params?.sort,
-      order: params?.order,
-      cursor: params?.cursor,
-      limit: params?.limit
+    return this.requestOperation<PaginatedResponse<Dispute>>("disputesListV2", {
+      query: params
     });
-    return this.request<PaginatedResponse<Dispute>>(`/v1/disputes${query}`);
   }
 
   getDispute(disputeId: string): Promise<Dispute> {
-    return this.request<Dispute>(`/v1/disputes/${disputeId}`);
+    return this.requestOperation<Dispute>("disputesGetV2", {
+      pathParams: { id: disputeId }
+    });
   }
 
   openDispute(payload: {
@@ -411,23 +412,22 @@ export class AgentradeApiClient {
     submissionId: string;
     reasonMd: string;
   }): Promise<Dispute> {
-    return this.request<Dispute>("/v1/disputes", {
-      method: "POST",
-      auth: "bearer",
+    return this.requestOperation<Dispute>("disputesOpenV2", {
       body: payload
     });
   }
 
   voteDispute(disputeId: string, payload: { vote: VoteChoice }): Promise<VoteDisputeResult> {
-    return this.request<VoteDisputeResult>(`/v1/disputes/${disputeId}/votes`, {
-      method: "POST",
-      auth: "bearer",
+    return this.requestOperation<VoteDisputeResult>("disputesVoteV2", {
+      pathParams: { id: disputeId },
       body: payload
     });
   }
 
   getAgentProfile(address: Address): Promise<AgentProfile> {
-    return this.request<AgentProfile>(`/v1/agents/${address}`);
+    return this.requestOperation<AgentProfile>("agentsGetProfileV2", {
+      pathParams: { address }
+    });
   }
 
   getAgents(params?: {
@@ -438,27 +438,22 @@ export class AgentradeApiClient {
     cursor?: string;
     limit?: number;
   }): Promise<PaginatedResponse<AgentDirectoryItem>> {
-    const query = buildQueryString({
-      q: params?.q,
-      activeOnly: params?.activeOnly,
-      sort: params?.sort,
-      order: params?.order,
-      cursor: params?.cursor,
-      limit: params?.limit
+    return this.requestOperation<PaginatedResponse<AgentDirectoryItem>>("agentsListV2", {
+      query: params
     });
-    return this.request<PaginatedResponse<AgentDirectoryItem>>(`/v1/agents${query}`);
   }
 
   updateAgentProfile(address: Address, payload: { name?: string; bio?: string }): Promise<AgentProfile> {
-    return this.request<AgentProfile>(`/v1/agents/${address}/profile`, {
-      method: "PATCH",
-      auth: "bearer",
+    return this.requestOperation<AgentProfile>("agentsUpdateProfileV2", {
+      pathParams: { address },
       body: payload
     });
   }
 
   getAgentStats(address: Address): Promise<AgentStats> {
-    return this.request<AgentStats>(`/v1/agents/${address}/stats`);
+    return this.requestOperation<AgentStats>("agentsGetStatsV2", {
+      pathParams: { address }
+    });
   }
 
   getActivities(params?: {
@@ -470,74 +465,68 @@ export class AgentradeApiClient {
     cursor?: string;
     limit?: number;
   }): Promise<PaginatedResponse<ActivityEvent>> {
-    const query = buildQueryString({
-      taskId: params?.taskId,
-      disputeId: params?.disputeId,
-      address: params?.address,
-      type: params?.type,
-      order: params?.order,
-      cursor: params?.cursor,
-      limit: params?.limit
+    return this.requestOperation<PaginatedResponse<ActivityEvent>>("activitiesListV2", {
+      query: params
     });
-    return this.request<PaginatedResponse<ActivityEvent>>(`/v1/activities${query}`);
   }
 
   getDashboardSummary(params?: { tz?: string }): Promise<DashboardSummaryResponse> {
-    const query = buildQueryString({ tz: params?.tz });
-    return this.request<DashboardSummaryResponse>(`/v1/dashboard/summary${query}`);
-  }
-
-  getDashboardTrends(params?: {
-    tz?: string;
-    window?: "7d" | "30d";
-  }): Promise<DashboardTrendsResponse> {
-    const query = buildQueryString({ tz: params?.tz, window: params?.window });
-    return this.request<DashboardTrendsResponse>(`/v1/dashboard/trends${query}`);
-  }
-
-  getLedger(address: Address): Promise<LedgerBalance> {
-    return this.request<LedgerBalance>(`/v1/ledger/${address}`);
-  }
-
-  getCycles(): Promise<{ items: Cycle[] }> {
-    return this.request<{ items: Cycle[] }>("/v1/cycles");
-  }
-
-  getActiveCycle(): Promise<Cycle> {
-    return this.request<Cycle>("/v1/cycles/active");
-  }
-
-  getCycle(cycleId: string): Promise<Cycle> {
-    return this.request<Cycle>(`/v1/cycles/${cycleId}`);
-  }
-
-  getCycleRewards(cycleId: string): Promise<CycleRewardsResponse> {
-    return this.request<CycleRewardsResponse>(`/v1/cycles/${cycleId}/rewards`);
-  }
-
-  getEconomyParams(): Promise<PublicEconomyParams> {
-    return this.request<PublicEconomyParams>("/v1/economy/params");
-  }
-
-  closeCurrentCycleAdmin(): Promise<CloseCycleResult> {
-    return this.request<CloseCycleResult>("/v1/admin/cycles/close", {
-      method: "POST",
-      auth: "admin"
+    return this.requestOperation<DashboardSummaryResponse>("dashboardSummaryV2", {
+      query: params
     });
   }
 
+  getDashboardTrends(params?: { tz?: string; window?: "7d" | "30d" }): Promise<DashboardTrendsResponse> {
+    return this.requestOperation<DashboardTrendsResponse>("dashboardTrendsV2", {
+      query: params
+    });
+  }
+
+  getLedger(address: Address): Promise<LedgerBalance> {
+    return this.requestOperation<LedgerBalance>("ledgerGetV2", {
+      pathParams: { address }
+    });
+  }
+
+  getCycles(params?: { cursor?: string; limit?: number }): Promise<PaginatedResponse<Cycle>> {
+    return this.requestOperation<PaginatedResponse<Cycle>>("cyclesListV2", {
+      query: params
+    });
+  }
+
+  getActiveCycle(): Promise<Cycle> {
+    return this.requestOperation<Cycle>("cyclesGetActiveV2");
+  }
+
+  getCycle(cycleId: string): Promise<Cycle> {
+    return this.requestOperation<Cycle>("cyclesGetV2", {
+      pathParams: { id: cycleId }
+    });
+  }
+
+  getCycleRewards(cycleId: string): Promise<CycleRewardsResponse> {
+    return this.requestOperation<CycleRewardsResponse>("cyclesGetRewardsV2", {
+      pathParams: { id: cycleId }
+    });
+  }
+
+  getEconomyParams(): Promise<PublicEconomyParams> {
+    return this.requestOperation<PublicEconomyParams>("economyGetParamsV2");
+  }
+
+  closeCurrentCycleAdmin(): Promise<CloseCycleResult> {
+    return this.requestOperation<CloseCycleResult>("adminCloseCycleV2");
+  }
+
   overrideDisputeAdmin(disputeId: string, payload: { result: "COMPLETED" | "NOT_COMPLETED" }): Promise<Dispute> {
-    return this.request<Dispute>(`/v1/admin/disputes/${disputeId}/override`, {
-      method: "POST",
-      auth: "admin",
+    return this.requestOperation<Dispute>("adminOverrideDisputeV2", {
+      pathParams: { id: disputeId },
       body: payload
     });
   }
 
   exportBridgeBatchAdmin(payload: { addresses?: Address[] } = {}): Promise<BridgeExportResponse> {
-    return this.request<BridgeExportResponse>("/v1/admin/bridge/export", {
-      method: "POST",
-      auth: "admin",
+    return this.requestOperation<BridgeExportResponse>("adminBridgeExportV2", {
       body: payload
     });
   }

@@ -2,6 +2,10 @@
 
 ## 2026-04-02
 
+- Added `packages/contracts` as the single external contract source, defining versioned operation metadata, request/response schemas, error envelopes, and generated OpenAPI output.
+- Split the server API surface into resource route modules, kept `app.ts` focused on assembly/auth/error handling, and wired `/v2` responses through contract-backed validation.
+- Migrated SDK request assembly, CLI operation bindings, and web read clients to `/v2`, while keeping `/v1` as a frozen compatibility surface.
+- Added contract-drift verification for CLI operation bindings and server-side tests for contract completeness, generated OpenAPI sync, and live `/v2` response-schema validation.
 - Hardened `GET /v1/economy/params` into a sanitized `PublicEconomyParams` response and added server/CLI regressions that assert secrets and infrastructure URLs never leak publicly.
 - Added startup validation that rejects placeholder `JWT_SECRET` / `ADMIN_SERVICE_KEY` values outside `NODE_ENV=test`, updated `.env.example`, and aligned local toolchain guidance around Node 22 + pnpm 9 + `corepack enable`.
 - Extended persistence-mode read paths so tasks/disputes/activities/agents/dashboard perform DB-side filtering, sorting, pagination, and aggregation without changing external query/cursor contracts.

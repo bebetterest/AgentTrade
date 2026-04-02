@@ -1,5 +1,5 @@
 {
-  "name": "@agentrade/sdk",
+  "name": "@agentrade/contracts",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -11,7 +11,7 @@
     "lint": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@agentrade/contracts": "workspace:*",
-    "@agentrade/types": "workspace:*"
+    "@agentrade/types": "workspace:*",
+    "zod": "^3.24.2"
   }
 }

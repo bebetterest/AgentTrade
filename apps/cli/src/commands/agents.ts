@@ -1,8 +1,9 @@
 import type { Command } from "commander";
 import { CliValidationError } from "../errors.js";
+import { cliOperationBindings } from "../operation-bindings.js";
 import { resolveTextInput } from "../text-input.js";
 import { ensureAddress, ensureNonEmpty, ensurePositiveInteger } from "../validators.js";
-import { executeBearerJsonCommand, executeJsonCommand } from "./shared.js";
+import { executeBearerOperationCommand, executeOperationCommand } from "./shared.js";
 
 export const registerAgentCommands = (program: Command): void => {
   const agents = program.command("agents").description("Agent profile and stats commands");
@@ -17,8 +18,8 @@ export const registerAgentCommands = (program: Command): void => {
     .option("--cursor <offset>", "pagination cursor")
     .option("--limit <number>", "page size")
     .action(async (options, command: Command) => {
-      await executeJsonCommand(command, async ({ client }) =>
-        client.getAgents({
+      await executeOperationCommand(command, cliOperationBindings["agents list"], async () => ({
+        query: {
           q: typeof options.q === "string" ? ensureNonEmpty(options.q, "--q") : undefined,
           activeOnly: options.activeOnly ? true : undefined,
           sort: typeof options.sort === "string"
@@ -35,8 +36,8 @@ export const registerAgentCommands = (program: Command): void => {
             : undefined,
           cursor: typeof options.cursor === "string" ? ensureNonEmpty(options.cursor, "--cursor") : undefined,
           limit: typeof options.limit === "string" ? ensurePositiveInteger(options.limit, "--limit") : undefined
-        })
-      );
+        }
+      }));
     });
 
   const profile = agents.command("profile").description("Agent profile commands");
@@ -46,9 +47,9 @@ export const registerAgentCommands = (program: Command): void => {
     .description("Get agent profile")
     .requiredOption("--address <address>", "agent address")
     .action(async (options, command: Command) => {
-      await executeJsonCommand(command, async ({ client }) => {
-        return client.getAgentProfile(ensureAddress(String(options.address), "--address"));
-      });
+      await executeOperationCommand(command, cliOperationBindings["agents profile get"], async () => ({
+        pathParams: { address: ensureAddress(String(options.address), "--address") }
+      }));
     });
 
   profile
@@ -60,7 +61,7 @@ export const registerAgentCommands = (program: Command): void => {
     .option("--bio <text>", "profile bio")
     .option("--bio-file <path>", "file containing profile bio")
     .action(async (options, command: Command) => {
-      await executeBearerJsonCommand(command, async ({ client }) => {
+      await executeBearerOperationCommand(command, cliOperationBindings["agents profile update"], async () => {
         const name = resolveTextInput({
           inlineValue: options.name,
           filePath: options.nameFile,
@@ -80,10 +81,13 @@ export const registerAgentCommands = (program: Command): void => {
           throw new CliValidationError("at least one of --name/--name-file or --bio/--bio-file must be provided");
         }
 
-        return client.updateAgentProfile(ensureAddress(String(options.address), "--address"), {
-          ...(name !== undefined ? { name } : {}),
-          ...(bio !== undefined ? { bio } : {})
-        });
+        return {
+          pathParams: { address: ensureAddress(String(options.address), "--address") },
+          body: {
+            ...(name !== undefined ? { name } : {}),
+            ...(bio !== undefined ? { bio } : {})
+          }
+        };
       });
     });
 
@@ -92,8 +96,8 @@ export const registerAgentCommands = (program: Command): void => {
     .description("Get agent stats")
     .requiredOption("--address <address>", "agent address")
     .action(async (options, command: Command) => {
-      await executeJsonCommand(command, async ({ client }) => {
-        return client.getAgentStats(ensureAddress(String(options.address), "--address"));
-      });
+      await executeOperationCommand(command, cliOperationBindings["agents stats"], async () => ({
+        pathParams: { address: ensureAddress(String(options.address), "--address") }
+      }));
     });
 };

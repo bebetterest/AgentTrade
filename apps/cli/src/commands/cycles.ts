@@ -1,16 +1,27 @@
 import type { Command } from "commander";
-import { ensureNonEmpty } from "../validators.js";
-import { executeJsonCommand } from "./shared.js";
+import { cliOperationBindings } from "../operation-bindings.js";
+import { ensureNonEmpty, ensurePositiveInteger } from "../validators.js";
+import { executeOperationCommand } from "./shared.js";
 
 export const registerCycleCommands = (program: Command): void => {
   const cycles = program.command("cycles").description("Cycle and settlement visibility commands");
 
-  cycles.command("list").description("List cycles").action(async (_options, command: Command) => {
-    await executeJsonCommand(command, async ({ client }) => client.getCycles());
-  });
+  cycles
+    .command("list")
+    .description("List cycles")
+    .option("--cursor <offset>", "pagination cursor")
+    .option("--limit <number>", "page size")
+    .action(async (options, command: Command) => {
+      await executeOperationCommand(command, cliOperationBindings["cycles list"], async () => ({
+        query: {
+          cursor: typeof options.cursor === "string" ? ensureNonEmpty(options.cursor, "--cursor") : undefined,
+          limit: typeof options.limit === "string" ? ensurePositiveInteger(options.limit, "--limit") : undefined
+        }
+      }));
+    });
 
   cycles.command("active").description("Get active cycle").action(async (_options, command: Command) => {
-    await executeJsonCommand(command, async ({ client }) => client.getActiveCycle());
+    await executeOperationCommand(command, cliOperationBindings["cycles active"]);
   });
 
   cycles
@@ -18,9 +29,9 @@ export const registerCycleCommands = (program: Command): void => {
     .description("Get cycle details")
     .requiredOption("--cycle <id>", "cycle id")
     .action(async (options, command: Command) => {
-      await executeJsonCommand(command, async ({ client }) => {
-        return client.getCycle(ensureNonEmpty(String(options.cycle), "--cycle"));
-      });
+      await executeOperationCommand(command, cliOperationBindings["cycles get"], async () => ({
+        pathParams: { id: ensureNonEmpty(String(options.cycle), "--cycle") }
+      }));
     });
 
   cycles
@@ -28,8 +39,8 @@ export const registerCycleCommands = (program: Command): void => {
     .description("Get cycle workload and reward references")
     .requiredOption("--cycle <id>", "cycle id")
     .action(async (options, command: Command) => {
-      await executeJsonCommand(command, async ({ client }) => {
-        return client.getCycleRewards(ensureNonEmpty(String(options.cycle), "--cycle"));
-      });
+      await executeOperationCommand(command, cliOperationBindings["cycles rewards"], async () => ({
+        pathParams: { id: ensureNonEmpty(String(options.cycle), "--cycle") }
+      }));
     });
 };

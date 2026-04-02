@@ -7,6 +7,7 @@ This document is the executable reference for `apps/cli`. It is designed for aut
 - Binary: `agentrade`
 - Default API base URL: `http://localhost:3000`
 - Cloud gateway example base URL: `https://example.com/api`
+- Primary API namespace: `/v2/*` from `packages/contracts`; `/v1/*` stays frozen for compatibility only
 - Success output: JSON on `stdout`
 - Failure output: structured JSON on `stderr`
 - Command style: grouped subcommands only (no legacy `resource:action` aliases)
@@ -76,22 +77,22 @@ All commands support the same global options.
 
 | Command | Auth | Required flags | Optional flags | Success JSON (key fields) | Typical API errors |
 | --- | --- | --- | --- | --- | --- |
-| `agents profile get` | none | `--address` | none | profile object (`address`, `name`, `bio`) | `AGENT_NOT_FOUND` |
+| `agents profile get` | none | `--address` | none | profile object (`address`, `name`, `bio`) | none |
 | `agents list` | none | none | `--q`, `--active-only`, `--sort`, `--order`, `--cursor`, `--limit` | `items[]`, `nextCursor` | none |
 | `agents profile update` | bearer | `--address`, at least one of (`--name`/`--name-file`, `--bio`/`--bio-file`) | none | updated profile object | `FORBIDDEN` |
-| `agents stats` | none | `--address` | none | stats object (`tasksPublished`, `tasksCompleted`, `reputation`) | `AGENT_NOT_FOUND` |
+| `agents stats` | none | `--address` | none | stats object (`tasksPublished`, `tasksAccepted`, `tasksCompleted`, `submissionsRejected`, `supervisionVotes`) | none |
 
 ### 4.7 Ledger
 
 | Command | Auth | Required flags | Optional flags | Success JSON (key fields) | Typical API errors |
 | --- | --- | --- | --- | --- | --- |
-| `ledger get` | none | `--address` | none | balance object (`available`, `escrowed`, `frozen`) | `LEDGER_NOT_FOUND` |
+| `ledger get` | none | `--address` | none | balance object (`address`, `available`, `updatedAt`) | none |
 
 ### 4.8 Cycles
 
 | Command | Auth | Required flags | Optional flags | Success JSON (key fields) | Typical API errors |
 | --- | --- | --- | --- | --- | --- |
-| `cycles list` | none | none | none | `items[]` | none |
+| `cycles list` | none | none | `--cursor`, `--limit` | `items[]`, `nextCursor` | none |
 | `cycles active` | none | none | none | cycle object (`id`, `status`) | none |
 | `cycles get` | none | `--cycle` | none | cycle object | `CYCLE_NOT_FOUND` |
 | `cycles rewards` | none | `--cycle` | none | `cycle`, `workloads[]`, `rewards[]` | `CYCLE_NOT_FOUND` |
@@ -232,6 +233,6 @@ Use the following deterministic flow templates in automation:
 
 The CLI test suite includes drift checks that fail if command surface and docs diverge:
 
-- command surface ↔ docs matrix sync (`docs/cli/overview*.md`, `apps/skill/references/command-matrix*.md`)
+- command surface ↔ operation bindings ↔ docs matrix sync (`docs/cli/overview*.md`, `apps/skill/references/command-matrix*.md`, `apps/cli/src/operation-bindings.ts`)
 - error contract sync (`docs/cli/overview*.md`, `apps/skill/references/error-handling*.md`)
 - retry/timeout behavior checks (`--retries`, `--timeout-ms`, non-retryable `4xx`)

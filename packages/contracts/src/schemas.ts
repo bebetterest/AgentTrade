@@ -1,0 +1,1292 @@
+import { z } from "zod";
+import {
+  ActivityEventType,
+  CycleStatus,
+  DisputeStatus,
+  SubmissionStatus,
+  TaskStatus,
+  VoteChoice
+} from "@agentrade/types";
+
+export type OpenApiSchemaObject = {
+  $ref?: string;
+  type?: "object" | "string" | "number" | "integer" | "boolean" | "array";
+  format?: string;
+  description?: string;
+  example?: unknown;
+  enum?: string[];
+  items?: OpenApiSchemaObject;
+  properties?: Record<string, OpenApiSchemaObject>;
+  required?: string[];
+  additionalProperties?: boolean | OpenApiSchemaObject;
+  nullable?: boolean;
+  default?: unknown;
+  minLength?: number;
+  maxLength?: number;
+  minimum?: number;
+  maximum?: number;
+  pattern?: string;
+};
+
+export interface ContractSchema<TSchema extends z.ZodTypeAny = z.ZodTypeAny> {
+  name: string;
+  schema: TSchema;
+  openapi: OpenApiSchemaObject;
+}
+
+const ADDRESS_PATTERN = "^0x[a-fA-F0-9]{40}$";
+const addressExample = "0x1111111111111111111111111111111111111111";
+const isoDateExample = "2026-04-02T08:00:00.000Z";
+
+const defineSchema = <TSchema extends z.ZodTypeAny>(
+  name: string,
+  schema: TSchema,
+  openapi: OpenApiSchemaObject
+): ContractSchema<TSchema> => ({
+  name,
+  schema,
+  openapi
+});
+
+export const schemaRef = (schema: string | ContractSchema): OpenApiSchemaObject => ({
+  $ref: `#/components/schemas/${typeof schema === "string" ? schema : schema.name}`
+});
+
+const addressField = {
+  type: "string",
+  pattern: ADDRESS_PATTERN,
+  example: addressExample
+} satisfies OpenApiSchemaObject;
+
+const isoDateField = {
+  type: "string",
+  format: "date-time",
+  example: isoDateExample
+} satisfies OpenApiSchemaObject;
+
+const boolField = { type: "boolean" } satisfies OpenApiSchemaObject;
+const stringField = { type: "string" } satisfies OpenApiSchemaObject;
+const nonEmptyStringField = { type: "string", minLength: 1 } satisfies OpenApiSchemaObject;
+const integerField = { type: "integer" } satisfies OpenApiSchemaObject;
+const numberField = { type: "number" } satisfies OpenApiSchemaObject;
+
+const addressSchema = z.string().regex(new RegExp(ADDRESS_PATTERN));
+const isoDateSchema = z.string().datetime();
+const nonEmptyStringSchema = z.string().trim().min(1);
+const nullableIsoDateOpenApi = { ...isoDateField, nullable: true } satisfies OpenApiSchemaObject;
+
+const addressArrayOpenApi = { type: "array", items: { ...addressField } } satisfies OpenApiSchemaObject;
+
+export const reputationTripleSchema = defineSchema(
+  "ReputationTriple",
+  z.object({
+    publisher: z.number(),
+    worker: z.number(),
+    supervisor: z.number()
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: ["publisher", "worker", "supervisor"],
+    properties: {
+      publisher: { ...numberField },
+      worker: { ...numberField },
+      supervisor: { ...numberField }
+    }
+  }
+);
+
+export const agentStatsSchema = defineSchema(
+  "AgentStats",
+  z.object({
+    tasksPublished: z.number().int(),
+    tasksAccepted: z.number().int(),
+    tasksCompleted: z.number().int(),
+    tasksTerminated: z.number().int(),
+    submissionsRejected: z.number().int(),
+    supervisionVotes: z.number().int()
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "tasksPublished",
+      "tasksAccepted",
+      "tasksCompleted",
+      "tasksTerminated",
+      "submissionsRejected",
+      "supervisionVotes"
+    ],
+    properties: {
+      tasksPublished: { ...integerField },
+      tasksAccepted: { ...integerField },
+      tasksCompleted: { ...integerField },
+      tasksTerminated: { ...integerField },
+      submissionsRejected: { ...integerField },
+      supervisionVotes: { ...integerField }
+    }
+  }
+);
+
+export const agentProfileSchema = defineSchema(
+  "AgentProfile",
+  z.object({
+    address: addressSchema,
+    name: z.string(),
+    bio: z.string(),
+    reputation: reputationTripleSchema.schema,
+    stats: agentStatsSchema.schema,
+    createdAt: isoDateSchema,
+    updatedAt: isoDateSchema
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: ["address", "name", "bio", "reputation", "stats", "createdAt", "updatedAt"],
+    properties: {
+      address: { ...addressField },
+      name: { ...stringField },
+      bio: { ...stringField },
+      reputation: schemaRef(reputationTripleSchema),
+      stats: schemaRef(agentStatsSchema),
+      createdAt: { ...isoDateField },
+      updatedAt: { ...isoDateField }
+    }
+  }
+);
+
+export const taskSchema = defineSchema(
+  "Task",
+  z.object({
+    id: z.string(),
+    publisher: addressSchema,
+    title: z.string(),
+    descriptionMd: z.string(),
+    acceptanceCriteria: z.string(),
+    status: z.nativeEnum(TaskStatus),
+    deadlineUtc: isoDateSchema,
+    displayTimezone: z.string(),
+    slotsTotal: z.number().int(),
+    rewardPerSlot: z.number().int(),
+    allowRepeatCompletionsBySameAgent: z.boolean(),
+    taxAmount: z.number().int(),
+    rewardEscrowRemaining: z.number().int(),
+    acceptedAgents: z.array(addressSchema),
+    completedAgents: z.array(addressSchema),
+    createdAt: isoDateSchema,
+    updatedAt: isoDateSchema
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "id",
+      "publisher",
+      "title",
+      "descriptionMd",
+      "acceptanceCriteria",
+      "status",
+      "deadlineUtc",
+      "displayTimezone",
+      "slotsTotal",
+      "rewardPerSlot",
+      "allowRepeatCompletionsBySameAgent",
+      "taxAmount",
+      "rewardEscrowRemaining",
+      "acceptedAgents",
+      "completedAgents",
+      "createdAt",
+      "updatedAt"
+    ],
+    properties: {
+      id: { ...stringField },
+      publisher: { ...addressField },
+      title: { ...stringField },
+      descriptionMd: { ...stringField },
+      acceptanceCriteria: { ...stringField },
+      status: {
+        type: "string",
+        enum: Object.values(TaskStatus)
+      },
+      deadlineUtc: { ...isoDateField },
+      displayTimezone: { ...stringField },
+      slotsTotal: { ...integerField },
+      rewardPerSlot: { ...integerField },
+      allowRepeatCompletionsBySameAgent: { ...boolField },
+      taxAmount: { ...integerField },
+      rewardEscrowRemaining: { ...integerField },
+      acceptedAgents: { ...addressArrayOpenApi },
+      completedAgents: { ...addressArrayOpenApi },
+      createdAt: { ...isoDateField },
+      updatedAt: { ...isoDateField }
+    }
+  }
+);
+
+export const submissionSchema = defineSchema(
+  "Submission",
+  z.object({
+    id: z.string(),
+    taskId: z.string(),
+    agent: addressSchema,
+    payloadMd: z.string(),
+    status: z.nativeEnum(SubmissionStatus),
+    createdAt: isoDateSchema,
+    updatedAt: isoDateSchema
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "taskId", "agent", "payloadMd", "status", "createdAt", "updatedAt"],
+    properties: {
+      id: { ...stringField },
+      taskId: { ...stringField },
+      agent: { ...addressField },
+      payloadMd: { ...stringField },
+      status: {
+        type: "string",
+        enum: Object.values(SubmissionStatus)
+      },
+      createdAt: { ...isoDateField },
+      updatedAt: { ...isoDateField }
+    }
+  }
+);
+
+export const disputeSchema = defineSchema(
+  "Dispute",
+  z.object({
+    id: z.string(),
+    taskId: z.string(),
+    submissionId: z.string(),
+    opener: addressSchema,
+    reasonMd: z.string(),
+    status: z.nativeEnum(DisputeStatus),
+    createdAt: isoDateSchema,
+    updatedAt: isoDateSchema
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "taskId", "submissionId", "opener", "reasonMd", "status", "createdAt", "updatedAt"],
+    properties: {
+      id: { ...stringField },
+      taskId: { ...stringField },
+      submissionId: { ...stringField },
+      opener: { ...addressField },
+      reasonMd: { ...stringField },
+      status: {
+        type: "string",
+        enum: Object.values(DisputeStatus)
+      },
+      createdAt: { ...isoDateField },
+      updatedAt: { ...isoDateField }
+    }
+  }
+);
+
+export const supervisionVoteSchema = defineSchema(
+  "SupervisionVote",
+  z.object({
+    id: z.string(),
+    disputeId: z.string(),
+    agent: addressSchema,
+    vote: z.nativeEnum(VoteChoice),
+    weightSnapshot: z.number(),
+    createdCycleId: z.string(),
+    createdAt: isoDateSchema
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "disputeId", "agent", "vote", "weightSnapshot", "createdCycleId", "createdAt"],
+    properties: {
+      id: { ...stringField },
+      disputeId: { ...stringField },
+      agent: { ...addressField },
+      vote: {
+        type: "string",
+        enum: Object.values(VoteChoice)
+      },
+      weightSnapshot: { ...numberField },
+      createdCycleId: { ...stringField },
+      createdAt: { ...isoDateField }
+    }
+  }
+);
+
+export const cycleWorkloadSchema = defineSchema(
+  "CycleWorkload",
+  z.object({
+    id: z.string(),
+    cycleId: z.string(),
+    disputeId: z.string(),
+    agent: addressSchema,
+    workload: z.number(),
+    createdAt: isoDateSchema,
+    settledAt: isoDateSchema.nullable()
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "cycleId", "disputeId", "agent", "workload", "createdAt", "settledAt"],
+    properties: {
+      id: { ...stringField },
+      cycleId: { ...stringField },
+      disputeId: { ...stringField },
+      agent: { ...addressField },
+      workload: { ...numberField },
+      createdAt: { ...isoDateField },
+      settledAt: { ...nullableIsoDateOpenApi }
+    }
+  }
+);
+
+export const cycleSchema = defineSchema(
+  "Cycle",
+  z.object({
+    id: z.string(),
+    status: z.nativeEnum(CycleStatus),
+    mintedAmount: z.number().int(),
+    taxPool: z.number().int(),
+    penaltyPool: z.number().int(),
+    startedAt: isoDateSchema,
+    closedAt: isoDateSchema.nullable()
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "status", "mintedAmount", "taxPool", "penaltyPool", "startedAt", "closedAt"],
+    properties: {
+      id: { ...stringField },
+      status: {
+        type: "string",
+        enum: Object.values(CycleStatus)
+      },
+      mintedAmount: { ...integerField },
+      taxPool: { ...integerField },
+      penaltyPool: { ...integerField },
+      startedAt: { ...isoDateField },
+      closedAt: { ...nullableIsoDateOpenApi }
+    }
+  }
+);
+
+export const activityEventSchema = defineSchema(
+  "ActivityEvent",
+  z.object({
+    id: z.string(),
+    type: z.nativeEnum(ActivityEventType),
+    cycleId: z.string(),
+    taskId: z.string().nullable(),
+    disputeId: z.string().nullable(),
+    actor: addressSchema,
+    createdAt: isoDateSchema
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "type", "cycleId", "taskId", "disputeId", "actor", "createdAt"],
+    properties: {
+      id: { ...stringField },
+      type: {
+        type: "string",
+        enum: Object.values(ActivityEventType)
+      },
+      cycleId: { ...stringField },
+      taskId: { ...stringField, nullable: true },
+      disputeId: { ...stringField, nullable: true },
+      actor: { ...addressField },
+      createdAt: { ...isoDateField }
+    }
+  }
+);
+
+export const dashboardMetricSnapshotSchema = defineSchema(
+  "DashboardMetricSnapshot",
+  z.object({
+    tasksPublished: z.number().int(),
+    tasksAccepted: z.number().int(),
+    tasksCompleted: z.number().int(),
+    disputesOpened: z.number().int()
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: ["tasksPublished", "tasksAccepted", "tasksCompleted", "disputesOpened"],
+    properties: {
+      tasksPublished: { ...integerField },
+      tasksAccepted: { ...integerField },
+      tasksCompleted: { ...integerField },
+      disputesOpened: { ...integerField }
+    }
+  }
+);
+
+export const dashboardSummaryResponseSchema = defineSchema(
+  "DashboardSummaryResponse",
+  z.object({
+    timezone: z.string(),
+    generatedAt: isoDateSchema,
+    activeCycleId: z.string(),
+    today: dashboardMetricSnapshotSchema.schema,
+    currentCycle: dashboardMetricSnapshotSchema.schema,
+    totals: z.object({
+      tasks: z.number().int(),
+      disputes: z.number().int(),
+      agents: z.number().int()
+    })
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: ["timezone", "generatedAt", "activeCycleId", "today", "currentCycle", "totals"],
+    properties: {
+      timezone: { ...stringField },
+      generatedAt: { ...isoDateField },
+      activeCycleId: { ...stringField },
+      today: schemaRef(dashboardMetricSnapshotSchema),
+      currentCycle: schemaRef(dashboardMetricSnapshotSchema),
+      totals: {
+        type: "object",
+        additionalProperties: false,
+        required: ["tasks", "disputes", "agents"],
+        properties: {
+          tasks: { ...integerField },
+          disputes: { ...integerField },
+          agents: { ...integerField }
+        }
+      }
+    }
+  }
+);
+
+export const dashboardTrendPointSchema = defineSchema(
+  "DashboardTrendPoint",
+  z.object({
+    bucketStart: isoDateSchema,
+    label: z.string(),
+    tasksPublished: z.number().int(),
+    tasksAccepted: z.number().int(),
+    tasksCompleted: z.number().int(),
+    disputesOpened: z.number().int()
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "bucketStart",
+      "label",
+      "tasksPublished",
+      "tasksAccepted",
+      "tasksCompleted",
+      "disputesOpened"
+    ],
+    properties: {
+      bucketStart: { ...isoDateField },
+      label: { ...stringField },
+      tasksPublished: { ...integerField },
+      tasksAccepted: { ...integerField },
+      tasksCompleted: { ...integerField },
+      disputesOpened: { ...integerField }
+    }
+  }
+);
+
+export const dashboardTrendsResponseSchema = defineSchema(
+  "DashboardTrendsResponse",
+  z.object({
+    timezone: z.string(),
+    generatedAt: isoDateSchema,
+    window: z.enum(["7d", "30d"]),
+    points: z.array(dashboardTrendPointSchema.schema)
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: ["timezone", "generatedAt", "window", "points"],
+    properties: {
+      timezone: { ...stringField },
+      generatedAt: { ...isoDateField },
+      window: {
+        type: "string",
+        enum: ["7d", "30d"]
+      },
+      points: {
+        type: "array",
+        items: schemaRef(dashboardTrendPointSchema)
+      }
+    }
+  }
+);
+
+export const agentDirectoryItemSchema = defineSchema(
+  "AgentDirectoryItem",
+  z.object({
+    address: addressSchema,
+    name: z.string(),
+    bio: z.string(),
+    reputation: reputationTripleSchema.schema,
+    stats: agentStatsSchema.schema,
+    createdAt: isoDateSchema,
+    updatedAt: isoDateSchema,
+    latestActivityAt: isoDateSchema.nullable(),
+    score: z.number(),
+    isActive: z.boolean()
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "address",
+      "name",
+      "bio",
+      "reputation",
+      "stats",
+      "createdAt",
+      "updatedAt",
+      "latestActivityAt",
+      "score",
+      "isActive"
+    ],
+    properties: {
+      address: { ...addressField },
+      name: { ...stringField },
+      bio: { ...stringField },
+      reputation: schemaRef(reputationTripleSchema),
+      stats: schemaRef(agentStatsSchema),
+      createdAt: { ...isoDateField },
+      updatedAt: { ...isoDateField },
+      latestActivityAt: { ...nullableIsoDateOpenApi },
+      score: { ...numberField },
+      isActive: { ...boolField }
+    }
+  }
+);
+
+const paginatedResponseOpenApi = (itemSchema: ContractSchema): OpenApiSchemaObject => ({
+  type: "object",
+  additionalProperties: false,
+  required: ["items", "nextCursor"],
+  properties: {
+    items: {
+      type: "array",
+      items: schemaRef(itemSchema)
+    },
+    nextCursor: {
+      ...stringField,
+      nullable: true
+    }
+  }
+});
+
+const definePaginatedResponseSchema = <TSchema extends z.ZodTypeAny>(
+  name: string,
+  itemSchema: ContractSchema<TSchema>
+) =>
+  defineSchema(
+    name,
+    z.object({
+      items: z.array(itemSchema.schema),
+      nextCursor: z.string().nullable()
+    }),
+    paginatedResponseOpenApi(itemSchema)
+  );
+
+export const paginatedTaskResponseSchema = definePaginatedResponseSchema("PaginatedTaskResponse", taskSchema);
+export const paginatedDisputeResponseSchema = definePaginatedResponseSchema(
+  "PaginatedDisputeResponse",
+  disputeSchema
+);
+export const paginatedAgentDirectoryResponseSchema = definePaginatedResponseSchema(
+  "PaginatedAgentDirectoryResponse",
+  agentDirectoryItemSchema
+);
+export const paginatedActivityResponseSchema = definePaginatedResponseSchema(
+  "PaginatedActivityResponse",
+  activityEventSchema
+);
+export const paginatedCycleResponseSchema = definePaginatedResponseSchema("PaginatedCycleResponse", cycleSchema);
+
+export const ledgerBalanceSchema = defineSchema(
+  "LedgerBalance",
+  z.object({
+    address: addressSchema,
+    available: z.number().int(),
+    updatedAt: isoDateSchema
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: ["address", "available", "updatedAt"],
+    properties: {
+      address: { ...addressField },
+      available: { ...integerField },
+      updatedAt: { ...isoDateField }
+    }
+  }
+);
+
+export const healthStatusSchema = defineSchema(
+  "HealthStatus",
+  z.object({
+    ok: z.boolean(),
+    service: z.string()
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: ["ok", "service"],
+    properties: {
+      ok: { ...boolField },
+      service: { ...stringField }
+    }
+  }
+);
+
+export const authChallengeRequestSchema = defineSchema(
+  "AuthChallengeRequest",
+  z.object({
+    address: addressSchema
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: ["address"],
+    properties: {
+      address: { ...addressField }
+    }
+  }
+);
+
+export const authChallengeResponseSchema = defineSchema(
+  "AuthChallengeResponse",
+  z.object({
+    nonce: z.string(),
+    message: z.string()
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: ["nonce", "message"],
+    properties: {
+      nonce: { ...stringField },
+      message: { ...stringField }
+    }
+  }
+);
+
+export const authVerifyRequestSchema = defineSchema(
+  "AuthVerifyRequest",
+  z.object({
+    address: addressSchema,
+    nonce: nonEmptyStringSchema,
+    message: nonEmptyStringSchema,
+    signature: nonEmptyStringSchema
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: ["address", "nonce", "message", "signature"],
+    properties: {
+      address: { ...addressField },
+      nonce: { ...nonEmptyStringField },
+      message: { ...nonEmptyStringField },
+      signature: { ...nonEmptyStringField }
+    }
+  }
+);
+
+export const authVerifyResponseSchema = defineSchema(
+  "AuthVerifyResponse",
+  z.object({
+    token: z.string(),
+    expiresIn: z.string()
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: ["token", "expiresIn"],
+    properties: {
+      token: { ...stringField },
+      expiresIn: { ...stringField }
+    }
+  }
+);
+
+export const voteDisputeResultSchema = defineSchema(
+  "VoteDisputeResult",
+  z.object({
+    vote: supervisionVoteSchema.schema,
+    workload: cycleWorkloadSchema.schema
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: ["vote", "workload"],
+    properties: {
+      vote: schemaRef(supervisionVoteSchema),
+      workload: schemaRef(cycleWorkloadSchema)
+    }
+  }
+);
+
+export const cycleDistributionSchema = defineSchema(
+  "CycleDistribution",
+  z.object({
+    agent: addressSchema,
+    amount: z.number().int()
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: ["agent", "amount"],
+    properties: {
+      agent: { ...addressField },
+      amount: { ...integerField }
+    }
+  }
+);
+
+export const closeCycleResultSchema = defineSchema(
+  "CloseCycleResult",
+  z.object({
+    closedCycleId: z.string(),
+    openedCycleId: z.string(),
+    rewardPool: z.number().int(),
+    distributions: z.array(cycleDistributionSchema.schema),
+    finalizedDisputes: z.array(z.string())
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: ["closedCycleId", "openedCycleId", "rewardPool", "distributions", "finalizedDisputes"],
+    properties: {
+      closedCycleId: { ...stringField },
+      openedCycleId: { ...stringField },
+      rewardPool: { ...integerField },
+      distributions: {
+        type: "array",
+        items: schemaRef(cycleDistributionSchema)
+      },
+      finalizedDisputes: {
+        type: "array",
+        items: { ...stringField }
+      }
+    }
+  }
+);
+
+export const cycleRewardsResponseSchema = defineSchema(
+  "CycleRewardsResponse",
+  z.object({
+    cycle: cycleSchema.schema,
+    workloads: z.array(cycleWorkloadSchema.schema)
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: ["cycle", "workloads"],
+    properties: {
+      cycle: schemaRef(cycleSchema),
+      workloads: {
+        type: "array",
+        items: schemaRef(cycleWorkloadSchema)
+      }
+    }
+  }
+);
+
+export const bridgeExportItemSchema = defineSchema(
+  "BridgeExportItem",
+  z.object({
+    address: addressSchema,
+    amount: z.number().int()
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: ["address", "amount"],
+    properties: {
+      address: { ...addressField },
+      amount: { ...integerField }
+    }
+  }
+);
+
+export const bridgeExportResponseSchema = defineSchema(
+  "BridgeExportResponse",
+  z.object({
+    chain: z.string(),
+    mode: z.literal("OFFCHAIN_EXPORT_ONLY"),
+    exports: z.array(bridgeExportItemSchema.schema)
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: ["chain", "mode", "exports"],
+    properties: {
+      chain: { ...stringField },
+      mode: {
+        type: "string",
+        enum: ["OFFCHAIN_EXPORT_ONLY"]
+      },
+      exports: {
+        type: "array",
+        items: schemaRef(bridgeExportItemSchema)
+      }
+    }
+  }
+);
+
+export const publicEconomyParamsSchema = defineSchema(
+  "PublicEconomyParams",
+  z.object({
+    appName: z.string(),
+    enablePersistence: z.boolean(),
+    enableRedisRateLimit: z.boolean(),
+    authChallengeTtlMinutes: z.number().int(),
+    rateLimitPerMinute: z.number().int(),
+    rateLimitBurst: z.number().int(),
+    taskTitleMaxLength: z.number().int(),
+    taskDescriptionMaxLength: z.number().int(),
+    taskAcceptanceCriteriaMaxLength: z.number().int(),
+    taskSubmissionPayloadMaxLength: z.number().int(),
+    disputeReasonMaxLength: z.number().int(),
+    taskSlotsMax: z.number().int(),
+    taskRewardPerSlotMax: z.number().int(),
+    taskDeadlineMaxHours: z.number().int(),
+    taxRateBps: z.number().int(),
+    taxMin: z.number().int(),
+    rewardMin: z.number().int(),
+    mintPerCycle: z.number().int(),
+    terminationPenaltyBps: z.number().int(),
+    submissionTimeoutHours: z.number().int(),
+    resubmitCooldownMinutes: z.number().int(),
+    disputeQuorum: z.number().int(),
+    disputeApprovalBps: z.number().int(),
+    reputationWeightPublisherBps: z.number().int(),
+    reputationWeightWorkerBps: z.number().int(),
+    reputationWeightSupervisorBps: z.number().int(),
+    bridgeChain: z.string(),
+    bridgeMode: z.literal("OFFCHAIN_EXPORT_ONLY")
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "appName",
+      "enablePersistence",
+      "enableRedisRateLimit",
+      "authChallengeTtlMinutes",
+      "rateLimitPerMinute",
+      "rateLimitBurst",
+      "taskTitleMaxLength",
+      "taskDescriptionMaxLength",
+      "taskAcceptanceCriteriaMaxLength",
+      "taskSubmissionPayloadMaxLength",
+      "disputeReasonMaxLength",
+      "taskSlotsMax",
+      "taskRewardPerSlotMax",
+      "taskDeadlineMaxHours",
+      "taxRateBps",
+      "taxMin",
+      "rewardMin",
+      "mintPerCycle",
+      "terminationPenaltyBps",
+      "submissionTimeoutHours",
+      "resubmitCooldownMinutes",
+      "disputeQuorum",
+      "disputeApprovalBps",
+      "reputationWeightPublisherBps",
+      "reputationWeightWorkerBps",
+      "reputationWeightSupervisorBps",
+      "bridgeChain",
+      "bridgeMode"
+    ],
+    properties: {
+      appName: { ...stringField },
+      enablePersistence: { ...boolField },
+      enableRedisRateLimit: { ...boolField },
+      authChallengeTtlMinutes: { ...integerField },
+      rateLimitPerMinute: { ...integerField },
+      rateLimitBurst: { ...integerField },
+      taskTitleMaxLength: { ...integerField },
+      taskDescriptionMaxLength: { ...integerField },
+      taskAcceptanceCriteriaMaxLength: { ...integerField },
+      taskSubmissionPayloadMaxLength: { ...integerField },
+      disputeReasonMaxLength: { ...integerField },
+      taskSlotsMax: { ...integerField },
+      taskRewardPerSlotMax: { ...integerField },
+      taskDeadlineMaxHours: { ...integerField },
+      taxRateBps: { ...integerField },
+      taxMin: { ...integerField },
+      rewardMin: { ...integerField },
+      mintPerCycle: { ...integerField },
+      terminationPenaltyBps: { ...integerField },
+      submissionTimeoutHours: { ...integerField },
+      resubmitCooldownMinutes: { ...integerField },
+      disputeQuorum: { ...integerField },
+      disputeApprovalBps: { ...integerField },
+      reputationWeightPublisherBps: { ...integerField },
+      reputationWeightWorkerBps: { ...integerField },
+      reputationWeightSupervisorBps: { ...integerField },
+      bridgeChain: { ...stringField },
+      bridgeMode: {
+        type: "string",
+        enum: ["OFFCHAIN_EXPORT_ONLY"]
+      }
+    }
+  }
+);
+
+export const createTaskRequestSchema = defineSchema(
+  "CreateTaskRequest",
+  z.object({
+    title: nonEmptyStringSchema,
+    descriptionMd: nonEmptyStringSchema,
+    acceptanceCriteria: nonEmptyStringSchema,
+    deadlineUtc: isoDateSchema,
+    displayTimezone: nonEmptyStringSchema,
+    slotsTotal: z.number().int().positive(),
+    rewardPerSlot: z.number().int().positive(),
+    allowRepeatCompletionsBySameAgent: z.boolean()
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "title",
+      "descriptionMd",
+      "acceptanceCriteria",
+      "deadlineUtc",
+      "displayTimezone",
+      "slotsTotal",
+      "rewardPerSlot",
+      "allowRepeatCompletionsBySameAgent"
+    ],
+    properties: {
+      title: { ...nonEmptyStringField },
+      descriptionMd: { ...nonEmptyStringField },
+      acceptanceCriteria: { ...nonEmptyStringField },
+      deadlineUtc: { ...isoDateField },
+      displayTimezone: { ...nonEmptyStringField },
+      slotsTotal: { ...integerField, minimum: 1 },
+      rewardPerSlot: { ...integerField, minimum: 1 },
+      allowRepeatCompletionsBySameAgent: { ...boolField }
+    }
+  }
+);
+
+export const submitTaskRequestSchema = defineSchema(
+  "SubmitTaskRequest",
+  z.object({
+    payloadMd: nonEmptyStringSchema
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: ["payloadMd"],
+    properties: {
+      payloadMd: { ...nonEmptyStringField }
+    }
+  }
+);
+
+export const openDisputeRequestSchema = defineSchema(
+  "OpenDisputeRequest",
+  z.object({
+    taskId: nonEmptyStringSchema,
+    submissionId: nonEmptyStringSchema,
+    reasonMd: nonEmptyStringSchema
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: ["taskId", "submissionId", "reasonMd"],
+    properties: {
+      taskId: { ...nonEmptyStringField },
+      submissionId: { ...nonEmptyStringField },
+      reasonMd: { ...nonEmptyStringField }
+    }
+  }
+);
+
+export const voteDisputeRequestSchema = defineSchema(
+  "VoteDisputeRequest",
+  z.object({
+    vote: z.nativeEnum(VoteChoice)
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: ["vote"],
+    properties: {
+      vote: {
+        type: "string",
+        enum: Object.values(VoteChoice)
+      }
+    }
+  }
+);
+
+export const updateAgentProfileRequestSchema = defineSchema(
+  "UpdateAgentProfileRequest",
+  z.object({
+    name: z.string().max(120).optional(),
+    bio: z.string().max(1000).optional()
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      name: { ...stringField, maxLength: 120 },
+      bio: { ...stringField, maxLength: 1000 }
+    }
+  }
+);
+
+export const overrideDisputeRequestSchema = defineSchema(
+  "OverrideDisputeRequest",
+  z.object({
+    result: z.enum(["COMPLETED", "NOT_COMPLETED"])
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: ["result"],
+    properties: {
+      result: {
+        type: "string",
+        enum: ["COMPLETED", "NOT_COMPLETED"]
+      }
+    }
+  }
+);
+
+export const bridgeExportRequestSchema = defineSchema(
+  "BridgeExportRequest",
+  z.object({
+    addresses: z.array(addressSchema).optional()
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      addresses: { ...addressArrayOpenApi }
+    }
+  }
+);
+
+export const v1ApiErrorEnvelopeSchema = defineSchema(
+  "V1ApiErrorEnvelope",
+  z.object({
+    error: z.string(),
+    message: z.string().optional(),
+    issues: z.unknown().optional()
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: ["error"],
+    properties: {
+      error: { ...stringField },
+      message: { ...stringField },
+      issues: {}
+    }
+  }
+);
+
+export const v2ApiErrorEnvelopeSchema = defineSchema(
+  "V2ApiErrorEnvelope",
+  z.object({
+    error: z.object({
+      code: z.string(),
+      message: z.string(),
+      details: z.unknown().optional(),
+      requestId: z.string(),
+      retryable: z.boolean()
+    })
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: ["error"],
+    properties: {
+      error: {
+        type: "object",
+        additionalProperties: false,
+        required: ["code", "message", "requestId", "retryable"],
+        properties: {
+          code: { ...stringField },
+          message: { ...stringField },
+          details: {},
+          requestId: { ...stringField },
+          retryable: { ...boolField }
+        }
+      }
+    }
+  }
+);
+
+const booleanQuerySchema = z
+  .union([z.boolean(), z.enum(["true", "false"]).transform((value) => value === "true")])
+  .optional();
+
+export const taskListQuerySchemaV1 = z.object({
+  q: nonEmptyStringSchema.optional(),
+  status: z.nativeEnum(TaskStatus).optional(),
+  publisher: z.string().optional(),
+  sort: z.enum(["latest", "created", "deadline", "reward"]).optional(),
+  order: z.enum(["asc", "desc"]).optional(),
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional()
+});
+
+export const taskListQuerySchemaV2 = z.object({
+  q: nonEmptyStringSchema.optional(),
+  status: z.nativeEnum(TaskStatus).optional(),
+  publisher: z.string().optional(),
+  sort: z.enum(["latest", "created", "deadline", "reward"]).default("latest"),
+  order: z.enum(["asc", "desc"]).default("desc"),
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(20)
+});
+
+export const disputeListQuerySchemaV1 = z.object({
+  taskId: z.string().optional(),
+  opener: z.string().optional(),
+  status: z.nativeEnum(DisputeStatus).optional(),
+  q: nonEmptyStringSchema.optional(),
+  sort: z.enum(["latest", "created"]).optional(),
+  order: z.enum(["asc", "desc"]).optional(),
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional()
+});
+
+export const disputeListQuerySchemaV2 = z.object({
+  taskId: z.string().optional(),
+  opener: z.string().optional(),
+  status: z.nativeEnum(DisputeStatus).optional(),
+  q: nonEmptyStringSchema.optional(),
+  sort: z.enum(["latest", "created"]).default("latest"),
+  order: z.enum(["asc", "desc"]).default("desc"),
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(20)
+});
+
+export const activityListQuerySchemaV1 = z.object({
+  taskId: z.string().optional(),
+  disputeId: z.string().optional(),
+  address: z.string().optional(),
+  type: z.nativeEnum(ActivityEventType).optional(),
+  order: z.enum(["asc", "desc"]).optional(),
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional()
+});
+
+export const activityListQuerySchemaV2 = z.object({
+  taskId: z.string().optional(),
+  disputeId: z.string().optional(),
+  address: z.string().optional(),
+  type: z.nativeEnum(ActivityEventType).optional(),
+  order: z.enum(["asc", "desc"]).default("desc"),
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(20)
+});
+
+export const agentListQuerySchemaV1 = z.object({
+  q: nonEmptyStringSchema.optional(),
+  activeOnly: booleanQuerySchema,
+  sort: z.enum(["latest", "score", "reputation", "completed", "published", "accepted"]).optional(),
+  order: z.enum(["asc", "desc"]).optional(),
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional()
+});
+
+export const agentListQuerySchemaV2 = z.object({
+  q: nonEmptyStringSchema.optional(),
+  activeOnly: booleanQuerySchema.transform((value) => value ?? false),
+  sort: z.enum(["latest", "score", "reputation", "completed", "published", "accepted"]).default("latest"),
+  order: z.enum(["asc", "desc"]).default("desc"),
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(20)
+});
+
+export const dashboardSummaryQuerySchema = z.object({
+  tz: nonEmptyStringSchema.default("UTC")
+});
+
+export const dashboardTrendsQuerySchema = z.object({
+  tz: nonEmptyStringSchema.default("UTC"),
+  window: z.enum(["7d", "30d"]).default("7d")
+});
+
+export const cycleListQuerySchemaV1 = z.object({
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional()
+});
+
+export const cycleListQuerySchemaV2 = z.object({
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(20)
+});
+
+export const idPathSchema = z.object({
+  id: nonEmptyStringSchema
+});
+
+export const addressPathSchema = z.object({
+  address: addressSchema
+});
+
+export const emptyObjectSchema = z.object({});
+
+export const namedSchemas = [
+  reputationTripleSchema,
+  agentStatsSchema,
+  agentProfileSchema,
+  taskSchema,
+  submissionSchema,
+  disputeSchema,
+  supervisionVoteSchema,
+  cycleWorkloadSchema,
+  cycleSchema,
+  activityEventSchema,
+  dashboardMetricSnapshotSchema,
+  dashboardSummaryResponseSchema,
+  dashboardTrendPointSchema,
+  dashboardTrendsResponseSchema,
+  agentDirectoryItemSchema,
+  paginatedTaskResponseSchema,
+  paginatedDisputeResponseSchema,
+  paginatedAgentDirectoryResponseSchema,
+  paginatedActivityResponseSchema,
+  paginatedCycleResponseSchema,
+  ledgerBalanceSchema,
+  healthStatusSchema,
+  authChallengeRequestSchema,
+  authChallengeResponseSchema,
+  authVerifyRequestSchema,
+  authVerifyResponseSchema,
+  voteDisputeResultSchema,
+  cycleDistributionSchema,
+  closeCycleResultSchema,
+  cycleRewardsResponseSchema,
+  bridgeExportItemSchema,
+  bridgeExportResponseSchema,
+  publicEconomyParamsSchema,
+  createTaskRequestSchema,
+  submitTaskRequestSchema,
+  openDisputeRequestSchema,
+  voteDisputeRequestSchema,
+  updateAgentProfileRequestSchema,
+  overrideDisputeRequestSchema,
+  bridgeExportRequestSchema,
+  v1ApiErrorEnvelopeSchema,
+  v2ApiErrorEnvelopeSchema
+] as const;
+
+export const openApiSchemaComponents = Object.fromEntries(
+  namedSchemas.map((item) => [item.name, item.openapi])
+);

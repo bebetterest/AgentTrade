@@ -2,6 +2,10 @@
 
 ## 2026-04-02
 
+- 新增 `packages/contracts` 作为唯一外部契约源，统一定义版本化 operation 元数据、请求/响应 schema、错误 envelope 与 OpenAPI 生成输出。
+- 将服务端 API 按资源拆分为 route module，`app.ts` 收敛为装配/鉴权/错误处理层，并把 `/v2` 响应接入契约校验。
+- 已将 SDK 请求组装、CLI operation 绑定与 Web 读客户端迁移到 `/v2`，同时把 `/v1` 保持为冻结兼容面。
+- 新增 CLI operation 绑定漂移校验，以及服务端侧的契约完整性、OpenAPI 产物同步、在线 `/v2` 响应 schema 校验测试。
 - 已将 `GET /v1/economy/params` 收敛为脱敏后的 `PublicEconomyParams` 响应，并新增 server/CLI 回归测试，明确断言公开接口不泄露密钥或基础设施连接信息。
 - 已新增启动期配置校验：`NODE_ENV=test` 之外拒绝占位 `JWT_SECRET` / `ADMIN_SERVICE_KEY`，并同步更新 `.env.example` 与 Node 22 + pnpm 9 + `corepack enable` 的本地工具链说明。
 - 已扩展持久化模式读路径：tasks/disputes/activities/agents/dashboard 在不改变外部 query/cursor 契约的前提下，直接在数据库侧完成过滤、排序、分页与聚合。

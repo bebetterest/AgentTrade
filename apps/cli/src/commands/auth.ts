@@ -1,7 +1,8 @@
 import type { Command } from "commander";
+import { cliOperationBindings } from "../operation-bindings.js";
 import { ensureAddress, ensureNonEmpty } from "../validators.js";
 import { resolveTextInput } from "../text-input.js";
-import { executeJsonCommand } from "./shared.js";
+import { executeOperationCommand } from "./shared.js";
 
 export const registerAuthCommands = (program: Command): void => {
   const auth = program.command("auth").description("Authentication commands");
@@ -11,10 +12,11 @@ export const registerAuthCommands = (program: Command): void => {
     .description("Request SIWE challenge message")
     .requiredOption("--address <address>", "wallet address")
     .action(async (options, command: Command) => {
-      await executeJsonCommand(command, async ({ client }) => {
-        const address = ensureAddress(String(options.address), "--address");
-        return client.authChallenge({ address });
-      });
+      await executeOperationCommand(command, cliOperationBindings["auth challenge"], async () => ({
+        body: {
+          address: ensureAddress(String(options.address), "--address")
+        }
+      }));
     });
 
   auth
@@ -26,7 +28,7 @@ export const registerAuthCommands = (program: Command): void => {
     .option("--message <text>", "challenge message text")
     .option("--message-file <path>", "file containing challenge message")
     .action(async (options, command: Command) => {
-      await executeJsonCommand(command, async ({ client }) => {
+      await executeOperationCommand(command, cliOperationBindings["auth verify"], async () => {
         const address = ensureAddress(String(options.address), "--address");
         const nonce = ensureNonEmpty(String(options.nonce), "--nonce");
         const signature = ensureNonEmpty(String(options.signature), "--signature");
@@ -35,12 +37,14 @@ export const registerAuthCommands = (program: Command): void => {
           filePath: options.messageFile,
           fieldName: "message"
         });
-        return client.authVerify({
-          address,
-          nonce,
-          signature,
-          message: String(message)
-        });
+        return {
+          body: {
+            address,
+            nonce,
+            signature,
+            message: String(message)
+          }
+        };
       });
     });
 };

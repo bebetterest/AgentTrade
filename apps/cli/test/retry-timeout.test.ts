@@ -51,7 +51,7 @@ test("cli retry: retries 5xx and then succeeds", async () => {
       response.end(JSON.stringify({ error: "TEMP", message: "please retry" }));
       return;
     }
-    response.end(JSON.stringify({ items: [] }));
+    response.end(JSON.stringify({ items: [], nextCursor: null }));
   });
 
   await new Promise<void>((resolvePromise) => {
@@ -74,7 +74,7 @@ test("cli retry: retries 5xx and then succeeds", async () => {
 
     assert.equal(result.code, 0, result.stderr);
     assert.equal(attempts, 2);
-    assert.deepEqual(JSON.parse(result.stdout.trim()), { items: [] });
+    assert.deepEqual(JSON.parse(result.stdout.trim()), { items: [], nextCursor: null });
   } finally {
     await new Promise<void>((resolvePromise, rejectPromise) => {
       server.close((error) => {
@@ -150,7 +150,7 @@ test("cli timeout: request timeout returns NETWORK_ERROR", async () => {
     attempts += 1;
     await new Promise((resolvePromise) => setTimeout(resolvePromise, 200));
     response.setHeader("content-type", "application/json");
-    response.end(JSON.stringify({ items: [] }));
+    response.end(JSON.stringify({ items: [], nextCursor: null }));
   });
 
   await new Promise<void>((resolvePromise) => {

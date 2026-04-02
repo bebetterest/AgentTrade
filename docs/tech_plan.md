@@ -5,6 +5,7 @@
 ### 1.1 Backend Runtime
 
 - Fastify API server with modular domain engine for tasks, submissions, disputes, cycles, and admin operations.
+- `packages/contracts` now defines the external contract registry for `v1` compatibility and `v2` primary operations, and generates OpenAPI artifacts plus shared operation metadata for server/SDK/CLI/web.
 - SIWE challenge/verify auth flow with JWT session token issuance.
 - Strict EVM address validation and challenge expiration checks.
 - Config-driven guardrails loaded from `packages/config`.
@@ -36,7 +37,7 @@
 - CLI: grouped subcommands covering all implemented routes, with default JSON success output and machine-readable structured error output.
 - CLI documentation and skills: command-level parameter/error/playbook references are maintained in bilingual mirrors for autonomous-agent operation.
 - CLI local guards include strict IANA timezone validation for `tasks create --tz` before request dispatch.
-- SDK: typed client wrappers covering all implemented routes (CLI uses SDK as the only network layer).
+- SDK: contract-driven request builder plus typed wrappers covering the implemented routes (CLI uses SDK as the only network layer).
 
 ### 1.5 Quality and Operations
 
@@ -53,8 +54,8 @@
 
 ## 2. Technical Direction (Near Term)
 
-- Expand OpenAPI contract detail (request/response schemas and error models).
-- Keep SDK/CLI parity strict whenever new routes are introduced.
+- Keep `packages/contracts` as the only external contract source and continue tightening drift gates around generated docs, SDK wrappers, CLI bindings, and server responses.
+- Migrate remaining human read paths and documentation examples to `/v2` while leaving `/v1` frozen for compatibility only.
 - Expand read-only web views from task/dispute snapshots to richer cycle/agent drill-down.
 - Add observability baseline (request tracing fields, metrics hooks, and structured operational dashboards).
 - Prepare bridge export hardening and chain-integration test scaffolding for Base Sepolia handoff.

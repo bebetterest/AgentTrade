@@ -1,5 +1,6 @@
 import type { Command } from "commander";
 import type { Task } from "@agentrade/types";
+import { cliOperationBindings } from "../operation-bindings.js";
 import {
   ensureAddress,
   ensureIanaTimeZone,
@@ -8,7 +9,7 @@ import {
   ensurePositiveInteger
 } from "../validators.js";
 import { resolveTextInput } from "../text-input.js";
-import { executeBearerJsonCommand, executeJsonCommand } from "./shared.js";
+import { executeBearerOperationCommand, executeOperationCommand } from "./shared.js";
 
 export const registerTaskCommands = (program: Command): void => {
   const tasks = program.command("tasks").description("Task lifecycle commands");
@@ -24,8 +25,8 @@ export const registerTaskCommands = (program: Command): void => {
     .option("--cursor <offset>", "pagination cursor")
     .option("--limit <number>", "page size")
     .action(async (options, command: Command) => {
-      await executeJsonCommand(command, async ({ client }) => {
-        return client.getTasks({
+      await executeOperationCommand(command, cliOperationBindings["tasks list"], async () => ({
+        query: {
           q: typeof options.q === "string" ? ensureNonEmpty(options.q, "--q") : undefined,
           status: typeof options.status === "string" ? options.status.trim().toUpperCase() as Task["status"] : undefined,
           publisher: typeof options.publisher === "string" ? ensureAddress(options.publisher, "--publisher") : undefined,
@@ -33,8 +34,8 @@ export const registerTaskCommands = (program: Command): void => {
           order: typeof options.order === "string" ? options.order.trim().toLowerCase() as "asc" | "desc" : undefined,
           cursor: typeof options.cursor === "string" ? ensureNonEmpty(options.cursor, "--cursor") : undefined,
           limit: typeof options.limit === "string" ? ensurePositiveInteger(options.limit, "--limit") : undefined
-        });
-      });
+        }
+      }));
     });
 
   tasks
@@ -42,10 +43,9 @@ export const registerTaskCommands = (program: Command): void => {
     .description("Get task details")
     .requiredOption("--task <id>", "task id")
     .action(async (options, command: Command) => {
-      await executeJsonCommand(command, async ({ client }) => {
-        const taskId = ensureNonEmpty(String(options.task), "--task");
-        return client.getTask(taskId);
-      });
+      await executeOperationCommand(command, cliOperationBindings["tasks get"], async () => ({
+        pathParams: { id: ensureNonEmpty(String(options.task), "--task") }
+      }));
     });
 
   tasks
@@ -62,7 +62,7 @@ export const registerTaskCommands = (program: Command): void => {
     .requiredOption("--reward <number>", "reward per slot")
     .option("--allow-repeat", "allow repeat completions by same agent")
     .action(async (options, command: Command) => {
-      await executeBearerJsonCommand(command, async ({ client }) => {
+      await executeBearerOperationCommand(command, cliOperationBindings["tasks create"], async () => {
         const descriptionMd = resolveTextInput({
           inlineValue: options.desc,
           filePath: options.descFile,
@@ -73,16 +73,18 @@ export const registerTaskCommands = (program: Command): void => {
           filePath: options.criteriaFile,
           fieldName: "criteria"
         });
-        return client.createTask({
-          title: ensureNonEmpty(String(options.title), "--title"),
-          descriptionMd: String(descriptionMd),
-          acceptanceCriteria: String(acceptanceCriteria),
-          deadlineUtc: ensureIsoDate(String(options.deadline), "--deadline"),
-          displayTimezone: ensureIanaTimeZone(String(options.tz), "--tz"),
-          slotsTotal: ensurePositiveInteger(String(options.slots), "--slots"),
-          rewardPerSlot: ensurePositiveInteger(String(options.reward), "--reward"),
-          allowRepeatCompletionsBySameAgent: Boolean(options.allowRepeat)
-        });
+        return {
+          body: {
+            title: ensureNonEmpty(String(options.title), "--title"),
+            descriptionMd: String(descriptionMd),
+            acceptanceCriteria: String(acceptanceCriteria),
+            deadlineUtc: ensureIsoDate(String(options.deadline), "--deadline"),
+            displayTimezone: ensureIanaTimeZone(String(options.tz), "--tz"),
+            slotsTotal: ensurePositiveInteger(String(options.slots), "--slots"),
+            rewardPerSlot: ensurePositiveInteger(String(options.reward), "--reward"),
+            allowRepeatCompletionsBySameAgent: Boolean(options.allowRepeat)
+          }
+        };
       });
     });
 
@@ -91,9 +93,9 @@ export const registerTaskCommands = (program: Command): void => {
     .description("Accept a task")
     .requiredOption("--task <id>", "task id")
     .action(async (options, command: Command) => {
-      await executeBearerJsonCommand(command, async ({ client }) => {
-        return client.acceptTask(ensureNonEmpty(String(options.task), "--task"));
-      });
+      await executeBearerOperationCommand(command, cliOperationBindings["tasks accept"], async () => ({
+        pathParams: { id: ensureNonEmpty(String(options.task), "--task") }
+      }));
     });
 
   tasks
@@ -103,15 +105,18 @@ export const registerTaskCommands = (program: Command): void => {
     .option("--payload <markdown>", "submission markdown payload")
     .option("--payload-file <path>", "file containing submission markdown payload")
     .action(async (options, command: Command) => {
-      await executeBearerJsonCommand(command, async ({ client }) => {
+      await executeBearerOperationCommand(command, cliOperationBindings["tasks submit"], async () => {
         const payloadMd = resolveTextInput({
           inlineValue: options.payload,
           filePath: options.payloadFile,
           fieldName: "payload"
         });
-        return client.submitTask(ensureNonEmpty(String(options.task), "--task"), {
-          payloadMd: String(payloadMd)
-        });
+        return {
+          pathParams: { id: ensureNonEmpty(String(options.task), "--task") },
+          body: {
+            payloadMd: String(payloadMd)
+          }
+        };
       });
     });
 
@@ -120,8 +125,8 @@ export const registerTaskCommands = (program: Command): void => {
     .description("Terminate a task")
     .requiredOption("--task <id>", "task id")
     .action(async (options, command: Command) => {
-      await executeBearerJsonCommand(command, async ({ client }) => {
-        return client.terminateTask(ensureNonEmpty(String(options.task), "--task"));
-      });
+      await executeBearerOperationCommand(command, cliOperationBindings["tasks terminate"], async () => ({
+        pathParams: { id: ensureNonEmpty(String(options.task), "--task") }
+      }));
     });
 };

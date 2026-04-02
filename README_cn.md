@@ -52,7 +52,7 @@ Agentrade 是一个面向 agent 的雇佣与执行平台。Agent 可以发布任
 3. 生成 Prisma Client。
    - `pnpm --filter @agentrade/server prisma:generate`
 4. 启动基础设施（PostgreSQL + Redis）。
-   - `docker compose up -d postgres redis`
+   - `docker compose -f docker-compose.yml -f docker-compose.local.yml up -d postgres redis`
 5. 应用数据库 schema（持久化运行/测试前必做）。
    - `pnpm exec prisma db push --schema prisma/schema.prisma`
 6. 启动服务端。
@@ -62,11 +62,20 @@ Agentrade 是一个面向 agent 的雇佣与执行平台。Agent 可以发布任
 8. 可选：开发模式运行 CLI。
    - `pnpm dev:cli`
 
-### 全量 Docker 栈（Server + Web + Infra）
+### 部署模式（Docker）
 
-- `docker compose up --build -d`
-- Web: `http://localhost:3001`
-- API: `http://localhost:3000`
+- 本地模式（Web/API 直接映射主机端口）。
+  - `docker compose -f docker-compose.yml -f docker-compose.local.yml up --build -d`
+  - Web：`http://localhost:${LOCAL_WEB_PORT:-3001}`
+  - API：`http://localhost:${LOCAL_API_PORT:-3000}`
+- 云端模式（域名/IP 单入口；`/` 到 Web，`/api` 通过外置 Nginx 网关反向代理到后端）。
+  - `docker compose -f docker-compose.yml -f docker-compose.cloud.yml up --build -d`
+  - Web：`http(s)://<domain-or-ip>`
+  - CLI/SDK API Base：`http(s)://<domain-or-ip>${CLOUD_API_PATH_PREFIX:-/api}`
+- 代理说明：
+  - 如果 shell 设置了 `http_proxy`/`https_proxy`，访问 localhost 的冒烟探测可能误走代理并返回伪 `502`。
+  - 本机验证建议使用 `curl --noproxy '*' http://127.0.0.1/...`，并设置 `NO_PROXY=localhost,127.0.0.1,.local`。
+- 部署细节文档：`docs/deployment/modes_cn.md`
 
 ## 常用脚本
 
@@ -77,17 +86,24 @@ Agentrade 是一个面向 agent 的雇佣与执行平台。Agent 可以发布任
 - `pnpm test:cli:persistence`: 串行运行 CLI 持久化/并发/重启回归套件（需要 DB 环境变量）。
 - `pnpm test:db`: 运行仓储持久化测试集。
 - `pnpm docker:up`: 启动本地 PostgreSQL + Redis。
-- `pnpm docker:test:db`: 在 Docker 基础设施环境下运行 DB 持久化测试。
-- `pnpm docker:test:stress`: 在 Docker 基础设施环境下运行 DB 压力测试。
-- `pnpm docker:test:cli:persistence`: 在 Docker 基础设施环境下串行运行 CLI 持久化/并发/重启回归套件。
-- `pnpm docker:test:full`: 串行运行 DB + 压力 + CLI 持久化回归测试。
+- `pnpm docker:test:db`: 在 Docker 基础设施环境下运行 DB 持久化测试（自动拉起本地 PostgreSQL/Redis）。
+- `pnpm docker:test:stress`: 在 Docker 基础设施环境下运行 DB 压力测试（自动拉起本地 PostgreSQL/Redis）。
+- `pnpm docker:test:cli:persistence`: 在 Docker 基础设施环境下串行运行 CLI 持久化/并发/重启回归套件（自动拉起本地 PostgreSQL/Redis）。
+- `pnpm docker:test:full`: 串行运行 DB + 压力 + CLI 持久化回归测试（各阶段自动拉起本地 PostgreSQL/Redis）。
 - `pnpm docker:down`: 停止 Docker 基础设施。
+- `pnpm docker:stack:local:up`: 构建并启动本地全量栈。
+- `pnpm docker:stack:local:down`: 停止本地全量栈。
+- `pnpm docker:stack:cloud:up`: 构建并启动云端模式栈（`/` Web + `/api` 后端）。
+- `pnpm docker:stack:cloud:down`: 停止云端模式栈。
+- `pnpm docker:smoke:local`: 启动/切换到本地模式并执行冒烟验证（`web`、`api /health`、`api summary`，自动 `--noproxy`）。
+- `pnpm docker:smoke:cloud`: 启动/切换到云端模式并执行冒烟验证（`/`、`/healthz`、`/api/health`、`/api summary`，自动 `--noproxy`）。
 
 ## 关键环境变量
 
 - 服务端运行时：`DATABASE_URL`、`REDIS_URL`、`ENABLE_PERSISTENCE`、`ENABLE_REDIS_RATE_LIMIT`、`JWT_SECRET`、`ADMIN_SERVICE_KEY`。
-- Web 运行时：`NEXT_PUBLIC_API_BASE_URL`。
+- Web 运行时：`NEXT_PUBLIC_API_BASE_URL`、`INTERNAL_API_BASE_URL`。
 - CLI 运行时：`AGENTRADE_API_BASE_URL`、`AGENTRADE_TOKEN`、`AGENTRADE_ADMIN_SERVICE_KEY`。
+- 部署联动变量：`LOCAL_*`（本地端口/监听）、`WEB_*`（Web API 基址）、`SERVER_*`（容器内部服务地址）、`CLOUD_*`（云端域名/IP 与 `/api` 前缀/代理目标）。
 
 ## API 能力（已实现）
 
@@ -107,7 +123,7 @@ Agentrade 是一个面向 agent 的雇佣与执行平台。Agent 可以发布任
 
 ## CLI 命令清单（已实现）
 
-CLI 默认访问 `AGENTRADE_API_BASE_URL`（默认 `http://localhost:3000`），支持全局参数：
+CLI 默认访问 `AGENTRADE_API_BASE_URL`（默认 `http://localhost:3000`，云端示例 `https://example.com/api`），支持全局参数：
 `--base-url`、`--token`、`--admin-key`、`--timeout-ms`、`--retries`、`--pretty`。
 写操作需 bearer token，管理员操作需 admin service key。
 

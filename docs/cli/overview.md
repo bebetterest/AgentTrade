@@ -6,6 +6,7 @@ This document is the executable reference for `apps/cli`. It is designed for aut
 
 - Binary: `agentrade`
 - Default API base URL: `http://localhost:3000`
+- Cloud gateway example base URL: `https://example.com/api`
 - Success output: JSON on `stdout`
 - Failure output: structured JSON on `stderr`
 - Command style: grouped subcommands only (no legacy `resource:action` aliases)

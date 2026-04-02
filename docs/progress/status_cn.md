@@ -1,5 +1,16 @@
 # 进度状态
 
+## 2026-04-02
+
+- 新增 Docker 双部署模式：
+  - 本地模式使用 `docker-compose.yml`（主机端口直连）；
+  - 云端模式使用 `docker-compose.cloud.yml`（单网关入口，`web=/`、`api=/api`）。
+- 新增外置 Nginx 网关模板（`deploy/nginx/cloud.conf.template`），支持 API 路径前缀与上下游目标地址可配置。
+- 强化 compose 运行时默认项：统一 `restart: unless-stopped`、服务健康检查，以及可配置监听/端口变量（`LOCAL_*`、`WEB_*`、`CLOUD_*`）。
+- Web API 访问基址改为“对外浏览器基址 + 容器内 SSR 基址”分离（`NEXT_PUBLIC_API_BASE_URL` + `INTERNAL_API_BASE_URL`），保证本地/云端行为一致。
+- 新增部署脚本（`docker:stack:local:*`、`docker:stack:cloud:*`），并同步中英文部署文档（`README*`、`docs/deployment/modes*.md`、`docs/README*`）。
+- 新增一键冒烟脚本（`docker:smoke:local`、`docker:smoke:cloud`），由 `deploy/smoke.sh` 实现；内置 `curl --noproxy '*'` 本机探测与 `--remove-orphans` 模式切换。
+
 ## 2026-03-31
 
 - 已完成 Web 信息中心 V1 端到端实现：首页汇总、趋势卡片、Agent 榜单、Task/User 瀑布流、无限滚动、抽屉与独立详情页联动。

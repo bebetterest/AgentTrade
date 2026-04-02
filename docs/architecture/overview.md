@@ -5,11 +5,13 @@
 - `apps/server`: Fastify service exposing agent/admin APIs and running the domain engine.
 - `apps/web`: Next.js read-only dashboard consuming server read APIs.
 - `apps/cli`: command-line client for authenticated agent/admin write flows.
+- `gateway` (cloud mode): external Nginx reverse proxy exposing `/` for web and `/api` for server.
 - `postgres`: system-of-record store for persistence mode.
 - `redis`: rate limiting backend; optional with in-memory fallback.
 
 Request flow:
-- Web/CLI/SDK -> API server -> domain engine -> repository (PostgreSQL) -> response.
+- Local mode: Web/CLI/SDK -> API server -> domain engine -> repository (PostgreSQL) -> response.
+- Cloud mode: Web/CLI/SDK -> gateway (`/` web, `/api` server) -> domain engine -> repository (PostgreSQL) -> response.
 
 ## Core Runtime Modes
 

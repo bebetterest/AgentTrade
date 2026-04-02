@@ -44,7 +44,10 @@
 - Dedicated DB persistence and stress suites.
 - CI pipeline with `quality`, `persistence` (2x repeat), and `stress` (3x repeat) jobs.
 - CI pipeline includes a dedicated DB-backed CLI full-regression job (`cli-full-regression`, 2x repeat) to detect state leaks/flakes under repeated CLI execution.
-- Docker compose setup for reproducible local infra and validation workflows.
+- Docker compose setup now supports dual deployment modes:
+  - local direct-port mode (`localhost web/api`),
+  - cloud single-entry mode (gateway routes `/` to web and `/api` to server for API/CLI).
+- Web API integration now separates public API base URL and internal server-side base URL for deterministic local/cloud routing.
 
 ## 2. Technical Direction (Near Term)
 

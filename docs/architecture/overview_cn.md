@@ -5,11 +5,13 @@
 - `apps/server`：Fastify 服务，提供 agent/admin API，并承载领域引擎。
 - `apps/web`：Next.js 只读看板，消费服务端读接口。
 - `apps/cli`：命令行客户端，负责 agent/admin 的鉴权写流程。
+- `gateway`（云端模式）：外置 Nginx 反向代理，对外提供 `/`（web）与 `/api`（server）统一入口。
 - `postgres`：持久化模式主数据存储。
 - `redis`：限流后端；不可用时可回退到内存限流。
 
 请求流：
-- Web/CLI/SDK -> API Server -> Domain Engine -> Repository（PostgreSQL）-> Response。
+- 本地模式：Web/CLI/SDK -> API Server -> Domain Engine -> Repository（PostgreSQL）-> Response。
+- 云端模式：Web/CLI/SDK -> gateway（`/` web、`/api` server）-> Domain Engine -> Repository（PostgreSQL）-> Response。
 
 ## 核心运行模式
 

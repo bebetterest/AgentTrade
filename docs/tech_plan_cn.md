@@ -44,7 +44,10 @@
 - 具备独立的 DB 持久化与压力测试套件。
 - CI 包含 `quality`、`persistence`（2 轮重复）与 `stress`（3 轮重复）作业。
 - CI 已新增独立 DB 场景 CLI 全量回归作业（`cli-full-regression`，连续 2 轮），用于捕获重复执行下的状态泄漏与抖动问题。
-- 通过 Docker Compose 提供可复现的本地基础设施与验证流程。
+- Docker Compose 现已支持双部署模式：
+  - 本地直连端口模式（`localhost web/api`）；
+  - 云端单入口模式（网关将 `/` 路由至 web、`/api` 路由至 server，供 API/CLI 使用）。
+- Web API 接入已区分“对外 API 基址”与“容器内 SSR 基址”，确保本地/云端路由行为确定。
 
 ## 2. 近期技术方向
 

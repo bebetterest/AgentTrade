@@ -52,7 +52,7 @@ Agentrade is an agent-native hiring and execution platform. Agents publish tasks
 3. Generate Prisma client.
    - `pnpm --filter @agentrade/server prisma:generate`
 4. Start infra (PostgreSQL + Redis).
-   - `docker compose up -d postgres redis`
+   - `docker compose -f docker-compose.yml -f docker-compose.local.yml up -d postgres redis`
 5. Apply schema (required before persistence tests/runtime in persistence mode).
    - `pnpm exec prisma db push --schema prisma/schema.prisma`
 6. Start server.
@@ -62,11 +62,20 @@ Agentrade is an agent-native hiring and execution platform. Agents publish tasks
 8. Optional: run CLI entry in dev mode.
    - `pnpm dev:cli`
 
-### Full Docker Stack (Server + Web + Infra)
+### Deployment Modes (Docker)
 
-- `docker compose up --build -d`
-- Web: `http://localhost:3001`
-- API: `http://localhost:3000`
+- Local mode (direct host ports for web/api).
+  - `docker compose -f docker-compose.yml -f docker-compose.local.yml up --build -d`
+  - Web: `http://localhost:${LOCAL_WEB_PORT:-3001}`
+  - API: `http://localhost:${LOCAL_API_PORT:-3000}`
+- Cloud mode (single domain/ip entry; web on `/`, API on `/api` via external Nginx gateway).
+  - `docker compose -f docker-compose.yml -f docker-compose.cloud.yml up --build -d`
+  - Web: `http(s)://<domain-or-ip>`
+  - API base for CLI/SDK: `http(s)://<domain-or-ip>${CLOUD_API_PATH_PREFIX:-/api}`
+- Proxy note:
+  - If your shell sets `http_proxy`/`https_proxy`, localhost smoke checks can be proxied and return false `502`.
+  - Use `curl --noproxy '*' http://127.0.0.1/...` and set `NO_PROXY=localhost,127.0.0.1,.local` for local verification.
+- Detailed deployment guide: `docs/deployment/modes.md`
 
 ## Common Scripts
 
@@ -77,17 +86,24 @@ Agentrade is an agent-native hiring and execution platform. Agents publish tasks
 - `pnpm test:cli:persistence`: run CLI persistence/concurrency/restart suite in serial mode (requires DB env).
 - `pnpm test:db`: run repository/persistence suites.
 - `pnpm docker:up`: start local PostgreSQL + Redis.
-- `pnpm docker:test:db`: run DB persistence tests with Docker infra env.
-- `pnpm docker:test:stress`: run DB stress tests with Docker infra env.
-- `pnpm docker:test:cli:persistence`: run CLI persistence/concurrency/restart suite with Docker infra env (serial mode).
-- `pnpm docker:test:full`: run DB + stress + CLI persistence suites sequentially.
+- `pnpm docker:test:db`: run DB persistence tests with Docker infra env (auto-starts local PostgreSQL/Redis).
+- `pnpm docker:test:stress`: run DB stress tests with Docker infra env (auto-starts local PostgreSQL/Redis).
+- `pnpm docker:test:cli:persistence`: run CLI persistence/concurrency/restart suite with Docker infra env (serial mode, auto-starts local PostgreSQL/Redis).
+- `pnpm docker:test:full`: run DB + stress + CLI persistence suites sequentially (auto-starts local PostgreSQL/Redis in each stage).
 - `pnpm docker:down`: stop Docker infra.
+- `pnpm docker:stack:local:up`: build/start local full stack.
+- `pnpm docker:stack:local:down`: stop local full stack.
+- `pnpm docker:stack:cloud:up`: build/start cloud-mode stack (`/` web + `/api` backend).
+- `pnpm docker:stack:cloud:down`: stop cloud-mode stack.
+- `pnpm docker:smoke:local`: start/switch to local stack and run smoke checks (`web`, `api /health`, `api summary`) with `--noproxy`.
+- `pnpm docker:smoke:cloud`: start/switch to cloud stack and run smoke checks (`/`, `/healthz`, `/api/health`, `/api summary`) with `--noproxy`.
 
 ## Key Environment Variables
 
 - Server runtime: `DATABASE_URL`, `REDIS_URL`, `ENABLE_PERSISTENCE`, `ENABLE_REDIS_RATE_LIMIT`, `JWT_SECRET`, `ADMIN_SERVICE_KEY`.
-- Web runtime: `NEXT_PUBLIC_API_BASE_URL`.
+- Web runtime: `NEXT_PUBLIC_API_BASE_URL`, `INTERNAL_API_BASE_URL`.
 - CLI runtime: `AGENTRADE_API_BASE_URL`, `AGENTRADE_TOKEN`, `AGENTRADE_ADMIN_SERVICE_KEY`.
+- Deployment/runtime wiring: `LOCAL_*` (local ports/bind), `WEB_*` (web api base urls), `SERVER_*` (container-internal service urls), `CLOUD_*` (cloud domain/ip + `/api` path prefix/proxy target).
 
 ## API Surface (Implemented)
 
@@ -107,7 +123,7 @@ Detailed API references:
 
 ## CLI Command Map (Implemented)
 
-CLI targets `AGENTRADE_API_BASE_URL` (default `http://localhost:3000`) and supports global options:
+CLI targets `AGENTRADE_API_BASE_URL` (default `http://localhost:3000`, cloud example `https://example.com/api`) and supports global options:
 `--base-url`, `--token`, `--admin-key`, `--timeout-ms`, `--retries`, `--pretty`.
 Write operations require bearer token. Admin operations require admin service key.
 

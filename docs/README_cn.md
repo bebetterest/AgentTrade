@@ -19,6 +19,11 @@
 - `cli/overview.md`：命令分组、参数、输出契约与错误语义。
 - `cli/overview_cn.md`：中文镜像。
 
+## 部署
+
+- `deployment/modes.md`：本地/云端 Docker 部署模式、环境变量开关与域名路径路由（`/` + `/api`）。
+- `deployment/modes_cn.md`：中文镜像。
+
 ## 规划与进度
 
 - `tech_plan.md`：实现基线与下一步技术方向。

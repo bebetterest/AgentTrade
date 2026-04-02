@@ -11,7 +11,13 @@ import type {
   Task
 } from "@agentrade/types";
 
-const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000";
+const trimTrailingSlash = (value: string): string => value.replace(/\/+$/, "");
+
+const runtimeBaseUrl = trimTrailingSlash(
+  typeof window === "undefined"
+    ? (process.env.INTERNAL_API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000")
+    : (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000")
+);
 
 const buildQuery = (params: Record<string, string | number | boolean | undefined>): string => {
   const search = new URLSearchParams();
@@ -50,7 +56,7 @@ const isApiRequestError = (error: unknown): error is ApiRequestError =>
   error instanceof ApiRequestError;
 
 const readJson = async <T>(path: string, options?: RequestOptions): Promise<T> => {
-  const response = await fetch(`${baseUrl}${path}`, {
+  const response = await fetch(`${runtimeBaseUrl}${path}`, {
     signal: options?.signal,
     cache: "no-store",
     ...(options?.revalidate

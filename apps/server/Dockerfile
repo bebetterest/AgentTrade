@@ -29,4 +29,4 @@ COPY --from=build /app/prisma ./prisma
 COPY --from=build /app/node_modules ./node_modules
 RUN node -e "const fs = require('node:fs'); for (const name of ['config', 'types']) { const path = '/app/packages/' + name + '/package.json'; const pkg = JSON.parse(fs.readFileSync(path, 'utf8')); pkg.main = 'dist/index.js'; pkg.types = 'dist/index.d.ts'; pkg.exports = './dist/index.js'; fs.writeFileSync(path, JSON.stringify(pkg, null, 2)); }"
 EXPOSE 3000
-CMD ["sh", "-c", "node_modules/.bin/prisma db push --schema prisma/schema.prisma && node apps/server/dist/src/index.js"]
+CMD ["sh", "-c", "node_modules/.bin/prisma db push --schema prisma/schema.prisma && exec node apps/server/dist/src/index.js"]

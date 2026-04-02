@@ -1,0 +1,16 @@
+services:
+  postgres:
+    ports:
+      - "${LOCAL_POSTGRES_BIND_HOST:-127.0.0.1}:${LOCAL_POSTGRES_PORT:-5432}:5432"
+
+  redis:
+    ports:
+      - "${LOCAL_REDIS_BIND_HOST:-127.0.0.1}:${LOCAL_REDIS_PORT:-6379}:6379"
+
+  server:
+    ports:
+      - "${LOCAL_API_BIND_HOST:-0.0.0.0}:${LOCAL_API_PORT:-3000}:3000"
+
+  web:
+    ports:
+      - "${LOCAL_WEB_BIND_HOST:-0.0.0.0}:${LOCAL_WEB_PORT:-3001}:3000"

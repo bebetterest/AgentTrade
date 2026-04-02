@@ -64,17 +64,47 @@ Agentrade 是一个面向 agent 的雇佣与执行平台。Agent 可以发布任
 
 ### 部署模式（Docker）
 
-- 本地模式（Web/API 直接映射主机端口）。
-  - `docker compose -f docker-compose.yml -f docker-compose.local.yml up --build -d`
-  - Web：`http://localhost:${LOCAL_WEB_PORT:-3001}`
-  - API：`http://localhost:${LOCAL_API_PORT:-3000}`
-- 云端模式（域名/IP 单入口；`/` 到 Web，`/api` 通过外置 Nginx 网关反向代理到后端）。
-  - `docker compose -f docker-compose.yml -f docker-compose.cloud.yml up --build -d`
-  - Web：`http(s)://<domain-or-ip>`
-  - CLI/SDK API Base：`http(s)://<domain-or-ip>${CLOUD_API_PATH_PREFIX:-/api}`
-- 代理说明：
-  - 如果 shell 设置了 `http_proxy`/`https_proxy`，访问 localhost 的冒烟探测可能误走代理并返回伪 `502`。
-  - 本机验证建议使用 `curl --noproxy '*' http://127.0.0.1/...`，并设置 `NO_PROXY=localhost,127.0.0.1,.local`。
+快速部署（推荐）：
+1. 本地模式：
+   - `pnpm docker:smoke:local`
+2. 云端模式：
+   - `pnpm docker:smoke:cloud`
+
+本地部署（手动）：
+1. 准备环境变量：
+   - `cp .env.example .env`
+2. 可选本地覆盖参数：
+   - `LOCAL_*`：主机监听地址/端口
+   - `WEB_*` / `SERVER_*`：Web API 路由与容器内服务地址
+3. 启动栈：
+   - `pnpm docker:stack:local:up`
+4. 访问：
+   - Web：`http://localhost:${LOCAL_WEB_PORT:-3001}`
+   - API：`http://localhost:${LOCAL_API_PORT:-3000}`
+   - CLI base URL：`http://localhost:${LOCAL_API_PORT:-3000}`
+5. 停止栈：
+   - `pnpm docker:stack:local:down`
+
+云端部署（外置 Nginx 网关，手动）：
+1. 准备环境变量：
+   - `cp .env.example .env`
+2. 设置云端路由参数：
+   - `CLOUD_HTTP_BIND_HOST`、`CLOUD_HTTP_PORT`、`CLOUD_SERVER_NAME`
+   - `CLOUD_API_PATH_PREFIX`（默认 `/api`）
+   - `CLOUD_WEB_API_BASE_URL`、`CLOUD_WEB_INTERNAL_API_BASE_URL`
+   - `CLOUD_API_UPSTREAM`、`CLOUD_WEB_UPSTREAM`
+3. 启动栈：
+   - `pnpm docker:stack:cloud:up`
+4. 访问：
+   - 网站：`http(s)://<domain-or-ip>/`
+   - API/CLI base URL：`http(s)://<domain-or-ip>${CLOUD_API_PATH_PREFIX:-/api}`
+5. 停止栈：
+   - `pnpm docker:stack:cloud:down`
+
+代理排障：
+1. 如果 shell 设置了 `http_proxy`/`https_proxy`，访问 localhost 的探测可能误走代理并返回伪 `502`。
+2. 本机验证建议使用 `curl --noproxy '*' http://127.0.0.1/...`。
+3. 建议在 shell 配置中设置 `NO_PROXY=localhost,127.0.0.1,.local`。
 - 部署细节文档：`docs/deployment/modes_cn.md`
 
 ## 常用脚本

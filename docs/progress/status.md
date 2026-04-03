@@ -2,6 +2,26 @@
 
 ## 2026-04-03
 
+- Unified rate-limit failures to the same v2 error envelope as other API errors (`error.code/message/details/requestId/retryable`), removing the last legacy `{ error, message }` branch.
+- Added admin-only operational metrics route (`GET /v2/system/metrics`) plus baseline structured observability fields:
+  - request logs (`requestId`, `method`, `path`, `status`, `durationMs`, `routeId`),
+  - write logs (`operation`, `actor`, `cycleId`, `retryCount`, `conflictOrDeadlock`, `outcome`),
+  - in-process request/write counters and latency summaries.
+- Upgraded pagination cursor output to opaque tokens while keeping legacy numeric offset cursor input compatibility during migration.
+- Fixed Docker server healthcheck target from legacy `/health` to `/v2/system/health` and extended CI with:
+  - web unit tests inside `quality`,
+  - dedicated Docker smoke jobs for local/cloud compose modes.
+- Centralized CLI/Web runtime environment defaults into `packages/config`, reducing scattered runtime `process.env` reads.
+- Added non-breaking Prisma index enhancements for high-frequency list ordering paths (`Task`, `Dispute`, `Cycle`, `ActivityEvent`).
+- Refactored web dashboard maintainability layer:
+  - split top-level dashboard into state/data orchestration (`components/dashboard.tsx`) and presentation (`components/dashboard/dashboard-view.tsx`),
+  - moved dashboard zh/en copy into a unified dictionary (`components/dashboard/i18n.ts`),
+  - removed inline `locale === "zh"` branches inside dashboard component modules.
+- Continued `state-repository` modularization by extracting shared transactional helpers (runtime lock, profile delta, activity append, slot/escrow invariants, runtime touch) into `state-repository-tx-helpers.ts`.
+- Extracted read-only direct-list/get primitives (tasks/disputes/agents/activities/cycles/ledger/active-cycle) into `state-repository-read-helpers.ts` and kept repository method signatures unchanged.
+- Started write-command extraction by moving profile patch transactional command orchestration into `state-repository-write-helpers.ts` while preserving API/repository behavior.
+- Extracted keyset/legacy-compatible paged read-query implementations (`tasks/disputes/agents/activities/cycles`) into `state-repository-query-helpers.ts`, keeping query contracts and cursor behavior unchanged.
+
 - Completed Phase 2 product closure across persistence and web read surfaces:
   - fixed DB reset cleanup ordering for `ActivityEvent` -> `AgentProfile` dependencies,
   - standardized `RuntimeState`-first lock ordering and in-transaction revision updates,
@@ -147,3 +167,51 @@
 - Hardened CLI persistence stress isolation by generating run-unique test addresses, removing hidden dependence on pre-clean balances/state between repeated suite runs.
 - Revalidated CLI with real Postgres (`TEST_DATABASE_URL`) and confirmed full suite stability: `npm --prefix apps/cli test` now passes 38/38 with persistence tests active (no skips).
 - Added dedicated CI job `cli-full-regression` to run DB-backed full CLI suite twice (`pnpm --filter @agentrade/cli test`) for state-leak/flake detection.
+
+## 2026-04-03
+
+- Completed `/v2` contract convergence for operational baseline:
+  - unified `429` to v2 error envelope (`{ error: { code, message, details, requestId, retryable } }`),
+  - added admin-only `GET /v2/system/metrics`,
+  - added SDK/contract/schema/type support for metrics response.
+- Implemented request/write observability baseline in server runtime:
+  - structured request logs (`requestId/method/path/status/durationMs/routeId`),
+  - structured write logs (`operation/actor/cycleId/retryCount/conflictOrDeadlock/outcome`),
+  - in-process counters + latency summaries exposed via `/v2/system/metrics`.
+- Upgraded list pagination to opaque keyset cursors across tasks/disputes/activities/agents/cycles:
+  - introduced shared cursor codec/parser utilities,
+  - switched DB read paths to keyset query predicates (legacy numeric/offset cursor input still accepted),
+  - aligned in-memory read paths with the same opaque cursor envelope and ordering semantics.
+- Added pagination regression for keyset page-stability under mid-stream inserts plus legacy cursor compatibility read.
+- Hardened Docker delivery path:
+  - fixed server/web Dockerfiles to include runtime-check script and workspace package manifests required by filtered installs,
+  - aligned server runtime image with built workspace packages (`config/contracts/types`),
+  - fixed compose healthcheck to `/v2/system/health`,
+  - smoke pipeline now injects non-placeholder smoke secrets by default.
+- Revalidated full quality/deployment gates:
+  - `check:fast`,
+  - `docker:test:db`,
+  - `docker:test:stress`,
+  - `docker:test:cli:persistence` (serial rerun to avoid shared-DB interference),
+  - `docker:smoke:local`,
+  - `docker:smoke:cloud`.
+- Continued repository modularization on the write-command side:
+  - extracted `publishTask`, `terminateTask`, `openDispute`, `confirmSubmission`, and `voteDispute` into `state-repository-write-helpers`,
+  - `PrismaStateRepository` now delegates all major task/submission/dispute/vote write paths through helper modules while preserving lock-ordering and invariants.
+- Re-ran full acceptance after the second write-helper extraction:
+  - `check:fast`,
+  - `docker:test:db`,
+  - `docker:test:stress`,
+  - `docker:test:cli:persistence`,
+  - `docker:smoke:local`,
+  - `docker:smoke:cloud`.
+- Completed extraction of remaining admin-cycle write commands:
+  - moved `closeCurrentCycle` and `overrideDispute` command bodies into `state-repository-write-helpers`,
+  - retained lock-order and settlement/dispute invariants by explicitly wiring transactional helper dependencies (`confirmSubmissionInternal`, `evaluateDispute`, `finalizeDisputeOutcome`, `nextCycleId`).
+- Re-ran full acceptance after admin-cycle write extraction:
+  - `check:fast`,
+  - `docker:test:db`,
+  - `docker:test:stress`,
+  - `docker:test:cli:persistence`,
+  - `docker:smoke:local`,
+  - `docker:smoke:cloud`.

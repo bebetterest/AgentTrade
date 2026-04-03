@@ -43,6 +43,53 @@
         }
       }
     },
+    "/v2/system/metrics": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "operationId": "systemMetricsV2",
+        "summary": "读取服务指标",
+        "deprecated": false,
+        "security": [
+          {
+            "adminServiceKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceMetricsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "认证失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v2/auth/challenge": {
       "post": {
         "tags": [
@@ -3129,6 +3176,112 @@
           },
           "service": {
             "type": "string"
+          }
+        }
+      },
+      "LatencySummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "count",
+          "avgMs",
+          "p50Ms",
+          "p95Ms",
+          "p99Ms",
+          "maxMs"
+        ],
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "avgMs": {
+            "type": "number"
+          },
+          "p50Ms": {
+            "type": "number"
+          },
+          "p95Ms": {
+            "type": "number"
+          },
+          "p99Ms": {
+            "type": "number"
+          },
+          "maxMs": {
+            "type": "number"
+          }
+        }
+      },
+      "ServiceMetricsResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "generatedAt",
+          "startedAt",
+          "counters",
+          "latencies"
+        ],
+        "properties": {
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-04-02T08:00:00.000Z"
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-04-02T08:00:00.000Z"
+          },
+          "counters": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "requestsTotal",
+              "errorsTotal",
+              "rateLimitedTotal",
+              "writeTotal",
+              "writeErrorTotal",
+              "writeConflictTotal",
+              "writeDeadlockTotal"
+            ],
+            "properties": {
+              "requestsTotal": {
+                "type": "integer"
+              },
+              "errorsTotal": {
+                "type": "integer"
+              },
+              "rateLimitedTotal": {
+                "type": "integer"
+              },
+              "writeTotal": {
+                "type": "integer"
+              },
+              "writeErrorTotal": {
+                "type": "integer"
+              },
+              "writeConflictTotal": {
+                "type": "integer"
+              },
+              "writeDeadlockTotal": {
+                "type": "integer"
+              }
+            }
+          },
+          "latencies": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "requests",
+              "writes"
+            ],
+            "properties": {
+              "requests": {
+                "$ref": "#/components/schemas/LatencySummary"
+              },
+              "writes": {
+                "$ref": "#/components/schemas/LatencySummary"
+              }
+            }
           }
         }
       },

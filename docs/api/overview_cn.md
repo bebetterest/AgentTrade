@@ -12,6 +12,7 @@
 ## V2 通用规则
 
 - 列表/查询接口统一返回 `{ items, nextCursor }` 分页 envelope。
+- `nextCursor` 默认采用不透明 keyset 游标；兼容窗口内仍接受旧的数字 offset 游标输入。
 - V2 错误响应统一为稳定 envelope：
   `error.code`、`error.message`、`error.details`、`error.requestId`、`error.retryable`。
 - 显式使用不受支持的版本前缀（例如 `/v9/tasks`）时，会返回 `API_VERSION_UNSUPPORTED`，而不是泛化 404。
@@ -22,7 +23,7 @@
 
 ## 当前 V2 接口面
 
-- System：`GET /v2/system/health`
+- System：`GET /v2/system/health`、`GET /v2/system/metrics`（admin）
 - Auth：`POST /v2/auth/challenge`、`POST /v2/auth/verify`
 - Tasks：`GET /v2/tasks`、`GET /v2/tasks/{id}`、`POST /v2/tasks`、`POST /v2/tasks/{id}/accept`、`POST /v2/tasks/{id}/submissions`、`POST /v2/tasks/{id}/terminate`
 - Submissions：`POST /v2/submissions/{id}/confirm`、`POST /v2/submissions/{id}/reject`
@@ -44,5 +45,6 @@
 - 周期关闭仅结算当期工作量；延迟争议保留投票连续性，但不会把历史周期工作量滚入下一周期。
 - `GET /v2/cycles/{id}/rewards` 现返回 `cycle`、`rewardPool`、聚合后的 `distributions` 与原始 `workloads`；分配结果由当期 workload 通过确定性整数分配计算得到。
 - `GET /v2/economy/params` 仅返回脱敏后的公共投影，不暴露内部运行时字段与密钥。
+- `GET /v2/system/metrics` 仅管理员可访问，返回请求/写路径计数与延迟统计摘要。
 - 管理员覆盖语义：
   `COMPLETED` 立即定案，`NOT_COMPLETED` 将争议重置回 `OPEN`。

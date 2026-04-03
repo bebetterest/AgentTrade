@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import {
+  type ActivityEvent,
   ActivityEventType,
   DisputeStatus,
   VoteChoice,
@@ -13,8 +14,7 @@ import {
   countMetrics,
   isAddress,
   isValidTimezone,
-  paginateItems,
-  parseCursorOffset,
+  paginateItemsByCursor,
   parseOperationBody,
   parseOperationParams,
   parseOperationQuery,
@@ -68,6 +68,50 @@ const sortDisputes = (items: Dispute[], sortKey: "latest" | "created", order: "a
   });
 };
 
+const disputeCursorPrimary = (item: Dispute, sortKey: "latest" | "created"): string =>
+  sortKey === "created" ? item.createdAt : item.updatedAt;
+
+const compareDisputeAfterCursor = (
+  item: Dispute,
+  sortKey: "latest" | "created",
+  order: "asc" | "desc",
+  cursorValues: Record<string, unknown>
+): number => {
+  const cursorId = cursorValues.id;
+  const cursorPrimary = cursorValues.primary;
+  if (typeof cursorId !== "string" || cursorId.length === 0) {
+    throw new DomainError("INVALID_CURSOR", "cursor id must be a non-empty string", 400);
+  }
+  if (typeof cursorPrimary !== "string" || cursorPrimary.length === 0) {
+    throw new DomainError("INVALID_CURSOR", "cursor primary must be a non-empty ISO datetime string", 400);
+  }
+  let delta = disputeCursorPrimary(item, sortKey).localeCompare(cursorPrimary);
+  if (delta === 0) {
+    delta = item.id.localeCompare(cursorId);
+  }
+  return order === "asc" ? delta : -delta;
+};
+
+const compareActivityAfterCursor = (
+  item: ActivityEvent,
+  order: "asc" | "desc",
+  cursorValues: Record<string, unknown>
+): number => {
+  const cursorId = cursorValues.id;
+  const cursorPrimary = cursorValues.primary;
+  if (typeof cursorId !== "string" || cursorId.length === 0) {
+    throw new DomainError("INVALID_CURSOR", "cursor id must be a non-empty string", 400);
+  }
+  if (typeof cursorPrimary !== "string" || cursorPrimary.length === 0) {
+    throw new DomainError("INVALID_CURSOR", "cursor primary must be a non-empty ISO datetime string", 400);
+  }
+  let delta = item.createdAt.localeCompare(cursorPrimary);
+  if (delta === 0) {
+    delta = item.id.localeCompare(cursorId);
+  }
+  return order === "asc" ? delta : -delta;
+};
+
 const registerDisputeListRoute = (
   app: FastifyInstance,
   services: AppServices,
@@ -93,7 +137,7 @@ const registerDisputeListRoute = (
           q: query.q,
           sort,
           order,
-          offset: parseCursorOffset(query.cursor),
+          cursor: query.cursor,
           limit,
           paged: true
         })
@@ -123,7 +167,27 @@ const registerDisputeListRoute = (
     }
 
     sortDisputes(items, sort, order);
-    return validateOperationResponse(operation, paginateItems(items, query.cursor, limit));
+    return validateOperationResponse(
+      operation,
+      paginateItemsByCursor(items, {
+        cursor: query.cursor,
+        limit,
+        resource: "disputes",
+        sort,
+        order,
+        toCursorValues: (item) => ({
+          primary: disputeCursorPrimary(item, sort),
+          id: item.id
+        }),
+        compareAfterCursor: (item, cursorValues) =>
+          compareDisputeAfterCursor(
+            item,
+            sort,
+            order,
+            cursorValues as Record<string, unknown>
+          )
+      })
+    );
   });
 };
 
@@ -167,13 +231,18 @@ const registerDisputeOpenRoute = (
             ...body,
             opener,
             disputeReasonMaxLength: services.config.disputeReasonMaxLength
-          })
+          }),
+          services.writeMeta({ operation: "disputes.open", actor: opener })
         )
       );
     }
     return validateOperationResponse(
       operation,
-      await services.mutate((engine) => engine.openDispute({ ...body, opener }), ["disputes"])
+      await services.mutate(
+        (engine) => engine.openDispute({ ...body, opener }),
+        ["disputes"],
+        services.writeMeta({ operation: "disputes.open", actor: opener })
+      )
     );
   });
 };
@@ -186,6 +255,7 @@ const registerDisputeVoteRoute = (
   app.post(toServerRoutePath(operation.pathTemplate), { preHandler: [app.authenticate] }, async (request, reply) => {
     const params = parseOperationParams<{ id: string }>(operation, request);
     const body = parseOperationBody<{ vote: VoteChoice }>(operation, request);
+    const agent = request.agentAddress as Address;
     try {
       if (services.stateRepository) {
         return validateOperationResponse(
@@ -193,10 +263,11 @@ const registerDisputeVoteRoute = (
           await services.mutateDirect(() =>
             services.stateRepository!.voteDisputeDirect({
               disputeId: params.id,
-              agent: request.agentAddress as Address,
+              agent,
               vote: body.vote,
               config: services.config
-            })
+            }),
+            services.writeMeta({ operation: "disputes.vote", actor: agent })
           )
         );
       }
@@ -206,10 +277,11 @@ const registerDisputeVoteRoute = (
           (engine) =>
             engine.voteDispute({
               disputeId: params.id,
-              agent: request.agentAddress as Address,
+              agent,
               vote: body.vote
             }),
-          ["profiles", "votes", "cycleWorkloads"]
+          ["profiles", "votes", "cycleWorkloads"],
+          services.writeMeta({ operation: "disputes.vote", actor: agent })
         )
       );
     } catch (error) {
@@ -243,8 +315,9 @@ const registerActivityListRoute = (
           disputeId: query.disputeId,
           address: query.address as Address | undefined,
           type: query.type,
+          sort: "created",
           order,
-          offset: parseCursorOffset(query.cursor),
+          cursor: query.cursor,
           limit,
           paged: true
         })
@@ -273,7 +346,22 @@ const registerActivityListRoute = (
       return order === "asc" ? delta : -delta;
     });
 
-    return validateOperationResponse(operation, paginateItems(items, query.cursor, limit));
+    return validateOperationResponse(
+      operation,
+      paginateItemsByCursor(items, {
+        cursor: query.cursor,
+        limit,
+        resource: "activities",
+        sort: "created",
+        order,
+        toCursorValues: (item) => ({
+          primary: item.createdAt,
+          id: item.id
+        }),
+        compareAfterCursor: (item, cursorValues) =>
+          compareActivityAfterCursor(item, order, cursorValues as Record<string, unknown>)
+      })
+    );
   });
 };
 

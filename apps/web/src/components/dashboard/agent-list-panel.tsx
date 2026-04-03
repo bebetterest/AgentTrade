@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { AgentDirectoryItem } from "@agentrade/types";
 import type { SupportedLocale } from "@agentrade/i18n";
 import { formatDateTime, shortAddress } from "../../lib/dashboard-format";
+import { getDashboardCopy } from "./i18n";
 
 interface AgentListPanelProps {
   locale: SupportedLocale;
@@ -32,52 +33,48 @@ export const AgentListPanel = ({
   onRefresh,
   onLoadMore
 }: AgentListPanelProps) => {
+  const copy = getDashboardCopy(locale);
+
   return (
     <>
       {agentLoadError ? (
         <div className="inline-error" data-testid="agents-error">
           <p className="empty-line">
-            {locale === "zh" ? "Agent 列表加载失败，请重试。" : "Agent list failed to load. Retry with refresh."}
+            {copy.agentList.loadError}
           </p>
           <button type="button" className="link-btn" onClick={onRefresh}>
-            {locale === "zh" ? "重试" : "Retry"}
+            {copy.common.retry}
           </button>
         </div>
       ) : null}
-      {loadingAgents ? <p className="empty-line">{locale === "zh" ? "加载中..." : "Loading..."}</p> : null}
+      {loadingAgents ? <p className="empty-line">{copy.common.loading}</p> : null}
       <div className="masonry-grid">
         {agents.map((agent) => (
           <article key={agent.address} className="masonry-card" data-testid="agent-card">
             <h3>{agent.name || shortAddress(agent.address)}</h3>
             <p className="muted">{shortAddress(agent.address)}</p>
-            <p>{locale === "zh" ? "综合分" : "Score"}: {agent.score}</p>
-            <p>{locale === "zh" ? "发布/接单/完成" : "Pub/Acc/Done"}: {agent.stats.tasksPublished}/{agent.stats.tasksAccepted}/{agent.stats.tasksCompleted}</p>
-            <p>{locale === "zh" ? "最新活动" : "Latest"}: {agent.latestActivityAt ? formatDateTime(agent.latestActivityAt, locale, timeZone) : "-"}</p>
+            <p>{copy.agentList.score}: {agent.score}</p>
+            <p>{copy.agentList.summary}: {agent.stats.tasksPublished}/{agent.stats.tasksAccepted}/{agent.stats.tasksCompleted}</p>
+            <p>{copy.agentList.latest}: {agent.latestActivityAt ? formatDateTime(agent.latestActivityAt, locale, timeZone) : "-"}</p>
             <div className="card-actions">
               <button type="button" className="link-btn" data-testid="agent-detail-trigger" onClick={() => onOpenAgentDetail(agent.address)}>
-                {locale === "zh" ? "详情" : "Details"}
+                {copy.common.details}
               </button>
-              <Link href={`/agents/${agent.address}`}>{locale === "zh" ? "完整页" : "Full page"}</Link>
+              <Link href={`/agents/${agent.address}`}>{copy.common.fullPage}</Link>
             </div>
           </article>
         ))}
       </div>
       {agents.length === 0 && !loadingAgents ? (
         <p className="empty-line" data-testid="agents-empty">
-          {hasAgentFilters
-            ? locale === "zh"
-              ? "筛选后暂无 Agent"
-              : "No agents match current filters"
-            : locale === "zh"
-              ? "暂无 Agent"
-              : "No agents"}
+          {hasAgentFilters ? copy.agentList.emptyFiltered : copy.agentList.empty}
         </p>
       ) : null}
       <div ref={agentSentinelRef} className="sentinel" />
-      {loadingMoreAgents ? <p className="empty-line">{locale === "zh" ? "加载更多..." : "Loading more..."}</p> : null}
+      {loadingMoreAgents ? <p className="empty-line">{copy.common.loadingMore}</p> : null}
       {nextCursor && !loadingMoreAgents ? (
         <button type="button" className="action-btn more-btn" data-testid="load-more-agents" onClick={onLoadMore}>
-          {locale === "zh" ? "加载更多 Agent" : "Load more agents"}
+          {copy.agentList.loadMore}
         </button>
       ) : null}
     </>

@@ -15,6 +15,7 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
+    "@agentrade/config": "workspace:*",
     "@agentrade/contracts": "workspace:*",
     "@agentrade/i18n": "workspace:*",
     "@agentrade/types": "workspace:*",

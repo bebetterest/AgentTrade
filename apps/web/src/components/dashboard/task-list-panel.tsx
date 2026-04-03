@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Task } from "@agentrade/types";
 import type { SupportedLocale } from "@agentrade/i18n";
 import { formatDateTime, shortAddress } from "../../lib/dashboard-format";
+import { getDashboardCopy } from "./i18n";
 import { TASK_STATUS_FILTERS } from "./shared";
 
 interface TaskListPanelProps {
@@ -39,6 +40,8 @@ export const TaskListPanel = ({
   onRefresh,
   onLoadMore
 }: TaskListPanelProps) => {
+  const copy = getDashboardCopy(locale);
+
   return (
     <>
       <div className="status-strip">
@@ -48,7 +51,7 @@ export const TaskListPanel = ({
           type="button"
           onClick={() => onSetTaskStatus(null)}
         >
-          {locale === "zh" ? "全部" : "All"} ({tasks.length})
+          {copy.taskList.all} ({tasks.length})
         </button>
         {TASK_STATUS_FILTERS.map((status) => (
           <button
@@ -66,48 +69,42 @@ export const TaskListPanel = ({
       {taskLoadError ? (
         <div className="inline-error" data-testid="tasks-error">
           <p className="empty-line">
-            {locale === "zh" ? "任务列表加载失败，请重试。" : "Task list failed to load. Retry with refresh."}
+            {copy.taskList.loadError}
           </p>
           <button type="button" className="link-btn" onClick={onRefresh}>
-            {locale === "zh" ? "重试" : "Retry"}
+            {copy.common.retry}
           </button>
         </div>
       ) : null}
-      {loadingTasks ? <p className="empty-line">{locale === "zh" ? "加载中..." : "Loading..."}</p> : null}
+      {loadingTasks ? <p className="empty-line">{copy.common.loading}</p> : null}
       <div className="masonry-grid">
         {tasks.map((task) => (
           <article key={task.id} className="masonry-card" data-testid="task-card">
             <h3>{task.title}</h3>
             <p className="muted">{shortAddress(task.publisher)}</p>
             <span className="state-chip">{task.status}</span>
-            <p>{locale === "zh" ? "奖励" : "Reward"}: {task.rewardPerSlot} AGC</p>
-            <p>{locale === "zh" ? "槽位" : "Slots"}: {task.completedAgents.length}/{task.slotsTotal}</p>
-            <p>{locale === "zh" ? "截止" : "Deadline"}: {formatDateTime(task.deadlineUtc, locale, timeZone)}</p>
+            <p>{copy.taskList.reward}: {task.rewardPerSlot} AGC</p>
+            <p>{copy.taskList.slots}: {task.completedAgents.length}/{task.slotsTotal}</p>
+            <p>{copy.taskList.deadline}: {formatDateTime(task.deadlineUtc, locale, timeZone)}</p>
             <div className="card-actions">
               <button type="button" className="link-btn" data-testid="task-detail-trigger" onClick={() => onOpenTaskDetail(task.id)}>
-                {locale === "zh" ? "详情" : "Details"}
+                {copy.common.details}
               </button>
-              <Link href={`/tasks/${task.id}`}>{locale === "zh" ? "完整页" : "Full page"}</Link>
+              <Link href={`/tasks/${task.id}`}>{copy.common.fullPage}</Link>
             </div>
           </article>
         ))}
       </div>
       {tasks.length === 0 && !loadingTasks ? (
         <p className="empty-line" data-testid="tasks-empty">
-          {hasTaskFilters
-            ? locale === "zh"
-              ? "筛选后暂无任务"
-              : "No tasks match current filters"
-            : locale === "zh"
-              ? "暂无任务"
-              : "No tasks"}
+          {hasTaskFilters ? copy.taskList.emptyFiltered : copy.taskList.empty}
         </p>
       ) : null}
       <div ref={taskSentinelRef} className="sentinel" />
-      {loadingMoreTasks ? <p className="empty-line">{locale === "zh" ? "加载更多..." : "Loading more..."}</p> : null}
+      {loadingMoreTasks ? <p className="empty-line">{copy.common.loadingMore}</p> : null}
       {nextCursor && !loadingMoreTasks ? (
         <button type="button" className="action-btn more-btn" data-testid="load-more-tasks" onClick={onLoadMore}>
-          {locale === "zh" ? "加载更多任务" : "Load more tasks"}
+          {copy.taskList.loadMore}
         </button>
       ) : null}
     </>

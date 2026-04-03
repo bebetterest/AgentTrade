@@ -20,7 +20,8 @@ import { registerDisputeRoutes } from "./api/disputes.js";
 import {
   isAddress,
   toV2ErrorEnvelope,
-  type AppServices
+  type AppServices,
+  type WriteOperationMeta
 } from "./api/services.js";
 import { registerSystemRoutes } from "./api/system.js";
 import { registerTaskRoutes } from "./api/tasks.js";
@@ -31,6 +32,7 @@ import {
   getRequestPathname,
   resolveVersionlessApiRedirect
 } from "./api/versioning.js";
+import { ServiceMetricsCollector } from "./observability/metrics.js";
 import { HttpError } from "./utils/http-error.js";
 import "./types.js";
 
@@ -39,6 +41,7 @@ export const buildApp = async () => {
   assertSupportedApiDefaultVersion(config);
   const app = Fastify({ logger: !process.env.VITEST });
   const limiter = await createRateLimiter(config, app.log);
+  const metrics = new ServiceMetricsCollector();
   const stateRepository = config.enablePersistence ? new PrismaStateRepository(config.databaseUrl) : null;
 
   let inMemoryEngine = new AgentradeEngine(config);
@@ -60,6 +63,75 @@ export const buildApp = async () => {
 
   const cloneSnapshot = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
+  const errorCode = (error: unknown): string | null => {
+    if (!error || typeof error !== "object" || !("code" in error)) {
+      return null;
+    }
+    const raw = (error as { code?: unknown }).code;
+    return typeof raw === "string" && raw.length > 0 ? raw : null;
+  };
+
+  const isDeadlockError = (error: unknown): boolean => {
+    const code = errorCode(error);
+    if (code === "40P01") {
+      return true;
+    }
+    const message = error instanceof Error ? error.message.toLowerCase() : "";
+    return message.includes("deadlock");
+  };
+
+  const resolveCurrentCycleId = (): string | undefined => {
+    try {
+      return inMemoryEngine.getActiveCycle().id;
+    } catch {
+      return undefined;
+    }
+  };
+
+  const normalizeWriteMeta = (
+    meta: WriteOperationMeta | undefined,
+    fallbackOperation: string
+  ): WriteOperationMeta => ({
+    operation: meta?.operation ?? fallbackOperation,
+    actor: meta?.actor,
+    cycleId: meta?.cycleId ?? resolveCurrentCycleId()
+  });
+
+  const recordWriteOutcome = (
+    meta: WriteOperationMeta,
+    input: {
+      startedAtNs: bigint;
+      retryCount: number;
+      conflict: boolean;
+      outcome: "success" | "error";
+      error?: unknown;
+    }
+  ): void => {
+    const durationMs = Number(process.hrtime.bigint() - input.startedAtNs) / 1_000_000;
+    const deadlock = input.outcome === "error" && isDeadlockError(input.error);
+    metrics.recordWrite({
+      durationMs,
+      outcome: input.outcome,
+      conflict: input.conflict,
+      deadlock
+    });
+
+    const payload = {
+      operation: meta.operation,
+      actor: meta.actor ?? null,
+      cycleId: meta.cycleId ?? null,
+      retryCount: input.retryCount,
+      conflictOrDeadlock: input.conflict || deadlock,
+      outcome: input.outcome,
+      durationMs: Number(durationMs.toFixed(3))
+    };
+    if (input.outcome === "success") {
+      app.log.info(payload, "write operation completed");
+      return;
+    }
+    app.log.warn({ ...payload, code: errorCode(input.error) }, "write operation failed");
+  };
+
   let mutationQueue: Promise<void> = Promise.resolve();
   const enqueueMutation = async <T>(operation: () => Promise<T>): Promise<T> => {
     const next = mutationQueue.then(operation, operation);
@@ -72,68 +144,126 @@ export const buildApp = async () => {
 
   const mutate = async <T>(
     operation: (engine: AgentradeEngine) => T | Promise<T>,
-    scope?: PersistenceMutationScope[]
+    scope?: PersistenceMutationScope[],
+    meta?: WriteOperationMeta
   ): Promise<T> => {
-    if (!stateRepository) {
-      return operation(inMemoryEngine);
-    }
-    return enqueueMutation(async () => {
-      if (inMemoryEngineDirty) {
-        const latestSnapshot = await stateRepository.load();
-        if (latestSnapshot) {
-          inMemoryEngine = AgentradeEngine.fromSnapshot(config, latestSnapshot);
-          app.engine = inMemoryEngine;
-        }
-        runtimeRevision = await stateRepository.getRuntimeRevision();
-        inMemoryEngineDirty = false;
-      }
+    const writeMeta = normalizeWriteMeta(meta, "engine-mutate");
+    const startedAtNs = process.hrtime.bigint();
+    let retryCount = 0;
+    let conflict = false;
 
-      for (let attempt = 1; attempt <= 3; attempt += 1) {
-        const baselineSnapshot = inMemoryEngine.toSnapshot();
-        const runtime = AgentradeEngine.fromSnapshot(config, cloneSnapshot(baselineSnapshot));
-        const result = await operation(runtime);
-        const nextSnapshot = runtime.toSnapshot();
-
-        try {
-          runtimeRevision = await stateRepository.syncFromSnapshots(
-            baselineSnapshot,
-            nextSnapshot,
-            runtimeRevision,
-            scope
-          );
-        } catch (error) {
-          if (error instanceof PersistenceConflictError && attempt < 3) {
-            const latestSnapshot = await stateRepository.load();
-            if (latestSnapshot) {
-              inMemoryEngine = AgentradeEngine.fromSnapshot(config, latestSnapshot);
-              app.engine = inMemoryEngine;
-            }
-            runtimeRevision = await stateRepository.getRuntimeRevision();
-            continue;
-          }
-          throw error;
-        }
-
-        inMemoryEngine = runtime;
-        app.engine = inMemoryEngine;
-        inMemoryEngineDirty = false;
+    try {
+      if (!stateRepository) {
+        const result = await operation(inMemoryEngine);
+        recordWriteOutcome(writeMeta, {
+          startedAtNs,
+          retryCount,
+          conflict,
+          outcome: "success"
+        });
         return result;
       }
 
-      throw new HttpError(409, "persistence conflict: retry limit reached");
-    });
+      const result = await enqueueMutation(async () => {
+        if (inMemoryEngineDirty) {
+          const latestSnapshot = await stateRepository.load();
+          if (latestSnapshot) {
+            inMemoryEngine = AgentradeEngine.fromSnapshot(config, latestSnapshot);
+            app.engine = inMemoryEngine;
+          }
+          runtimeRevision = await stateRepository.getRuntimeRevision();
+          inMemoryEngineDirty = false;
+        }
+
+        for (let attempt = 1; attempt <= 3; attempt += 1) {
+          const baselineSnapshot = inMemoryEngine.toSnapshot();
+          const runtime = AgentradeEngine.fromSnapshot(config, cloneSnapshot(baselineSnapshot));
+          const result = await operation(runtime);
+          const nextSnapshot = runtime.toSnapshot();
+
+          try {
+            runtimeRevision = await stateRepository.syncFromSnapshots(
+              baselineSnapshot,
+              nextSnapshot,
+              runtimeRevision,
+              scope
+            );
+          } catch (error) {
+            if (error instanceof PersistenceConflictError && attempt < 3) {
+              conflict = true;
+              retryCount += 1;
+              const latestSnapshot = await stateRepository.load();
+              if (latestSnapshot) {
+                inMemoryEngine = AgentradeEngine.fromSnapshot(config, latestSnapshot);
+                app.engine = inMemoryEngine;
+              }
+              runtimeRevision = await stateRepository.getRuntimeRevision();
+              continue;
+            }
+            throw error;
+          }
+
+          inMemoryEngine = runtime;
+          app.engine = inMemoryEngine;
+          inMemoryEngineDirty = false;
+          return result;
+        }
+
+        throw new HttpError(409, "persistence conflict: retry limit reached");
+      });
+
+      recordWriteOutcome(writeMeta, {
+        startedAtNs,
+        retryCount,
+        conflict,
+        outcome: "success"
+      });
+      return result;
+    } catch (error) {
+      recordWriteOutcome(writeMeta, {
+        startedAtNs,
+        retryCount,
+        conflict,
+        outcome: "error",
+        error
+      });
+      throw error;
+    }
   };
 
-  const mutateDirect = async <T>(operation: () => Promise<T>): Promise<T> => {
+  const mutateDirect = async <T>(
+    operation: () => Promise<T>,
+    meta?: WriteOperationMeta
+  ): Promise<T> => {
+    const writeMeta = normalizeWriteMeta(meta, "repository-direct-write");
+    const startedAtNs = process.hrtime.bigint();
     if (!stateRepository) {
       throw new HttpError(500, "persistence repository is unavailable");
     }
-    return enqueueMutation(async () => {
-      const result = await operation();
-      inMemoryEngineDirty = true;
-      runtimeRevision = null;
+    try {
+      const result = await enqueueMutation(async () => {
+        const next = await operation();
+        inMemoryEngineDirty = true;
+        runtimeRevision = null;
+        return next;
+      });
+      recordWriteOutcome(writeMeta, {
+        startedAtNs,
+        retryCount: 0,
+        conflict: false,
+        outcome: "success"
+      });
       return result;
-    });
+    } catch (error) {
+      recordWriteOutcome(writeMeta, {
+        startedAtNs,
+        retryCount: 0,
+        conflict: false,
+        outcome: "error",
+        error
+      });
+      throw error;
+    }
   };
 
   const defaultAgentProfile = (address: Address): AgentProfile => {
@@ -206,7 +336,9 @@ export const buildApp = async () => {
   const services: AppServices = {
     config,
     stateRepository,
+    metrics,
     challenges,
+    writeMeta: (input) => normalizeWriteMeta(input, input.operation),
     read,
     mutate,
     mutateDirect,
@@ -243,10 +375,37 @@ export const buildApp = async () => {
     }
   });
 
+  const requestStartTimes = new WeakMap<object, bigint>();
+  app.addHook("onRequest", async (request) => {
+    requestStartTimes.set(request, process.hrtime.bigint());
+  });
   app.addHook("onRequest", applyRateLimit(limiter));
   app.addHook("onSend", async (request, reply, payload) => {
     reply.header("x-request-id", request.id);
     return payload;
+  });
+  app.addHook("onResponse", async (request, reply) => {
+    const startedAt = requestStartTimes.get(request);
+    const durationMs = startedAt
+      ? Number(process.hrtime.bigint() - startedAt) / 1_000_000
+      : 0;
+    const path = getRequestPathname(request.raw.url ?? request.url);
+    const routeId = request.routeOptions?.url ?? "unmatched";
+    metrics.recordRequest({
+      statusCode: reply.statusCode,
+      durationMs
+    });
+    app.log.info(
+      {
+        requestId: request.id,
+        method: request.method,
+        path,
+        status: reply.statusCode,
+        durationMs: Number(durationMs.toFixed(3)),
+        routeId
+      },
+      "request completed"
+    );
   });
   app.register(cors, { origin: true });
 

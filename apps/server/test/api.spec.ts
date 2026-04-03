@@ -4,6 +4,7 @@ import type { Address } from "@agentrade/types";
 import { VoteChoice } from "@agentrade/types";
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "../src/app.js";
+import { parseCursorOffset } from "../src/api/services.js";
 
 const addr = (seed: string): Address =>
   `0x${Buffer.from(seed).toString("hex").slice(0, 40).padEnd(40, "0")}` as Address;
@@ -141,6 +142,37 @@ describe("API integration", () => {
     expect(
       (response.json() as { error: { message: string } }).error.message
     ).toContain("unsupported api version 'v9'");
+  });
+
+  it("exposes system metrics only to admin channel with v2 envelope", async () => {
+    const forbidden = await app!.inject({
+      method: "GET",
+      url: "/v2/system/metrics"
+    });
+    expect(forbidden.statusCode).toBe(401);
+    expect(errorCode(forbidden.json())).toBe("HTTP_ERROR");
+
+    const response = await app!.inject({
+      method: "GET",
+      url: "/v2/system/metrics",
+      headers: {
+        "x-admin-service-key": adminKey
+      }
+    });
+    expect(response.statusCode).toBe(200);
+    const payload = response.json() as {
+      generatedAt: string;
+      startedAt: string;
+      counters: { requestsTotal: number; errorsTotal: number; rateLimitedTotal: number };
+      latencies: { requests: { count: number }; writes: { count: number } };
+    };
+    expect(payload.generatedAt.length).toBeGreaterThan(0);
+    expect(payload.startedAt.length).toBeGreaterThan(0);
+    expect(payload.counters.requestsTotal).toBeGreaterThan(0);
+    expect(payload.counters.errorsTotal).toBeGreaterThanOrEqual(0);
+    expect(payload.counters.rateLimitedTotal).toBeGreaterThanOrEqual(0);
+    expect(payload.latencies.requests.count).toBeGreaterThan(0);
+    expect(payload.latencies.writes.count).toBe(0);
   });
 
   it("rejects task creation with past deadline", async () => {
@@ -376,6 +408,69 @@ describe("API integration", () => {
 
     expect(first.statusCode).toBe(200);
     expect(second.statusCode).toBe(429);
+    expect(errorCode(second.json())).toBe("RATE_LIMITED");
+    expect((second.json() as { error: { requestId: string; retryable: boolean } }).error.retryable).toBe(true);
+  });
+
+  it("returns opaque pagination cursors while keeping legacy numeric cursor compatibility", async () => {
+    const publisher = addr("cursor-publisher");
+    for (let index = 0; index < 3; index += 1) {
+      const created = await app!.inject({
+        method: "POST",
+        url: "/v2/tasks",
+        headers: { authorization: `Bearer ${bearer(publisher)}` },
+        payload: {
+          title: `cursor-task-${index + 1}`,
+          descriptionMd: "desc",
+          acceptanceCriteria: "criteria",
+          deadlineUtc: futureDeadline(48 + index),
+          displayTimezone: "UTC",
+          slotsTotal: 1,
+          rewardPerSlot: 10 + index,
+          allowRepeatCompletionsBySameAgent: false
+        }
+      });
+      expect(created.statusCode).toBe(200);
+    }
+
+    const pageOneRes = await app!.inject({
+      method: "GET",
+      url: `/v2/tasks?publisher=${publisher}&sort=created&order=asc&limit=2`
+    });
+    expect(pageOneRes.statusCode).toBe(200);
+    const pageOne = pageOneRes.json() as {
+      items: Array<{ id: string }>;
+      nextCursor: string | null;
+    };
+    expect(pageOne.items.length).toBe(2);
+    expect(pageOne.nextCursor).not.toBeNull();
+    expect(parseCursorOffset(pageOne.nextCursor ?? undefined)).toBe(2);
+
+    const pageTwoOpaqueRes = await app!.inject({
+      method: "GET",
+      url: `/v2/tasks?publisher=${publisher}&sort=created&order=asc&limit=2&cursor=${pageOne.nextCursor}`
+    });
+    expect(pageTwoOpaqueRes.statusCode).toBe(200);
+    const pageTwoOpaque = pageTwoOpaqueRes.json() as {
+      items: Array<{ id: string }>;
+      nextCursor: string | null;
+    };
+    expect(pageTwoOpaque.items.length).toBe(1);
+    expect(pageTwoOpaque.nextCursor).toBeNull();
+
+    const pageTwoLegacyRes = await app!.inject({
+      method: "GET",
+      url: `/v2/tasks?publisher=${publisher}&sort=created&order=asc&limit=2&cursor=2`
+    });
+    expect(pageTwoLegacyRes.statusCode).toBe(200);
+    const pageTwoLegacy = pageTwoLegacyRes.json() as {
+      items: Array<{ id: string }>;
+      nextCursor: string | null;
+    };
+    expect(pageTwoLegacy.items.map((item) => item.id)).toEqual(
+      pageTwoOpaque.items.map((item) => item.id)
+    );
+    expect(pageTwoLegacy.nextCursor).toBeNull();
   });
 
   it("prevents oversell when two agents race for one slot", async () => {

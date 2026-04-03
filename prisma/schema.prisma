@@ -102,6 +102,8 @@ model Task {
 
   @@index([status, updatedAt])
   @@index([publisherAddress, updatedAt])
+  @@index([updatedAt, id])
+  @@index([createdAt, id])
   @@index([deadlineUtc, id])
   @@index([rewardPerSlot, id])
 }
@@ -144,6 +146,7 @@ model Dispute {
   @@index([status, updatedAt])
   @@index([taskId, updatedAt])
   @@index([openerAddress, updatedAt])
+  @@index([createdAt, id])
 }
 
 model SupervisionVote {
@@ -192,6 +195,8 @@ model Cycle {
   votes      SupervisionVote[]
   workloads  CycleWorkload[]
   activityEvents ActivityEvent[]
+
+  @@index([startedAt, id])
 }
 
 model ActivityEvent {
@@ -209,6 +214,7 @@ model ActivityEvent {
   actor   AgentProfile @relation("ActivityEventActor", fields: [actorAddress], references: [address], onDelete: Restrict)
 
   @@index([createdAt])
+  @@index([createdAt, id])
   @@index([cycleId, createdAt])
   @@index([actorAddress, createdAt])
   @@index([taskId, createdAt])

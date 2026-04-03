@@ -2,7 +2,7 @@ import type { ActivityEvent, Dispute, Task } from "@agentrade/types";
 import type { SupportedLocale } from "@agentrade/i18n";
 import { formatDateTime, shortAddress } from "../../lib/dashboard-format";
 import { renderSafeMarkdown } from "../../lib/markdown";
-import { EVENT_LABELS } from "./shared";
+import { getDashboardCopy } from "./i18n";
 
 interface TaskDetailDrawerProps {
   locale: SupportedLocale;
@@ -25,25 +25,27 @@ export const TaskDetailDrawer = ({
   onRetry,
   onOpenAgentDetail
 }: TaskDetailDrawerProps) => {
+  const copy = getDashboardCopy(locale);
+
   if (taskDetail.loading) {
-    return <p className="empty-line">{locale === "zh" ? "加载中..." : "Loading..."}</p>;
+    return <p className="empty-line">{copy.common.loading}</p>;
   }
 
   if (taskDetail.error) {
     return (
       <div className="inline-error" data-testid="task-detail-error">
         <p className="empty-line">
-          {locale === "zh" ? "任务详情加载失败，请重试。" : "Task details failed to load. Retry."}
+          {copy.taskDetail.loadError}
         </p>
         <button type="button" className="link-btn" data-testid="retry-task-detail" onClick={onRetry}>
-          {locale === "zh" ? "重试" : "Retry"}
+          {copy.common.retry}
         </button>
       </div>
     );
   }
 
   if (!taskDetail.task) {
-    return <p className="empty-line">{locale === "zh" ? "任务不存在" : "Task not found"}</p>;
+    return <p className="empty-line">{copy.taskDetail.notFound}</p>;
   }
 
   const task = taskDetail.task;
@@ -55,22 +57,22 @@ export const TaskDetailDrawer = ({
       <div className="detail-grid">
         <div className="detail-card">
           <div className="metric-line">
-            <span>{locale === "zh" ? "发布者" : "Publisher"}</span>
+            <span>{copy.taskDetail.publisher}</span>
             <strong>
               <button type="button" className="link-btn inline-link" onClick={() => onOpenAgentDetail(task.publisher)}>
                 {shortAddress(task.publisher)}
               </button>
             </strong>
           </div>
-          <div className="metric-line"><span>{locale === "zh" ? "奖励" : "Reward"}</span><strong>{task.rewardPerSlot} AGC</strong></div>
-          <div className="metric-line"><span>{locale === "zh" ? "税额" : "Tax"}</span><strong>{task.taxAmount} AGC</strong></div>
-          <div className="metric-line"><span>{locale === "zh" ? "剩余托管" : "Escrow Remaining"}</span><strong>{task.rewardEscrowRemaining} AGC</strong></div>
-          <div className="metric-line"><span>{locale === "zh" ? "槽位进度" : "Slot Progress"}</span><strong>{task.completedAgents.length}/{task.slotsTotal}</strong></div>
-          <div className="metric-line"><span>{locale === "zh" ? "截止时间" : "Deadline"}</span><strong>{formatDateTime(task.deadlineUtc, locale, timeZone)}</strong></div>
+          <div className="metric-line"><span>{copy.taskDetail.reward}</span><strong>{task.rewardPerSlot} AGC</strong></div>
+          <div className="metric-line"><span>{copy.taskDetail.tax}</span><strong>{task.taxAmount} AGC</strong></div>
+          <div className="metric-line"><span>{copy.taskDetail.escrowRemaining}</span><strong>{task.rewardEscrowRemaining} AGC</strong></div>
+          <div className="metric-line"><span>{copy.taskDetail.slotProgress}</span><strong>{task.completedAgents.length}/{task.slotsTotal}</strong></div>
+          <div className="metric-line"><span>{copy.taskDetail.deadline}</span><strong>{formatDateTime(task.deadlineUtc, locale, timeZone)}</strong></div>
         </div>
         <div className="detail-card">
-          <h4>{locale === "zh" ? "参与 Agent" : "Participants"}</h4>
-          <p className="muted">{locale === "zh" ? "已接受" : "Accepted"}</p>
+          <h4>{copy.taskDetail.participants}</h4>
+          <p className="muted">{copy.taskDetail.accepted}</p>
           {task.acceptedAgents.length > 0 ? (
             <div className="chip-list">
               {task.acceptedAgents.map((address) => (
@@ -80,9 +82,9 @@ export const TaskDetailDrawer = ({
               ))}
             </div>
           ) : (
-            <p className="empty-line">{locale === "zh" ? "暂无" : "None"}</p>
+            <p className="empty-line">{copy.taskDetail.none}</p>
           )}
-          <p className="muted">{locale === "zh" ? "已完成" : "Completed"}</p>
+          <p className="muted">{copy.taskDetail.completed}</p>
           {task.completedAgents.length > 0 ? (
             <div className="chip-list">
               {task.completedAgents.map((address) => (
@@ -92,14 +94,14 @@ export const TaskDetailDrawer = ({
               ))}
             </div>
           ) : (
-            <p className="empty-line">{locale === "zh" ? "暂无" : "None"}</p>
+            <p className="empty-line">{copy.taskDetail.none}</p>
           )}
         </div>
       </div>
       <div className="markdown">{renderSafeMarkdown(task.descriptionMd)}</div>
-      <h4>{locale === "zh" ? "验收标准" : "Acceptance Criteria"}</h4>
+      <h4>{copy.taskDetail.acceptanceCriteria}</h4>
       <div className="markdown">{renderSafeMarkdown(task.acceptanceCriteria)}</div>
-      <h4>{locale === "zh" ? "关联争议" : "Related disputes"}</h4>
+      <h4>{copy.taskDetail.relatedDisputes}</h4>
       {taskDetail.disputes.length > 0 ? (
         <ul className="detail-list">
           {taskDetail.disputes.map((item) => (
@@ -109,7 +111,7 @@ export const TaskDetailDrawer = ({
                 <span className="state-chip">{item.status}</span>
               </div>
               <p className="muted">
-                {locale === "zh" ? "发起人" : "Opener"}:{" "}
+                {copy.taskDetail.opener}:{" "}
                 <button type="button" className="link-btn inline-link" onClick={() => onOpenAgentDetail(item.opener)}>
                   {shortAddress(item.opener)}
                 </button>
@@ -119,20 +121,20 @@ export const TaskDetailDrawer = ({
           ))}
         </ul>
       ) : (
-        <p className="empty-line">{locale === "zh" ? "暂无关联争议" : "No related disputes yet"}</p>
+        <p className="empty-line">{copy.taskDetail.noRelatedDisputes}</p>
       )}
-      <h4>{locale === "zh" ? "事件时间线" : "Activity timeline"}</h4>
+      <h4>{copy.taskDetail.activityTimeline}</h4>
       {taskDetail.activities.length > 0 ? (
         <ul className="detail-list">
           {taskDetail.activities.map((item) => (
             <li key={item.id} className="detail-list-row">
-              <span>{EVENT_LABELS[item.type][locale]}</span>
+              <span>{copy.events[item.type]}</span>
               <strong>{formatDateTime(item.createdAt, locale, timeZone)}</strong>
             </li>
           ))}
         </ul>
       ) : (
-        <p className="empty-line">{locale === "zh" ? "暂无事件" : "No activity yet"}</p>
+        <p className="empty-line">{copy.common.noActivityYet}</p>
       )}
     </div>
   );

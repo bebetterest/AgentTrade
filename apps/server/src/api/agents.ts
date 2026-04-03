@@ -4,8 +4,7 @@ import { getApiOperation, type ApiOperationDefinition } from "@agentrade/contrac
 import type { AppServices } from "./services.js";
 import {
   isAddress,
-  paginateItems,
-  parseCursorOffset,
+  paginateItemsByCursor,
   parseOperationBody,
   parseOperationParams,
   parseOperationQuery,
@@ -76,6 +75,78 @@ const sortAgents = (
   });
 };
 
+const agentSortPrimary = (
+  item: AgentDirectoryItem,
+  sortKey: "latest" | "score" | "reputation" | "completed" | "published" | "accepted"
+): string | number | null =>
+  sortKey === "score"
+    ? item.score
+    : sortKey === "reputation"
+      ? (item.reputation.publisher + item.reputation.worker + item.reputation.supervisor) / 3
+      : sortKey === "completed"
+        ? item.stats.tasksCompleted
+        : sortKey === "published"
+          ? item.stats.tasksPublished
+          : sortKey === "accepted"
+            ? item.stats.tasksAccepted
+            : item.latestActivityAt;
+
+const compareAgentAfterCursor = (
+  item: AgentDirectoryItem,
+  sortKey: "latest" | "score" | "reputation" | "completed" | "published" | "accepted",
+  order: "asc" | "desc",
+  cursorValues: Record<string, unknown>
+): number => {
+  const cursorAddress = cursorValues.address;
+  if (typeof cursorAddress !== "string" || cursorAddress.length === 0) {
+    throw new DomainError("INVALID_CURSOR", "cursor address must be a non-empty string", 400);
+  }
+  const cursorPrimary = cursorValues.primary;
+  let delta = 0;
+  if (sortKey === "latest") {
+    if (cursorPrimary !== null && (typeof cursorPrimary !== "string" || cursorPrimary.length === 0)) {
+      throw new DomainError("INVALID_CURSOR", "cursor primary must be null or ISO datetime string", 400);
+    }
+    const left = item.latestActivityAt ?? "";
+    const right = typeof cursorPrimary === "string" ? cursorPrimary : "";
+    delta = left.localeCompare(right);
+  } else {
+    const asNumber =
+      typeof cursorPrimary === "number"
+        ? cursorPrimary
+        : typeof cursorPrimary === "string"
+          ? Number(cursorPrimary)
+          : Number.NaN;
+    if (!Number.isFinite(asNumber)) {
+      throw new DomainError("INVALID_CURSOR", "cursor primary must be a finite number", 400);
+    }
+    delta = Number(agentSortPrimary(item, sortKey)) - asNumber;
+  }
+  if (delta === 0) {
+    delta = item.address.localeCompare(cursorAddress);
+  }
+  return order === "asc" ? delta : -delta;
+};
+
+const compareCycleAfterCursor = (
+  item: { id: string; startedAt: string },
+  cursorValues: Record<string, unknown>
+): number => {
+  const cursorId = cursorValues.id;
+  const cursorStartedAt = cursorValues.primary;
+  if (typeof cursorId !== "string" || cursorId.length === 0) {
+    throw new DomainError("INVALID_CURSOR", "cursor id must be a non-empty string", 400);
+  }
+  if (typeof cursorStartedAt !== "string" || cursorStartedAt.length === 0) {
+    throw new DomainError("INVALID_CURSOR", "cursor primary must be a non-empty ISO datetime string", 400);
+  }
+  let delta = item.startedAt.localeCompare(cursorStartedAt);
+  if (delta === 0) {
+    delta = item.id.localeCompare(cursorId);
+  }
+  return delta;
+};
+
 const registerAgentListRoute = (
   app: FastifyInstance,
   services: AppServices,
@@ -95,7 +166,7 @@ const registerAgentListRoute = (
           activeOnly: query.activeOnly,
           sort,
           order,
-          offset: parseCursorOffset(query.cursor),
+          cursor: query.cursor,
           limit,
           paged: true
         })
@@ -142,7 +213,27 @@ const registerAgentListRoute = (
     }
 
     sortAgents(items, sort, order);
-    return validateOperationResponse(operation, paginateItems(items, query.cursor, limit));
+    return validateOperationResponse(
+      operation,
+      paginateItemsByCursor(items, {
+        cursor: query.cursor,
+        limit,
+        resource: "agents",
+        sort,
+        order,
+        toCursorValues: (item) => ({
+          primary: agentSortPrimary(item, sort),
+          address: item.address
+        }),
+        compareAfterCursor: (item, cursorValues) =>
+          compareAgentAfterCursor(
+            item,
+            sort,
+            order,
+            cursorValues as Record<string, unknown>
+          )
+      })
+    );
   });
 };
 
@@ -176,6 +267,7 @@ const registerAgentUpdateRoute = (
   app.patch(toServerRoutePath(operation.pathTemplate), { preHandler: [app.authenticate] }, async (request) => {
     const params = parseOperationParams<{ address: string }>(operation, request);
     const body = parseOperationBody<{ name?: string; bio?: string }>(operation, request);
+    const actor = request.agentAddress as Address;
     if (params.address.toLowerCase() !== String(request.agentAddress).toLowerCase()) {
       throw new HttpError(403, "cannot update another profile");
     }
@@ -184,14 +276,14 @@ const registerAgentUpdateRoute = (
         operation,
         await services.mutateDirect(() =>
           services.stateRepository!.updateAgentProfileDirect(params.address as Address, body)
-        )
+        , services.writeMeta({ operation: "agents.update-profile", actor }))
       );
     }
     return validateOperationResponse(
       operation,
       await services.mutate((engine) => engine.updateAgentProfile(params.address as Address, body), [
         "profiles"
-      ])
+      ], services.writeMeta({ operation: "agents.update-profile", actor }))
     );
   });
 };
@@ -247,12 +339,32 @@ const registerCycleListRoute = (
 ) => {
   app.get(toServerRoutePath(operation.pathTemplate), async (request) => {
     const query = parseOperationQuery<CycleListQuery>(operation, request);
-    const items = services.stateRepository
-      ? await services.stateRepository.listCyclesDirect()
-      : await services.read((engine) => engine.listCycles());
+    if (services.stateRepository) {
+      return validateOperationResponse(
+        operation,
+        await services.stateRepository.queryCyclesDirect({
+          cursor: query.cursor,
+          limit: query.limit ?? 20,
+          paged: true
+        })
+      );
+    }
+    const items = await services.read((engine) => engine.listCycles());
     return validateOperationResponse(
       operation,
-      paginateItems(items, query.cursor, query.limit ?? 20)
+      paginateItemsByCursor(items, {
+        cursor: query.cursor,
+        limit: query.limit ?? 20,
+        resource: "cycles",
+        sort: "startedAt",
+        order: "asc",
+        toCursorValues: (item) => ({
+          primary: item.startedAt,
+          id: item.id
+        }),
+        compareAfterCursor: (item, cursorValues) =>
+          compareCycleAfterCursor(item, cursorValues as Record<string, unknown>)
+      })
     );
   });
 };
@@ -322,7 +434,10 @@ const registerAdminCloseRoute = (
     if (services.stateRepository) {
       return validateOperationResponse(
         operation,
-        await services.mutateDirect(() => services.stateRepository!.closeCurrentCycleDirect(services.config))
+        await services.mutateDirect(
+          () => services.stateRepository!.closeCurrentCycleDirect(services.config),
+          services.writeMeta({ operation: "admin.cycles.close" })
+        )
       );
     }
     return validateOperationResponse(
@@ -335,7 +450,7 @@ const registerAdminCloseRoute = (
         "disputes",
         "cycleWorkloads",
         "cycles"
-      ])
+      ], services.writeMeta({ operation: "admin.cycles.close" }))
     );
   });
 };
@@ -353,7 +468,7 @@ const registerAdminOverrideRoute = (
         operation,
         await services.mutateDirect(() =>
           services.stateRepository!.overrideDisputeDirect(params.id, body.result)
-        )
+        , services.writeMeta({ operation: "admin.disputes.override" }))
       );
     }
     return validateOperationResponse(
@@ -364,7 +479,7 @@ const registerAdminOverrideRoute = (
         "tasks",
         "submissions",
         "disputes"
-      ])
+      ], services.writeMeta({ operation: "admin.disputes.override" }))
     );
   });
 };

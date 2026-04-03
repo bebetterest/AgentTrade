@@ -16,15 +16,7 @@ import type {
   Task
 } from "@agentrade/types";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { AgentDetailDrawer } from "./dashboard/agent-detail-drawer";
-import { AgentListPanel } from "./dashboard/agent-list-panel";
-import { ActivityFeed } from "./dashboard/activity-feed";
-import { CycleDetailDrawer } from "./dashboard/cycle-detail-drawer";
-import { CycleListPanel } from "./dashboard/cycle-list-panel";
-import { OverviewPanels } from "./dashboard/overview-panels";
-import { TaskDetailDrawer } from "./dashboard/task-detail-drawer";
-import { TaskListPanel } from "./dashboard/task-list-panel";
-import { LocaleSwitcher } from "./locale-switcher";
+import { DashboardView } from "./dashboard/dashboard-view";
 import {
   fetchActivities,
   fetchActiveCycle,
@@ -825,267 +817,76 @@ export const Dashboard = ({
   };
 
   return (
-    <main className="page" data-testid="dashboard-page">
-      <section className="top">
-        <div>
-          <h1 className="title">{t.appTitle}</h1>
-          <p className="sub">{t.readOnlyNotice}</p>
-        </div>
-        <LocaleSwitcher initialLocale={initialLocale} onChange={setLocale} />
-      </section>
-
-      <section className="toolbar">
-        <span className="badge">{timeZone}</span>
-        <button type="button" className="action-btn" data-testid="refresh-button" onClick={refreshAll} disabled={refreshing}>
-          {refreshing ? (locale === "zh" ? "刷新中..." : "Refreshing...") : locale === "zh" ? "手动刷新" : "Refresh"}
-        </button>
-      </section>
-      {overviewError ? (
-        <section className="card alert-card" data-testid="overview-error">
-          <p>{locale === "zh" ? "概览模块拉取失败，请重试。" : "Overview modules failed to load. Try refresh."}</p>
-          <button type="button" className="action-btn" onClick={refreshAll}>
-            {locale === "zh" ? "重试" : "Retry"}
-          </button>
-        </section>
-      ) : null}
-
-      <OverviewPanels
-        locale={locale}
-        timeZone={timeZone}
-        summary={summary}
-        activeCycle={activeCycle}
-        cycleUptime={cycleUptime}
-        trendWindow={trendWindow}
-        trendPublished={trendPublished}
-        trendAccepted={trendAccepted}
-        trendCompleted={trendCompleted}
-        trendDisputes={trendDisputes}
-        leaders={leaders}
-        onTrendWindowChange={(window) => updateQuery({ trendWindow: window })}
-        onOpenAgentDetail={openAgentDetail}
-        onOpenCycleDetail={openCycleDetail}
-      />
-
-      <section className="insight-grid">
-        <ActivityFeed
-          locale={locale}
-          timeZone={timeZone}
-          refreshing={refreshing}
-          feedLoadError={feedLoadError}
-          loadingFeed={loadingFeed}
-          activityFeed={activityFeed}
-          onRefresh={refreshAll}
-          onOpenByActivity={openByActivity}
-        />
-      </section>
-
-      <section className="card">
-        <div className="tabs">
-          <button
-            type="button"
-            className={`tab-btn ${tab === "tasks" ? "active" : ""}`}
-            data-testid="tab-tasks"
-            onClick={() => updateQuery({ tab: "tasks", agentDetail: null, taskDetail: null, cycleDetail: null })}
-          >
-            Task
-          </button>
-          <button
-            type="button"
-            className={`tab-btn ${tab === "users" ? "active" : ""}`}
-            data-testid="tab-users"
-            onClick={() => updateQuery({ tab: "users", agentDetail: null, taskDetail: null, cycleDetail: null })}
-          >
-            User
-          </button>
-          <button
-            type="button"
-            className={`tab-btn ${tab === "cycles" ? "active" : ""}`}
-            data-testid="tab-cycles"
-            onClick={() => updateQuery({ tab: "cycles", agentDetail: null, taskDetail: null, cycleDetail: null })}
-          >
-            Cycle
-          </button>
-        </div>
-
-        {tab !== "cycles" ? (
-          <div className="filter-row">
-            <label className="sr-only" htmlFor="dashboard-search-input">
-              {locale === "zh" ? "搜索" : "Search"}
-            </label>
-            <input
-              id="dashboard-search-input"
-              data-testid="search-input"
-              value={searchDraft}
-              onChange={(event) => setSearchDraft(event.target.value)}
-              onBlur={commitSearch}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  commitSearch();
-                }
-              }}
-              placeholder={locale === "zh" ? "搜索标题、地址..." : "Search title, address..."}
-            />
-            {searchDraft.length > 0 ? (
-              <button type="button" className="link-btn" data-testid="clear-search-button" onClick={clearSearch}>
-                {locale === "zh" ? "清除" : "Clear"}
-              </button>
-            ) : null}
-            {tab === "tasks" ? (
-              <>
-                <select
-                  data-testid="task-status-select"
-                  value={taskStatus ?? ""}
-                  onChange={(event) => updateQuery({ taskStatus: event.target.value || null })}
-                >
-                  <option value="">{locale === "zh" ? "全部状态" : "All status"}</option>
-                  <option value="OPEN">OPEN</option>
-                  <option value="IN_PROGRESS">IN_PROGRESS</option>
-                  <option value="CLOSED">CLOSED</option>
-                  <option value="TERMINATED">TERMINATED</option>
-                </select>
-                <select
-                  data-testid="task-sort-select"
-                  value={taskSort}
-                  onChange={(event) => updateQuery({ taskSort: event.target.value })}
-                >
-                  <option value="latest">{locale === "zh" ? "最新" : "Latest"}</option>
-                  <option value="created">{locale === "zh" ? "创建时间" : "Created"}</option>
-                  <option value="deadline">{locale === "zh" ? "截止时间" : "Deadline"}</option>
-                  <option value="reward">{locale === "zh" ? "奖励" : "Reward"}</option>
-                </select>
-              </>
-            ) : (
-              <>
-                <label className="switch-line">
-                  <input
-                    data-testid="active-only-checkbox"
-                    type="checkbox"
-                    checked={activeOnly}
-                    onChange={(event) => updateQuery({ activeOnly: event.target.checked ? "true" : "false" })}
-                  />
-                  {locale === "zh" ? "仅活跃" : "Active only"}
-                </label>
-                <select
-                  data-testid="agent-sort-select"
-                  value={agentSort}
-                  onChange={(event) => updateQuery({ agentSort: event.target.value })}
-                >
-                  <option value="latest">{locale === "zh" ? "最新" : "Latest"}</option>
-                  <option value="score">{locale === "zh" ? "综合分" : "Score"}</option>
-                  <option value="reputation">{locale === "zh" ? "信誉" : "Reputation"}</option>
-                  <option value="completed">{locale === "zh" ? "完成量" : "Completed"}</option>
-                  <option value="published">{locale === "zh" ? "发布量" : "Published"}</option>
-                  <option value="accepted">{locale === "zh" ? "接单量" : "Accepted"}</option>
-                </select>
-              </>
-            )}
-            <select
-              data-testid="sort-order-select"
-              value={tab === "tasks" ? taskOrder : agentOrder}
-              onChange={(event) => updateQuery(tab === "tasks" ? { taskOrder: event.target.value } : { agentOrder: event.target.value })}
-            >
-              <option value="desc">{locale === "zh" ? "降序" : "Desc"}</option>
-              <option value="asc">{locale === "zh" ? "升序" : "Asc"}</option>
-            </select>
-            <button type="button" className="action-btn" data-testid="reset-filters" onClick={resetFilters}>
-              {locale === "zh" ? "重置筛选" : "Reset"}
-            </button>
-          </div>
-        ) : (
-          <p className="sub">{locale === "zh" ? "查看周期、奖励分配与监督 workload。" : "Browse cycles, reward distributions, and supervision workloads."}</p>
-        )}
-        {tab === "tasks" ? (
-          <TaskListPanel
-            locale={locale}
-            timeZone={timeZone}
-            tasks={tasksData.items}
-            taskStatus={taskStatus}
-            taskStatusCounts={taskStatusCounts}
-            hasTaskFilters={hasTaskFilters}
-            loadingTasks={loadingTasks}
-            loadingMoreTasks={loadingMoreTasks}
-            taskLoadError={taskLoadError}
-            nextCursor={tasksData.nextCursor}
-            taskSentinelRef={taskSentinelRef}
-            onOpenTaskDetail={openTaskDetail}
-            onSetTaskStatus={(status) => updateQuery({ taskStatus: status })}
-            onRefresh={refreshAll}
-            onLoadMore={() => void loadMoreTasks()}
-          />
-        ) : tab === "users" ? (
-          <AgentListPanel
-            locale={locale}
-            timeZone={timeZone}
-            agents={agentsData.items}
-            hasAgentFilters={hasAgentFilters}
-            loadingAgents={loadingAgents}
-            loadingMoreAgents={loadingMoreAgents}
-            agentLoadError={agentLoadError}
-            nextCursor={agentsData.nextCursor}
-            agentSentinelRef={agentSentinelRef}
-            onOpenAgentDetail={openAgentDetail}
-            onRefresh={refreshAll}
-            onLoadMore={() => void loadMoreAgents()}
-          />
-        ) : (
-          <CycleListPanel
-            locale={locale}
-            timeZone={timeZone}
-            cycles={cyclesData.items}
-            loadingCycles={loadingCycles}
-            loadingMoreCycles={loadingMoreCycles}
-            cycleLoadError={cycleLoadError}
-            nextCursor={cyclesData.nextCursor}
-            cycleSentinelRef={cycleSentinelRef}
-            onOpenCycleDetail={openCycleDetail}
-            onRefresh={refreshAll}
-            onLoadMore={() => void loadMoreCycles()}
-          />
-        )}
-      </section>
-
-      {taskDetailId || agentDetailAddress || cycleDetailId ? (
-        <section className="drawer-mask" onClick={closeDetail}>
-          <aside
-            className="drawer"
-            data-testid="detail-drawer"
-            role="dialog"
-            aria-modal="true"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <div className="section-head">
-              <h2>{locale === "zh" ? "详情" : "Details"}</h2>
-              <button type="button" className="link-btn" onClick={closeDetail}>
-                {locale === "zh" ? "关闭" : "Close"}
-              </button>
-            </div>
-            {taskDetailId ? (
-              <TaskDetailDrawer
-                locale={locale}
-                timeZone={timeZone}
-                taskDetail={taskDetail}
-                onRetry={retryTaskDetail}
-                onOpenAgentDetail={openAgentDetail}
-              />
-            ) : cycleDetailId ? (
-              <CycleDetailDrawer
-                locale={locale}
-                timeZone={timeZone}
-                cycleDetail={cycleDetail}
-                onRetry={retryCycleDetail}
-                onOpenAgentDetail={openAgentDetail}
-              />
-            ) : (
-              <AgentDetailDrawer
-                locale={locale}
-                timeZone={timeZone}
-                agentDetail={agentDetail}
-                onRetry={retryAgentDetail}
-              />
-            )}
-          </aside>
-        </section>
-      ) : null}
-    </main>
+    <DashboardView
+      initialLocale={initialLocale}
+      locale={locale}
+      setLocale={setLocale}
+      appTitle={t.appTitle}
+      readOnlyNotice={t.readOnlyNotice}
+      timeZone={timeZone}
+      refreshing={refreshing}
+      overviewError={overviewError}
+      summary={summary}
+      leaders={leaders}
+      activeCycle={activeCycle}
+      activityFeed={activityFeed}
+      tasksData={tasksData}
+      agentsData={agentsData}
+      cyclesData={cyclesData}
+      loadingTasks={loadingTasks}
+      loadingAgents={loadingAgents}
+      loadingCycles={loadingCycles}
+      loadingMoreTasks={loadingMoreTasks}
+      loadingMoreAgents={loadingMoreAgents}
+      loadingMoreCycles={loadingMoreCycles}
+      loadingFeed={loadingFeed}
+      taskLoadError={taskLoadError}
+      agentLoadError={agentLoadError}
+      cycleLoadError={cycleLoadError}
+      feedLoadError={feedLoadError}
+      taskDetail={taskDetail}
+      agentDetail={agentDetail}
+      cycleDetail={cycleDetail}
+      taskSentinelRef={taskSentinelRef}
+      agentSentinelRef={agentSentinelRef}
+      cycleSentinelRef={cycleSentinelRef}
+      tab={tab}
+      taskStatus={taskStatus}
+      taskSort={taskSort}
+      taskOrder={taskOrder}
+      agentSort={agentSort}
+      agentOrder={agentOrder}
+      activeOnly={activeOnly}
+      trendWindow={trendWindow}
+      taskDetailId={taskDetailId}
+      agentDetailAddress={agentDetailAddress}
+      cycleDetailId={cycleDetailId}
+      searchDraft={searchDraft}
+      setSearchDraft={setSearchDraft}
+      trendPublished={trendPublished}
+      trendAccepted={trendAccepted}
+      trendCompleted={trendCompleted}
+      trendDisputes={trendDisputes}
+      cycleUptime={cycleUptime}
+      taskStatusCounts={taskStatusCounts}
+      hasTaskFilters={hasTaskFilters}
+      hasAgentFilters={hasAgentFilters}
+      updateQuery={updateQuery}
+      refreshAll={refreshAll}
+      clearSearch={clearSearch}
+      commitSearch={commitSearch}
+      resetFilters={resetFilters}
+      openTaskDetail={openTaskDetail}
+      openAgentDetail={openAgentDetail}
+      openCycleDetail={openCycleDetail}
+      closeDetail={closeDetail}
+      retryTaskDetail={retryTaskDetail}
+      retryAgentDetail={retryAgentDetail}
+      retryCycleDetail={retryCycleDetail}
+      loadMoreTasks={() => void loadMoreTasks()}
+      loadMoreAgents={() => void loadMoreAgents()}
+      loadMoreCycles={() => void loadMoreCycles()}
+      openByActivity={openByActivity}
+    />
   );
 };

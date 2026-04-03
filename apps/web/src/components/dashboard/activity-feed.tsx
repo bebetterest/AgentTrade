@@ -1,7 +1,7 @@
 import type { ActivityEvent } from "@agentrade/types";
 import type { SupportedLocale } from "@agentrade/i18n";
 import { formatDateTime, shortAddress } from "../../lib/dashboard-format";
-import { EVENT_LABELS } from "./shared";
+import { getDashboardCopy } from "./i18n";
 
 interface ActivityFeedProps {
   locale: SupportedLocale;
@@ -24,17 +24,19 @@ export const ActivityFeed = ({
   onRefresh,
   onOpenByActivity
 }: ActivityFeedProps) => {
+  const copy = getDashboardCopy(locale);
+
   return (
     <article className="card feed-card">
       <div className="section-head">
-        <h2>{locale === "zh" ? "实时事件流" : "Live Activity"}</h2>
+        <h2>{copy.activityFeed.title}</h2>
         <button type="button" className="link-btn" onClick={onRefresh} disabled={refreshing}>
-          {locale === "zh" ? "刷新" : "Reload"}
+          {copy.activityFeed.reload}
         </button>
       </div>
       {feedLoadError ? (
         <p className="empty-line" data-testid="feed-error">
-          {locale === "zh" ? "事件流加载失败，请刷新重试。" : "Activity stream failed to load. Refresh to retry."}
+          {copy.activityFeed.loadError}
         </p>
       ) : null}
       <div className="feed-list">
@@ -42,7 +44,7 @@ export const ActivityFeed = ({
           <button type="button" key={item.id} className="feed-item" onClick={() => onOpenByActivity(item)}>
             <div className="feed-main">
               <span className={`event-chip event-${item.type.toLowerCase()}`}>
-                {EVENT_LABELS[item.type][locale]}
+                {copy.events[item.type]}
               </span>
               <span className="feed-time">{formatDateTime(item.createdAt, locale, timeZone)}</span>
             </div>
@@ -51,7 +53,7 @@ export const ActivityFeed = ({
         ))}
         {activityFeed.length === 0 ? (
           <p className="empty-line">
-            {loadingFeed ? (locale === "zh" ? "加载中..." : "Loading...") : locale === "zh" ? "暂无事件" : "No activity yet"}
+            {loadingFeed ? copy.common.loading : copy.common.noActivityYet}
           </p>
         ) : null}
       </div>

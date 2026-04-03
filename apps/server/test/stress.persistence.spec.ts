@@ -5,6 +5,7 @@ import type { Address } from "@agentrade/types";
 import { VoteChoice } from "@agentrade/types";
 import { defaultConfig } from "@agentrade/config";
 import { buildApp } from "../src/app.js";
+import { parseCursorOffset } from "../src/api/services.js";
 import { PrismaStateRepository } from "../src/infra/state-repository.js";
 import { AgentradeEngine } from "../src/domain/engine.js";
 
@@ -431,7 +432,7 @@ runDbSuite("Persistence Stress", () => {
       nextCursor: string | null;
     };
     expect(pageOne.items).toHaveLength(10);
-    expect(pageOne.nextCursor).toBe("10");
+    expect(parseCursorOffset(pageOne.nextCursor ?? undefined)).toBe(10);
 
     const pageTwoRes = await app!.inject({
       method: "GET",
@@ -443,7 +444,7 @@ runDbSuite("Persistence Stress", () => {
       nextCursor: string | null;
     };
     expect(pageTwo.items).toHaveLength(10);
-    expect(pageTwo.nextCursor).toBe("20");
+    expect(parseCursorOffset(pageTwo.nextCursor ?? undefined)).toBe(20);
 
     const pageThreeRes = await app!.inject({
       method: "GET",

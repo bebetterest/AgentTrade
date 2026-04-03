@@ -4,8 +4,7 @@ import { getApiOperation, type ApiOperationDefinition } from "@agentrade/contrac
 import type { AppServices } from "./services.js";
 import {
   isAddress,
-  paginateItems,
-  parseCursorOffset,
+  paginateItemsByCursor,
   parseOperationBody,
   parseOperationParams,
   parseOperationQuery,
@@ -58,6 +57,50 @@ const sortTasks = (
   });
 };
 
+const taskCursorPrimary = (item: Task, sortKey: "latest" | "created" | "deadline" | "reward"): string | number =>
+  sortKey === "created"
+    ? item.createdAt
+    : sortKey === "deadline"
+      ? item.deadlineUtc
+      : sortKey === "reward"
+        ? item.rewardPerSlot
+        : item.updatedAt;
+
+const compareTaskAfterCursor = (
+  item: Task,
+  sortKey: "latest" | "created" | "deadline" | "reward",
+  order: "asc" | "desc",
+  cursorValues: Record<string, unknown>
+): number => {
+  const cursorId = cursorValues.id;
+  if (typeof cursorId !== "string" || cursorId.length === 0) {
+    throw new DomainError("INVALID_CURSOR", "cursor id must be a non-empty string", 400);
+  }
+  const cursorPrimary = cursorValues.primary;
+  let delta = 0;
+  if (sortKey === "reward") {
+    const asNumber =
+      typeof cursorPrimary === "number"
+        ? cursorPrimary
+        : typeof cursorPrimary === "string"
+          ? Number(cursorPrimary)
+          : Number.NaN;
+    if (!Number.isFinite(asNumber)) {
+      throw new DomainError("INVALID_CURSOR", "cursor primary must be a finite number", 400);
+    }
+    delta = item.rewardPerSlot - asNumber;
+  } else {
+    if (typeof cursorPrimary !== "string" || cursorPrimary.length === 0) {
+      throw new DomainError("INVALID_CURSOR", "cursor primary must be a non-empty ISO datetime string", 400);
+    }
+    delta = taskCursorPrimary(item, sortKey).toString().localeCompare(cursorPrimary);
+  }
+  if (delta === 0) {
+    delta = item.id.localeCompare(cursorId);
+  }
+  return order === "asc" ? delta : -delta;
+};
+
 const registerTaskListRoute = (
   app: FastifyInstance,
   services: AppServices,
@@ -82,7 +125,7 @@ const registerTaskListRoute = (
           publisher: query.publisher as Address | undefined,
           sort,
           order,
-          offset: parseCursorOffset(query.cursor),
+          cursor: query.cursor,
           limit,
           paged: true
         })
@@ -108,8 +151,27 @@ const registerTaskListRoute = (
     }
 
     sortTasks(items, sort, order);
-
-    return validateOperationResponse(operation, paginateItems(items, query.cursor, limit));
+    return validateOperationResponse(
+      operation,
+      paginateItemsByCursor(items, {
+        cursor: query.cursor,
+        limit,
+        resource: "tasks",
+        sort,
+        order,
+        toCursorValues: (item) => ({
+          primary: taskCursorPrimary(item, sort),
+          id: item.id
+        }),
+        compareAfterCursor: (item, cursorValues) =>
+          compareTaskAfterCursor(
+            item,
+            sort,
+            order,
+            cursorValues as Record<string, unknown>
+          )
+      })
+    );
   });
 };
 
@@ -158,7 +220,8 @@ const registerTaskCreateRoute = (
             publisher,
             ...body,
             config: services.config
-          })
+          }),
+          services.writeMeta({ operation: "tasks.create", actor: publisher })
         )
       );
     }
@@ -170,7 +233,8 @@ const registerTaskCreateRoute = (
             publisher,
             ...body
           }),
-        ["profiles", "balances", "tasks", "cycles"]
+        ["profiles", "balances", "tasks", "cycles"],
+        services.writeMeta({ operation: "tasks.create", actor: publisher })
       )
     );
   });
@@ -187,12 +251,19 @@ const registerTaskAcceptRoute = (
     if (services.stateRepository) {
       return validateOperationResponse(
         operation,
-        await services.mutateDirect(() => services.stateRepository!.acceptTaskDirect(params.id, agent))
+        await services.mutateDirect(
+          () => services.stateRepository!.acceptTaskDirect(params.id, agent),
+          services.writeMeta({ operation: "tasks.accept", actor: agent })
+        )
       );
     }
     return validateOperationResponse(
       operation,
-      await services.mutate((engine) => engine.acceptTask(params.id, agent), ["profiles", "tasks"])
+      await services.mutate(
+        (engine) => engine.acceptTask(params.id, agent),
+        ["profiles", "tasks"],
+        services.writeMeta({ operation: "tasks.accept", actor: agent })
+      )
     );
   });
 };
@@ -218,7 +289,8 @@ const registerTaskSubmitRoute = (
             payloadMd: body.payloadMd,
             taskSubmissionPayloadMaxLength: services.config.taskSubmissionPayloadMaxLength,
             resubmitCooldownMinutes: services.config.resubmitCooldownMinutes
-          })
+          }),
+          services.writeMeta({ operation: "tasks.submit", actor: agent })
         )
       );
     }
@@ -226,7 +298,7 @@ const registerTaskSubmitRoute = (
       operation,
       await services.mutate((engine) => engine.submitTask(params.id, agent, body.payloadMd), [
         "submissions"
-      ])
+      ], services.writeMeta({ operation: "tasks.submit", actor: agent }))
     );
   });
 };
@@ -244,7 +316,7 @@ const registerTaskTerminateRoute = (
         operation,
         await services.mutateDirect(() =>
           services.stateRepository!.terminateTaskDirect(params.id, publisher, services.config)
-        )
+        , services.writeMeta({ operation: "tasks.terminate", actor: publisher }))
       );
     }
     return validateOperationResponse(
@@ -254,7 +326,7 @@ const registerTaskTerminateRoute = (
         "balances",
         "tasks",
         "cycles"
-      ])
+      ], services.writeMeta({ operation: "tasks.terminate", actor: publisher }))
     );
   });
 };
@@ -272,7 +344,7 @@ const registerSubmissionConfirmRoute = (
         operation,
         await services.mutateDirect(() =>
           services.stateRepository!.confirmSubmissionDirect(params.id, publisher)
-        )
+        , services.writeMeta({ operation: "submissions.confirm", actor: publisher }))
       );
     }
     return validateOperationResponse(
@@ -282,7 +354,7 @@ const registerSubmissionConfirmRoute = (
         "balances",
         "tasks",
         "submissions"
-      ])
+      ], services.writeMeta({ operation: "submissions.confirm", actor: publisher }))
     );
   });
 };
@@ -300,7 +372,7 @@ const registerSubmissionRejectRoute = (
         operation,
         await services.mutateDirect(() =>
           services.stateRepository!.rejectSubmissionDirect(params.id, publisher)
-        )
+        , services.writeMeta({ operation: "submissions.reject", actor: publisher }))
       );
     }
     return validateOperationResponse(
@@ -308,7 +380,7 @@ const registerSubmissionRejectRoute = (
       await services.mutate((engine) => engine.rejectSubmission(params.id, publisher), [
         "profiles",
         "submissions"
-      ])
+      ], services.writeMeta({ operation: "submissions.reject", actor: publisher }))
     );
   });
 };

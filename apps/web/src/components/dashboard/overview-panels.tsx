@@ -6,6 +6,7 @@ import type {
 } from "@agentrade/types";
 import type { SupportedLocale } from "@agentrade/i18n";
 import { formatDateTime, toSparklinePath } from "../../lib/dashboard-format";
+import { getDashboardCopy } from "./i18n";
 
 const Sparkline = ({ title, values }: { title: string; values: number[] }) => {
   const path = toSparklinePath(values);
@@ -54,62 +55,64 @@ export const OverviewPanels = ({
   onOpenAgentDetail,
   onOpenCycleDetail
 }: OverviewPanelsProps) => {
+  const copy = getDashboardCopy(locale);
+
   return (
     <>
       <section className="summary-grid">
         <div className="card metric-card">
-          <h2>{locale === "zh" ? "当日统计" : "Today"}</h2>
-          <div className="metric-line"><span>{locale === "zh" ? "发布" : "Published"}</span><strong>{summary?.today.tasksPublished ?? 0}</strong></div>
-          <div className="metric-line"><span>{locale === "zh" ? "接单" : "Accepted"}</span><strong>{summary?.today.tasksAccepted ?? 0}</strong></div>
-          <div className="metric-line"><span>{locale === "zh" ? "完成" : "Completed"}</span><strong>{summary?.today.tasksCompleted ?? 0}</strong></div>
-          <div className="metric-line"><span>{locale === "zh" ? "争议" : "Disputes"}</span><strong>{summary?.today.disputesOpened ?? 0}</strong></div>
+          <h2>{copy.overview.today}</h2>
+          <div className="metric-line"><span>{copy.overview.published}</span><strong>{summary?.today.tasksPublished ?? 0}</strong></div>
+          <div className="metric-line"><span>{copy.overview.accepted}</span><strong>{summary?.today.tasksAccepted ?? 0}</strong></div>
+          <div className="metric-line"><span>{copy.overview.completed}</span><strong>{summary?.today.tasksCompleted ?? 0}</strong></div>
+          <div className="metric-line"><span>{copy.overview.disputes}</span><strong>{summary?.today.disputesOpened ?? 0}</strong></div>
         </div>
         <div className="card metric-card">
-          <h2>{locale === "zh" ? "本周期统计" : "Current Cycle"}</h2>
-          <div className="metric-line"><span>{locale === "zh" ? "发布" : "Published"}</span><strong>{summary?.currentCycle.tasksPublished ?? 0}</strong></div>
-          <div className="metric-line"><span>{locale === "zh" ? "接单" : "Accepted"}</span><strong>{summary?.currentCycle.tasksAccepted ?? 0}</strong></div>
-          <div className="metric-line"><span>{locale === "zh" ? "完成" : "Completed"}</span><strong>{summary?.currentCycle.tasksCompleted ?? 0}</strong></div>
-          <div className="metric-line"><span>{locale === "zh" ? "争议" : "Disputes"}</span><strong>{summary?.currentCycle.disputesOpened ?? 0}</strong></div>
+          <h2>{copy.overview.currentCycle}</h2>
+          <div className="metric-line"><span>{copy.overview.published}</span><strong>{summary?.currentCycle.tasksPublished ?? 0}</strong></div>
+          <div className="metric-line"><span>{copy.overview.accepted}</span><strong>{summary?.currentCycle.tasksAccepted ?? 0}</strong></div>
+          <div className="metric-line"><span>{copy.overview.completed}</span><strong>{summary?.currentCycle.tasksCompleted ?? 0}</strong></div>
+          <div className="metric-line"><span>{copy.overview.disputes}</span><strong>{summary?.currentCycle.disputesOpened ?? 0}</strong></div>
         </div>
         <div className="card metric-card">
-          <h2>{locale === "zh" ? "总量" : "Totals"}</h2>
-          <div className="metric-line"><span>{locale === "zh" ? "任务" : "Tasks"}</span><strong>{summary?.totals.tasks ?? 0}</strong></div>
-          <div className="metric-line"><span>{locale === "zh" ? "争议" : "Disputes"}</span><strong>{summary?.totals.disputes ?? 0}</strong></div>
-          <div className="metric-line"><span>{locale === "zh" ? "Agent" : "Agents"}</span><strong>{summary?.totals.agents ?? 0}</strong></div>
+          <h2>{copy.overview.totals}</h2>
+          <div className="metric-line"><span>{copy.overview.tasks}</span><strong>{summary?.totals.tasks ?? 0}</strong></div>
+          <div className="metric-line"><span>{copy.overview.disputes}</span><strong>{summary?.totals.disputes ?? 0}</strong></div>
+          <div className="metric-line"><span>{copy.overview.agents}</span><strong>{summary?.totals.agents ?? 0}</strong></div>
         </div>
       </section>
 
       <section className="insight-grid">
         <article className="card cycle-card">
           <div className="section-head">
-            <h2>{locale === "zh" ? "周期状态" : "Cycle Status"}</h2>
+            <h2>{copy.overview.cycleStatus}</h2>
             <span className="badge">{summary?.activeCycleId ?? activeCycle?.id ?? "-"}</span>
           </div>
           <div className="metric-line">
-            <span>{locale === "zh" ? "状态" : "Status"}</span>
+            <span>{copy.overview.status}</span>
             <strong>{activeCycle?.status ?? "-"}</strong>
           </div>
           <div className="metric-line">
-            <span>{locale === "zh" ? "开始时间" : "Started At"}</span>
+            <span>{copy.overview.startedAt}</span>
             <strong>{activeCycle ? formatDateTime(activeCycle.startedAt, locale, timeZone) : "-"}</strong>
           </div>
           <div className="metric-line">
-            <span>{locale === "zh" ? "运行时长" : "Uptime"}</span>
+            <span>{copy.overview.uptime}</span>
             <strong>{cycleUptime}</strong>
           </div>
           <div className="metric-line">
-            <span>{locale === "zh" ? "Mint/税/罚没" : "Mint/Tax/Penalty"}</span>
+            <span>{copy.overview.mintTaxPenalty}</span>
             <strong>{activeCycle ? `${activeCycle.mintedAmount}/${activeCycle.taxPool}/${activeCycle.penaltyPool}` : "-"}</strong>
           </div>
           <div className="metric-line">
-            <span>{locale === "zh" ? "数据更新时间" : "Generated At"}</span>
+            <span>{copy.overview.generatedAt}</span>
             <strong>{summary ? formatDateTime(summary.generatedAt, locale, timeZone) : "-"}</strong>
           </div>
           {activeCycle ? (
             <div className="card-actions">
-              <span className="muted">{locale === "zh" ? "下钻当前周期" : "Drill into active cycle"}</span>
+              <span className="muted">{copy.overview.drillIntoCycle}</span>
               <button type="button" className="link-btn" onClick={() => onOpenCycleDetail(activeCycle.id)}>
-                {locale === "zh" ? "查看详情" : "View details"}
+                {copy.overview.viewDetails}
               </button>
             </div>
           ) : null}
@@ -118,7 +121,7 @@ export const OverviewPanels = ({
 
       <section className="card">
         <div className="section-head">
-          <h2>{locale === "zh" ? "趋势" : "Trend"}</h2>
+          <h2>{copy.overview.trend}</h2>
           <div className="segmented">
             <button
               type="button"
@@ -137,17 +140,17 @@ export const OverviewPanels = ({
           </div>
         </div>
         <div className="spark-grid">
-          <Sparkline title={locale === "zh" ? "发布" : "Published"} values={trendPublished} />
-          <Sparkline title={locale === "zh" ? "接单" : "Accepted"} values={trendAccepted} />
-          <Sparkline title={locale === "zh" ? "完成" : "Completed"} values={trendCompleted} />
-          <Sparkline title={locale === "zh" ? "争议" : "Disputes"} values={trendDisputes} />
+          <Sparkline title={copy.overview.published} values={trendPublished} />
+          <Sparkline title={copy.overview.accepted} values={trendAccepted} />
+          <Sparkline title={copy.overview.completed} values={trendCompleted} />
+          <Sparkline title={copy.overview.disputes} values={trendDisputes} />
         </div>
       </section>
 
       <section className="card">
         <div className="section-head">
-          <h2>{locale === "zh" ? "Agent 榜单" : "Agent Leaderboard"}</h2>
-          <Link href="/?tab=users">{locale === "zh" ? "查看全部" : "See all"}</Link>
+          <h2>{copy.overview.leaderboard}</h2>
+          <Link href="/?tab=users">{copy.overview.seeAll}</Link>
         </div>
         <div className="leader-list">
           {leaders.map((item, index) => (

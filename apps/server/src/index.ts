@@ -1,7 +1,9 @@
+import { loadConfig } from "@agentrade/config";
 import { buildApp } from "./app.js";
 
-const port = Number(process.env.PORT ?? "3000");
-const host = process.env.HOST ?? "0.0.0.0";
+const runtimeConfig = loadConfig();
+const port = runtimeConfig.port;
+const host = runtimeConfig.host;
 
 buildApp()
   .then((app) =>

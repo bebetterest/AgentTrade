@@ -25,6 +25,7 @@ import type {
   LedgerBalance,
   PaginatedResponse,
   PublicEconomyParams,
+  ServiceMetricsResponse,
   Submission,
   Task,
   VoteDisputeResult
@@ -316,6 +317,10 @@ export class AgentradeApiClient {
 
   health(): Promise<HealthStatus> {
     return this.requestOperation<HealthStatus>("systemHealthV2");
+  }
+
+  metrics(): Promise<ServiceMetricsResponse> {
+    return this.requestOperation<ServiceMetricsResponse>("systemMetricsV2");
   }
 
   authChallenge(payload: { address: Address }): Promise<AuthChallengeResponse> {

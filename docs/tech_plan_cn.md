@@ -10,18 +10,24 @@
 - 严格 EVM 地址校验与 challenge 过期校验。
 - 通过 `packages/config` 实现集中化配置与输入约束。
 - `packages/config` 现已区分内部运行时配置与公开经济/护栏投影，并在 `NODE_ENV=test` 之外拒绝占位密钥。
+- `packages/config` 已补充 CLI 与 Web 运行时默认项加载，CLI/Web/Server 运行时环境读取不再分散。
+- System 接口面新增管理员只读指标端点（`GET /v2/system/metrics`），用于输出运维计数与延迟摘要。
 
 ### 1.2 持久化与并发一致性
 
 - 基于 Prisma 的 PostgreSQL 规范化仓储持久化。
 - 持久化读路径改为仓储表直查（不再每请求全量快照加载/重建）。
 - tasks/disputes/activities/agents/dashboard 读接口现已在保持既有 query/cursor 契约的前提下，直接在数据库侧完成过滤、排序、分页与聚合。
+- 分页游标已升级为不透明 keyset token（tasks/disputes/activities/agents/cycles），同时保留旧数字 offset 游标输入兼容，降低迁移风险。
 - 第四阶段已将全部 API 写操作（`publish`/`accept`/`submit`/`confirm`/`reject`/`terminate`/`openDispute`/`vote`/资料更新/周期结算/争议覆盖）切换为仓储事务直写命令路径（热点路径不再依赖运行时快照重建/重写）。
 - 仓储写命令使用显式运行时行锁顺序与确定性事务执行，保障结算/争议并发安全。
 - 快照 reset 现会先删除依赖的 `ActivityEvent` 行，再清理 profile 等实体，从而可把 engine 基线同步稳定复用为 DB 套件 reset 原语。
 - 可重试持久化失败现已覆盖 deadlock 类事务错误，同时保持 `RuntimeState` 优先加锁与同事务内 revision 时间戳更新路径的一致顺序。
 - 服务端通过进程内写入队列串行化同进程并发写请求，再提交持久化事务。
 - 快照差量 upsert/delete（支持 mutation scope）保留为 engine 快照同步的兜底路径，不再是主要持久化热点写路径。
+- 仓储内部正在按职责拆分：游标编解码工具、分页读查询 helper、行映射器、读侧 direct list/get helper、写命令 helper 与事务辅助原语（加锁/资料增量更新/活动写入/槽位不变量/runtime touch）已逐步从单体仓储文件中提取。
+- 写命令 helper 拆分现已覆盖资料更新与 task/submission/dispute/vote 热点写路径（`publish`、`accept`、`submit`、`confirm`、`reject`、`terminate`、`openDispute`、`vote`），并通过显式依赖契约保持仓储类委托调用与行为一致性。
+- 写命令 helper 拆分已进一步覆盖管理员周期/争议写路径（`closeCurrentCycle`、`overrideDispute`），并复用仓储事务原语保障结算/争议评估与周期推进的确定性。
 
 ### 1.3 领域规则与结算
 
@@ -36,6 +42,7 @@
 ### 1.4 产品界面
 
 - Web：只读信息中心，支持中英文切换，并通过 `cookie -> Accept-Language/UTC` 解析 SSR 默认语言/时区，提供时区感知汇总/趋势、`Tasks` / `Users` / `Cycles` 三个 tab、可分享的详情路由、周期奖励分配视图与 Agent 余额视图。
+- Web dashboard 结构已分层：顶层状态/数据编排与展示渲染分离，且 dashboard 中英文文案已统一收敛到单一字典模块。
 - CLI：采用分组子命令覆盖全部已实现路由，成功默认 JSON 输出，失败默认机器可读结构化错误输出。
 - CLI 文档与 skill：已维护命令级参数/错误/执行剧本参考，并保持中英文镜像同步，便于自动化 agent 直接执行。
 - CLI 本地护栏已补齐 `tasks create --tz` 的严格 IANA 时区校验（请求发送前拦截）。
@@ -49,6 +56,8 @@
 - 具备独立的 DB 持久化与压力测试套件。
 - CI 包含 `quality`、`persistence`（2 轮重复）与 `stress`（3 轮重复）作业。
 - CI 已新增独立 DB 场景 CLI 全量回归作业（`cli-full-regression`，连续 2 轮），用于捕获重复执行下的状态泄漏与抖动问题。
+- CI 质量门禁已补充 Web 单测，并新增 local/cloud 两条 Docker smoke 作业覆盖部署链路。
+- 服务端可观测性基线已补齐：请求结构化日志（`requestId/method/path/status/durationMs/routeId`）与写路径结构化日志（`operation/actor/cycleId/retry/conflict/outcome`），并在进程内聚合指标。
 - Docker Compose 现已支持双部署模式：
   - 本地直连端口模式（`localhost web/api`）；
   - 云端单入口模式（网关将 `/` 路由至 web、`/api` 路由至 server，供 API/CLI 使用）。

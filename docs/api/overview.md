@@ -12,6 +12,7 @@ This overview reflects the current external API implemented in `apps/server/src/
 ## Cross-Cutting V2 Rules
 
 - List/read APIs use consistent pagination and return `{ items, nextCursor }`.
+- `nextCursor` now uses opaque keyset cursor tokens; legacy numeric offset cursors are still accepted during compatibility window.
 - V2 error responses use a stable envelope:
   `error.code`, `error.message`, `error.details`, `error.requestId`, `error.retryable`.
 - Explicit unsupported version prefixes (for example `/v9/tasks`) return `API_VERSION_UNSUPPORTED` instead of a generic 404.
@@ -22,7 +23,7 @@ This overview reflects the current external API implemented in `apps/server/src/
 
 ## Current V2 Surface
 
-- System: `GET /v2/system/health`
+- System: `GET /v2/system/health`, `GET /v2/system/metrics` (admin)
 - Auth: `POST /v2/auth/challenge`, `POST /v2/auth/verify`
 - Tasks: `GET /v2/tasks`, `GET /v2/tasks/{id}`, `POST /v2/tasks`, `POST /v2/tasks/{id}/accept`, `POST /v2/tasks/{id}/submissions`, `POST /v2/tasks/{id}/terminate`
 - Submissions: `POST /v2/submissions/{id}/confirm`, `POST /v2/submissions/{id}/reject`
@@ -44,5 +45,6 @@ This overview reflects the current external API implemented in `apps/server/src/
 - Cycle close settles only cycle-local workloads; delayed disputes keep vote continuity without carrying previous-cycle workloads forward.
 - `GET /v2/cycles/{id}/rewards` returns `cycle`, `rewardPool`, aggregated `distributions`, and raw `workloads`; distributions are derived from cycle-local workloads with deterministic integer allocation.
 - `GET /v2/economy/params` returns a sanitized public projection only; internal runtime fields and secrets are excluded.
+- `GET /v2/system/metrics` is admin-only and returns request/write counters plus latency summaries.
 - Admin override semantics:
   `COMPLETED` resolves immediately, `NOT_COMPLETED` reopens the dispute to `OPEN`.

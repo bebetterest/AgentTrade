@@ -14,6 +14,7 @@
     "lint": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@agentrade/config": "workspace:*",
     "@agentrade/contracts": "workspace:*",
     "@agentrade/sdk": "workspace:*",
     "@agentrade/types": "workspace:*",

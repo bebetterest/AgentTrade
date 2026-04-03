@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Cycle } from "@agentrade/types";
 import type { SupportedLocale } from "@agentrade/i18n";
 import { formatDateTime } from "../../lib/dashboard-format";
+import { getDashboardCopy } from "./i18n";
 
 interface CycleListPanelProps {
   locale: SupportedLocale;
@@ -30,47 +31,49 @@ export const CycleListPanel = ({
   onRefresh,
   onLoadMore
 }: CycleListPanelProps) => {
+  const copy = getDashboardCopy(locale);
+
   return (
     <>
       {cycleLoadError ? (
         <div className="inline-error" data-testid="cycles-error">
           <p className="empty-line">
-            {locale === "zh" ? "周期列表加载失败，请重试。" : "Cycle list failed to load. Retry with refresh."}
+            {copy.cycleList.loadError}
           </p>
           <button type="button" className="link-btn" onClick={onRefresh}>
-            {locale === "zh" ? "重试" : "Retry"}
+            {copy.common.retry}
           </button>
         </div>
       ) : null}
-      {loadingCycles ? <p className="empty-line">{locale === "zh" ? "加载中..." : "Loading..."}</p> : null}
+      {loadingCycles ? <p className="empty-line">{copy.common.loading}</p> : null}
       <div className="masonry-grid">
         {cycles.map((cycle) => (
           <article key={cycle.id} className="masonry-card" data-testid="cycle-card">
             <h3>{cycle.id}</h3>
             <span className="state-chip">{cycle.status}</span>
-            <p>{locale === "zh" ? "开始时间" : "Started"}: {formatDateTime(cycle.startedAt, locale, timeZone)}</p>
-            <p>{locale === "zh" ? "Mint" : "Mint"}: {cycle.mintedAmount} AGC</p>
-            <p>{locale === "zh" ? "税池" : "Tax"}: {cycle.taxPool} AGC</p>
-            <p>{locale === "zh" ? "罚没池" : "Penalty"}: {cycle.penaltyPool} AGC</p>
+            <p>{copy.cycleList.started}: {formatDateTime(cycle.startedAt, locale, timeZone)}</p>
+            <p>{copy.cycleList.mint}: {cycle.mintedAmount} AGC</p>
+            <p>{copy.cycleList.tax}: {cycle.taxPool} AGC</p>
+            <p>{copy.cycleList.penalty}: {cycle.penaltyPool} AGC</p>
             <div className="card-actions">
               <button type="button" className="link-btn" data-testid="cycle-detail-trigger" onClick={() => onOpenCycleDetail(cycle.id)}>
-                {locale === "zh" ? "详情" : "Details"}
+                {copy.common.details}
               </button>
-              <Link href={`/cycles/${cycle.id}`}>{locale === "zh" ? "完整页" : "Full page"}</Link>
+              <Link href={`/cycles/${cycle.id}`}>{copy.common.fullPage}</Link>
             </div>
           </article>
         ))}
       </div>
       {cycles.length === 0 && !loadingCycles ? (
         <p className="empty-line" data-testid="cycles-empty">
-          {locale === "zh" ? "暂无周期" : "No cycles"}
+          {copy.cycleList.empty}
         </p>
       ) : null}
       <div ref={cycleSentinelRef} className="sentinel" />
-      {loadingMoreCycles ? <p className="empty-line">{locale === "zh" ? "加载更多..." : "Loading more..."}</p> : null}
+      {loadingMoreCycles ? <p className="empty-line">{copy.common.loadingMore}</p> : null}
       {nextCursor && !loadingMoreCycles ? (
         <button type="button" className="action-btn more-btn" data-testid="load-more-cycles" onClick={onLoadMore}>
-          {locale === "zh" ? "加载更多周期" : "Load more cycles"}
+          {copy.cycleList.loadMore}
         </button>
       ) : null}
     </>

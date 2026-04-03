@@ -1,8 +1,6 @@
 import { Prisma, PrismaClient } from "@prisma/client";
-import { nanoid } from "nanoid";
 import type { AppConfig } from "@agentrade/config";
 import type { EngineStateSnapshot } from "../domain/engine.js";
-import { INITIAL_AGENT_BALANCE } from "../domain/engine.js";
 import {
   type ActivityEvent,
   type AgentDirectoryItem,
@@ -30,13 +28,69 @@ import {
   type Address
 } from "@agentrade/types";
 import {
-  allocateIntegerPool,
-  clampReputation,
-  computeSupervisorVoteWeight,
-  computeTaxAmount,
-  computeTerminationPenalty
+  allocateIntegerPool
 } from "../domain/helpers.js";
 import { DomainError } from "../domain/errors.js";
+import {
+  mapAgentProfile,
+  mapCycle,
+  mapCycleWorkload,
+  mapDispute,
+  mapLedgerBalance,
+  mapSubmission,
+  mapTask,
+  mapVote
+} from "./state-repository-mappers.js";
+import {
+  appendActivityEventWithTx,
+  applyProfileDeltaWithTx,
+  ensureAgentAndLedgerWithTx,
+  getConfirmedSlots,
+  lockRuntimeWithTx,
+  touchRuntimeStateWithTx
+} from "./state-repository-tx-helpers.js";
+import {
+  readGetActiveCycleDirect,
+  readGetAgentDirect,
+  readGetCycleDirect,
+  readGetDisputeDirect,
+  readGetLedgerDirect,
+  readGetTaskDirect,
+  readListActivitiesDirect,
+  readListAgentsDirect,
+  readListCyclesDirect,
+  readListDisputesDirect,
+  readListTasksDirect
+} from "./state-repository-read-helpers.js";
+import {
+  type ActivityListQuery,
+  type AgentListQuery,
+  type CycleListQuery,
+  type DisputeListQuery,
+  queryActivitiesDirect,
+  queryAgentsDirect,
+  queryCyclesDirect,
+  queryDisputesDirect,
+  queryTasksDirect,
+  type TaskListQuery
+} from "./state-repository-query-helpers.js";
+import {
+  type OpenDisputeDirectInput,
+  type PublishTaskDirectInput,
+  type SubmitTaskDirectInput,
+  type VoteDisputeDirectInput,
+  writeAcceptTaskDirect,
+  writeCloseCurrentCycleDirect,
+  writeConfirmSubmissionDirect,
+  writeOpenDisputeDirect,
+  writeOverrideDisputeDirect,
+  writePublishTaskDirect,
+  writeRejectSubmissionDirect,
+  writeSubmitTaskDirect,
+  writeTerminateTaskDirect,
+  writeVoteDisputeDirect,
+  writeUpdateAgentProfileDirect
+} from "./state-repository-write-helpers.js";
 
 const RUNTIME_ID = "singleton";
 const MAX_SERIALIZABLE_RETRIES = 20;
@@ -58,76 +112,6 @@ const asStringArray = (value: Prisma.JsonValue): string[] => {
 
 const asAddressArray = (value: Prisma.JsonValue): Address[] =>
   asStringArray(value).map((item) => asAddress(item));
-
-type SortOrder = "asc" | "desc";
-type TaskListSort = "latest" | "created" | "deadline" | "reward";
-type DisputeListSort = "latest" | "created";
-type AgentListSort = "latest" | "score" | "reputation" | "completed" | "published" | "accepted";
-
-interface TaskListQuery {
-  q?: string;
-  status?: DomainTaskStatus;
-  publisher?: Address;
-  sort: TaskListSort;
-  order: SortOrder;
-  offset: number;
-  limit: number;
-  paged: boolean;
-}
-
-interface DisputeListQuery {
-  taskId?: string;
-  opener?: Address;
-  status?: DomainDisputeStatus;
-  q?: string;
-  sort: DisputeListSort;
-  order: SortOrder;
-  offset: number;
-  limit: number;
-  paged: boolean;
-}
-
-interface AgentListQuery {
-  q?: string;
-  activeOnly?: boolean;
-  sort: AgentListSort;
-  order: SortOrder;
-  offset: number;
-  limit: number;
-  paged: boolean;
-}
-
-interface ActivityListQuery {
-  taskId?: string;
-  disputeId?: string;
-  address?: Address;
-  type?: DomainActivityEventType;
-  order: SortOrder;
-  offset: number;
-  limit: number;
-  paged: boolean;
-}
-
-interface AgentDirectoryRow {
-  address: string;
-  name: string;
-  bio: string;
-  publisherRep: number;
-  workerRep: number;
-  supervisorRep: number;
-  tasksPublishedCount: number;
-  tasksAcceptedCount: number;
-  tasksCompletedCount: number;
-  tasksTerminatedCount: number;
-  submissionsRejectedCount: number;
-  supervisionVotesCount: number;
-  createdAt: Date;
-  updatedAt: Date;
-  latestActivityAt: Date | null;
-  reputationAverage: number | Prisma.Decimal | string;
-  score: number | Prisma.Decimal | string;
-  isActive: boolean;
-}
 
 interface DashboardMetricRow {
   tasksPublished: number | bigint | Prisma.Decimal | string | null;
@@ -185,8 +169,6 @@ const diffByKey = <T>(
   return { upserts, deletes };
 };
 
-const escapeLikePattern = (value: string): string => value.replace(/[\\%_]/g, "\\$&");
-
 const toNumber = (value: unknown): number => {
   if (typeof value === "number") {
     return value;
@@ -198,20 +180,6 @@ const toNumber = (value: unknown): number => {
     return value.toNumber();
   }
   return Number(value ?? 0);
-};
-
-const buildPaginatedResponse = <T>(
-  items: T[],
-  offset: number,
-  limit: number
-): PaginatedResponse<T> => {
-  if (items.length > limit) {
-    return {
-      items: items.slice(0, limit),
-      nextCursor: String(offset + limit)
-    };
-  }
-  return { items, nextCursor: null };
 };
 
 export class PersistenceConflictError extends Error {
@@ -337,314 +305,86 @@ export class PrismaStateRepository {
   }
 
   async listTasksDirect(): Promise<Task[]> {
-    const tasks = await this.prisma.task.findMany({ orderBy: { createdAt: "asc" } });
-    return tasks.map((item) => this.mapTask(item));
+    return readListTasksDirect(this.prisma);
   }
 
   async queryTasksDirect(query: TaskListQuery): Promise<PaginatedResponse<Task>> {
-    const where: Prisma.TaskWhereInput = {
-      status: query.status,
-      publisherAddress: query.publisher
-        ? {
-            equals: query.publisher,
-            mode: "insensitive"
-          }
-        : undefined,
-      OR: query.q
-        ? [
-            { id: { contains: query.q, mode: "insensitive" } },
-            { title: { contains: query.q, mode: "insensitive" } },
-            { publisherAddress: { contains: query.q, mode: "insensitive" } }
-          ]
-        : undefined
-    };
-
-    const orderBy: Prisma.TaskOrderByWithRelationInput[] =
-      query.sort === "created"
-        ? [{ createdAt: query.order }, { id: query.order }]
-        : query.sort === "deadline"
-          ? [{ deadlineUtc: query.order }, { id: query.order }]
-          : query.sort === "reward"
-            ? [{ rewardPerSlot: query.order }, { id: query.order }]
-            : [{ updatedAt: query.order }, { id: query.order }];
-
-    const tasks = await this.prisma.task.findMany({
-      where,
-      orderBy,
-      ...(query.paged
-        ? {
-            skip: query.offset,
-            take: query.limit + 1
-          }
-        : {})
-    });
-
-    const mapped = tasks.map((item) => this.mapTask(item));
-    return query.paged
-      ? buildPaginatedResponse(mapped, query.offset, query.limit)
-      : { items: mapped, nextCursor: null };
+    return queryTasksDirect(this.prisma, query);
   }
 
   async getTaskDirect(taskId: string): Promise<Task | null> {
-    const task = await this.prisma.task.findUnique({ where: { id: taskId } });
-    return task ? this.mapTask(task) : null;
+    return readGetTaskDirect(this.prisma, taskId);
   }
 
   async listDisputesDirect(): Promise<Dispute[]> {
-    const disputes = await this.prisma.dispute.findMany({ orderBy: { createdAt: "asc" } });
-    return disputes.map((item) => this.mapDispute(item));
+    return readListDisputesDirect(this.prisma);
   }
 
   async queryDisputesDirect(query: DisputeListQuery): Promise<PaginatedResponse<Dispute>> {
-    const where: Prisma.DisputeWhereInput = {
-      taskId: query.taskId,
-      status: query.status,
-      openerAddress: query.opener
-        ? {
-            equals: query.opener,
-            mode: "insensitive"
-          }
-        : undefined,
-      OR: query.q
-        ? [
-            { id: { contains: query.q, mode: "insensitive" } },
-            { taskId: { contains: query.q, mode: "insensitive" } },
-            { submissionId: { contains: query.q, mode: "insensitive" } },
-            { openerAddress: { contains: query.q, mode: "insensitive" } }
-          ]
-        : undefined
-    };
-
-    const orderBy: Prisma.DisputeOrderByWithRelationInput[] =
-      query.sort === "created"
-        ? [{ createdAt: query.order }, { id: query.order }]
-        : [{ updatedAt: query.order }, { id: query.order }];
-
-    const disputes = await this.prisma.dispute.findMany({
-      where,
-      orderBy,
-      ...(query.paged
-        ? {
-            skip: query.offset,
-            take: query.limit + 1
-          }
-        : {})
-    });
-
-    const mapped = disputes.map((item) => this.mapDispute(item));
-    return query.paged
-      ? buildPaginatedResponse(mapped, query.offset, query.limit)
-      : { items: mapped, nextCursor: null };
+    return queryDisputesDirect(this.prisma, query);
   }
 
   async listAgentsDirect(): Promise<AgentProfile[]> {
-    const profiles = await this.prisma.agentProfile.findMany({ orderBy: { createdAt: "asc" } });
-    return profiles.map((item) => this.mapAgentProfile(item));
+    return readListAgentsDirect(this.prisma);
   }
 
   async queryAgentsDirect(query: AgentListQuery): Promise<PaginatedResponse<AgentDirectoryItem>> {
-    const whereClauses: Prisma.Sql[] = [];
-    if (query.activeOnly) {
-      whereClauses.push(Prisma.sql`ranked."isActive" = true`);
-    }
-    if (query.q) {
-      const pattern = `%${escapeLikePattern(query.q)}%`;
-      whereClauses.push(
-        Prisma.sql`(
-          ranked.address ILIKE ${pattern} ESCAPE '\'
-          OR ranked.name ILIKE ${pattern} ESCAPE '\'
-          OR ranked.bio ILIKE ${pattern} ESCAPE '\'
-        )`
-      );
-    }
-
-    const whereSql =
-      whereClauses.length > 0
-        ? Prisma.sql`WHERE ${Prisma.join(whereClauses, " AND ")}`
-        : Prisma.empty;
-    const directionSql = Prisma.raw(query.order.toUpperCase());
-    const nullsSql = Prisma.raw(query.order === "asc" ? "NULLS FIRST" : "NULLS LAST");
-    const orderBySql =
-      query.sort === "score"
-        ? Prisma.sql`ORDER BY ranked.score ${directionSql}, ranked.address ${directionSql}`
-        : query.sort === "reputation"
-          ? Prisma.sql`ORDER BY ranked."reputationAverage" ${directionSql}, ranked.address ${directionSql}`
-          : query.sort === "completed"
-            ? Prisma.sql`ORDER BY ranked."tasksCompletedCount" ${directionSql}, ranked.address ${directionSql}`
-            : query.sort === "published"
-              ? Prisma.sql`ORDER BY ranked."tasksPublishedCount" ${directionSql}, ranked.address ${directionSql}`
-              : query.sort === "accepted"
-                ? Prisma.sql`ORDER BY ranked."tasksAcceptedCount" ${directionSql}, ranked.address ${directionSql}`
-                : Prisma.sql`ORDER BY ranked."latestActivityAt" ${directionSql} ${nullsSql}, ranked.address ${directionSql}`;
-    const paginationSql = query.paged
-      ? Prisma.sql`LIMIT ${query.limit + 1} OFFSET ${query.offset}`
-      : Prisma.empty;
-
-    const rows = await this.prisma.$queryRaw<AgentDirectoryRow[]>(Prisma.sql`
-      SELECT *
-      FROM (
-        SELECT
-          ap.address,
-          ap.name,
-          ap.bio,
-          ap."publisherRep" AS "publisherRep",
-          ap."workerRep" AS "workerRep",
-          ap."supervisorRep" AS "supervisorRep",
-          ap."tasksPublishedCount" AS "tasksPublishedCount",
-          ap."tasksAcceptedCount" AS "tasksAcceptedCount",
-          ap."tasksCompletedCount" AS "tasksCompletedCount",
-          ap."tasksTerminatedCount" AS "tasksTerminatedCount",
-          ap."submissionsRejectedCount" AS "submissionsRejectedCount",
-          ap."supervisionVotesCount" AS "supervisionVotesCount",
-          ap."createdAt" AS "createdAt",
-          ap."updatedAt" AS "updatedAt",
-          MAX(ae."createdAt") AS "latestActivityAt",
-          ((ap."publisherRep" + ap."workerRep" + ap."supervisorRep") / 3.0) AS "reputationAverage",
-          ROUND(
-            (
-              0.45 * ((ap."publisherRep" + ap."workerRep" + ap."supervisorRep") / 3.0)
-              + 0.35 * CASE
-                WHEN ap."tasksAcceptedCount" > 0 THEN LEAST(1.0, ap."tasksCompletedCount"::float / ap."tasksAcceptedCount") * 100
-                ELSE 0
-              END
-              + 0.2 * CASE
-                WHEN ap."tasksAcceptedCount" > 0 THEN GREATEST(0.0, 1.0 - ap."submissionsRejectedCount"::float / ap."tasksAcceptedCount") * 100
-                ELSE 100
-              END
-            )::numeric,
-            2
-          ) AS score,
-          (
-            MAX(ae."createdAt") IS NOT NULL
-            OR ap."tasksAcceptedCount" > 0
-            OR ap."tasksPublishedCount" > 0
-            OR ap."tasksCompletedCount" > 0
-            OR ap."submissionsRejectedCount" > 0
-            OR ap."supervisionVotesCount" > 0
-          ) AS "isActive"
-        FROM "AgentProfile" ap
-        LEFT JOIN "ActivityEvent" ae ON ae."actorAddress" = ap.address
-        GROUP BY
-          ap.address,
-          ap.name,
-          ap.bio,
-          ap."publisherRep",
-          ap."workerRep",
-          ap."supervisorRep",
-          ap."tasksPublishedCount",
-          ap."tasksAcceptedCount",
-          ap."tasksCompletedCount",
-          ap."tasksTerminatedCount",
-          ap."submissionsRejectedCount",
-          ap."supervisionVotesCount",
-          ap."createdAt",
-          ap."updatedAt"
-      ) ranked
-      ${whereSql}
-      ${orderBySql}
-      ${paginationSql}
-    `);
-
-    const mapped = rows.map((item) => this.mapAgentDirectoryItem(item));
-    return query.paged
-      ? buildPaginatedResponse(mapped, query.offset, query.limit)
-      : { items: mapped, nextCursor: null };
+    return queryAgentsDirect(this.prisma, query);
   }
 
   async listActivitiesDirect(): Promise<ActivityEvent[]> {
-    const events = await this.prisma.activityEvent.findMany({ orderBy: { createdAt: "asc" } });
-    return events.map((item) => this.mapActivityEvent(item));
+    return readListActivitiesDirect(this.prisma);
   }
 
   async queryActivitiesDirect(query: ActivityListQuery): Promise<PaginatedResponse<ActivityEvent>> {
-    const where: Prisma.ActivityEventWhereInput = {
-      taskId: query.taskId,
-      disputeId: query.disputeId,
-      type: query.type,
-      actorAddress: query.address
-        ? {
-            equals: query.address,
-            mode: "insensitive"
-          }
-        : undefined
-    };
-
-    const events = await this.prisma.activityEvent.findMany({
-      where,
-      orderBy: [{ createdAt: query.order }, { id: query.order }],
-      ...(query.paged
-        ? {
-            skip: query.offset,
-            take: query.limit + 1
-          }
-        : {})
-    });
-
-    const mapped = events.map((item) => this.mapActivityEvent(item));
-    return query.paged
-      ? buildPaginatedResponse(mapped, query.offset, query.limit)
-      : { items: mapped, nextCursor: null };
+    return queryActivitiesDirect(this.prisma, query);
   }
 
   async getDisputeDirect(disputeId: string): Promise<Dispute | null> {
-    const dispute = await this.prisma.dispute.findUnique({ where: { id: disputeId } });
-    return dispute ? this.mapDispute(dispute) : null;
+    return readGetDisputeDirect(this.prisma, disputeId);
   }
 
   async getAgentDirect(address: Address): Promise<AgentProfile | null> {
-    const profile = await this.prisma.agentProfile.findUnique({ where: { address } });
-    return profile ? this.mapAgentProfile(profile) : null;
+    return readGetAgentDirect(this.prisma, address);
   }
 
   async updateAgentProfileDirect(
     address: Address,
     payload: { name?: string; bio?: string }
   ): Promise<AgentProfile> {
-    const profile = await this.executeWithRetry(async () =>
-      this.prisma.$transaction(async (tx) => {
-        const now = new Date();
-        await this.lockRuntimeWithTx(tx);
-        await this.ensureAgentAndLedgerWithTx(tx, address, now);
-        const current = await tx.agentProfile.findUnique({ where: { address } });
-        if (!current) {
-          throw new DomainError("AGENT_NOT_FOUND", `Agent ${address} not found`, 404);
-        }
-        const updated = await tx.agentProfile.update({
-          where: { address },
-          data: {
-            name: payload.name ?? current.name,
-            bio: payload.bio ?? current.bio,
-            updatedAt: now
-          }
-        });
-        await this.touchRuntimeStateWithTx(tx);
-        return updated;
-      })
+    const profile = await writeUpdateAgentProfileDirect(
+      this.prisma,
+      {
+        executeWithRetry: (operation) => this.executeWithRetry(operation),
+        lockRuntimeWithTx: (tx) => this.lockRuntimeWithTx(tx),
+        ensureAgentAndLedgerWithTx: (tx, nextAddress, now) =>
+          this.ensureAgentAndLedgerWithTx(tx, nextAddress, now),
+        touchRuntimeStateWithTx: (tx) => this.touchRuntimeStateWithTx(tx)
+      },
+      address,
+      payload
     );
-    return this.mapAgentProfile(profile);
+    return mapAgentProfile(profile);
   }
 
   async getLedgerDirect(address: Address): Promise<LedgerBalance | null> {
-    const balance = await this.prisma.ledgerBalance.findUnique({ where: { address } });
-    return balance ? this.mapLedgerBalance(balance) : null;
+    return readGetLedgerDirect(this.prisma, address);
   }
 
   async listCyclesDirect(): Promise<Cycle[]> {
-    const cycles = await this.prisma.cycle.findMany({ orderBy: { startedAt: "asc" } });
-    return cycles.map((item) => this.mapCycle(item));
+    return readListCyclesDirect(this.prisma);
+  }
+
+  async queryCyclesDirect(query: CycleListQuery): Promise<PaginatedResponse<Cycle>> {
+    return queryCyclesDirect(this.prisma, query);
   }
 
   async getCycleDirect(cycleId: string): Promise<Cycle | null> {
-    const cycle = await this.prisma.cycle.findUnique({ where: { id: cycleId } });
-    return cycle ? this.mapCycle(cycle) : null;
+    return readGetCycleDirect(this.prisma, cycleId);
   }
 
   async getActiveCycleDirect(): Promise<Cycle | null> {
-    const runtime = await this.prisma.runtimeState.findUnique({ where: { id: RUNTIME_ID } });
-    if (!runtime) {
-      return null;
-    }
-    return this.getCycleDirect(runtime.activeCycleId);
+    return readGetActiveCycleDirect(this.prisma, RUNTIME_ID);
   }
 
   async getDashboardSummaryDirect(timeZone: string): Promise<DashboardSummaryResponse> {
@@ -757,10 +497,10 @@ export class PrismaStateRepository {
     }));
 
     return {
-      cycle: this.mapCycle(cycle),
+      cycle: mapCycle(cycle),
       rewardPool,
       distributions,
-      workloads: workloads.map((item) => this.mapCycleWorkload(item))
+      workloads: workloads.map((item) => mapCycleWorkload(item))
     };
   }
 
@@ -772,900 +512,210 @@ export class PrismaStateRepository {
     return balances.map((item) => ({ address: asAddress(item.address), amount: item.available }));
   }
 
-  async publishTaskDirect(input: {
-    publisher: Address;
-    title: string;
-    descriptionMd: string;
-    acceptanceCriteria: string;
-    deadlineUtc: string;
-    displayTimezone: string;
-    slotsTotal: number;
-    rewardPerSlot: number;
-    allowRepeatCompletionsBySameAgent: boolean;
-    config: AppConfig;
-  }): Promise<Task> {
-    const task = await this.executeWithRetry(async () =>
-      this.prisma.$transaction(async (tx) => {
-        const now = new Date();
-        const runtime = await this.lockRuntimeWithTx(tx);
-        await this.ensureAgentAndLedgerWithTx(tx, input.publisher, now);
-
-        const normalizedTitle = input.title.trim();
-        if (normalizedTitle.length === 0 || input.title.length > input.config.taskTitleMaxLength) {
-          throw new DomainError(
-            "INVALID_TASK_TITLE",
-            `title must be non-empty and <= ${input.config.taskTitleMaxLength} chars`,
-            400
-          );
-        }
-        if (
-          input.descriptionMd.trim().length === 0 ||
-          input.descriptionMd.length > input.config.taskDescriptionMaxLength
-        ) {
-          throw new DomainError(
-            "INVALID_TASK_DESCRIPTION",
-            `description must be non-empty and <= ${input.config.taskDescriptionMaxLength} chars`,
-            400
-          );
-        }
-        if (
-          input.acceptanceCriteria.trim().length === 0 ||
-          input.acceptanceCriteria.length > input.config.taskAcceptanceCriteriaMaxLength
-        ) {
-          throw new DomainError(
-            "INVALID_ACCEPTANCE_CRITERIA",
-            `acceptanceCriteria must be non-empty and <= ${input.config.taskAcceptanceCriteriaMaxLength} chars`,
-            400
-          );
-        }
-        const deadlineMs = new Date(input.deadlineUtc).getTime();
-        if (!Number.isFinite(deadlineMs)) {
-          throw new DomainError("INVALID_DEADLINE", "deadlineUtc must be a valid ISO datetime", 400);
-        }
-        if (deadlineMs <= now.getTime()) {
-          throw new DomainError("INVALID_DEADLINE", "deadlineUtc must be in the future", 400);
-        }
-        const maxDeadlineMs = now.getTime() + input.config.taskDeadlineMaxHours * 3_600_000;
-        if (deadlineMs > maxDeadlineMs) {
-          throw new DomainError(
-            "INVALID_DEADLINE",
-            `deadlineUtc must be within ${input.config.taskDeadlineMaxHours} hours`,
-            400
-          );
-        }
-        if (
-          !Number.isSafeInteger(input.slotsTotal) ||
-          input.slotsTotal <= 0 ||
-          input.slotsTotal > input.config.taskSlotsMax
-        ) {
-          throw new DomainError(
-            "INVALID_SLOTS",
-            `slotsTotal must be a safe integer in [1, ${input.config.taskSlotsMax}]`,
-            400
-          );
-        }
-        if (
-          !Number.isSafeInteger(input.rewardPerSlot) ||
-          input.rewardPerSlot < input.config.rewardMin ||
-          input.rewardPerSlot > input.config.taskRewardPerSlotMax
-        ) {
-          throw new DomainError(
-            "INVALID_REWARD",
-            `rewardPerSlot must be a safe integer in [${input.config.rewardMin}, ${input.config.taskRewardPerSlotMax}]`,
-            400
-          );
-        }
-        const totalReward = input.slotsTotal * input.rewardPerSlot;
-        if (!Number.isSafeInteger(totalReward) || totalReward <= 0) {
-          throw new DomainError(
-            "INVALID_TASK_BUDGET",
-            "task reward budget is outside supported integer range",
-            400
-          );
-        }
-        const taxAmount = computeTaxAmount(totalReward, input.config);
-        if (!Number.isSafeInteger(taxAmount) || taxAmount < 0) {
-          throw new DomainError("INVALID_TASK_BUDGET", "task tax amount is invalid", 400);
-        }
-        const totalCost = totalReward + taxAmount;
-        if (!Number.isSafeInteger(totalCost) || totalCost <= 0) {
-          throw new DomainError(
-            "INVALID_TASK_BUDGET",
-            "task total cost is outside supported integer range",
-            400
-          );
-        }
-
-        await tx.$queryRaw`SELECT address FROM "LedgerBalance" WHERE address = ${input.publisher} FOR UPDATE`;
-        const balance = await tx.ledgerBalance.findUnique({ where: { address: input.publisher } });
-        if (!balance) {
-          throw new DomainError("LEDGER_NOT_FOUND", `Ledger for ${input.publisher} not found`, 404);
-        }
-        if (balance.available < totalCost) {
-          throw new DomainError("INSUFFICIENT_BALANCE", "insufficient balance for task escrow and tax", 409);
-        }
-
-        await tx.ledgerBalance.update({
-          where: { address: input.publisher },
-          data: {
-            available: {
-              decrement: totalCost
-            },
-            updatedAt: now
-          }
-        });
-
-        await tx.cycle.update({
-          where: { id: runtime.activeCycleId },
-          data: {
-            taxPool: {
-              increment: taxAmount
-            }
-          }
-        });
-
-        const created = await tx.task.create({
-          data: {
-            id: nanoid(),
-            publisherAddress: input.publisher,
-            title: normalizedTitle,
-            descriptionMd: input.descriptionMd,
-            acceptanceCriteria: input.acceptanceCriteria,
-            status: DomainTaskStatus.OPEN,
-            deadlineUtc: new Date(input.deadlineUtc),
-            displayTimezone: input.displayTimezone,
-            slotsTotal: input.slotsTotal,
-            rewardPerSlot: input.rewardPerSlot,
-            allowRepeatCompletionsBySameAgent: input.allowRepeatCompletionsBySameAgent,
-            taxAmount,
-            rewardEscrowRemaining: totalReward,
-            acceptedAgents: toJsonAddressArray([]),
-            completedAgents: toJsonAddressArray([]),
-            createdAt: now,
-            updatedAt: now
-          }
-        });
-
-        await this.applyProfileDeltaWithTx(tx, input.publisher, now, {
-          publisherReputationDelta: 1,
-          tasksPublished: 1
-        });
-        await this.appendActivityEventWithTx(tx, {
-          type: DomainActivityEventType.TASK_PUBLISHED,
-          cycleId: runtime.activeCycleId,
-          taskId: created.id,
-          disputeId: null,
-          actor: input.publisher,
-          createdAt: now
-        });
-        await this.touchRuntimeStateWithTx(tx);
-        return created;
-      })
+  async publishTaskDirect(input: PublishTaskDirectInput): Promise<Task> {
+    const task = await writePublishTaskDirect(
+      this.prisma,
+      {
+        executeWithRetry: (operation) => this.executeWithRetry(operation),
+        lockRuntimeWithTx: (tx) => this.lockRuntimeWithTx(tx),
+        ensureAgentAndLedgerWithTx: (tx, address, now) =>
+          this.ensureAgentAndLedgerWithTx(tx, address, now),
+        touchRuntimeStateWithTx: (tx) => this.touchRuntimeStateWithTx(tx),
+        applyProfileDeltaWithTx: (tx, address, now, delta) =>
+          this.applyProfileDeltaWithTx(tx, address, now, delta),
+        appendActivityEventWithTx: (tx, activity) => this.appendActivityEventWithTx(tx, activity)
+      },
+      input
     );
-
-    return this.mapTask(task);
+    return mapTask(task);
   }
 
   async rejectSubmissionDirect(submissionId: string, publisher: Address): Promise<Submission> {
-    const submission = await this.executeWithRetry(async () =>
-      this.prisma.$transaction(async (tx) => {
-        await this.lockRuntimeWithTx(tx);
-        const now = new Date();
-        await tx.$queryRaw`SELECT id FROM "Submission" WHERE id = ${submissionId} FOR UPDATE`;
-        const submissionRow = await tx.submission.findUnique({ where: { id: submissionId } });
-        if (!submissionRow) {
-          throw new DomainError("SUBMISSION_NOT_FOUND", `Submission ${submissionId} not found`, 404);
-        }
-        const task = await tx.task.findUnique({ where: { id: submissionRow.taskId } });
-        if (!task) {
-          throw new DomainError("TASK_NOT_FOUND", `Task ${submissionRow.taskId} does not exist`, 404);
-        }
-        if (task.publisherAddress !== publisher) {
-          throw new DomainError("FORBIDDEN", "only the publisher can reject submission", 403);
-        }
-        if (submissionRow.status !== DomainSubmissionStatus.SUBMITTED) {
-          throw new DomainError("SUBMISSION_NOT_PENDING", "submission is not in submitted state", 409);
-        }
-
-        await this.ensureAgentAndLedgerWithTx(tx, asAddress(submissionRow.agentAddress), now);
-        const updated = await tx.submission.update({
-          where: { id: submissionId },
-          data: {
-            status: DomainSubmissionStatus.REJECTED,
-            updatedAt: now
-          }
-        });
-        await this.applyProfileDeltaWithTx(tx, asAddress(submissionRow.agentAddress), now, {
-          workerReputationDelta: -1,
-          submissionsRejected: 1
-        });
-        await this.touchRuntimeStateWithTx(tx);
-        return updated;
-      })
+    const submission = await writeRejectSubmissionDirect(
+      this.prisma,
+      {
+        executeWithRetry: (operation) => this.executeWithRetry(operation),
+        lockRuntimeWithTx: (tx) => this.lockRuntimeWithTx(tx),
+        ensureAgentAndLedgerWithTx: (tx, address, now) =>
+          this.ensureAgentAndLedgerWithTx(tx, address, now),
+        touchRuntimeStateWithTx: (tx) => this.touchRuntimeStateWithTx(tx),
+        applyProfileDeltaWithTx: (tx, address, now, input) =>
+          this.applyProfileDeltaWithTx(tx, address, now, input)
+      },
+      submissionId,
+      publisher
     );
 
-    return this.mapSubmission(submission);
+    return mapSubmission(submission);
   }
 
   async terminateTaskDirect(taskId: string, publisher: Address, config: AppConfig): Promise<Task> {
-    const task = await this.executeWithRetry(async () =>
-      this.prisma.$transaction(async (tx) => {
-        const runtime = await this.lockRuntimeWithTx(tx);
-        const now = new Date();
-        await tx.$queryRaw`SELECT id FROM "Task" WHERE id = ${taskId} FOR UPDATE`;
-        const taskRow = await tx.task.findUnique({ where: { id: taskId } });
-        if (!taskRow) {
-          throw new DomainError("TASK_NOT_FOUND", `Task ${taskId} does not exist`, 404);
-        }
-        if (taskRow.publisherAddress !== publisher) {
-          throw new DomainError("FORBIDDEN", "only the publisher can terminate task", 403);
-        }
-        if (taskRow.status === DomainTaskStatus.TERMINATED || taskRow.status === DomainTaskStatus.CLOSED) {
-          throw new DomainError("TASK_NOT_TERMINABLE", "task is already closed", 409);
-        }
-
-        const penalty = computeTerminationPenalty(taskRow.rewardEscrowRemaining, config);
-        const refund = Math.max(0, taskRow.rewardEscrowRemaining - penalty);
-        await this.ensureAgentAndLedgerWithTx(tx, asAddress(taskRow.publisherAddress), now);
-        await tx.ledgerBalance.update({
-          where: { address: taskRow.publisherAddress },
-          data: {
-            available: {
-              increment: refund
-            },
-            updatedAt: now
-          }
-        });
-
-        await tx.cycle.update({
-          where: { id: runtime.activeCycleId },
-          data: {
-            penaltyPool: {
-              increment: penalty
-            }
-          }
-        });
-
-        const updated = await tx.task.update({
-          where: { id: taskRow.id },
-          data: {
-            rewardEscrowRemaining: 0,
-            status: DomainTaskStatus.TERMINATED,
-            updatedAt: now
-          }
-        });
-        await this.applyProfileDeltaWithTx(tx, asAddress(taskRow.publisherAddress), now, {
-          publisherReputationDelta: -1,
-          tasksTerminated: 1
-        });
-        await this.appendActivityEventWithTx(tx, {
-          type: DomainActivityEventType.TASK_TERMINATED,
-          cycleId: runtime.activeCycleId,
-          taskId: taskRow.id,
-          disputeId: null,
-          actor: publisher,
-          createdAt: now
-        });
-        await this.touchRuntimeStateWithTx(tx);
-        return updated;
-      })
+    const task = await writeTerminateTaskDirect(
+      this.prisma,
+      {
+        executeWithRetry: (operation) => this.executeWithRetry(operation),
+        lockRuntimeWithTx: (tx) => this.lockRuntimeWithTx(tx),
+        ensureAgentAndLedgerWithTx: (tx, address, now) =>
+          this.ensureAgentAndLedgerWithTx(tx, address, now),
+        touchRuntimeStateWithTx: (tx) => this.touchRuntimeStateWithTx(tx),
+        applyProfileDeltaWithTx: (tx, address, now, delta) =>
+          this.applyProfileDeltaWithTx(tx, address, now, delta),
+        appendActivityEventWithTx: (tx, activity) => this.appendActivityEventWithTx(tx, activity)
+      },
+      taskId,
+      publisher,
+      config
     );
-
-    return this.mapTask(task);
+    return mapTask(task);
   }
 
-  async openDisputeDirect(input: {
-    taskId: string;
-    submissionId: string;
-    opener: Address;
-    reasonMd: string;
-    disputeReasonMaxLength: number;
-  }): Promise<Dispute> {
-    const dispute = await this.executeWithRetry(async () =>
-      this.prisma.$transaction(async (tx) => {
-        const runtime = await this.lockRuntimeWithTx(tx);
-        const now = new Date();
-        await this.ensureAgentAndLedgerWithTx(tx, input.opener, now);
-        const task = await tx.task.findUnique({ where: { id: input.taskId } });
-        if (!task) {
-          throw new DomainError("TASK_NOT_FOUND", `Task ${input.taskId} does not exist`, 404);
-        }
-        const submission = await tx.submission.findUnique({ where: { id: input.submissionId } });
-        if (!submission) {
-          throw new DomainError("SUBMISSION_NOT_FOUND", `Submission ${input.submissionId} not found`, 404);
-        }
-        if (submission.taskId !== task.id) {
-          throw new DomainError("MISMATCH", "submission does not belong to task", 400);
-        }
-        if (input.reasonMd.trim().length === 0 || input.reasonMd.length > input.disputeReasonMaxLength) {
-          throw new DomainError(
-            "INVALID_DISPUTE_REASON",
-            `reasonMd must be non-empty and <= ${input.disputeReasonMaxLength} chars`,
-            400
-          );
-        }
-        if (input.opener !== asAddress(task.publisherAddress) && input.opener !== asAddress(submission.agentAddress)) {
-          throw new DomainError(
-            "DISPUTE_FORBIDDEN_OPENER",
-            "only task publisher or submission agent can open dispute",
-            403
-          );
-        }
-        if (submission.status !== DomainSubmissionStatus.REJECTED) {
-          throw new DomainError(
-            "SUBMISSION_NOT_DISPUTABLE",
-            "submission must be rejected before dispute can be opened",
-            409
-          );
-        }
-
-        const hasOpenDispute = await tx.dispute.findFirst({
-          where: {
-            submissionId: submission.id,
-            status: DomainDisputeStatus.OPEN
-          },
-          select: { id: true }
-        });
-        if (hasOpenDispute) {
-          throw new DomainError(
-            "OPEN_DISPUTE_ALREADY_EXISTS",
-            "an open dispute already exists for this submission",
-            409
-          );
-        }
-
-        const created = await tx.dispute.create({
-          data: {
-            id: nanoid(),
-            taskId: task.id,
-            submissionId: submission.id,
-            openerAddress: input.opener,
-            reasonMd: input.reasonMd,
-            status: DomainDisputeStatus.OPEN,
-            createdAt: now,
-            updatedAt: now
-          }
-        });
-        await this.appendActivityEventWithTx(tx, {
-          type: DomainActivityEventType.DISPUTE_OPENED,
-          cycleId: runtime.activeCycleId,
-          taskId: task.id,
-          disputeId: created.id,
-          actor: input.opener,
-          createdAt: now
-        });
-        await this.touchRuntimeStateWithTx(tx);
-        return created;
-      })
+  async openDisputeDirect(input: OpenDisputeDirectInput): Promise<Dispute> {
+    const dispute = await writeOpenDisputeDirect(
+      this.prisma,
+      {
+        executeWithRetry: (operation) => this.executeWithRetry(operation),
+        lockRuntimeWithTx: (tx) => this.lockRuntimeWithTx(tx),
+        ensureAgentAndLedgerWithTx: (tx, address, now) =>
+          this.ensureAgentAndLedgerWithTx(tx, address, now),
+        touchRuntimeStateWithTx: (tx) => this.touchRuntimeStateWithTx(tx),
+        applyProfileDeltaWithTx: (tx, address, now, delta) =>
+          this.applyProfileDeltaWithTx(tx, address, now, delta),
+        appendActivityEventWithTx: (tx, activity) => this.appendActivityEventWithTx(tx, activity)
+      },
+      input
     );
-
-    return this.mapDispute(dispute);
+    return mapDispute(dispute);
   }
 
   async closeCurrentCycleDirect(config: AppConfig): Promise<CloseCycleResult> {
-    return this.executeWithRetry(async () => this.prisma.$transaction(async (tx) => {
-      const runtime = await this.lockRuntimeWithTx(tx);
-      const now = new Date();
-      const cycle = await tx.cycle.findUnique({ where: { id: runtime.activeCycleId } });
-      if (!cycle) {
-        throw new DomainError("CYCLE_NOT_FOUND", `Cycle ${runtime.activeCycleId} not found`, 404);
-      }
-
-      const staleThreshold = new Date(now.getTime() - config.submissionTimeoutHours * 3_600_000);
-      const staleSubmissions = await tx.submission.findMany({
-        where: {
-          status: DomainSubmissionStatus.SUBMITTED,
-          createdAt: { lte: staleThreshold }
-        },
-        orderBy: { createdAt: "asc" }
-      });
-      for (const stale of staleSubmissions) {
-        const submission = await tx.submission.findUnique({ where: { id: stale.id } });
-        if (!submission || submission.status !== DomainSubmissionStatus.SUBMITTED) {
-          continue;
-        }
-        const task = await tx.task.findUnique({ where: { id: submission.taskId } });
-        if (!task) {
-          throw new DomainError("TASK_NOT_FOUND", `Task ${submission.taskId} does not exist`, 404);
-        }
-        if (task.status === DomainTaskStatus.TERMINATED || task.status === DomainTaskStatus.CLOSED) {
-          continue;
-        }
-        const confirmedSlots = this.getConfirmedSlots(task.slotsTotal, task.rewardPerSlot, task.rewardEscrowRemaining);
-        if (confirmedSlots >= task.slotsTotal || task.rewardEscrowRemaining < task.rewardPerSlot) {
-          await tx.task.update({
-            where: { id: task.id },
-            data: {
-              status: DomainTaskStatus.CLOSED,
-              acceptedAgents: toJsonAddressArray([]),
-              updatedAt: now
-            }
-          });
-          continue;
-        }
-        await this.confirmSubmissionInternalWithTx(
-          tx,
-          submission,
-          task,
-          now,
-          runtime.activeCycleId,
-          asAddress(task.publisherAddress)
-        );
-      }
-
-      const finalizedDisputes: string[] = [];
-      const openDisputes = await tx.dispute.findMany({
-        where: { status: DomainDisputeStatus.OPEN },
-        orderBy: { createdAt: "asc" }
-      });
-      for (const dispute of openDisputes) {
-        const changed = await this.evaluateDisputeWithTx(
-          tx,
-          dispute.id,
-          config,
-          now,
-          runtime.activeCycleId
-        );
-        if (changed) {
-          finalizedDisputes.push(dispute.id);
-        }
-      }
-
-      const rewardPool = cycle.mintedAmount + cycle.taxPool + cycle.penaltyPool;
-      const workloads = await tx.cycleWorkload.findMany({
-        where: {
-          cycleId: cycle.id,
-          settledAt: null
-        },
-        orderBy: { createdAt: "asc" }
-      });
-      const grouped = new Map<string, number>();
-      for (const workload of workloads) {
-        grouped.set(workload.agentAddress, (grouped.get(workload.agentAddress) ?? 0) + workload.workload);
-      }
-      const distributionsMap = allocateIntegerPool(rewardPool, grouped);
-      for (const [agent, amount] of distributionsMap.entries()) {
-        await this.ensureAgentAndLedgerWithTx(tx, asAddress(agent), now);
-        await tx.ledgerBalance.update({
-          where: { address: agent },
-          data: {
-            available: {
-              increment: amount
-            },
-            updatedAt: now
-          }
-        });
-      }
-      if (workloads.length > 0) {
-        await tx.cycleWorkload.updateMany({
-          where: {
-            id: {
-              in: workloads.map((item) => item.id)
-            }
-          },
-          data: {
-            settledAt: now
-          }
-        });
-      }
-
-      await tx.cycle.update({
-        where: { id: cycle.id },
-        data: {
-          status: DomainCycleStatus.CLOSED,
-          closedAt: now
-        }
-      });
-      const nextCycleId = this.nextCycleId(cycle.id);
-      await tx.cycle.create({
-        data: {
-          id: nextCycleId,
-          status: DomainCycleStatus.OPEN,
-          mintedAmount: config.mintPerCycle,
-          taxPool: 0,
-          penaltyPool: 0,
-          startedAt: now,
-          closedAt: null
-        }
-      });
-      await this.touchRuntimeStateWithTx(tx, nextCycleId);
-
-      return {
-        closedCycleId: cycle.id,
-        openedCycleId: nextCycleId,
-        rewardPool,
-        distributions: [...distributionsMap.entries()].map(([agent, amount]) => ({
-          agent: asAddress(agent),
-          amount
-        })),
-        finalizedDisputes
-      };
-    }));
+    return writeCloseCurrentCycleDirect(
+      this.prisma,
+      {
+        executeWithRetry: (operation) => this.executeWithRetry(operation),
+        lockRuntimeWithTx: (tx) => this.lockRuntimeWithTx(tx),
+        ensureAgentAndLedgerWithTx: (tx, address, now) =>
+          this.ensureAgentAndLedgerWithTx(tx, address, now),
+        touchRuntimeStateWithTx: (tx, activeCycleId) =>
+          this.touchRuntimeStateWithTx(tx, activeCycleId),
+        getConfirmedSlots: (slotsTotal, rewardPerSlot, rewardEscrowRemaining) =>
+          this.getConfirmedSlots(slotsTotal, rewardPerSlot, rewardEscrowRemaining),
+        confirmSubmissionInternalWithTx: (tx, submission, task, now, cycleId, actor) =>
+          this.confirmSubmissionInternalWithTx(tx, submission, task, now, cycleId, actor),
+        evaluateDisputeWithTx: (tx, disputeId, nextConfig, now, cycleId) =>
+          this.evaluateDisputeWithTx(tx, disputeId, nextConfig, now, cycleId),
+        nextCycleId: (currentCycleId) => this.nextCycleId(currentCycleId)
+      },
+      config
+    );
   }
 
   async overrideDisputeDirect(
     disputeId: string,
     result: "COMPLETED" | "NOT_COMPLETED"
   ): Promise<Dispute> {
-    const dispute = await this.executeWithRetry(async () =>
-      this.prisma.$transaction(async (tx) => {
-        const runtime = await this.lockRuntimeWithTx(tx);
-        const now = new Date();
-        await tx.$queryRaw`SELECT id FROM "Dispute" WHERE id = ${disputeId} FOR UPDATE`;
-        const row = await tx.dispute.findUnique({ where: { id: disputeId } });
-        if (!row) {
-          throw new DomainError("DISPUTE_NOT_FOUND", `Dispute ${disputeId} does not exist`, 404);
-        }
-
-        if (result === "COMPLETED") {
-          if (row.status !== DomainDisputeStatus.RESOLVED_COMPLETED) {
-            await tx.dispute.update({
-              where: { id: disputeId },
-              data: {
-                status: DomainDisputeStatus.RESOLVED_COMPLETED,
-                updatedAt: now
-              }
-            });
-            await this.finalizeDisputeWithOutcomeWithTx(
-              tx,
-              disputeId,
-              DomainVoteChoice.COMPLETED,
-              now,
-              runtime.activeCycleId
-            );
-          }
-        } else {
-          await tx.dispute.update({
-            where: { id: disputeId },
-            data: {
-              status: DomainDisputeStatus.OPEN,
-              updatedAt: now
-            }
-          });
-        }
-
-        await this.touchRuntimeStateWithTx(tx);
-        return tx.dispute.findUniqueOrThrow({ where: { id: disputeId } });
-      })
+    const dispute = await writeOverrideDisputeDirect(
+      this.prisma,
+      {
+        executeWithRetry: (operation) => this.executeWithRetry(operation),
+        lockRuntimeWithTx: (tx) => this.lockRuntimeWithTx(tx),
+        touchRuntimeStateWithTx: (tx, activeCycleId) =>
+          this.touchRuntimeStateWithTx(tx, activeCycleId),
+        finalizeDisputeWithOutcomeWithTx: (tx, nextDisputeId, outcome, now, cycleId) =>
+          this.finalizeDisputeWithOutcomeWithTx(tx, nextDisputeId, outcome, now, cycleId)
+      },
+      disputeId,
+      result
     );
 
-    return this.mapDispute(dispute);
+    return mapDispute(dispute);
   }
 
   async acceptTaskDirect(taskId: string, agent: Address): Promise<Task> {
-    const task = await this.executeWithRetry(async () =>
-      this.prisma.$transaction(async (tx) => {
-        const now = new Date();
-        const runtime = await this.lockRuntimeWithTx(tx);
-        await this.ensureAgentAndLedgerWithTx(tx, agent, now);
-
-        await tx.$queryRaw`SELECT id FROM "Task" WHERE id = ${taskId} FOR UPDATE`;
-        const taskRow = await tx.task.findUnique({ where: { id: taskId } });
-        if (!taskRow) {
-          throw new DomainError("TASK_NOT_FOUND", `Task ${taskId} does not exist`, 404);
-        }
-
-        if (taskRow.status === DomainTaskStatus.TERMINATED || taskRow.status === DomainTaskStatus.CLOSED) {
-          throw new DomainError("TASK_NOT_ACCEPTABLE", "task is not open for acceptance", 409);
-        }
-        if (taskRow.deadlineUtc.getTime() <= now.getTime()) {
-          throw new DomainError("TASK_EXPIRED", "task deadline has passed", 409);
-        }
-
-        const acceptedAgents = asAddressArray(taskRow.acceptedAgents);
-        const completedAgents = asAddressArray(taskRow.completedAgents);
-        const confirmedSlots = this.getConfirmedSlots(
-          taskRow.slotsTotal,
-          taskRow.rewardPerSlot,
-          taskRow.rewardEscrowRemaining
-        );
-
-        if (confirmedSlots >= taskRow.slotsTotal || acceptedAgents.length + confirmedSlots >= taskRow.slotsTotal) {
-          throw new DomainError("TASK_SLOTS_FULL", "task has no available slots", 409);
-        }
-        if (!taskRow.allowRepeatCompletionsBySameAgent && completedAgents.includes(agent)) {
-          throw new DomainError("REPEAT_NOT_ALLOWED", "agent already completed this task", 409);
-        }
-        if (acceptedAgents.includes(agent)) {
-          throw new DomainError("ALREADY_ACCEPTED", "agent already accepted this task", 409);
-        }
-
-        acceptedAgents.push(agent);
-        const updatedTask = await tx.task.update({
-          where: { id: taskRow.id },
-          data: {
-            acceptedAgents: toJsonAddressArray(acceptedAgents),
-            status: DomainTaskStatus.IN_PROGRESS,
-            updatedAt: now
-          }
-        });
-        await this.applyProfileDeltaWithTx(tx, agent, now, {
-          tasksAccepted: 1
-        });
-        await this.appendActivityEventWithTx(tx, {
-          type: DomainActivityEventType.TASK_ACCEPTED,
-          cycleId: runtime.activeCycleId,
-          taskId: taskRow.id,
-          disputeId: null,
-          actor: agent,
-          createdAt: now
-        });
-        await this.touchRuntimeStateWithTx(tx);
-        return updatedTask;
-      })
+    const task = await writeAcceptTaskDirect(
+      this.prisma,
+      {
+        executeWithRetry: (operation) => this.executeWithRetry(operation),
+        lockRuntimeWithTx: (tx) => this.lockRuntimeWithTx(tx),
+        ensureAgentAndLedgerWithTx: (tx, address, now) =>
+          this.ensureAgentAndLedgerWithTx(tx, address, now),
+        touchRuntimeStateWithTx: (tx) => this.touchRuntimeStateWithTx(tx),
+        applyProfileDeltaWithTx: (tx, address, now, input) =>
+          this.applyProfileDeltaWithTx(tx, address, now, input),
+        appendActivityEventWithTx: (tx, input) => this.appendActivityEventWithTx(tx, input),
+        getConfirmedSlots: (slotsTotal, rewardPerSlot, rewardEscrowRemaining) =>
+          this.getConfirmedSlots(slotsTotal, rewardPerSlot, rewardEscrowRemaining)
+      },
+      taskId,
+      agent
     );
 
-    return this.mapTask(task);
+    return mapTask(task);
   }
 
-  async submitTaskDirect(input: {
-    taskId: string;
-    agent: Address;
-    payloadMd: string;
-    taskSubmissionPayloadMaxLength: number;
-    resubmitCooldownMinutes: number;
-  }): Promise<Submission> {
-    const submission = await this.executeWithRetry(async () =>
-      this.prisma.$transaction(async (tx) => {
-        const now = new Date();
-        await this.lockRuntimeWithTx(tx);
-        await this.ensureAgentAndLedgerWithTx(tx, input.agent, now);
-
-        await tx.$queryRaw`SELECT id FROM "Task" WHERE id = ${input.taskId} FOR UPDATE`;
-        const taskRow = await tx.task.findUnique({ where: { id: input.taskId } });
-        if (!taskRow) {
-          throw new DomainError("TASK_NOT_FOUND", `Task ${input.taskId} does not exist`, 404);
-        }
-        if (
-          input.payloadMd.trim().length === 0 ||
-          input.payloadMd.length > input.taskSubmissionPayloadMaxLength
-        ) {
-          throw new DomainError(
-            "INVALID_SUBMISSION_PAYLOAD",
-            `payloadMd must be non-empty and <= ${input.taskSubmissionPayloadMaxLength} chars`,
-            400
-          );
-        }
-        if (taskRow.status === DomainTaskStatus.TERMINATED || taskRow.status === DomainTaskStatus.CLOSED) {
-          throw new DomainError("TASK_NOT_SUBMITTABLE", "task is not open for submissions", 409);
-        }
-        const confirmedSlots = this.getConfirmedSlots(
-          taskRow.slotsTotal,
-          taskRow.rewardPerSlot,
-          taskRow.rewardEscrowRemaining
-        );
-        if (confirmedSlots >= taskRow.slotsTotal || taskRow.rewardEscrowRemaining < taskRow.rewardPerSlot) {
-          throw new DomainError("TASK_NOT_SUBMITTABLE", "task is not open for submissions", 409);
-        }
-        if (taskRow.deadlineUtc.getTime() <= now.getTime()) {
-          throw new DomainError("TASK_EXPIRED", "task deadline has passed", 409);
-        }
-
-        const acceptedAgents = asAddressArray(taskRow.acceptedAgents);
-        if (!acceptedAgents.includes(input.agent)) {
-          throw new DomainError("TASK_NOT_ACCEPTED_BY_AGENT", "agent has not accepted this task", 403);
-        }
-
-        const lastSubmission = await tx.submission.findFirst({
-          where: {
-            taskId: taskRow.id,
-            agentAddress: input.agent
-          },
-          orderBy: { createdAt: "desc" }
-        });
-        if (lastSubmission) {
-          const elapsedMs = now.getTime() - lastSubmission.createdAt.getTime();
-          const cooldownMs = input.resubmitCooldownMinutes * 60_000;
-          if (elapsedMs < cooldownMs) {
-            throw new DomainError(
-              "RESUBMIT_COOLDOWN",
-              `resubmission cooldown not reached (${input.resubmitCooldownMinutes} minutes)`,
-              429
-            );
-          }
-        }
-
-        const created = await tx.submission.create({
-          data: {
-            id: nanoid(),
-            taskId: taskRow.id,
-            agentAddress: input.agent,
-            payloadMd: input.payloadMd,
-            status: DomainSubmissionStatus.SUBMITTED,
-            createdAt: now,
-            updatedAt: now
-          }
-        });
-        await this.touchRuntimeStateWithTx(tx);
-        return created;
-      })
+  async submitTaskDirect(input: SubmitTaskDirectInput): Promise<Submission> {
+    const submission = await writeSubmitTaskDirect(
+      this.prisma,
+      {
+        executeWithRetry: (operation) => this.executeWithRetry(operation),
+        lockRuntimeWithTx: (tx) => this.lockRuntimeWithTx(tx),
+        ensureAgentAndLedgerWithTx: (tx, address, now) =>
+          this.ensureAgentAndLedgerWithTx(tx, address, now),
+        touchRuntimeStateWithTx: (tx) => this.touchRuntimeStateWithTx(tx),
+        getConfirmedSlots: (slotsTotal, rewardPerSlot, rewardEscrowRemaining) =>
+          this.getConfirmedSlots(slotsTotal, rewardPerSlot, rewardEscrowRemaining)
+      },
+      input
     );
 
-    return this.mapSubmission(submission);
+    return mapSubmission(submission);
   }
 
   async confirmSubmissionDirect(submissionId: string, publisher: Address): Promise<Submission> {
-    const submission = await this.executeWithRetry(async () =>
-      this.prisma.$transaction(async (tx) => {
-        const now = new Date();
-        const runtime = await this.lockRuntimeWithTx(tx);
-        await tx.$queryRaw`SELECT id FROM "Submission" WHERE id = ${submissionId} FOR UPDATE`;
-        const submissionRow = await tx.submission.findUnique({ where: { id: submissionId } });
-        if (!submissionRow) {
-          throw new DomainError("SUBMISSION_NOT_FOUND", `Submission ${submissionId} not found`, 404);
-        }
-
-        await tx.$queryRaw`SELECT id FROM "Task" WHERE id = ${submissionRow.taskId} FOR UPDATE`;
-        const taskRow = await tx.task.findUnique({ where: { id: submissionRow.taskId } });
-        if (!taskRow) {
-          throw new DomainError("TASK_NOT_FOUND", `Task ${submissionRow.taskId} does not exist`, 404);
-        }
-        if (taskRow.publisherAddress !== publisher) {
-          throw new DomainError("FORBIDDEN", "only the publisher can confirm submission", 403);
-        }
-
-        if (submissionRow.status === DomainSubmissionStatus.CONFIRMED) {
-          return submissionRow;
-        }
-        if (
-          submissionRow.status !== DomainSubmissionStatus.SUBMITTED &&
-          submissionRow.status !== DomainSubmissionStatus.REJECTED
-        ) {
-          throw new DomainError(
-            "SUBMISSION_NOT_CONFIRMABLE",
-            "submission cannot be confirmed from this state",
-            409
-          );
-        }
-
-        const completedAgents = asAddressArray(taskRow.completedAgents);
-        if (
-          !taskRow.allowRepeatCompletionsBySameAgent &&
-          completedAgents.includes(asAddress(submissionRow.agentAddress))
-        ) {
-          throw new DomainError(
-            "REPEAT_COMPLETION_NOT_ALLOWED",
-            "agent already completed this non-repeatable task",
-            409
-          );
-        }
-
-        const confirmedSlotsBefore = this.getConfirmedSlots(
-          taskRow.slotsTotal,
-          taskRow.rewardPerSlot,
-          taskRow.rewardEscrowRemaining
-        );
-        if (confirmedSlotsBefore >= taskRow.slotsTotal || taskRow.rewardEscrowRemaining < taskRow.rewardPerSlot) {
-          throw new DomainError("SUBMISSION_NOT_CONFIRMABLE", "task has no remaining payable slots", 409);
-        }
-
-        await this.confirmSubmissionInternalWithTx(
-          tx,
-          submissionRow,
-          taskRow,
-          now,
-          runtime.activeCycleId,
-          publisher
-        );
-
-        await this.touchRuntimeStateWithTx(tx);
-        return tx.submission.findUniqueOrThrow({ where: { id: submissionRow.id } });
-      })
+    const submission = await writeConfirmSubmissionDirect(
+      this.prisma,
+      {
+        executeWithRetry: (operation) => this.executeWithRetry(operation),
+        lockRuntimeWithTx: (tx) => this.lockRuntimeWithTx(tx),
+        ensureAgentAndLedgerWithTx: (tx, address, now) =>
+          this.ensureAgentAndLedgerWithTx(tx, address, now),
+        touchRuntimeStateWithTx: (tx) => this.touchRuntimeStateWithTx(tx),
+        getConfirmedSlots: (slotsTotal, rewardPerSlot, rewardEscrowRemaining) =>
+          this.getConfirmedSlots(slotsTotal, rewardPerSlot, rewardEscrowRemaining),
+        confirmSubmissionInternalWithTx: (tx, nextSubmission, task, now, cycleId, actor) =>
+          this.confirmSubmissionInternalWithTx(tx, nextSubmission, task, now, cycleId, actor)
+      },
+      submissionId,
+      publisher
     );
-
-    return this.mapSubmission(submission);
+    return mapSubmission(submission);
   }
 
-  async voteDisputeDirect(input: {
-    disputeId: string;
-    agent: Address;
-    vote: DomainVoteChoice;
-    config: AppConfig;
-  }): Promise<{ vote: SupervisionVote; workload: CycleWorkload }> {
-    try {
-      return await this.executeWithRetry(async () =>
-        this.prisma.$transaction(async (tx) => {
-          const now = new Date();
-          const runtime = await this.lockRuntimeWithTx(tx);
-          await this.ensureAgentAndLedgerWithTx(tx, input.agent, now);
-
-          await tx.$queryRaw`SELECT id FROM "Dispute" WHERE id = ${input.disputeId} FOR UPDATE`;
-          const dispute = await tx.dispute.findUnique({ where: { id: input.disputeId } });
-          if (!dispute) {
-            throw new DomainError("DISPUTE_NOT_FOUND", `Dispute ${input.disputeId} does not exist`, 404);
-          }
-          if (dispute.status !== DomainDisputeStatus.OPEN) {
-            throw new DomainError("DISPUTE_CLOSED", "dispute is already resolved", 409);
-          }
-
-          const existingVote = await tx.supervisionVote.findFirst({
-            where: {
-              disputeId: input.disputeId,
-              agentAddress: input.agent
-            },
-            select: { id: true }
-          });
-          if (existingVote) {
-            throw new DomainError(
-              "DUPLICATE_SUPERVISION_PARTICIPATION",
-              "agent can participate only once per dispute across all cycles",
-              409
-            );
-          }
-
-          const cycle = await tx.cycle.findUnique({ where: { id: runtime.activeCycleId } });
-          if (!cycle) {
-            throw new DomainError("CYCLE_NOT_FOUND", `Cycle ${runtime.activeCycleId} not found`, 404);
-          }
-
-          const profile = await tx.agentProfile.findUniqueOrThrow({ where: { address: input.agent } });
-          const weightSnapshot = computeSupervisorVoteWeight(
-            {
-              publisher: profile.publisherRep,
-              worker: profile.workerRep,
-              supervisor: profile.supervisorRep
-            },
-            input.config
-          );
-
-          const vote = await tx.supervisionVote.create({
-            data: {
-              id: nanoid(),
-              disputeId: input.disputeId,
-              agentAddress: input.agent,
-              vote: input.vote,
-              weightSnapshot,
-              createdCycleId: runtime.activeCycleId,
-              createdAt: now
-            }
-          });
-
-          const workload = await tx.cycleWorkload.create({
-            data: {
-              id: nanoid(),
-              cycleId: runtime.activeCycleId,
-              disputeId: input.disputeId,
-              agentAddress: input.agent,
-              workload: 1,
-              createdAt: now,
-              settledAt: null
-            }
-          });
-
-          await this.applyProfileDeltaWithTx(tx, input.agent, now, {
-            supervisorReputationDelta: 0.5,
-            supervisionVotes: 1
-          });
-          await this.touchRuntimeStateWithTx(tx);
-
-          return {
-            vote: this.mapVote(vote),
-            workload: this.mapCycleWorkload(workload)
-          };
-        })
-      );
-    } catch (error) {
-      const code = error && typeof error === "object" && "code" in error ? String(error.code ?? "") : "";
-      if (code === "P2002") {
-        throw new DomainError(
-          "DUPLICATE_SUPERVISION_PARTICIPATION",
-          "agent can participate only once per dispute across all cycles",
-          409
-        );
-      }
-      throw error;
-    }
+  async voteDisputeDirect(
+    input: VoteDisputeDirectInput
+  ): Promise<{ vote: SupervisionVote; workload: CycleWorkload }> {
+    const result = await writeVoteDisputeDirect(
+      this.prisma,
+      {
+        executeWithRetry: (operation) => this.executeWithRetry(operation),
+        lockRuntimeWithTx: (tx) => this.lockRuntimeWithTx(tx),
+        ensureAgentAndLedgerWithTx: (tx, address, now) =>
+          this.ensureAgentAndLedgerWithTx(tx, address, now),
+        touchRuntimeStateWithTx: (tx) => this.touchRuntimeStateWithTx(tx),
+        applyProfileDeltaWithTx: (tx, address, now, delta) =>
+          this.applyProfileDeltaWithTx(tx, address, now, delta)
+      },
+      input
+    );
+    return {
+      vote: mapVote(result.vote),
+      workload: mapCycleWorkload(result.workload)
+    };
   }
 
   private async lockRuntimeWithTx(
     tx: Prisma.TransactionClient
   ): Promise<{ id: string; activeCycleId: string; updatedAt: Date }> {
-    await tx.$queryRaw`SELECT id FROM "RuntimeState" WHERE id = ${RUNTIME_ID} FOR UPDATE`;
-    const runtime = await tx.runtimeState.findUnique({ where: { id: RUNTIME_ID } });
-    if (!runtime) {
-      throw new DomainError("RUNTIME_NOT_INITIALIZED", "runtime state is not initialized", 500);
-    }
-    return runtime;
+    return lockRuntimeWithTx(tx, RUNTIME_ID);
   }
 
   private async confirmSubmissionInternalWithTx(
@@ -2223,38 +1273,7 @@ export class PrismaStateRepository {
     address: Address,
     now: Date
   ): Promise<void> {
-    const existingProfile = await tx.agentProfile.findUnique({ where: { address } });
-    if (!existingProfile) {
-      await tx.agentProfile.create({
-        data: {
-          address,
-          name: "",
-          bio: "",
-          publisherRep: 50,
-          workerRep: 50,
-          supervisorRep: 50,
-          tasksPublishedCount: 0,
-          tasksAcceptedCount: 0,
-          tasksCompletedCount: 0,
-          tasksTerminatedCount: 0,
-          submissionsRejectedCount: 0,
-          supervisionVotesCount: 0,
-          createdAt: now,
-          updatedAt: now
-        }
-      });
-    }
-
-    const existingLedger = await tx.ledgerBalance.findUnique({ where: { address } });
-    if (!existingLedger) {
-      await tx.ledgerBalance.create({
-        data: {
-          address,
-          available: INITIAL_AGENT_BALANCE,
-          updatedAt: now
-        }
-      });
-    }
+    await ensureAgentAndLedgerWithTx(tx, address, now);
   }
 
   private async appendActivityEventWithTx(
@@ -2268,17 +1287,7 @@ export class PrismaStateRepository {
       createdAt: Date;
     }
   ): Promise<void> {
-    await tx.activityEvent.create({
-      data: {
-        id: nanoid(),
-        type: input.type,
-        cycleId: input.cycleId,
-        taskId: input.taskId,
-        disputeId: input.disputeId,
-        actorAddress: input.actor,
-        createdAt: input.createdAt
-      }
-    });
+    await appendActivityEventWithTx(tx, input);
   }
 
   private async applyProfileDeltaWithTx(
@@ -2297,45 +1306,7 @@ export class PrismaStateRepository {
       supervisionVotes?: number;
     }
   ): Promise<void> {
-    const profile = await tx.agentProfile.findUnique({ where: { address } });
-    if (!profile) {
-      throw new DomainError("AGENT_NOT_FOUND", `Agent ${address} not found`, 404);
-    }
-    const nextPublisherRep = clampReputation(
-      profile.publisherRep + (input.publisherReputationDelta ?? 0)
-    );
-    const nextWorkerRep = clampReputation(profile.workerRep + (input.workerReputationDelta ?? 0));
-    const nextSupervisorRep = clampReputation(
-      profile.supervisorRep + (input.supervisorReputationDelta ?? 0)
-    );
-
-    await tx.agentProfile.update({
-      where: { address },
-      data: {
-        publisherRep: nextPublisherRep,
-        workerRep: nextWorkerRep,
-        supervisorRep: nextSupervisorRep,
-        tasksPublishedCount: {
-          increment: input.tasksPublished ?? 0
-        },
-        tasksAcceptedCount: {
-          increment: input.tasksAccepted ?? 0
-        },
-        tasksCompletedCount: {
-          increment: input.tasksCompleted ?? 0
-        },
-        tasksTerminatedCount: {
-          increment: input.tasksTerminated ?? 0
-        },
-        submissionsRejectedCount: {
-          increment: input.submissionsRejected ?? 0
-        },
-        supervisionVotesCount: {
-          increment: input.supervisionVotes ?? 0
-        },
-        updatedAt: now
-      }
-    });
+    await applyProfileDeltaWithTx(tx, address, now, input);
   }
 
   private getConfirmedSlots(
@@ -2343,289 +1314,14 @@ export class PrismaStateRepository {
     rewardPerSlot: number,
     rewardEscrowRemaining: number
   ): number {
-    if (rewardPerSlot <= 0 || slotsTotal <= 0) {
-      throw new DomainError(
-        "TASK_SETTLEMENT_INVARIANT_BROKEN",
-        "task slot or reward invariant is invalid",
-        500
-      );
-    }
-    const totalEscrow = slotsTotal * rewardPerSlot;
-    if (rewardEscrowRemaining < 0 || rewardEscrowRemaining > totalEscrow) {
-      throw new DomainError(
-        "TASK_ESCROW_INVARIANT_BROKEN",
-        "task escrow remaining is outside allowed bounds",
-        500
-      );
-    }
-    const spent = totalEscrow - rewardEscrowRemaining;
-    if (spent % rewardPerSlot !== 0) {
-      throw new DomainError(
-        "TASK_SETTLEMENT_INVARIANT_BROKEN",
-        "task reward escrow is not aligned to slot reward",
-        500
-      );
-    }
-    const confirmedSlots = Math.floor(spent / rewardPerSlot);
-    if (confirmedSlots < 0 || confirmedSlots > slotsTotal) {
-      throw new DomainError(
-        "TASK_SETTLEMENT_INVARIANT_BROKEN",
-        "confirmed slot count is outside allowed bounds",
-        500
-      );
-    }
-    return confirmedSlots;
+    return getConfirmedSlots(slotsTotal, rewardPerSlot, rewardEscrowRemaining);
   }
 
   private async touchRuntimeStateWithTx(
     tx: Prisma.TransactionClient,
     activeCycleId?: string
   ): Promise<void> {
-    await tx.runtimeState.update({
-      where: { id: RUNTIME_ID },
-      data: {
-        ...(typeof activeCycleId === "string" ? { activeCycleId } : {}),
-        updatedAt: new Date()
-      }
-    });
-  }
-
-  private mapAgentProfile(item: {
-    address: string;
-    name: string;
-    bio: string;
-    publisherRep: number;
-    workerRep: number;
-    supervisorRep: number;
-    tasksPublishedCount: number;
-    tasksAcceptedCount: number;
-    tasksCompletedCount: number;
-    tasksTerminatedCount: number;
-    submissionsRejectedCount: number;
-    supervisionVotesCount: number;
-    createdAt: Date;
-    updatedAt: Date;
-  }): AgentProfile {
-    return {
-      address: asAddress(item.address),
-      name: item.name,
-      bio: item.bio,
-      reputation: {
-        publisher: item.publisherRep,
-        worker: item.workerRep,
-        supervisor: item.supervisorRep
-      },
-      stats: {
-        tasksPublished: item.tasksPublishedCount,
-        tasksAccepted: item.tasksAcceptedCount,
-        tasksCompleted: item.tasksCompletedCount,
-        tasksTerminated: item.tasksTerminatedCount,
-        submissionsRejected: item.submissionsRejectedCount,
-        supervisionVotes: item.supervisionVotesCount
-      },
-      createdAt: toIso(item.createdAt),
-      updatedAt: toIso(item.updatedAt)
-    };
-  }
-
-  private mapLedgerBalance(item: {
-    address: string;
-    available: number;
-    updatedAt: Date;
-  }): LedgerBalance {
-    return {
-      address: asAddress(item.address),
-      available: item.available,
-      updatedAt: toIso(item.updatedAt)
-    };
-  }
-
-  private mapTask(item: {
-    id: string;
-    publisherAddress: string;
-    title: string;
-    descriptionMd: string;
-    acceptanceCriteria: string;
-    status: unknown;
-    deadlineUtc: Date;
-    displayTimezone: string;
-    slotsTotal: number;
-    rewardPerSlot: number;
-    allowRepeatCompletionsBySameAgent: boolean;
-    taxAmount: number;
-    rewardEscrowRemaining: number;
-    acceptedAgents: Prisma.JsonValue;
-    completedAgents: Prisma.JsonValue;
-    createdAt: Date;
-    updatedAt: Date;
-  }): Task {
-    return {
-      id: item.id,
-      publisher: asAddress(item.publisherAddress),
-      title: item.title,
-      descriptionMd: item.descriptionMd,
-      acceptanceCriteria: item.acceptanceCriteria,
-      status: item.status as DomainTaskStatus,
-      deadlineUtc: toIso(item.deadlineUtc),
-      displayTimezone: item.displayTimezone,
-      slotsTotal: item.slotsTotal,
-      rewardPerSlot: item.rewardPerSlot,
-      allowRepeatCompletionsBySameAgent: item.allowRepeatCompletionsBySameAgent,
-      taxAmount: item.taxAmount,
-      rewardEscrowRemaining: item.rewardEscrowRemaining,
-      acceptedAgents: asAddressArray(item.acceptedAgents),
-      completedAgents: asAddressArray(item.completedAgents),
-      createdAt: toIso(item.createdAt),
-      updatedAt: toIso(item.updatedAt)
-    };
-  }
-
-  private mapSubmission(item: {
-    id: string;
-    taskId: string;
-    agentAddress: string;
-    payloadMd: string;
-    status: unknown;
-    createdAt: Date;
-    updatedAt: Date;
-  }): Submission {
-    return {
-      id: item.id,
-      taskId: item.taskId,
-      agent: asAddress(item.agentAddress),
-      payloadMd: item.payloadMd,
-      status: item.status as DomainSubmissionStatus,
-      createdAt: toIso(item.createdAt),
-      updatedAt: toIso(item.updatedAt)
-    };
-  }
-
-  private mapDispute(item: {
-    id: string;
-    taskId: string;
-    submissionId: string;
-    openerAddress: string;
-    reasonMd: string;
-    status: unknown;
-    createdAt: Date;
-    updatedAt: Date;
-  }): Dispute {
-    return {
-      id: item.id,
-      taskId: item.taskId,
-      submissionId: item.submissionId,
-      opener: asAddress(item.openerAddress),
-      reasonMd: item.reasonMd,
-      status: item.status as DomainDisputeStatus,
-      createdAt: toIso(item.createdAt),
-      updatedAt: toIso(item.updatedAt)
-    };
-  }
-
-  private mapVote(item: {
-    id: string;
-    disputeId: string;
-    agentAddress: string;
-    vote: unknown;
-    weightSnapshot: number;
-    createdCycleId: string;
-    createdAt: Date;
-  }): SupervisionVote {
-    return {
-      id: item.id,
-      disputeId: item.disputeId,
-      agent: asAddress(item.agentAddress),
-      vote: item.vote as DomainVoteChoice,
-      weightSnapshot: item.weightSnapshot,
-      createdCycleId: item.createdCycleId,
-      createdAt: toIso(item.createdAt)
-    };
-  }
-
-  private mapCycleWorkload(item: {
-    id: string;
-    cycleId: string;
-    disputeId: string;
-    agentAddress: string;
-    workload: number;
-    createdAt: Date;
-    settledAt: Date | null;
-  }): CycleWorkload {
-    return {
-      id: item.id,
-      cycleId: item.cycleId,
-      disputeId: item.disputeId,
-      agent: asAddress(item.agentAddress),
-      workload: item.workload,
-      createdAt: toIso(item.createdAt),
-      settledAt: item.settledAt ? toIso(item.settledAt) : null
-    };
-  }
-
-  private mapCycle(item: {
-    id: string;
-    status: unknown;
-    mintedAmount: number;
-    taxPool: number;
-    penaltyPool: number;
-    startedAt: Date;
-    closedAt: Date | null;
-  }): Cycle {
-    return {
-      id: item.id,
-      status: item.status as DomainCycleStatus,
-      mintedAmount: item.mintedAmount,
-      taxPool: item.taxPool,
-      penaltyPool: item.penaltyPool,
-      startedAt: toIso(item.startedAt),
-      closedAt: item.closedAt ? toIso(item.closedAt) : null
-    };
-  }
-
-  private mapActivityEvent(item: {
-    id: string;
-    type: unknown;
-    cycleId: string;
-    taskId: string | null;
-    disputeId: string | null;
-    actorAddress: string;
-    createdAt: Date;
-  }): ActivityEvent {
-    return {
-      id: item.id,
-      type: item.type as DomainActivityEventType,
-      cycleId: item.cycleId,
-      taskId: item.taskId,
-      disputeId: item.disputeId,
-      actor: asAddress(item.actorAddress),
-      createdAt: toIso(item.createdAt)
-    };
-  }
-
-  private mapAgentDirectoryItem(item: AgentDirectoryRow): AgentDirectoryItem {
-    return {
-      address: asAddress(item.address),
-      name: item.name,
-      bio: item.bio,
-      reputation: {
-        publisher: item.publisherRep,
-        worker: item.workerRep,
-        supervisor: item.supervisorRep
-      },
-      stats: {
-        tasksPublished: item.tasksPublishedCount,
-        tasksAccepted: item.tasksAcceptedCount,
-        tasksCompleted: item.tasksCompletedCount,
-        tasksTerminated: item.tasksTerminatedCount,
-        submissionsRejected: item.submissionsRejectedCount,
-        supervisionVotes: item.supervisionVotesCount
-      },
-      createdAt: toIso(item.createdAt),
-      updatedAt: toIso(item.updatedAt),
-      latestActivityAt: item.latestActivityAt ? toIso(item.latestActivityAt) : null,
-      score: toNumber(item.score),
-      isActive: item.isActive
-    };
+    await touchRuntimeStateWithTx(tx, RUNTIME_ID, activeCycleId);
   }
 
   private async queryActivityMetrics(whereSql: Prisma.Sql): Promise<DashboardMetricSnapshot> {

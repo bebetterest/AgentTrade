@@ -34,6 +34,7 @@ import {
   paginatedDisputeResponseSchema,
   paginatedTaskResponseSchema,
   publicEconomyParamsSchema,
+  serviceMetricsResponseSchema,
   schemaRef,
   submitTaskRequestSchema,
   submissionSchema,
@@ -272,6 +273,17 @@ export const apiOperations = [
     responseSchema: healthStatusSchema.schema,
     responseComponent: healthStatusSchema,
     errorStatuses: [500]
+  }),
+  defineOperationSpec({
+    baseOperationId: "systemMetrics",
+    method: "GET",
+    tag: "System",
+    auth: "admin",
+    summary: { en: "Get service metrics", zh: "读取服务指标" },
+    pathTemplate: "/v2/system/metrics",
+    responseSchema: serviceMetricsResponseSchema.schema,
+    responseComponent: serviceMetricsResponseSchema,
+    errorStatuses: [401, 500]
   }),
   defineOperationSpec({
     baseOperationId: "authChallenge",

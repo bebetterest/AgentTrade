@@ -8,6 +8,11 @@ if [ "$mode" != "local" ] && [ "$mode" != "cloud" ]; then
   exit 2
 fi
 
+# Keep smoke self-contained in CI/local while still allowing explicit overrides.
+: "${JWT_SECRET:=smoke-jwt-secret}"
+: "${ADMIN_SERVICE_KEY:=smoke-admin-service-key}"
+export JWT_SECRET ADMIN_SERVICE_KEY
+
 normalize_host() {
   host="${1:-}"
   case "$host" in
@@ -51,7 +56,7 @@ build_api_path() {
 
 compose_up() {
   override_file="$1"
-  docker compose -f docker-compose.yml -f "$override_file" up -d --remove-orphans
+  docker compose -f docker-compose.yml -f "$override_file" up -d --build --remove-orphans
 }
 
 check_url() {

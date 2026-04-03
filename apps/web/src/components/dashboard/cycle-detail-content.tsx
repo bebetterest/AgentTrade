@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { CycleRewardsResponse, Dispute } from "@agentrade/types";
 import type { SupportedLocale } from "@agentrade/i18n";
 import { formatDateTime, shortAddress } from "../../lib/dashboard-format";
+import { getDashboardCopy } from "./i18n";
 
 interface CycleDetailContentProps {
   locale: SupportedLocale;
@@ -42,6 +43,7 @@ export const CycleDetailContent = ({
   onOpenAgentDetail,
   getAgentHref
 }: CycleDetailContentProps) => {
+  const copy = getDashboardCopy(locale);
   const { cycle, rewardPool, distributions, workloads } = rewards;
 
   return (
@@ -51,18 +53,18 @@ export const CycleDetailContent = ({
 
       <div className="detail-grid">
         <div className="detail-card">
-          <h4>{locale === "zh" ? "周期概览" : "Cycle Overview"}</h4>
-          <div className="metric-line"><span>{locale === "zh" ? "状态" : "Status"}</span><strong>{cycle.status}</strong></div>
-          <div className="metric-line"><span>{locale === "zh" ? "开始时间" : "Started At"}</span><strong>{formatDateTime(cycle.startedAt, locale, timeZone)}</strong></div>
-          <div className="metric-line"><span>{locale === "zh" ? "关闭时间" : "Closed At"}</span><strong>{cycle.closedAt ? formatDateTime(cycle.closedAt, locale, timeZone) : "-"}</strong></div>
-          <div className="metric-line"><span>{locale === "zh" ? "Mint" : "Mint"}</span><strong>{cycle.mintedAmount} AGC</strong></div>
-          <div className="metric-line"><span>{locale === "zh" ? "税池" : "Tax Pool"}</span><strong>{cycle.taxPool} AGC</strong></div>
-          <div className="metric-line"><span>{locale === "zh" ? "罚没池" : "Penalty Pool"}</span><strong>{cycle.penaltyPool} AGC</strong></div>
-          <div className="metric-line"><span>{locale === "zh" ? "奖励池" : "Reward Pool"}</span><strong>{rewardPool} AGC</strong></div>
+          <h4>{copy.cycleDetail.cycleOverview}</h4>
+          <div className="metric-line"><span>{copy.cycleDetail.status}</span><strong>{cycle.status}</strong></div>
+          <div className="metric-line"><span>{copy.cycleDetail.startedAt}</span><strong>{formatDateTime(cycle.startedAt, locale, timeZone)}</strong></div>
+          <div className="metric-line"><span>{copy.cycleDetail.closedAt}</span><strong>{cycle.closedAt ? formatDateTime(cycle.closedAt, locale, timeZone) : "-"}</strong></div>
+          <div className="metric-line"><span>{copy.cycleDetail.mint}</span><strong>{cycle.mintedAmount} AGC</strong></div>
+          <div className="metric-line"><span>{copy.cycleDetail.taxPool}</span><strong>{cycle.taxPool} AGC</strong></div>
+          <div className="metric-line"><span>{copy.cycleDetail.penaltyPool}</span><strong>{cycle.penaltyPool} AGC</strong></div>
+          <div className="metric-line"><span>{copy.cycleDetail.rewardPool}</span><strong>{rewardPool} AGC</strong></div>
         </div>
 
         <div className="detail-card">
-          <h4>{locale === "zh" ? "奖励分配" : "Distributions"}</h4>
+          <h4>{copy.cycleDetail.distributions}</h4>
           {distributions.length > 0 ? (
             <ul className="detail-list">
               {distributions.map((item) => (
@@ -73,12 +75,12 @@ export const CycleDetailContent = ({
               ))}
             </ul>
           ) : (
-            <p className="empty-line">{locale === "zh" ? "当前周期还没有可分配奖励。" : "No rewards are allocatable for this cycle yet."}</p>
+            <p className="empty-line">{copy.cycleDetail.noDistributions}</p>
           )}
         </div>
       </div>
 
-      <h4>{locale === "zh" ? "争议摘要" : "Dispute Summary"}</h4>
+      <h4>{copy.cycleDetail.disputeSummary}</h4>
       {disputes.length > 0 ? (
         <ul className="detail-list">
           {disputes.map((item) => (
@@ -88,27 +90,27 @@ export const CycleDetailContent = ({
                 <span className="state-chip">{item.status}</span>
               </div>
               <p className="muted">
-                {locale === "zh" ? "发起人" : "Opener"}: {renderAddress(item.opener, onOpenAgentDetail, getAgentHref)}
+                {copy.cycleDetail.opener}: {renderAddress(item.opener, onOpenAgentDetail, getAgentHref)}
               </p>
               <p>{item.reasonMd}</p>
             </li>
           ))}
         </ul>
       ) : (
-        <p className="empty-line">{locale === "zh" ? "当前周期没有争议记录。" : "No disputes are associated with this cycle."}</p>
+        <p className="empty-line">{copy.cycleDetail.noDisputes}</p>
       )}
 
-      <h4>{locale === "zh" ? "原始 workload" : "Raw Workloads"}</h4>
+      <h4>{copy.cycleDetail.rawWorkloads}</h4>
       {workloads.length > 0 ? (
         <div className="table-wrap">
           <table className="data-table">
             <thead>
               <tr>
-                <th>{locale === "zh" ? "Agent" : "Agent"}</th>
-                <th>{locale === "zh" ? "争议" : "Dispute"}</th>
-                <th>{locale === "zh" ? "工作量" : "Workload"}</th>
-                <th>{locale === "zh" ? "创建时间" : "Created At"}</th>
-                <th>{locale === "zh" ? "结算时间" : "Settled At"}</th>
+                <th>{copy.cycleDetail.agent}</th>
+                <th>{copy.cycleDetail.dispute}</th>
+                <th>{copy.cycleDetail.workload}</th>
+                <th>{copy.cycleDetail.createdAt}</th>
+                <th>{copy.cycleDetail.settledAt}</th>
               </tr>
             </thead>
             <tbody>
@@ -125,7 +127,7 @@ export const CycleDetailContent = ({
           </table>
         </div>
       ) : (
-        <p className="empty-line">{locale === "zh" ? "当前周期没有 workload。" : "No workloads are recorded for this cycle."}</p>
+        <p className="empty-line">{copy.cycleDetail.noWorkloads}</p>
       )}
     </div>
   );

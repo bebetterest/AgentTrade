@@ -50,11 +50,18 @@ describe("applyRateLimit hook", () => {
       }
     };
 
-    await handler({ ip: "127.0.0.1" } as never, reply as never);
+    await handler({ ip: "127.0.0.1", id: "request-1" } as never, reply as never);
     expect(status).toBe(429);
     expect(body).toEqual({
-      error: "RATE_LIMITED",
-      message: "too many requests from this IP"
+      error: {
+        code: "RATE_LIMITED",
+        message: "too many requests from this IP",
+        details: {
+          source: "rate-limit"
+        },
+        requestId: "request-1",
+        retryable: true
+      }
     });
   });
 });

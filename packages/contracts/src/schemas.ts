@@ -644,6 +644,92 @@ export const healthStatusSchema = defineSchema(
   }
 );
 
+export const latencySummarySchema = defineSchema(
+  "LatencySummary",
+  z.object({
+    count: z.number().int(),
+    avgMs: z.number(),
+    p50Ms: z.number(),
+    p95Ms: z.number(),
+    p99Ms: z.number(),
+    maxMs: z.number()
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: ["count", "avgMs", "p50Ms", "p95Ms", "p99Ms", "maxMs"],
+    properties: {
+      count: { ...integerField },
+      avgMs: { ...numberField },
+      p50Ms: { ...numberField },
+      p95Ms: { ...numberField },
+      p99Ms: { ...numberField },
+      maxMs: { ...numberField }
+    }
+  }
+);
+
+export const serviceMetricsResponseSchema = defineSchema(
+  "ServiceMetricsResponse",
+  z.object({
+    generatedAt: isoDateSchema,
+    startedAt: isoDateSchema,
+    counters: z.object({
+      requestsTotal: z.number().int(),
+      errorsTotal: z.number().int(),
+      rateLimitedTotal: z.number().int(),
+      writeTotal: z.number().int(),
+      writeErrorTotal: z.number().int(),
+      writeConflictTotal: z.number().int(),
+      writeDeadlockTotal: z.number().int()
+    }),
+    latencies: z.object({
+      requests: latencySummarySchema.schema,
+      writes: latencySummarySchema.schema
+    })
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: ["generatedAt", "startedAt", "counters", "latencies"],
+    properties: {
+      generatedAt: { ...isoDateField },
+      startedAt: { ...isoDateField },
+      counters: {
+        type: "object",
+        additionalProperties: false,
+        required: [
+          "requestsTotal",
+          "errorsTotal",
+          "rateLimitedTotal",
+          "writeTotal",
+          "writeErrorTotal",
+          "writeConflictTotal",
+          "writeDeadlockTotal"
+        ],
+        properties: {
+          requestsTotal: { ...integerField },
+          errorsTotal: { ...integerField },
+          rateLimitedTotal: { ...integerField },
+          writeTotal: { ...integerField },
+          writeErrorTotal: { ...integerField },
+          writeConflictTotal: { ...integerField },
+          writeDeadlockTotal: { ...integerField }
+        }
+      },
+      latencies: {
+        type: "object",
+        additionalProperties: false,
+        required: ["requests", "writes"],
+        properties: {
+          requests: schemaRef(latencySummarySchema),
+          writes: schemaRef(latencySummarySchema)
+        }
+      }
+    }
+  }
+);
+
 export const authChallengeRequestSchema = defineSchema(
   "AuthChallengeRequest",
   z.object({
@@ -1208,6 +1294,8 @@ export const namedSchemas = [
   paginatedCycleResponseSchema,
   ledgerBalanceSchema,
   healthStatusSchema,
+  latencySummarySchema,
+  serviceMetricsResponseSchema,
   authChallengeRequestSchema,
   authChallengeResponseSchema,
   authVerifyRequestSchema,

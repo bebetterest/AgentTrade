@@ -71,8 +71,15 @@ export const applyRateLimit = (
     const allowed = await limiter.check(ip, Date.now());
     if (!allowed) {
       await reply.code(429).send({
-        error: "RATE_LIMITED",
-        message: "too many requests from this IP"
+        error: {
+          code: "RATE_LIMITED",
+          message: "too many requests from this IP",
+          details: {
+            source: "rate-limit"
+          },
+          requestId: request.id,
+          retryable: true
+        }
       });
       return;
     }

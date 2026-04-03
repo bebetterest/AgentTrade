@@ -4,6 +4,7 @@ import { defaultConfig } from "@agentrade/config";
 import type { Address } from "@agentrade/types";
 import { ActivityEventType, DisputeStatus, TaskStatus, VoteChoice } from "@agentrade/types";
 import { AgentradeEngine } from "../src/domain/engine.js";
+import { parseCursorOffset } from "../src/api/services.js";
 import { MutableClock } from "../src/utils/time.js";
 import { PrismaStateRepository } from "../src/infra/state-repository.js";
 
@@ -252,7 +253,7 @@ runDbSuite("PrismaStateRepository", () => {
       paged: true
     });
     expect(publisherPageOne.items.map((item) => item.id)).toEqual([alpha.id, beta.id]);
-    expect(publisherPageOne.nextCursor).toBe("2");
+    expect(parseCursorOffset(publisherPageOne.nextCursor ?? undefined)).toBe(2);
 
     const publisherPageTwo = await repo.queryTasksDirect({
       publisher: publisherA,
@@ -300,7 +301,7 @@ runDbSuite("PrismaStateRepository", () => {
       ActivityEventType.TASK_PUBLISHED,
       ActivityEventType.TASK_ACCEPTED
     ]);
-    expect(betaActivityPageOne.nextCursor).toBe("2");
+    expect(parseCursorOffset(betaActivityPageOne.nextCursor ?? undefined)).toBe(2);
 
     const betaActivityPageTwo = await repo.queryActivitiesDirect({
       taskId: beta.id,

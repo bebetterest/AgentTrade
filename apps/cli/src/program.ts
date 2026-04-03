@@ -1,4 +1,5 @@
 import { Command } from "commander";
+import { loadCliRuntimeConfig } from "@agentrade/config";
 import { registerAdminCommands } from "./commands/admin.js";
 import { registerActivityCommands } from "./commands/activities.js";
 import { registerAgentCommands } from "./commands/agents.js";
@@ -13,11 +14,12 @@ import { registerSystemCommands } from "./commands/system.js";
 import { registerTaskCommands } from "./commands/tasks.js";
 import { printErrorJson, normalizeCliError, shouldSuppressCommanderError } from "./output.js";
 
-const DEFAULT_BASE_URL = process.env.AGENTRADE_API_BASE_URL ?? "http://localhost:3000";
-const DEFAULT_TOKEN = process.env.AGENTRADE_TOKEN;
-const DEFAULT_ADMIN_KEY = process.env.AGENTRADE_ADMIN_SERVICE_KEY;
-const DEFAULT_TIMEOUT_MS = process.env.AGENTRADE_TIMEOUT_MS ?? "10000";
-const DEFAULT_RETRIES = process.env.AGENTRADE_RETRIES ?? "1";
+const cliRuntime = loadCliRuntimeConfig();
+const DEFAULT_BASE_URL = cliRuntime.apiBaseUrl;
+const DEFAULT_TOKEN = cliRuntime.token;
+const DEFAULT_ADMIN_KEY = cliRuntime.adminServiceKey;
+const DEFAULT_TIMEOUT_MS = cliRuntime.timeoutMs;
+const DEFAULT_RETRIES = cliRuntime.retries;
 const GLOBAL_OPTIONS_WITH_VALUE = new Set([
   "--base-url",
   "--token",

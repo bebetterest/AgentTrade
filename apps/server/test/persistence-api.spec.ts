@@ -5,6 +5,7 @@ import type { Address } from "@agentrade/types";
 import { VoteChoice } from "@agentrade/types";
 import { defaultConfig } from "@agentrade/config";
 import { buildApp } from "../src/app.js";
+import { parseCursorOffset } from "../src/api/services.js";
 import { PrismaStateRepository } from "../src/infra/state-repository.js";
 import { AgentradeEngine } from "../src/domain/engine.js";
 
@@ -921,7 +922,7 @@ runDbSuite("API persistence mode", () => {
       nextCursor: string | null;
     };
     expect(tasksPageOne.items.map((item) => item.id)).toEqual([delta.id, beta.id]);
-    expect(tasksPageOne.nextCursor).toBe("2");
+    expect(parseCursorOffset(tasksPageOne.nextCursor ?? undefined)).toBe(2);
 
     const tasksPageTwoRes = await app!.inject({
       method: "GET",
@@ -970,7 +971,7 @@ runDbSuite("API persistence mode", () => {
       "TASK_PUBLISHED",
       "TASK_ACCEPTED"
     ]);
-    expect(activitiesPageOne.nextCursor).toBe("2");
+    expect(parseCursorOffset(activitiesPageOne.nextCursor ?? undefined)).toBe(2);
 
     const activitiesPageTwoRes = await app!.inject({
       method: "GET",
@@ -1043,5 +1044,69 @@ runDbSuite("API persistence mode", () => {
     expect(trends.points.reduce((sum, item) => sum + item.tasksAccepted, 0)).toBe(2);
     expect(trends.points.reduce((sum, item) => sum + item.tasksCompleted, 0)).toBe(1);
     expect(trends.points.reduce((sum, item) => sum + item.disputesOpened, 0)).toBe(1);
+  });
+
+  it("keeps keyset cursor pagination stable after inserts while accepting legacy offset cursors", async () => {
+    const publisher = addr("p-keyset-stable");
+    const createTask = async (title: string, rewardPerSlot: number): Promise<string> => {
+      const res = await app!.inject({
+        method: "POST",
+        url: "/v2/tasks",
+        headers: { authorization: `Bearer ${bearer(publisher)}` },
+        payload: {
+          title,
+          descriptionMd: "desc",
+          acceptanceCriteria: "ok",
+          deadlineUtc: futureDeadline(),
+          displayTimezone: "UTC",
+          slotsTotal: 1,
+          rewardPerSlot,
+          allowRepeatCompletionsBySameAgent: false
+        }
+      });
+      expect(res.statusCode).toBe(200);
+      return (res.json() as { id: string }).id;
+    };
+
+    const lowReward = await createTask("stable-low", 10);
+    const midReward = await createTask("stable-mid", 20);
+    const highReward = await createTask("stable-high", 30);
+
+    const pageOneRes = await app!.inject({
+      method: "GET",
+      url: `/v2/tasks?publisher=${publisher}&sort=reward&order=desc&limit=2`
+    });
+    expect(pageOneRes.statusCode).toBe(200);
+    const pageOne = pageOneRes.json() as {
+      items: Array<{ id: string }>;
+      nextCursor: string | null;
+    };
+    expect(pageOne.items.map((item) => item.id)).toEqual([highReward, midReward]);
+    expect(pageOne.nextCursor).not.toBeNull();
+    expect(parseCursorOffset(pageOne.nextCursor ?? undefined)).toBe(2);
+
+    await createTask("stable-new-top", 100);
+
+    const keysetPageTwoRes = await app!.inject({
+      method: "GET",
+      url: `/v2/tasks?publisher=${publisher}&sort=reward&order=desc&limit=2&cursor=${pageOne.nextCursor}`
+    });
+    expect(keysetPageTwoRes.statusCode).toBe(200);
+    const keysetPageTwo = keysetPageTwoRes.json() as {
+      items: Array<{ id: string }>;
+      nextCursor: string | null;
+    };
+    expect(keysetPageTwo.items.map((item) => item.id)).toEqual([lowReward]);
+    expect(keysetPageTwo.nextCursor).toBeNull();
+
+    const legacyPageTwoRes = await app!.inject({
+      method: "GET",
+      url: `/v2/tasks?publisher=${publisher}&sort=reward&order=desc&limit=2&cursor=2`
+    });
+    expect(legacyPageTwoRes.statusCode).toBe(200);
+    const legacyPageTwo = legacyPageTwoRes.json() as {
+      items: Array<{ id: string }>;
+    };
+    expect(legacyPageTwo.items.some((item) => item.id === lowReward)).toBe(true);
   });
 });

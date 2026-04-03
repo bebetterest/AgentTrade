@@ -6,6 +6,16 @@ import { ActivityEventType, type ActivityEvent, type Address, type AgentProfile,
 import type { AppConfig } from "@agentrade/config";
 import type { AgentradeEngine } from "../domain/engine.js";
 import type { PrismaStateRepository, PersistenceMutationScope } from "../infra/state-repository.js";
+import type { ServiceMetricsCollector } from "../observability/metrics.js";
+import {
+  clampPageLimit,
+  encodeKeysetCursor,
+  nextCursorOffset,
+  parseCursorOffset,
+  parseListCursor,
+  type CursorValues,
+  type SortOrder
+} from "../pagination/cursor.js";
 
 export interface AuthChallenge {
   address: Address;
@@ -17,13 +27,16 @@ export interface AuthChallenge {
 export interface AppServices {
   config: AppConfig;
   stateRepository: PrismaStateRepository | null;
+  metrics: ServiceMetricsCollector;
   challenges: Map<string, AuthChallenge>;
+  writeMeta(input: { operation: string; actor?: Address; cycleId?: string }): WriteOperationMeta;
   read<T>(operation: (engine: AgentradeEngine) => T | Promise<T>): Promise<T>;
   mutate<T>(
     operation: (engine: AgentradeEngine) => T | Promise<T>,
-    scope?: PersistenceMutationScope[]
+    scope?: PersistenceMutationScope[],
+    meta?: WriteOperationMeta
   ): Promise<T>;
-  mutateDirect<T>(operation: () => Promise<T>): Promise<T>;
+  mutateDirect<T>(operation: () => Promise<T>, meta?: WriteOperationMeta): Promise<T>;
   readTasks(): Promise<Task[]>;
   readDisputes(): Promise<Dispute[]>;
   readAgents(): Promise<AgentProfile[]>;
@@ -31,6 +44,12 @@ export interface AppServices {
   readActiveCycle(): Promise<Cycle>;
   defaultAgentProfile(address: Address): AgentProfile;
   defaultLedger(address: Address): LedgerBalance;
+}
+
+export interface WriteOperationMeta {
+  operation: string;
+  actor?: Address;
+  cycleId?: string;
 }
 
 export const isAddress = (value: string): value is Address => isEvmAddress(value);
@@ -76,30 +95,48 @@ export const countMetrics = (events: ActivityEvent[]): DashboardMetricSnapshot =
   return metrics;
 };
 
-export const parseCursorOffset = (cursor: string | undefined): number => {
-  if (!cursor) {
-    return 0;
-  }
-  const value = Number(cursor);
-  if (!Number.isSafeInteger(value) || value < 0) {
-    throw new z.ZodError([
-      {
-        code: z.ZodIssueCode.custom,
-        message: "cursor must be a non-negative integer string",
-        path: ["cursor"]
-      }
-    ]);
-  }
-  return value;
-};
+export { parseCursorOffset };
 
-export const paginateItems = <T>(items: T[], cursor: string | undefined, limit: number) => {
-  const offset = parseCursorOffset(cursor);
-  const boundedLimit = Math.max(1, Math.min(100, limit));
-  const page = items.slice(offset, offset + boundedLimit);
-  const nextOffset = offset + page.length;
-  const nextCursor = nextOffset < items.length ? String(nextOffset) : null;
-  return { items: page, nextCursor };
+export const paginateItemsByCursor = <T>(
+  items: T[],
+  input: {
+    cursor: string | undefined;
+    limit: number;
+    resource: string;
+    sort?: string;
+    order?: SortOrder;
+    toCursorValues: (item: T) => CursorValues;
+    compareAfterCursor: (item: T, cursorValues: CursorValues) => number;
+  }
+) => {
+  const parsed = parseListCursor(input.cursor, {
+    resource: input.resource,
+    sort: input.sort,
+    order: input.order
+  });
+  const boundedLimit = clampPageLimit(input.limit);
+  const startIndex =
+    parsed.mode === "legacy-offset"
+      ? Math.min(parsed.offset, items.length)
+      : parsed.mode === "keyset"
+        ? items.findIndex((item) => input.compareAfterCursor(item, parsed.values) > 0)
+        : 0;
+  const normalizedStart = startIndex < 0 ? items.length : startIndex;
+  const pageWithSentinel = items.slice(normalizedStart, normalizedStart + boundedLimit + 1);
+  const hasMore = pageWithSentinel.length > boundedLimit;
+  const pageItems = hasMore ? pageWithSentinel.slice(0, boundedLimit) : pageWithSentinel;
+  const nextCursor =
+    hasMore && pageItems.length > 0
+      ? encodeKeysetCursor({
+          resource: input.resource,
+          sort: input.sort,
+          order: input.order,
+          offset: nextCursorOffset(parsed, pageItems.length),
+          values: input.toCursorValues(pageItems[pageItems.length - 1] as T)
+        })
+      : null;
+
+  return { items: pageItems, nextCursor };
 };
 
 export const toAgentScore = (profile: AgentProfile): number => {

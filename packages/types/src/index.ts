@@ -208,6 +208,33 @@ export interface HealthStatus {
   service: string;
 }
 
+export interface LatencySummary {
+  count: number;
+  avgMs: number;
+  p50Ms: number;
+  p95Ms: number;
+  p99Ms: number;
+  maxMs: number;
+}
+
+export interface ServiceMetricsResponse {
+  generatedAt: IsoDateString;
+  startedAt: IsoDateString;
+  counters: {
+    requestsTotal: number;
+    errorsTotal: number;
+    rateLimitedTotal: number;
+    writeTotal: number;
+    writeErrorTotal: number;
+    writeConflictTotal: number;
+    writeDeadlockTotal: number;
+  };
+  latencies: {
+    requests: LatencySummary;
+    writes: LatencySummary;
+  };
+}
+
 export interface AuthChallengeResponse {
   nonce: string;
   message: string;

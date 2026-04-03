@@ -2,6 +2,26 @@
 
 ## 2026-04-03
 
+- 已将限流失败响应统一到 v2 错误包络（`error.code/message/details/requestId/retryable`），移除最后一处遗留 `{ error, message }` 返回分支。
+- 已新增管理员只读运维指标接口（`GET /v2/system/metrics`），并补齐基础结构化可观测字段：
+  - 请求日志：`requestId`、`method`、`path`、`status`、`durationMs`、`routeId`；
+  - 写路径日志：`operation`、`actor`、`cycleId`、`retryCount`、`conflictOrDeadlock`、`outcome`；
+  - 进程内请求/写入计数与延迟摘要聚合。
+- 已将分页 `nextCursor` 输出升级为不透明 token，同时保留旧数字 offset 游标输入兼容，支持平滑迁移。
+- 已修复 Docker server 健康检查目标：从旧 `/health` 切换为 `/v2/system/health`，并扩展 CI：
+  - 在 `quality` 作业纳入 web unit；
+  - 新增 local/cloud 两条 Docker smoke 作业。
+- 已将 CLI/Web 运行时默认环境读取收敛到 `packages/config`，减少分散 `process.env` 入口。
+- 已新增 Prisma 非破坏索引优化，覆盖高频列表排序路径（`Task`、`Dispute`、`Cycle`、`ActivityEvent`）。
+- 已完成 Web dashboard 可维护性拆分：
+  - 顶层 dashboard 已拆为状态/数据编排层（`components/dashboard.tsx`）与展示层（`components/dashboard/dashboard-view.tsx`）；
+  - dashboard 中英文文案已统一收敛到字典（`components/dashboard/i18n.ts`）；
+  - dashboard 组件内联 `locale === "zh"` 分支已移除。
+- 已继续推进 `state-repository` 模块化：将通用事务辅助（运行时加锁、资料增量更新、活动写入、槽位/托管不变量校验、运行时 touch）提取到 `state-repository-tx-helpers.ts`。
+- 已将读侧直查基础能力（tasks/disputes/agents/activities/cycles/ledger/active-cycle 的 direct list/get）提取到 `state-repository-read-helpers.ts`，并保持仓储对外方法签名不变。
+- 已启动写命令拆分：将资料 patch 的事务写编排提取到 `state-repository-write-helpers.ts`，保持 API/仓储行为不变。
+- 已将分页读查询实现（`tasks/disputes/agents/activities/cycles` 的 keyset 与旧 cursor 兼容逻辑）提取到 `state-repository-query-helpers.ts`，保持查询契约与 cursor 行为不变。
+
 - 已完成第二阶段产品收口，覆盖持久化门禁与 Web 读面：
   - 修复 `ActivityEvent` -> `AgentProfile` 依赖下的 DB reset 清理顺序，
   - 统一 `RuntimeState` 优先锁序与事务内 revision 更新时间，
@@ -147,3 +167,51 @@
 - 已强化 CLI 持久化压力测试隔离性：改为每次运行使用唯一测试地址，消除“重复执行依赖初始清洁余额/状态”的隐式前提。
 - 已在真实 Postgres（`TEST_DATABASE_URL`）下完成 CLI 全量复验：`npm --prefix apps/cli test` 38/38 全通过，持久化用例全部启用且无 skip。
 - 已新增独立 CI 作业 `cli-full-regression`：在 DB 环境下连续两轮执行完整 CLI 测试（`pnpm --filter @agentrade/cli test`），用于捕获状态泄漏与偶发抖动。
+
+## 2026-04-03
+
+- 完成 `/v2` 契约收敛与可运维基线接口：
+  - 将 `429` 统一为 v2 错误包络（`{ error: { code, message, details, requestId, retryable } }`）；
+  - 新增管理员只读 `GET /v2/system/metrics`；
+  - 同步补齐 SDK/contract/schema/type 的 metrics 响应定义。
+- 完成服务端请求级与写路径可观测性基线：
+  - 请求结构化日志（`requestId/method/path/status/durationMs/routeId`）；
+  - 写路径结构化日志（`operation/actor/cycleId/retryCount/conflictOrDeadlock/outcome`）；
+  - 进程内计数器与延迟摘要通过 `/v2/system/metrics` 对外暴露。
+- 将 tasks/disputes/activities/agents/cycles 分页升级为不透明 keyset 游标：
+  - 新增统一 cursor 编解码/解析工具；
+  - 持久化 DB 读路径切换为 keyset 谓词查询（同时兼容旧数字/offset cursor 输入）；
+  - 内存读路径同步到同一不透明 cursor 包络与排序语义。
+- 新增分页回归：覆盖“中途插入新数据时 keyset 连页稳定”与“旧 cursor 兼容读取”。
+- 加固 Docker 交付链路：
+  - 修复 server/web Dockerfile：补齐 filtered install 所需 runtime-check 脚本与 workspace 包清单；
+  - server 运行镜像改为携带构建后的 workspace 包（`config/contracts/types`）；
+  - compose 健康检查统一为 `/v2/system/health`；
+  - smoke 流程默认注入非占位 smoke 密钥，避免占位密钥导致启动失败。
+- 完成全链路复验：
+  - `check:fast`；
+  - `docker:test:db`；
+  - `docker:test:stress`；
+  - `docker:test:cli:persistence`（按共享 DB 约束串行复跑）；
+  - `docker:smoke:local`；
+  - `docker:smoke:cloud`。
+- 持续推进仓储写命令模块化拆分：
+  - 已将 `publishTask`、`terminateTask`、`openDispute`、`confirmSubmission`、`voteDispute` 抽取到 `state-repository-write-helpers`；
+  - `PrismaStateRepository` 现已通过 helper 模块委托主要 task/submission/dispute/vote 写路径，同时保持锁序与领域不变量。
+- 在第二轮写 helper 抽取后再次执行全量验收：
+  - `check:fast`；
+  - `docker:test:db`；
+  - `docker:test:stress`；
+  - `docker:test:cli:persistence`；
+  - `docker:smoke:local`；
+  - `docker:smoke:cloud`。
+- 完成管理员周期相关剩余写命令抽取：
+  - 已将 `closeCurrentCycle` 与 `overrideDispute` 命令体迁移至 `state-repository-write-helpers`；
+  - 通过显式事务依赖注入（`confirmSubmissionInternal`、`evaluateDispute`、`finalizeDisputeOutcome`、`nextCycleId`）保持锁序与结算/争议不变量不变。
+- 在管理员周期写路径抽取后再次执行全量验收：
+  - `check:fast`；
+  - `docker:test:db`；
+  - `docker:test:stress`；
+  - `docker:test:cli:persistence`；
+  - `docker:smoke:local`；
+  - `docker:smoke:cloud`。

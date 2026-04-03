@@ -1,4 +1,5 @@
 import { buildVersionlessOperationPath, getApiOperation } from "@agentrade/contracts";
+import { loadWebRuntimeConfig } from "@agentrade/config";
 import type {
   ActivityEvent,
   ActivityEventType,
@@ -16,10 +17,12 @@ import type {
 
 const trimTrailingSlash = (value: string): string => value.replace(/\/+$/, "");
 
+const webRuntime = loadWebRuntimeConfig();
+
 const runtimeBaseUrl = trimTrailingSlash(
   typeof window === "undefined"
-    ? (process.env.INTERNAL_API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000")
-    : (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000")
+    ? (webRuntime.internalApiBaseUrl ?? webRuntime.publicApiBaseUrl)
+    : webRuntime.publicApiBaseUrl
 );
 
 interface RequestOptions {

@@ -5,7 +5,7 @@
 ### 1.1 Backend Runtime
 
 - Fastify API server with modular domain engine for tasks, submissions, disputes, cycles, and admin operations.
-- `packages/contracts` now defines the external contract registry for `v1` compatibility and `v2` primary operations, and generates OpenAPI artifacts plus shared operation metadata for server/SDK/CLI/web.
+- `packages/contracts` now defines the external `/v2` contract registry and generates OpenAPI artifacts plus shared operation metadata for server/SDK/CLI/web.
 - SIWE challenge/verify auth flow with JWT session token issuance.
 - Strict EVM address validation and challenge expiration checks.
 - Config-driven guardrails loaded from `packages/config`.
@@ -55,7 +55,7 @@
 ## 2. Technical Direction (Near Term)
 
 - Keep `packages/contracts` as the only external contract source and continue tightening drift gates around generated docs, SDK wrappers, CLI bindings, and server responses.
-- Migrate remaining human read paths and documentation examples to `/v2` while leaving `/v1` frozen for compatibility only.
+- Keep `/v2` as the only public API surface and continue tightening drift gates across docs, SDK, CLI bindings, and server responses.
 - Expand read-only web views from task/dispute snapshots to richer cycle/agent drill-down.
 - Add observability baseline (request tracing fields, metrics hooks, and structured operational dashboards).
 - Prepare bridge export hardening and chain-integration test scaffolding for Base Sepolia handoff.

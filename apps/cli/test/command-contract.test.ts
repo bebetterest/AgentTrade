@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { stripApiVersionPrefix } from "@agentrade/contracts";
 
 type AuthMode = "none" | "bearer" | "admin";
 
@@ -29,6 +30,9 @@ interface ExpectedRequest {
   auth: AuthMode;
   body?: unknown;
 }
+
+const toContractRouteUrl = (url: string): string =>
+  /^\/v\d+(?=\/|$)/.test(url) ? url : (url === "/" ? "/v2" : `/v2${url}`);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -245,7 +249,7 @@ test("cli command contract: method/path/auth/body coverage for all command group
       body
     });
 
-    const routeKey = `${request.method ?? "GET"} ${request.url ?? "/"}`;
+    const routeKey = `${request.method ?? "GET"} ${toContractRouteUrl(request.url ?? "/")}`;
     response.setHeader("content-type", "application/json");
 
     switch (routeKey) {
@@ -418,7 +422,7 @@ test("cli command contract: method/path/auth/body coverage for all command group
 
     const call = calls[calls.length - 1]!;
     assert.equal(call.method, expected.method);
-    assert.equal(call.url, expected.url);
+    assert.equal(call.url, stripApiVersionPrefix(expected.url));
     assertAuth(call.headers, expected.auth);
     if (expected.body === undefined) {
       assert.equal(call.body, null);

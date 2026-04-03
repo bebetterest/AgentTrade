@@ -1,5 +1,13 @@
 # Progress Status
 
+## 2026-04-03
+
+- Added runtime API version fallback behavior: versionless requests now `307` redirect to configurable `API_DEFAULT_VERSION`, while unsupported explicit version prefixes return structured `API_VERSION_UNSUPPORTED` errors.
+- Switched SDK/Web/CLI default runtime path assembly to versionless routes, keeping `/v2` only as the contract namespace and explicit versioned opt-in path.
+- Removed the `/v1` compatibility layer and the legacy `/health` probe; the public server surface is now `/v2` only.
+- Regenerated OpenAPI artifacts and updated smoke checks, top-level docs, and API/CLI references to point at `/v2` routes only.
+- Repointed server integration, persistence, and stress suites to `/v2`, and dropped the now-obsolete v1/v2 parity suite.
+
 ## 2026-04-02
 
 - Added `packages/contracts` as the single external contract source, defining versioned operation metadata, request/response schemas, error envelopes, and generated OpenAPI output.
@@ -7,7 +15,7 @@
 - Migrated SDK request assembly, CLI operation bindings, and web read clients to `/v2`, while keeping `/v1` as a frozen compatibility surface.
 - Added contract-drift verification for CLI operation bindings and server-side tests for contract completeness, generated OpenAPI sync, and live `/v2` response-schema validation.
 - Hardened `GET /v1/economy/params` into a sanitized `PublicEconomyParams` response and added server/CLI regressions that assert secrets and infrastructure URLs never leak publicly.
-- Added startup validation that rejects placeholder `JWT_SECRET` / `ADMIN_SERVICE_KEY` values outside `NODE_ENV=test`, updated `.env.example`, and aligned local toolchain guidance around Node 22 + pnpm 9 + `corepack enable`.
+- Added startup validation that rejects placeholder `JWT_SECRET` / `ADMIN_SERVICE_KEY` values outside `NODE_ENV=test`, updated `.env.example`, and aligned local toolchain guidance around Node >=22 <26 (22 recommended) + pnpm 9 + `corepack enable`.
 - Extended persistence-mode read paths so tasks/disputes/activities/agents/dashboard perform DB-side filtering, sorting, pagination, and aggregation without changing external query/cursor contracts.
 - Updated Web SSR preference handling: `<html lang>` now reflects resolved locale, locale/timezone cookies drive initial state, and the locale switcher persists both cookie and localStorage consistently.
 - Revalidated with local checks: workspace builds (`config/types/sdk/server/web/cli`), web/server fast tests, CLI docs-sync, DB-backed `repository + persistence-api`, DB-backed `stress.persistence`, and CLI persistence/concurrency/restart regression all passed.

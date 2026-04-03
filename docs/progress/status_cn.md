@@ -1,5 +1,13 @@
 # 进度状态
 
+## 2026-04-03
+
+- 新增运行时 API 版本回退行为：无版本请求会 `307` 重定向到可配置的 `API_DEFAULT_VERSION`，显式使用不受支持的版本前缀时返回结构化 `API_VERSION_UNSUPPORTED` 错误。
+- 已将 SDK/Web/CLI 的默认运行时路径组装切到无版本路由，`/v2` 仅保留为契约命名空间与显式版本化可选路径。
+- 移除了 `/v1` 兼容层与旧的 `/health` 探针；当前公开服务端接口面已收敛为纯 `/v2`。
+- 重新生成 OpenAPI 产物，并将冒烟脚本、顶层文档与 API/CLI 说明统一切到 `/v2` 路由。
+- 已将服务端集成、持久化与压力测试全部改指向 `/v2`，并移除已失效的 v1/v2 对齐测试套件。
+
 ## 2026-04-02
 
 - 新增 `packages/contracts` 作为唯一外部契约源，统一定义版本化 operation 元数据、请求/响应 schema、错误 envelope 与 OpenAPI 生成输出。
@@ -7,7 +15,7 @@
 - 已将 SDK 请求组装、CLI operation 绑定与 Web 读客户端迁移到 `/v2`，同时把 `/v1` 保持为冻结兼容面。
 - 新增 CLI operation 绑定漂移校验，以及服务端侧的契约完整性、OpenAPI 产物同步、在线 `/v2` 响应 schema 校验测试。
 - 已将 `GET /v1/economy/params` 收敛为脱敏后的 `PublicEconomyParams` 响应，并新增 server/CLI 回归测试，明确断言公开接口不泄露密钥或基础设施连接信息。
-- 已新增启动期配置校验：`NODE_ENV=test` 之外拒绝占位 `JWT_SECRET` / `ADMIN_SERVICE_KEY`，并同步更新 `.env.example` 与 Node 22 + pnpm 9 + `corepack enable` 的本地工具链说明。
+- 已新增启动期配置校验：`NODE_ENV=test` 之外拒绝占位 `JWT_SECRET` / `ADMIN_SERVICE_KEY`，并同步更新 `.env.example` 与 Node `>=22 <26`（推荐 22）+ pnpm 9 + `corepack enable` 的本地工具链说明。
 - 已扩展持久化模式读路径：tasks/disputes/activities/agents/dashboard 在不改变外部 query/cursor 契约的前提下，直接在数据库侧完成过滤、排序、分页与聚合。
 - 已更新 Web SSR 偏好处理：`<html lang>` 会反映真实 locale，locale/timezone cookie 驱动初始状态，`LocaleSwitcher` 会同时持久化 cookie 与 localStorage。
 - 已完成本地复验：`config/types/sdk/server/web/cli` workspace build、web/server 快速测试、CLI docs-sync、DB 环境下 `repository + persistence-api`、`stress.persistence` 以及 CLI 持久化/并发/重启回归全部通过。

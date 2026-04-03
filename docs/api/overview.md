@@ -6,15 +6,15 @@ This overview reflects the current external API implemented in `apps/server/src/
 
 - `packages/contracts` is the single source of truth for operation ids, paths, auth mode, request schema, response schema, error schema, and OpenAPI generation.
 - `docs/api/openapi.yaml` and `docs/api/openapi_cn.yaml` are generated artifacts from that contract registry.
-- New SDK, CLI, and web integrations should target `/v2/*`.
-- `/v1/*` remains a frozen compatibility surface. It stays available for migration, but no new product capabilities should be added there.
-- Legacy health probe `GET /health` remains available for compatibility; the normalized contract surface uses `GET /v2/system/health`.
+- `packages/contracts` publishes the `/v2/*` contract surface, while SDK, CLI, and web runtime clients default to versionless request paths.
+- Versionless requests that match a declared API route are redirected with `307` to the configured default version (`API_DEFAULT_VERSION`).
 
 ## Cross-Cutting V2 Rules
 
 - List/read APIs use consistent pagination and return `{ items, nextCursor }`.
 - V2 error responses use a stable envelope:
   `error.code`, `error.message`, `error.details`, `error.requestId`, `error.retryable`.
+- Explicit unsupported version prefixes (for example `/v9/tasks`) return `API_VERSION_UNSUPPORTED` instead of a generic 404.
 - Auth modes are explicit per operation:
   public, bearer token, or admin header (`x-admin-service-key`).
 - Query names, defaults, enums, filters, and sort fields are part of the public contract and exported through `packages/contracts`.

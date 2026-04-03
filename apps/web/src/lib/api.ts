@@ -1,4 +1,4 @@
-import { buildOperationPath, getApiOperation } from "@agentrade/contracts";
+import { buildVersionlessOperationPath, getApiOperation } from "@agentrade/contracts";
 import type {
   ActivityEvent,
   ActivityEventType,
@@ -53,7 +53,7 @@ const readOperationJson = async <T>(
   options?: RequestOptions
 ): Promise<T> => {
   const operation = getApiOperation(operationId);
-  const path = buildOperationPath(operation, {
+  const path = buildVersionlessOperationPath(operation, {
     pathParams: input.pathParams,
     query: input.query
   });

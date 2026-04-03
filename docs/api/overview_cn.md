@@ -6,15 +6,15 @@
 
 - `packages/contracts` 是唯一外部契约来源，统一定义 operationId、路径、鉴权模式、请求 schema、响应 schema、错误 schema 与 OpenAPI 生成。
 - `docs/api/openapi.yaml` 与 `docs/api/openapi_cn.yaml` 由该契约层生成。
-- 新的 SDK、CLI 与 Web 集成统一面向 `/v2/*`。
-- `/v1/*` 保留为冻结兼容面，迁移期继续可用，但不再承载新增产品能力。
-- 兼容性健康检查 `GET /health` 继续保留；规范化契约入口为 `GET /v2/system/health`。
+- `packages/contracts` 发布 `/v2/*` 契约面，而 SDK、CLI 与 Web 的运行时客户端默认使用无版本请求路径。
+- 命中已声明 API 路径的无版本请求会通过 `307` 重定向到配置的默认版本（`API_DEFAULT_VERSION`）。
 
 ## V2 通用规则
 
 - 列表/查询接口统一返回 `{ items, nextCursor }` 分页 envelope。
 - V2 错误响应统一为稳定 envelope：
   `error.code`、`error.message`、`error.details`、`error.requestId`、`error.retryable`。
+- 显式使用不受支持的版本前缀（例如 `/v9/tasks`）时，会返回 `API_VERSION_UNSUPPORTED`，而不是泛化 404。
 - 每个 operation 明确声明鉴权模式：
   public、bearer token 或管理员请求头（`x-admin-service-key`）。
 - query 名称、默认值、枚举、过滤器与排序字段都进入公开契约，并由 `packages/contracts` 导出。

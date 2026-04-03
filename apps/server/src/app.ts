@@ -3,6 +3,7 @@ import cors from "@fastify/cors";
 import jwt from "jsonwebtoken";
 import { z } from "zod";
 import { loadConfig } from "@agentrade/config";
+import { supportedApiVersions } from "@agentrade/contracts";
 import { type ActivityEvent, type Address, type AgentProfile, type Cycle, type Dispute, type LedgerBalance, type Task } from "@agentrade/types";
 import { AgentradeEngine, INITIAL_AGENT_BALANCE } from "./domain/engine.js";
 import { DomainError } from "./domain/errors.js";
@@ -18,17 +19,24 @@ import { registerAuthRoutes } from "./api/auth.js";
 import { registerDisputeRoutes } from "./api/disputes.js";
 import {
   isAddress,
-  isV2Request,
   toV2ErrorEnvelope,
   type AppServices
 } from "./api/services.js";
 import { registerSystemRoutes } from "./api/system.js";
 import { registerTaskRoutes } from "./api/tasks.js";
+import {
+  assertSupportedApiDefaultVersion,
+  findUnsupportedApiVersion,
+  formatUnsupportedApiVersionMessage,
+  getRequestPathname,
+  resolveVersionlessApiRedirect
+} from "./api/versioning.js";
 import { HttpError } from "./utils/http-error.js";
 import "./types.js";
 
 export const buildApp = async () => {
   const config = loadConfig();
+  assertSupportedApiDefaultVersion(config);
   const app = Fastify({ logger: !process.env.VITEST });
   const limiter = await createRateLimiter(config, app.log);
   const stateRepository = config.enablePersistence ? new PrismaStateRepository(config.databaseUrl) : null;
@@ -252,44 +260,68 @@ export const buildApp = async () => {
   });
 
   app.setErrorHandler((error, request, reply) => {
-    const isV2 = isV2Request(request);
     if (error instanceof DomainError) {
-      if (isV2) {
-        reply.code(error.statusCode).send(
-          toV2ErrorEnvelope(error.statusCode, error.code, error.message, request.id)
-        );
-        return;
-      }
-      reply.code(error.statusCode).send({ error: error.code, message: error.message });
-      return;
-    }
-    if (error instanceof HttpError) {
-      if (isV2) {
-        reply.code(error.statusCode).send(
-          toV2ErrorEnvelope(error.statusCode, "HTTP_ERROR", error.message, request.id)
-        );
-        return;
-      }
-      reply.code(error.statusCode).send({ error: "HTTP_ERROR", message: error.message });
-      return;
-    }
-    if (error instanceof z.ZodError) {
-      if (isV2) {
-        reply.code(400).send(
-          toV2ErrorEnvelope(400, "VALIDATION_ERROR", "request validation failed", request.id, error.issues)
-        );
-        return;
-      }
-      reply.code(400).send({ error: "VALIDATION_ERROR", issues: error.issues });
-      return;
-    }
-    if (isV2) {
-      reply.code(500).send(
-        toV2ErrorEnvelope(500, "INTERNAL_ERROR", "unexpected server error", request.id)
+      reply.code(error.statusCode).send(
+        toV2ErrorEnvelope(error.statusCode, error.code, error.message, request.id)
       );
       return;
     }
-    reply.code(500).send({ error: "INTERNAL_ERROR", message: "unexpected server error" });
+    if (error instanceof HttpError) {
+      reply.code(error.statusCode).send(
+        toV2ErrorEnvelope(error.statusCode, "HTTP_ERROR", error.message, request.id)
+      );
+      return;
+    }
+    if (error instanceof z.ZodError) {
+      reply.code(400).send(
+        toV2ErrorEnvelope(400, "VALIDATION_ERROR", "request validation failed", request.id, error.issues)
+      );
+      return;
+    }
+    reply.code(500).send(
+      toV2ErrorEnvelope(500, "INTERNAL_ERROR", "unexpected server error", request.id)
+    );
+  });
+
+  app.setNotFoundHandler((request, reply) => {
+    const rawUrl = request.raw.url ?? request.url;
+    const redirectLocation = resolveVersionlessApiRedirect({
+      method: request.method,
+      rawUrl,
+      defaultVersion: config.apiDefaultVersion,
+      forwardedPrefix: request.headers["x-forwarded-prefix"]
+    });
+    if (redirectLocation) {
+      reply.redirect(redirectLocation, 307);
+      return;
+    }
+
+    const unsupportedVersion = findUnsupportedApiVersion(rawUrl);
+    if (unsupportedVersion) {
+      reply.code(400).send(
+        toV2ErrorEnvelope(
+          400,
+          "API_VERSION_UNSUPPORTED",
+          formatUnsupportedApiVersionMessage(unsupportedVersion, config.apiDefaultVersion),
+          request.id,
+          {
+            requestedVersion: unsupportedVersion,
+            supportedVersions: supportedApiVersions,
+            defaultVersion: config.apiDefaultVersion
+          }
+        )
+      );
+      return;
+    }
+
+    reply.code(404).send(
+      toV2ErrorEnvelope(
+        404,
+        "ROUTE_NOT_FOUND",
+        `route not found: ${getRequestPathname(rawUrl)}`,
+        request.id
+      )
+    );
   });
 
   registerSystemRoutes(app, services);

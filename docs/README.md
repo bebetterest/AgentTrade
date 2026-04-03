@@ -10,7 +10,7 @@ Update docs in the same commit as behavior changes.
 
 ## API Contracts
 
-- `api/overview.md`: current contract surface, `/v2` rules, and `/v1` compatibility policy.
+- `api/overview.md`: current `/v2` contract surface and behavior rules.
 - `api/openapi.yaml`: generated OpenAPI artifact from `packages/contracts`.
 - `api/overview_cn.md` / `api/openapi_cn.yaml`: Chinese mirrors.
 

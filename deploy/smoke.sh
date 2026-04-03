@@ -81,8 +81,8 @@ if [ "$mode" = "local" ]; then
   web_port="${LOCAL_WEB_PORT:-3001}"
 
   check_url "local web" "http://${web_host}:${web_port}/"
-  check_url "local api health" "http://${api_host}:${api_port}/health"
-  check_url "local api summary" "http://${api_host}:${api_port}/v1/dashboard/summary?tz=UTC"
+  check_url "local api health" "http://${api_host}:${api_port}/v2/system/health"
+  check_url "local api summary" "http://${api_host}:${api_port}/v2/dashboard/summary?tz=UTC"
 
   echo "Local smoke checks passed."
   exit 0
@@ -93,8 +93,8 @@ compose_up "docker-compose.cloud.yml"
 cloud_host="$(normalize_host "${CLOUD_HTTP_BIND_HOST:-127.0.0.1}")"
 cloud_port="${CLOUD_HTTP_PORT:-80}"
 api_prefix="$(normalize_api_prefix "${CLOUD_API_PATH_PREFIX:-/api}")"
-cloud_api_health_path="$(build_api_path "$api_prefix" "/health")"
-cloud_api_summary_path="$(build_api_path "$api_prefix" "/v1/dashboard/summary?tz=UTC")"
+cloud_api_health_path="$(build_api_path "$api_prefix" "/v2/system/health")"
+cloud_api_summary_path="$(build_api_path "$api_prefix" "/v2/dashboard/summary?tz=UTC")"
 
 base_url="http://${cloud_host}:${cloud_port}"
 check_url "cloud web root" "${base_url}/"

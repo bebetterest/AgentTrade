@@ -2,6 +2,7 @@ export interface AppConfig {
   appName: string;
   host: string;
   port: number;
+  apiDefaultVersion: string;
   databaseUrl: string;
   redisUrl: string;
   enablePersistence: boolean;
@@ -127,6 +128,7 @@ export const defaultConfig: AppConfig = {
   appName: "Agentrade",
   host: "0.0.0.0",
   port: 3000,
+  apiDefaultVersion: "v2",
   databaseUrl: "postgresql://postgres:postgres@localhost:5432/agentrade",
   redisUrl: "redis://localhost:6379",
   enablePersistence: true,
@@ -196,6 +198,7 @@ export const loadConfig = (): AppConfig => {
     appName: envString("APP_NAME", defaultConfig.appName),
     host: envString("HOST", defaultConfig.host),
     port: envNumber("PORT", defaultConfig.port),
+    apiDefaultVersion: envString("API_DEFAULT_VERSION", defaultConfig.apiDefaultVersion),
     databaseUrl: envString("DATABASE_URL", defaultConfig.databaseUrl),
     redisUrl: envString("REDIS_URL", defaultConfig.redisUrl),
     enablePersistence: envBoolean("ENABLE_PERSISTENCE", defaultConfig.enablePersistence),

@@ -35,11 +35,11 @@ describe("contract registry", () => {
       expect(operationIds.has(operation.operationId)).toBe(false);
       operationIds.add(operation.operationId);
 
-      expect(operation.pathTemplate === "/health" || /^\/v[12]\//.test(operation.pathTemplate)).toBe(true);
+      expect(/^\/v2\//.test(operation.pathTemplate)).toBe(true);
+      expect(operation.version).toBe("v2");
       expect(operation.responseSchema).toBeDefined();
       expect(operation.responseComponent).toBeDefined();
       expect(operation.errorStatuses?.length ?? 0).toBeGreaterThan(0);
-      expect(operation.errorEnvelope).toBe(operation.version);
 
       if (operation.pathParamsSchema) {
         expect(operation.pathTemplate).toMatch(/\{[^}]+\}/);
@@ -49,41 +49,7 @@ describe("contract registry", () => {
         expect(operation.requestBodyComponent).toBeDefined();
       }
 
-      if (operation.version === "v1") {
-        expect(operation.deprecated).toBe(true);
-      } else {
-        expect(operation.deprecated ?? false).toBe(false);
-      }
-    }
-  });
-
-  it("keeps every v1 contract paired with a v2 contract carrying the same semantics", () => {
-    const grouped = new Map<
-      string,
-      {
-        v1?: (typeof apiOperations)[number];
-        v2?: (typeof apiOperations)[number];
-      }
-    >();
-
-    for (const operation of apiOperations) {
-      const key = operation.operationId.replace(/V[12]$/, "");
-      const entry = grouped.get(key) ?? {};
-      entry[operation.version] = operation;
-      grouped.set(key, entry);
-    }
-
-    for (const [key, pair] of grouped) {
-      expect(pair.v1, `missing v1 contract for ${key}`).toBeDefined();
-      expect(pair.v2, `missing v2 contract for ${key}`).toBeDefined();
-
-      const v1 = pair.v1!;
-      const v2 = pair.v2!;
-      expect(v1.method).toBe(v2.method);
-      expect(v1.tag).toBe(v2.tag);
-      expect(v1.auth).toBe(v2.auth);
-      expect(Boolean(v1.bodySchema)).toBe(Boolean(v2.bodySchema));
-      expect(Boolean(v1.pathParamsSchema)).toBe(Boolean(v2.pathParamsSchema));
+      expect(operation.deprecated ?? false).toBe(false);
     }
   });
 

@@ -10,7 +10,7 @@
 
 ## API 契约
 
-- `api/overview.md`：当前契约面、`/v2` 规则与 `/v1` 兼容策略。
+- `api/overview.md`：当前 `/v2` 契约面与行为规则。
 - `api/openapi.yaml`：由 `packages/contracts` 生成的 OpenAPI 产物。
 - `api/overview_cn.md` / `api/openapi_cn.yaml`：中文镜像。
 

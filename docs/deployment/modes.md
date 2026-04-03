@@ -20,6 +20,7 @@ This repository supports two Docker deployment modes with configurable ports, bi
 - Behavior:
   - Gateway service is exposed on `CLOUD_HTTP_PORT` (default `80`).
   - Gateway forwards `/` to web and API path-prefix requests (`/api` by default) to server.
+  - Gateway forwards `X-Forwarded-Prefix` so versionless API redirects stay under the external API prefix.
   - Website is served at `http(s)://<domain-or-ip>/`.
   - API is served at `http(s)://<domain-or-ip>/api` (or custom `CLOUD_API_PATH_PREFIX`).
   - Server/web/db/redis container ports are not directly published to host in this mode.

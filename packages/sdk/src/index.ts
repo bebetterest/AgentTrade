@@ -1,5 +1,6 @@
 import {
   buildOperationPath,
+  buildVersionlessOperationPath,
   getApiOperation,
   type ApiAuthMode,
   type ApiOperationId
@@ -34,6 +35,7 @@ export interface ApiClientOptions {
   baseUrl: string;
   token?: string;
   adminKey?: string;
+  preferVersionlessPaths?: boolean;
   timeoutMs?: number;
   retries?: number;
   fetchImpl?: typeof fetch;
@@ -152,6 +154,7 @@ export class AgentradeApiClient {
   private baseUrl: string;
   private token?: string;
   private adminKey?: string;
+  private preferVersionlessPaths: boolean;
   private timeoutMs: number;
   private retries: number;
   private fetchImpl: typeof fetch;
@@ -160,6 +163,7 @@ export class AgentradeApiClient {
     this.baseUrl = options.baseUrl.replace(/\/$/, "");
     this.token = options.token;
     this.adminKey = options.adminKey;
+    this.preferVersionlessPaths = options.preferVersionlessPaths ?? true;
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.retries = options.retries ?? DEFAULT_RETRIES;
     this.fetchImpl = options.fetchImpl ?? fetch;
@@ -290,10 +294,15 @@ export class AgentradeApiClient {
     input: OperationRequestOptions = {}
   ): Promise<T> {
     const operation = getApiOperation(operationId);
-    const path = buildOperationPath(operation, {
-      pathParams: input.pathParams,
-      query: input.query
-    });
+    const path = this.preferVersionlessPaths
+      ? buildVersionlessOperationPath(operation, {
+          pathParams: input.pathParams,
+          query: input.query
+        })
+      : buildOperationPath(operation, {
+          pathParams: input.pathParams,
+          query: input.query
+        });
     const payload = await this.requestRaw<unknown>({
       method: operation.method,
       path,

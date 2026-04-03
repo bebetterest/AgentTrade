@@ -5,7 +5,7 @@
 ### 1.1 后端运行时
 
 - 基于 Fastify 的 API 服务，领域引擎模块覆盖任务、提交、争议、周期、管理员操作。
-- `packages/contracts` 现已成为外部契约注册表，统一承载 `v1` 兼容面与 `v2` 主接口，并生成 OpenAPI 产物及 server/SDK/CLI/web 共用的 operation 元数据。
+- `packages/contracts` 现已成为对外 `/v2` 契约注册表，并生成 OpenAPI 产物及 server/SDK/CLI/web 共用的 operation 元数据。
 - SIWE challenge/verify 认证流程与 JWT 会话签发。
 - 严格 EVM 地址校验与 challenge 过期校验。
 - 通过 `packages/config` 实现集中化配置与输入约束。
@@ -55,7 +55,7 @@
 ## 2. 近期技术方向
 
 - 持续把 `packages/contracts` 作为唯一外部契约源，并加强生成文档、SDK 封装、CLI 绑定与服务端响应之间的漂移门禁。
-- 继续把剩余的人类只读路径与文档示例迁移到 `/v2`，`/v1` 仅保留冻结兼容面。
+- 维持 `/v2` 作为唯一公开 API 接口面，并继续加强文档、SDK、CLI 绑定与服务端响应之间的漂移门禁。
 - 将只读 Web 从任务/争议快照扩展到更完整的周期与 agent 视图。
 - 增加可观测性基线（请求追踪字段、指标埋点与结构化运维看板）。
 - 推进桥接导出能力加固，并补齐 Base Sepolia 对接测试脚手架。

@@ -1078,25 +1078,6 @@ export const bridgeExportRequestSchema = defineSchema(
   }
 );
 
-export const v1ApiErrorEnvelopeSchema = defineSchema(
-  "V1ApiErrorEnvelope",
-  z.object({
-    error: z.string(),
-    message: z.string().optional(),
-    issues: z.unknown().optional()
-  }),
-  {
-    type: "object",
-    additionalProperties: false,
-    required: ["error"],
-    properties: {
-      error: { ...stringField },
-      message: { ...stringField },
-      issues: {}
-    }
-  }
-);
-
 export const v2ApiErrorEnvelopeSchema = defineSchema(
   "V2ApiErrorEnvelope",
   z.object({
@@ -1133,16 +1114,6 @@ const booleanQuerySchema = z
   .union([z.boolean(), z.enum(["true", "false"]).transform((value) => value === "true")])
   .optional();
 
-export const taskListQuerySchemaV1 = z.object({
-  q: nonEmptyStringSchema.optional(),
-  status: z.nativeEnum(TaskStatus).optional(),
-  publisher: z.string().optional(),
-  sort: z.enum(["latest", "created", "deadline", "reward"]).optional(),
-  order: z.enum(["asc", "desc"]).optional(),
-  cursor: z.string().optional(),
-  limit: z.coerce.number().int().min(1).max(100).optional()
-});
-
 export const taskListQuerySchemaV2 = z.object({
   q: nonEmptyStringSchema.optional(),
   status: z.nativeEnum(TaskStatus).optional(),
@@ -1151,17 +1122,6 @@ export const taskListQuerySchemaV2 = z.object({
   order: z.enum(["asc", "desc"]).default("desc"),
   cursor: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(20)
-});
-
-export const disputeListQuerySchemaV1 = z.object({
-  taskId: z.string().optional(),
-  opener: z.string().optional(),
-  status: z.nativeEnum(DisputeStatus).optional(),
-  q: nonEmptyStringSchema.optional(),
-  sort: z.enum(["latest", "created"]).optional(),
-  order: z.enum(["asc", "desc"]).optional(),
-  cursor: z.string().optional(),
-  limit: z.coerce.number().int().min(1).max(100).optional()
 });
 
 export const disputeListQuerySchemaV2 = z.object({
@@ -1175,16 +1135,6 @@ export const disputeListQuerySchemaV2 = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20)
 });
 
-export const activityListQuerySchemaV1 = z.object({
-  taskId: z.string().optional(),
-  disputeId: z.string().optional(),
-  address: z.string().optional(),
-  type: z.nativeEnum(ActivityEventType).optional(),
-  order: z.enum(["asc", "desc"]).optional(),
-  cursor: z.string().optional(),
-  limit: z.coerce.number().int().min(1).max(100).optional()
-});
-
 export const activityListQuerySchemaV2 = z.object({
   taskId: z.string().optional(),
   disputeId: z.string().optional(),
@@ -1193,15 +1143,6 @@ export const activityListQuerySchemaV2 = z.object({
   order: z.enum(["asc", "desc"]).default("desc"),
   cursor: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(20)
-});
-
-export const agentListQuerySchemaV1 = z.object({
-  q: nonEmptyStringSchema.optional(),
-  activeOnly: booleanQuerySchema,
-  sort: z.enum(["latest", "score", "reputation", "completed", "published", "accepted"]).optional(),
-  order: z.enum(["asc", "desc"]).optional(),
-  cursor: z.string().optional(),
-  limit: z.coerce.number().int().min(1).max(100).optional()
 });
 
 export const agentListQuerySchemaV2 = z.object({
@@ -1220,11 +1161,6 @@ export const dashboardSummaryQuerySchema = z.object({
 export const dashboardTrendsQuerySchema = z.object({
   tz: nonEmptyStringSchema.default("UTC"),
   window: z.enum(["7d", "30d"]).default("7d")
-});
-
-export const cycleListQuerySchemaV1 = z.object({
-  cursor: z.string().optional(),
-  limit: z.coerce.number().int().min(1).max(100).optional()
 });
 
 export const cycleListQuerySchemaV2 = z.object({
@@ -1283,7 +1219,6 @@ export const namedSchemas = [
   updateAgentProfileRequestSchema,
   overrideDisputeRequestSchema,
   bridgeExportRequestSchema,
-  v1ApiErrorEnvelopeSchema,
   v2ApiErrorEnvelopeSchema
 ] as const;
 

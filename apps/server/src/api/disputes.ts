@@ -11,7 +11,6 @@ import { getApiOperation, type ApiOperationDefinition } from "@agentrade/contrac
 import type { AppServices } from "./services.js";
 import {
   countMetrics,
-  hasExplicitPagination,
   isAddress,
   isValidTimezone,
   paginateItems,
@@ -48,34 +47,13 @@ type ActivityListQuery = {
   limit?: number;
 };
 
-const disputeListOperations = [
-  getApiOperation("disputesListV1"),
-  getApiOperation("disputesListV2")
-] as const;
-const disputeGetOperations = [
-  getApiOperation("disputesGetV1"),
-  getApiOperation("disputesGetV2")
-] as const;
-const disputeOpenOperations = [
-  getApiOperation("disputesOpenV1"),
-  getApiOperation("disputesOpenV2")
-] as const;
-const disputeVoteOperations = [
-  getApiOperation("disputesVoteV1"),
-  getApiOperation("disputesVoteV2")
-] as const;
-const activityListOperations = [
-  getApiOperation("activitiesListV1"),
-  getApiOperation("activitiesListV2")
-] as const;
-const dashboardSummaryOperations = [
-  getApiOperation("dashboardSummaryV1"),
-  getApiOperation("dashboardSummaryV2")
-] as const;
-const dashboardTrendOperations = [
-  getApiOperation("dashboardTrendsV1"),
-  getApiOperation("dashboardTrendsV2")
-] as const;
+const disputeListOperation = getApiOperation("disputesListV2");
+const disputeGetOperation = getApiOperation("disputesGetV2");
+const disputeOpenOperation = getApiOperation("disputesOpenV2");
+const disputeVoteOperation = getApiOperation("disputesVoteV2");
+const activityListOperation = getApiOperation("activitiesListV2");
+const dashboardSummaryOperation = getApiOperation("dashboardSummaryV2");
+const dashboardTrendOperation = getApiOperation("dashboardTrendsV2");
 
 const sortDisputes = (items: Dispute[], sortKey: "latest" | "created", order: "asc" | "desc") => {
   items.sort((left, right) => {
@@ -104,7 +82,6 @@ const registerDisputeListRoute = (
     const sort = query.sort ?? "latest";
     const order = query.order ?? "desc";
     const limit = query.limit ?? 20;
-    const paged = operation.version === "v2" || hasExplicitPagination(request.query);
 
     if (services.stateRepository) {
       return validateOperationResponse(
@@ -118,7 +95,7 @@ const registerDisputeListRoute = (
           order,
           offset: parseCursorOffset(query.cursor),
           limit,
-          paged
+          paged: true
         })
       );
     }
@@ -146,8 +123,7 @@ const registerDisputeListRoute = (
     }
 
     sortDisputes(items, sort, order);
-    const payload = paged ? paginateItems(items, query.cursor, limit) : { items, nextCursor: null };
-    return validateOperationResponse(operation, payload);
+    return validateOperationResponse(operation, paginateItems(items, query.cursor, limit));
   });
 };
 
@@ -258,7 +234,6 @@ const registerActivityListRoute = (
 
     const order = query.order ?? "desc";
     const limit = query.limit ?? 20;
-    const paged = operation.version === "v2" || hasExplicitPagination(request.query);
 
     if (services.stateRepository) {
       return validateOperationResponse(
@@ -271,7 +246,7 @@ const registerActivityListRoute = (
           order,
           offset: parseCursorOffset(query.cursor),
           limit,
-          paged
+          paged: true
         })
       );
     }
@@ -298,8 +273,7 @@ const registerActivityListRoute = (
       return order === "asc" ? delta : -delta;
     });
 
-    const payload = paged ? paginateItems(items, query.cursor, limit) : { items, nextCursor: null };
-    return validateOperationResponse(operation, payload);
+    return validateOperationResponse(operation, paginateItems(items, query.cursor, limit));
   });
 };
 
@@ -416,25 +390,11 @@ const registerDashboardTrendRoute = (
 };
 
 export const registerDisputeRoutes = (app: FastifyInstance, services: AppServices): void => {
-  for (const operation of disputeListOperations) {
-    registerDisputeListRoute(app, services, operation);
-  }
-  for (const operation of disputeGetOperations) {
-    registerDisputeGetRoute(app, services, operation);
-  }
-  for (const operation of disputeOpenOperations) {
-    registerDisputeOpenRoute(app, services, operation);
-  }
-  for (const operation of disputeVoteOperations) {
-    registerDisputeVoteRoute(app, services, operation);
-  }
-  for (const operation of activityListOperations) {
-    registerActivityListRoute(app, services, operation);
-  }
-  for (const operation of dashboardSummaryOperations) {
-    registerDashboardSummaryRoute(app, services, operation);
-  }
-  for (const operation of dashboardTrendOperations) {
-    registerDashboardTrendRoute(app, services, operation);
-  }
+  registerDisputeListRoute(app, services, disputeListOperation);
+  registerDisputeGetRoute(app, services, disputeGetOperation);
+  registerDisputeOpenRoute(app, services, disputeOpenOperation);
+  registerDisputeVoteRoute(app, services, disputeVoteOperation);
+  registerActivityListRoute(app, services, activityListOperation);
+  registerDashboardSummaryRoute(app, services, dashboardSummaryOperation);
+  registerDashboardTrendRoute(app, services, dashboardTrendOperation);
 };

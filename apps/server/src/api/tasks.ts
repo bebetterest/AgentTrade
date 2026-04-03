@@ -3,7 +3,6 @@ import { TaskStatus, type Address, type Task } from "@agentrade/types";
 import { getApiOperation, type ApiOperationDefinition } from "@agentrade/contracts";
 import type { AppServices } from "./services.js";
 import {
-  hasExplicitPagination,
   isAddress,
   paginateItems,
   parseCursorOffset,
@@ -27,26 +26,14 @@ type TaskListQuery = {
   limit?: number;
 };
 
-const taskListOperations = [
-  getApiOperation("tasksListV1"),
-  getApiOperation("tasksListV2")
-] as const;
-const taskGetOperations = [getApiOperation("tasksGetV1"), getApiOperation("tasksGetV2")] as const;
-const taskCreateOperations = [getApiOperation("tasksCreateV1"), getApiOperation("tasksCreateV2")] as const;
-const taskAcceptOperations = [getApiOperation("tasksAcceptV1"), getApiOperation("tasksAcceptV2")] as const;
-const taskSubmitOperations = [getApiOperation("tasksSubmitV1"), getApiOperation("tasksSubmitV2")] as const;
-const taskTerminateOperations = [
-  getApiOperation("tasksTerminateV1"),
-  getApiOperation("tasksTerminateV2")
-] as const;
-const submissionConfirmOperations = [
-  getApiOperation("submissionsConfirmV1"),
-  getApiOperation("submissionsConfirmV2")
-] as const;
-const submissionRejectOperations = [
-  getApiOperation("submissionsRejectV1"),
-  getApiOperation("submissionsRejectV2")
-] as const;
+const taskListOperation = getApiOperation("tasksListV2");
+const taskGetOperation = getApiOperation("tasksGetV2");
+const taskCreateOperation = getApiOperation("tasksCreateV2");
+const taskAcceptOperation = getApiOperation("tasksAcceptV2");
+const taskSubmitOperation = getApiOperation("tasksSubmitV2");
+const taskTerminateOperation = getApiOperation("tasksTerminateV2");
+const submissionConfirmOperation = getApiOperation("submissionsConfirmV2");
+const submissionRejectOperation = getApiOperation("submissionsRejectV2");
 
 const sortTasks = (
   items: Task[],
@@ -85,7 +72,6 @@ const registerTaskListRoute = (
     const sort = query.sort ?? "latest";
     const order = query.order ?? "desc";
     const limit = query.limit ?? 20;
-    const paged = operation.version === "v2" || hasExplicitPagination(request.query);
 
     if (services.stateRepository) {
       return validateOperationResponse(
@@ -98,7 +84,7 @@ const registerTaskListRoute = (
           order,
           offset: parseCursorOffset(query.cursor),
           limit,
-          paged
+          paged: true
         })
       );
     }
@@ -123,8 +109,7 @@ const registerTaskListRoute = (
 
     sortTasks(items, sort, order);
 
-    const payload = paged ? paginateItems(items, query.cursor, limit) : { items, nextCursor: null };
-    return validateOperationResponse(operation, payload);
+    return validateOperationResponse(operation, paginateItems(items, query.cursor, limit));
   });
 };
 
@@ -329,28 +314,12 @@ const registerSubmissionRejectRoute = (
 };
 
 export const registerTaskRoutes = (app: FastifyInstance, services: AppServices): void => {
-  for (const operation of taskListOperations) {
-    registerTaskListRoute(app, services, operation);
-  }
-  for (const operation of taskGetOperations) {
-    registerTaskGetRoute(app, services, operation);
-  }
-  for (const operation of taskCreateOperations) {
-    registerTaskCreateRoute(app, services, operation);
-  }
-  for (const operation of taskAcceptOperations) {
-    registerTaskAcceptRoute(app, services, operation);
-  }
-  for (const operation of taskSubmitOperations) {
-    registerTaskSubmitRoute(app, services, operation);
-  }
-  for (const operation of taskTerminateOperations) {
-    registerTaskTerminateRoute(app, services, operation);
-  }
-  for (const operation of submissionConfirmOperations) {
-    registerSubmissionConfirmRoute(app, services, operation);
-  }
-  for (const operation of submissionRejectOperations) {
-    registerSubmissionRejectRoute(app, services, operation);
-  }
+  registerTaskListRoute(app, services, taskListOperation);
+  registerTaskGetRoute(app, services, taskGetOperation);
+  registerTaskCreateRoute(app, services, taskCreateOperation);
+  registerTaskAcceptRoute(app, services, taskAcceptOperation);
+  registerTaskSubmitRoute(app, services, taskSubmitOperation);
+  registerTaskTerminateRoute(app, services, taskTerminateOperation);
+  registerSubmissionConfirmRoute(app, services, submissionConfirmOperation);
+  registerSubmissionRejectRoute(app, services, submissionRejectOperation);
 };

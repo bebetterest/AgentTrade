@@ -1,7 +1,9 @@
 import { expect, type Page, test } from "@playwright/test";
+import { stripApiVersionPrefix } from "@agentrade/contracts";
 import { ActivityEventType, DisputeStatus, TaskStatus, type ActivityEvent, type AgentDirectoryItem, type AgentProfile, type Dispute, type Task } from "@agentrade/types";
 
 const ISO_NOW = "2026-03-31T12:00:00.000Z";
+const API_ROUTE_PATTERN = "**/*";
 
 const tasks: Task[] = [
   {
@@ -206,11 +208,15 @@ interface InstallApiMocksOptions {
 const installApiMocks = async (page: Page, options: InstallApiMocksOptions = {}) => {
   let failedTaskActivity = false;
   let failedAddressActivity = false;
-  await page.route("**/v2/**", async (route) => {
+  await page.route(API_ROUTE_PATTERN, async (route) => {
     const url = new URL(route.request().url());
-    const path = url.pathname;
+    if (route.request().resourceType() !== "fetch") {
+      await route.continue();
+      return;
+    }
+    const path = stripApiVersionPrefix(url.pathname);
 
-    if (path === "/v2/dashboard/summary") {
+    if (path === "/dashboard/summary") {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -226,7 +232,7 @@ const installApiMocks = async (page: Page, options: InstallApiMocksOptions = {})
       return;
     }
 
-    if (path === "/v2/dashboard/trends") {
+    if (path === "/dashboard/trends") {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -244,7 +250,7 @@ const installApiMocks = async (page: Page, options: InstallApiMocksOptions = {})
       return;
     }
 
-    if (path === "/v2/cycles/active") {
+    if (path === "/cycles/active") {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -261,7 +267,7 @@ const installApiMocks = async (page: Page, options: InstallApiMocksOptions = {})
       return;
     }
 
-    if (path === "/v2/tasks") {
+    if (path === "/tasks") {
       const q = (url.searchParams.get("q") ?? "").toLowerCase();
       const status = url.searchParams.get("status");
       const sort = (url.searchParams.get("sort") as "latest" | "created" | "deadline" | "reward" | null) ?? "latest";
@@ -294,7 +300,7 @@ const installApiMocks = async (page: Page, options: InstallApiMocksOptions = {})
       return;
     }
 
-    if (path.startsWith("/v2/tasks/")) {
+    if (path.startsWith("/tasks/")) {
       const taskId = path.split("/").at(-1) ?? "";
       const task = tasks.find((item) => item.id === taskId);
       await route.fulfill({
@@ -305,7 +311,7 @@ const installApiMocks = async (page: Page, options: InstallApiMocksOptions = {})
       return;
     }
 
-    if (path === "/v2/agents") {
+    if (path === "/agents") {
       const q = (url.searchParams.get("q") ?? "").toLowerCase();
       const activeOnly = url.searchParams.get("activeOnly") !== "false";
       const sort = (url.searchParams.get("sort") as "latest" | "score" | "reputation" | "completed" | "published" | "accepted" | null) ?? "latest";
@@ -354,7 +360,7 @@ const installApiMocks = async (page: Page, options: InstallApiMocksOptions = {})
       return;
     }
 
-    if (path.startsWith("/v2/agents/")) {
+    if (path.startsWith("/agents/")) {
       const address = path.split("/").at(-1) ?? "";
       const profile = agentProfiles.find((item) => item.address === address);
       await route.fulfill({
@@ -365,7 +371,7 @@ const installApiMocks = async (page: Page, options: InstallApiMocksOptions = {})
       return;
     }
 
-    if (path === "/v2/disputes") {
+    if (path === "/disputes") {
       const taskId = url.searchParams.get("taskId");
       const filtered = taskId ? disputes.filter((item) => item.taskId === taskId) : disputes;
       const body = paginate(filtered, url.searchParams.get("cursor"), url.searchParams.get("limit"));
@@ -377,7 +383,7 @@ const installApiMocks = async (page: Page, options: InstallApiMocksOptions = {})
       return;
     }
 
-    if (path === "/v2/activities") {
+    if (path === "/activities") {
       const taskId = url.searchParams.get("taskId");
       const address = url.searchParams.get("address");
       const order = (url.searchParams.get("order") as "asc" | "desc" | null) ?? "desc";
@@ -483,7 +489,22 @@ test("user tab supports sorting and pagination", async ({ page }) => {
 
   await page.getByTestId("active-only-checkbox").click();
   await expect(page.getByTestId("active-only-checkbox")).not.toBeChecked();
-  await expect(page.getByTestId("agent-card")).toHaveCount(3);
+
+  const agentCards = page.getByTestId("agent-card");
+  await expect(async () => {
+    if (await agentCards.count() >= 3) {
+      return;
+    }
+    const loadMoreButton = page.getByTestId("load-more-agents");
+    if (await loadMoreButton.count() === 0) {
+      throw new Error("load-more button missing before agents reached expected count");
+    }
+    await loadMoreButton.click();
+  }).toPass({
+    timeout: 10_000,
+    intervals: [100, 250, 500]
+  });
+  await expect(agentCards).toHaveCount(3);
 });
 
 test("task and agent detail drawers can be opened", async ({ page }) => {
@@ -508,7 +529,7 @@ test("invalid query params are sanitized and still return usable results", async
 });
 
 test("task detail supports retry after transient API failures", async ({ page }) => {
-  await page.unroute("**/v2/**");
+  await page.unroute(API_ROUTE_PATTERN);
   await installApiMocks(page, { failActivitiesByTaskIdOnce: "task-beta" });
 
   await page.goto("/");

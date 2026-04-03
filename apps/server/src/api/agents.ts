@@ -1,9 +1,8 @@
 import type { FastifyInstance } from "fastify";
-import type { AgentDirectoryItem, Address, AgentProfile, Cycle } from "@agentrade/types";
+import type { AgentDirectoryItem, Address, AgentProfile } from "@agentrade/types";
 import { getApiOperation, type ApiOperationDefinition } from "@agentrade/contracts";
 import type { AppServices } from "./services.js";
 import {
-  hasExplicitPagination,
   isAddress,
   paginateItems,
   parseCursorOffset,
@@ -31,42 +30,18 @@ type CycleListQuery = {
   limit?: number;
 };
 
-const agentListOperations = [getApiOperation("agentsListV1"), getApiOperation("agentsListV2")] as const;
-const agentGetOperations = [
-  getApiOperation("agentsGetProfileV1"),
-  getApiOperation("agentsGetProfileV2")
-] as const;
-const agentUpdateOperations = [
-  getApiOperation("agentsUpdateProfileV1"),
-  getApiOperation("agentsUpdateProfileV2")
-] as const;
-const agentStatsOperations = [
-  getApiOperation("agentsGetStatsV1"),
-  getApiOperation("agentsGetStatsV2")
-] as const;
-const ledgerOperations = [getApiOperation("ledgerGetV1"), getApiOperation("ledgerGetV2")] as const;
-const cycleListOperations = [getApiOperation("cyclesListV1"), getApiOperation("cyclesListV2")] as const;
-const cycleActiveOperations = [
-  getApiOperation("cyclesGetActiveV1"),
-  getApiOperation("cyclesGetActiveV2")
-] as const;
-const cycleGetOperations = [getApiOperation("cyclesGetV1"), getApiOperation("cyclesGetV2")] as const;
-const cycleRewardsOperations = [
-  getApiOperation("cyclesGetRewardsV1"),
-  getApiOperation("cyclesGetRewardsV2")
-] as const;
-const adminCloseOperations = [
-  getApiOperation("adminCloseCycleV1"),
-  getApiOperation("adminCloseCycleV2")
-] as const;
-const adminOverrideOperations = [
-  getApiOperation("adminOverrideDisputeV1"),
-  getApiOperation("adminOverrideDisputeV2")
-] as const;
-const adminBridgeExportOperations = [
-  getApiOperation("adminBridgeExportV1"),
-  getApiOperation("adminBridgeExportV2")
-] as const;
+const agentListOperation = getApiOperation("agentsListV2");
+const agentGetOperation = getApiOperation("agentsGetProfileV2");
+const agentUpdateOperation = getApiOperation("agentsUpdateProfileV2");
+const agentStatsOperation = getApiOperation("agentsGetStatsV2");
+const ledgerOperation = getApiOperation("ledgerGetV2");
+const cycleListOperation = getApiOperation("cyclesListV2");
+const cycleActiveOperation = getApiOperation("cyclesGetActiveV2");
+const cycleGetOperation = getApiOperation("cyclesGetV2");
+const cycleRewardsOperation = getApiOperation("cyclesGetRewardsV2");
+const adminCloseOperation = getApiOperation("adminCloseCycleV2");
+const adminOverrideOperation = getApiOperation("adminOverrideDisputeV2");
+const adminBridgeExportOperation = getApiOperation("adminBridgeExportV2");
 
 const sortAgents = (
   items: AgentDirectoryItem[],
@@ -111,7 +86,6 @@ const registerAgentListRoute = (
     const sort = query.sort ?? "latest";
     const order = query.order ?? "desc";
     const limit = query.limit ?? 20;
-    const paged = operation.version === "v2" || hasExplicitPagination(request.query);
 
     if (services.stateRepository) {
       return validateOperationResponse(
@@ -123,7 +97,7 @@ const registerAgentListRoute = (
           order,
           offset: parseCursorOffset(query.cursor),
           limit,
-          paged
+          paged: true
         })
       );
     }
@@ -168,8 +142,7 @@ const registerAgentListRoute = (
     }
 
     sortAgents(items, sort, order);
-    const payload = paged ? paginateItems(items, query.cursor, limit) : { items, nextCursor: null };
-    return validateOperationResponse(operation, payload);
+    return validateOperationResponse(operation, paginateItems(items, query.cursor, limit));
   });
 };
 
@@ -267,21 +240,6 @@ const registerLedgerRoute = (
   });
 };
 
-const paginateCycles = (
-  items: Cycle[],
-  query: CycleListQuery,
-  operation: ApiOperationDefinition,
-  requestQuery: unknown
-) => {
-  if (operation.version === "v2") {
-    return paginateItems(items, query.cursor, query.limit ?? 20);
-  }
-  if (hasExplicitPagination(requestQuery)) {
-    return paginateItems(items, query.cursor, query.limit ?? 20);
-  }
-  return { items, nextCursor: null };
-};
-
 const registerCycleListRoute = (
   app: FastifyInstance,
   services: AppServices,
@@ -292,7 +250,10 @@ const registerCycleListRoute = (
     const items = services.stateRepository
       ? await services.stateRepository.listCyclesDirect()
       : await services.read((engine) => engine.listCycles());
-    return validateOperationResponse(operation, paginateCycles(items, query, operation, request.query));
+    return validateOperationResponse(
+      operation,
+      paginateItems(items, query.cursor, query.limit ?? 20)
+    );
   });
 };
 
@@ -428,40 +389,16 @@ const registerAdminBridgeExportRoute = (
 };
 
 export const registerAgentRoutes = (app: FastifyInstance, services: AppServices): void => {
-  for (const operation of agentListOperations) {
-    registerAgentListRoute(app, services, operation);
-  }
-  for (const operation of agentGetOperations) {
-    registerAgentGetRoute(app, services, operation);
-  }
-  for (const operation of agentUpdateOperations) {
-    registerAgentUpdateRoute(app, services, operation);
-  }
-  for (const operation of agentStatsOperations) {
-    registerAgentStatsRoute(app, services, operation);
-  }
-  for (const operation of ledgerOperations) {
-    registerLedgerRoute(app, services, operation);
-  }
-  for (const operation of cycleListOperations) {
-    registerCycleListRoute(app, services, operation);
-  }
-  for (const operation of cycleActiveOperations) {
-    registerCycleActiveRoute(app, services, operation);
-  }
-  for (const operation of cycleGetOperations) {
-    registerCycleGetRoute(app, services, operation);
-  }
-  for (const operation of cycleRewardsOperations) {
-    registerCycleRewardsRoute(app, services, operation);
-  }
-  for (const operation of adminCloseOperations) {
-    registerAdminCloseRoute(app, services, operation);
-  }
-  for (const operation of adminOverrideOperations) {
-    registerAdminOverrideRoute(app, services, operation);
-  }
-  for (const operation of adminBridgeExportOperations) {
-    registerAdminBridgeExportRoute(app, services, operation);
-  }
+  registerAgentListRoute(app, services, agentListOperation);
+  registerAgentGetRoute(app, services, agentGetOperation);
+  registerAgentUpdateRoute(app, services, agentUpdateOperation);
+  registerAgentStatsRoute(app, services, agentStatsOperation);
+  registerLedgerRoute(app, services, ledgerOperation);
+  registerCycleListRoute(app, services, cycleListOperation);
+  registerCycleActiveRoute(app, services, cycleActiveOperation);
+  registerCycleGetRoute(app, services, cycleGetOperation);
+  registerCycleRewardsRoute(app, services, cycleRewardsOperation);
+  registerAdminCloseRoute(app, services, adminCloseOperation);
+  registerAdminOverrideRoute(app, services, adminOverrideOperation);
+  registerAdminBridgeExportRoute(app, services, adminBridgeExportOperation);
 };

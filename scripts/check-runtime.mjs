@@ -1,4 +1,5 @@
-const requiredNodeMajor = 22;
+const minimumNodeMajor = 22;
+const maximumNodeMajorExclusive = 26;
 const requiredPnpmVersion = "9.12.1";
 
 const parseUserAgent = () => {
@@ -16,11 +17,12 @@ const fail = (message) => {
 };
 
 const nodeMajor = Number(process.versions.node.split(".")[0] ?? "0");
-if (nodeMajor !== requiredNodeMajor) {
+if (nodeMajor < minimumNodeMajor || nodeMajor >= maximumNodeMajorExclusive) {
   fail(
     [
-      `Unsupported Node.js runtime: found ${process.versions.node}, expected 22.x.`,
-      "Use `corepack enable` and a Node 22 runtime before running workspace commands."
+      `Unsupported Node.js runtime: found ${process.versions.node}, expected >=${minimumNodeMajor} <${maximumNodeMajorExclusive}.`,
+      "Use `corepack enable` and a supported Node runtime before running workspace commands.",
+      "Node 22 remains the recommended local baseline (see .nvmrc)."
     ].join("\n")
   );
 }

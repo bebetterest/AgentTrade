@@ -49,9 +49,33 @@ test("sdk request assembly: headers/body/auth", async () => {
   await client.acceptTask("task-1");
 
   assert.equal(calls.length, 1);
-  assert.equal(calls[0].input, "http://localhost:3000/v2/tasks/task-1/accept");
+  assert.equal(calls[0].input, "http://localhost:3000/tasks/task-1/accept");
   assert.equal(calls[0].init?.method, "POST");
   assert.equal((calls[0].init?.headers as Record<string, string>).authorization, "Bearer token-123");
+});
+
+test("sdk can opt into explicit versioned contract paths", async () => {
+  const calls: RecordedCall[] = [];
+  const fetchImpl: typeof fetch = async (input) => {
+    calls.push({ input: String(input) });
+    return new Response(JSON.stringify({ ok: true, service: "agentrade-server" }), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    });
+  };
+
+  const client = new AgentradeApiClient({
+    baseUrl: "http://localhost:3000/",
+    fetchImpl,
+    preferVersionlessPaths: false,
+    retries: 0,
+    timeoutMs: 5000
+  });
+
+  await client.health();
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].input, "http://localhost:3000/v2/system/health");
 });
 
 test("sdk retries 5xx then succeeds", async () => {

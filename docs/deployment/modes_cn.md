@@ -20,6 +20,7 @@
 - 行为：
   - 网关服务暴露在 `CLOUD_HTTP_PORT`（默认 `80`）。
   - 网关将 `/` 转发到 web，将 API 路径前缀请求（默认 `/api`）转发到 server。
+  - 网关会透传 `X-Forwarded-Prefix`，确保无版本 API 重定向仍保留外部 API 前缀。
   - 网站入口：`http(s)://<domain-or-ip>/`。
   - API 入口：`http(s)://<domain-or-ip>/api`（或自定义 `CLOUD_API_PATH_PREFIX`）。
   - 该模式下 server/web/db/redis 容器端口不会直接暴露到宿主机。

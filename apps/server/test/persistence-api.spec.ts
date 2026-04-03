@@ -14,6 +14,18 @@ const addr = (seed: string): Address =>
   `0x${Buffer.from(seed).toString("hex").slice(0, 40).padEnd(40, "0")}` as Address;
 const futureDeadline = (hours = 24): string =>
   new Date(Date.now() + hours * 3_600_000).toISOString();
+const errorCode = (payload: unknown): string | null => {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+  const error = (payload as { error?: unknown }).error;
+  if (!error || typeof error !== "object") {
+    return null;
+  }
+  return typeof (error as { code?: unknown }).code === "string"
+    ? ((error as { code: string }).code)
+    : null;
+};
 
 runDbSuite("API persistence mode", () => {
   const secret = "persist-secret";
@@ -26,7 +38,7 @@ runDbSuite("API persistence mode", () => {
   const rejectSubmission = async (submissionId: string, publisher: Address) => {
     const rejectRes = await app!.inject({
       method: "POST",
-      url: `/v1/submissions/${submissionId}/reject`,
+      url: `/v2/submissions/${submissionId}/reject`,
       headers: { authorization: `Bearer ${bearer(publisher)}` }
     });
     expect(rejectRes.statusCode).toBe(200);
@@ -73,7 +85,7 @@ runDbSuite("API persistence mode", () => {
     const publisher = addr("p1");
     const create = await app!.inject({
       method: "POST",
-      url: "/v1/tasks",
+      url: "/v2/tasks",
       headers: { authorization: `Bearer ${bearer(publisher)}` },
       payload: {
         title: "persistent-task",
@@ -91,7 +103,7 @@ runDbSuite("API persistence mode", () => {
 
     app = await buildApp();
     await app.ready();
-    const tasks = await app.inject({ method: "GET", url: "/v1/tasks" });
+    const tasks = await app.inject({ method: "GET", url: "/v2/tasks" });
     expect(tasks.statusCode).toBe(200);
     expect(tasks.json().items.length).toBe(1);
     expect(tasks.json().items[0].title).toBe("persistent-task");
@@ -101,7 +113,7 @@ runDbSuite("API persistence mode", () => {
     const agent = addr("profile-persist");
     const patchRes = await app!.inject({
       method: "PATCH",
-      url: `/v1/agents/${agent}/profile`,
+      url: `/v2/agents/${agent}/profile`,
       headers: { authorization: `Bearer ${bearer(agent)}` },
       payload: {
         name: "Agent Persist",
@@ -119,7 +131,7 @@ runDbSuite("API persistence mode", () => {
 
     const profileRes = await app!.inject({
       method: "GET",
-      url: `/v1/agents/${agent}`
+      url: `/v2/agents/${agent}`
     });
     expect(profileRes.statusCode).toBe(200);
     const profile = profileRes.json() as { name: string; bio: string };
@@ -134,7 +146,7 @@ runDbSuite("API persistence mode", () => {
 
     const taskRes = await app!.inject({
       method: "POST",
-      url: "/v1/tasks",
+      url: "/v2/tasks",
       headers: { authorization: `Bearer ${bearer(publisher)}` },
       payload: {
         title: "task",
@@ -151,12 +163,12 @@ runDbSuite("API persistence mode", () => {
 
     await app!.inject({
       method: "POST",
-      url: `/v1/tasks/${task.id}/accept`,
+      url: `/v2/tasks/${task.id}/accept`,
       headers: { authorization: `Bearer ${bearer(worker)}` }
     });
     const submissionRes = await app!.inject({
       method: "POST",
-      url: `/v1/tasks/${task.id}/submissions`,
+      url: `/v2/tasks/${task.id}/submissions`,
       headers: { authorization: `Bearer ${bearer(worker)}` },
       payload: { payloadMd: "result" }
     });
@@ -165,7 +177,7 @@ runDbSuite("API persistence mode", () => {
 
     const disputeRes = await app!.inject({
       method: "POST",
-      url: "/v1/disputes",
+      url: "/v2/disputes",
       headers: { authorization: `Bearer ${bearer(publisher)}` },
       payload: {
         taskId: task.id,
@@ -177,7 +189,7 @@ runDbSuite("API persistence mode", () => {
 
     const firstVote = await app!.inject({
       method: "POST",
-      url: `/v1/disputes/${dispute.id}/votes`,
+      url: `/v2/disputes/${dispute.id}/votes`,
       headers: { authorization: `Bearer ${bearer(supervisor)}` },
       payload: { vote: VoteChoice.COMPLETED }
     });
@@ -189,7 +201,7 @@ runDbSuite("API persistence mode", () => {
 
     const secondVote = await app!.inject({
       method: "POST",
-      url: `/v1/disputes/${dispute.id}/votes`,
+      url: `/v2/disputes/${dispute.id}/votes`,
       headers: { authorization: `Bearer ${bearer(supervisor)}` },
       payload: { vote: VoteChoice.NOT_COMPLETED }
     });
@@ -203,7 +215,7 @@ runDbSuite("API persistence mode", () => {
 
     const taskRes = await app!.inject({
       method: "POST",
-      url: "/v1/tasks",
+      url: "/v2/tasks",
       headers: { authorization: `Bearer ${bearer(publisher)}` },
       payload: {
         title: "delayed-cycle-task",
@@ -221,14 +233,14 @@ runDbSuite("API persistence mode", () => {
 
     const acceptRes = await app!.inject({
       method: "POST",
-      url: `/v1/tasks/${task.id}/accept`,
+      url: `/v2/tasks/${task.id}/accept`,
       headers: { authorization: `Bearer ${bearer(worker)}` }
     });
     expect(acceptRes.statusCode).toBe(200);
 
     const submissionRes = await app!.inject({
       method: "POST",
-      url: `/v1/tasks/${task.id}/submissions`,
+      url: `/v2/tasks/${task.id}/submissions`,
       headers: { authorization: `Bearer ${bearer(worker)}` },
       payload: { payloadMd: "result" }
     });
@@ -238,7 +250,7 @@ runDbSuite("API persistence mode", () => {
 
     const disputeRes = await app!.inject({
       method: "POST",
-      url: "/v1/disputes",
+      url: "/v2/disputes",
       headers: { authorization: `Bearer ${bearer(publisher)}` },
       payload: {
         taskId: task.id,
@@ -252,7 +264,7 @@ runDbSuite("API persistence mode", () => {
     for (const supervisor of supervisors) {
       const voteRes = await app!.inject({
         method: "POST",
-        url: `/v1/disputes/${dispute.id}/votes`,
+        url: `/v2/disputes/${dispute.id}/votes`,
         headers: { authorization: `Bearer ${bearer(supervisor)}` },
         payload: { vote: VoteChoice.NOT_COMPLETED }
       });
@@ -261,14 +273,14 @@ runDbSuite("API persistence mode", () => {
 
     const beforeClose1Res = await app!.inject({
       method: "GET",
-      url: `/v1/ledger/${supervisors[0]}`
+      url: `/v2/ledger/${supervisors[0]}`
     });
     expect(beforeClose1Res.statusCode).toBe(200);
     const beforeClose1 = (beforeClose1Res.json() as { available: number }).available;
 
     const close1Res = await app!.inject({
       method: "POST",
-      url: "/v1/admin/cycles/close",
+      url: "/v2/admin/cycles/close",
       headers: { "x-admin-service-key": adminKey }
     });
     expect(close1Res.statusCode).toBe(200);
@@ -277,14 +289,14 @@ runDbSuite("API persistence mode", () => {
 
     const disputeAfterClose1 = await app!.inject({
       method: "GET",
-      url: `/v1/disputes/${dispute.id}`
+      url: `/v2/disputes/${dispute.id}`
     });
     expect(disputeAfterClose1.statusCode).toBe(200);
     expect((disputeAfterClose1.json() as { status: string }).status).toBe("OPEN");
 
     const rewards1Res = await app!.inject({
       method: "GET",
-      url: `/v1/cycles/${close1.closedCycleId}/rewards`
+      url: `/v2/cycles/${close1.closedCycleId}/rewards`
     });
     expect(rewards1Res.statusCode).toBe(200);
     const rewards1 = rewards1Res.json() as {
@@ -296,7 +308,7 @@ runDbSuite("API persistence mode", () => {
 
     const afterClose1Res = await app!.inject({
       method: "GET",
-      url: `/v1/ledger/${supervisors[0]}`
+      url: `/v2/ledger/${supervisors[0]}`
     });
     expect(afterClose1Res.statusCode).toBe(200);
     const afterClose1 = (afterClose1Res.json() as { available: number }).available;
@@ -304,14 +316,14 @@ runDbSuite("API persistence mode", () => {
 
     const close2Res = await app!.inject({
       method: "POST",
-      url: "/v1/admin/cycles/close",
+      url: "/v2/admin/cycles/close",
       headers: { "x-admin-service-key": adminKey }
     });
     expect(close2Res.statusCode).toBe(200);
 
     const afterClose2Res = await app!.inject({
       method: "GET",
-      url: `/v1/ledger/${supervisors[0]}`
+      url: `/v2/ledger/${supervisors[0]}`
     });
     expect(afterClose2Res.statusCode).toBe(200);
     const afterClose2 = (afterClose2Res.json() as { available: number }).available;
@@ -324,7 +336,7 @@ runDbSuite("API persistence mode", () => {
 
     const taskRes = await app!.inject({
       method: "POST",
-      url: "/v1/tasks",
+      url: "/v2/tasks",
       headers: { authorization: `Bearer ${bearer(publisher)}` },
       payload: {
         title: "dedupe-dispute-restart-task",
@@ -342,14 +354,14 @@ runDbSuite("API persistence mode", () => {
 
     const acceptRes = await app!.inject({
       method: "POST",
-      url: `/v1/tasks/${task.id}/accept`,
+      url: `/v2/tasks/${task.id}/accept`,
       headers: { authorization: `Bearer ${bearer(worker)}` }
     });
     expect(acceptRes.statusCode).toBe(200);
 
     const submissionRes = await app!.inject({
       method: "POST",
-      url: `/v1/tasks/${task.id}/submissions`,
+      url: `/v2/tasks/${task.id}/submissions`,
       headers: { authorization: `Bearer ${bearer(worker)}` },
       payload: { payloadMd: "result" }
     });
@@ -359,7 +371,7 @@ runDbSuite("API persistence mode", () => {
 
     const firstDisputeRes = await app!.inject({
       method: "POST",
-      url: "/v1/disputes",
+      url: "/v2/disputes",
       headers: { authorization: `Bearer ${bearer(worker)}` },
       payload: {
         taskId: task.id,
@@ -375,7 +387,7 @@ runDbSuite("API persistence mode", () => {
 
     const secondDisputeRes = await app!.inject({
       method: "POST",
-      url: "/v1/disputes",
+      url: "/v2/disputes",
       headers: { authorization: `Bearer ${bearer(publisher)}` },
       payload: {
         taskId: task.id,
@@ -384,7 +396,7 @@ runDbSuite("API persistence mode", () => {
       }
     });
     expect(secondDisputeRes.statusCode).toBe(409);
-    expect(secondDisputeRes.json().error).toBe("OPEN_DISPUTE_ALREADY_EXISTS");
+    expect(errorCode(secondDisputeRes.json())).toBe("OPEN_DISPUTE_ALREADY_EXISTS");
   });
 
   it("preserves slot-based closure for repeatable tasks across restart", async () => {
@@ -399,7 +411,7 @@ runDbSuite("API persistence mode", () => {
     const worker = addr("pb4");
     const taskRes = await app!.inject({
       method: "POST",
-      url: "/v1/tasks",
+      url: "/v2/tasks",
       headers: { authorization: `Bearer ${bearer(publisher)}` },
       payload: {
         title: "repeat-restart-task",
@@ -417,13 +429,13 @@ runDbSuite("API persistence mode", () => {
 
     const accept1 = await app!.inject({
       method: "POST",
-      url: `/v1/tasks/${task.id}/accept`,
+      url: `/v2/tasks/${task.id}/accept`,
       headers: { authorization: `Bearer ${bearer(worker)}` }
     });
     expect(accept1.statusCode).toBe(200);
     const submit1 = await app!.inject({
       method: "POST",
-      url: `/v1/tasks/${task.id}/submissions`,
+      url: `/v2/tasks/${task.id}/submissions`,
       headers: { authorization: `Bearer ${bearer(worker)}` },
       payload: { payloadMd: "first" }
     });
@@ -431,7 +443,7 @@ runDbSuite("API persistence mode", () => {
     const submission1 = submit1.json() as { id: string };
     const confirm1 = await app!.inject({
       method: "POST",
-      url: `/v1/submissions/${submission1.id}/confirm`,
+      url: `/v2/submissions/${submission1.id}/confirm`,
       headers: { authorization: `Bearer ${bearer(publisher)}` }
     });
     expect(confirm1.statusCode).toBe(200);
@@ -442,13 +454,13 @@ runDbSuite("API persistence mode", () => {
 
     const accept2 = await app!.inject({
       method: "POST",
-      url: `/v1/tasks/${task.id}/accept`,
+      url: `/v2/tasks/${task.id}/accept`,
       headers: { authorization: `Bearer ${bearer(worker)}` }
     });
     expect(accept2.statusCode).toBe(200);
     const submit2 = await app!.inject({
       method: "POST",
-      url: `/v1/tasks/${task.id}/submissions`,
+      url: `/v2/tasks/${task.id}/submissions`,
       headers: { authorization: `Bearer ${bearer(worker)}` },
       payload: { payloadMd: "second" }
     });
@@ -456,14 +468,14 @@ runDbSuite("API persistence mode", () => {
     const submission2 = submit2.json() as { id: string };
     const confirm2 = await app!.inject({
       method: "POST",
-      url: `/v1/submissions/${submission2.id}/confirm`,
+      url: `/v2/submissions/${submission2.id}/confirm`,
       headers: { authorization: `Bearer ${bearer(publisher)}` }
     });
     expect(confirm2.statusCode).toBe(200);
 
     const taskAfter = await app!.inject({
       method: "GET",
-      url: `/v1/tasks/${task.id}`
+      url: `/v2/tasks/${task.id}`
     });
     expect(taskAfter.statusCode).toBe(200);
     const body = taskAfter.json() as { status: string; rewardEscrowRemaining: number };
@@ -486,14 +498,14 @@ runDbSuite("API persistence mode", () => {
 
     const workerBeforeRes = await app!.inject({
       method: "GET",
-      url: `/v1/ledger/${worker}`
+      url: `/v2/ledger/${worker}`
     });
     expect(workerBeforeRes.statusCode).toBe(200);
     const workerBefore = (workerBeforeRes.json() as { available: number }).available;
 
     const taskRes = await app!.inject({
       method: "POST",
-      url: "/v1/tasks",
+      url: "/v2/tasks",
       headers: { authorization: `Bearer ${bearer(publisher)}` },
       payload: {
         title: "restart-interactive-scenario",
@@ -511,14 +523,14 @@ runDbSuite("API persistence mode", () => {
 
     const acceptRes = await app!.inject({
       method: "POST",
-      url: `/v1/tasks/${task.id}/accept`,
+      url: `/v2/tasks/${task.id}/accept`,
       headers: { authorization: `Bearer ${bearer(worker)}` }
     });
     expect(acceptRes.statusCode).toBe(200);
 
     const submitRes = await app!.inject({
       method: "POST",
-      url: `/v1/tasks/${task.id}/submissions`,
+      url: `/v2/tasks/${task.id}/submissions`,
       headers: { authorization: `Bearer ${bearer(worker)}` },
       payload: { payloadMd: "scenario result" }
     });
@@ -529,7 +541,7 @@ runDbSuite("API persistence mode", () => {
 
     const disputeRes = await app!.inject({
       method: "POST",
-      url: "/v1/disputes",
+      url: "/v2/disputes",
       headers: { authorization: `Bearer ${bearer(worker)}` },
       payload: {
         taskId: task.id,
@@ -542,7 +554,7 @@ runDbSuite("API persistence mode", () => {
 
     const firstVoteRes = await app!.inject({
       method: "POST",
-      url: `/v1/disputes/${dispute.id}/votes`,
+      url: `/v2/disputes/${dispute.id}/votes`,
       headers: { authorization: `Bearer ${bearer(supervisors[0])}` },
       payload: { vote: VoteChoice.NOT_COMPLETED }
     });
@@ -550,14 +562,14 @@ runDbSuite("API persistence mode", () => {
 
     const closeCycle1Res = await app!.inject({
       method: "POST",
-      url: "/v1/admin/cycles/close",
+      url: "/v2/admin/cycles/close",
       headers: { "x-admin-service-key": adminKey }
     });
     expect(closeCycle1Res.statusCode).toBe(200);
 
     const disputeAfterCycle1Res = await app!.inject({
       method: "GET",
-      url: `/v1/disputes/${dispute.id}`
+      url: `/v2/disputes/${dispute.id}`
     });
     expect(disputeAfterCycle1Res.statusCode).toBe(200);
     expect((disputeAfterCycle1Res.json() as { status: string }).status).toBe("OPEN");
@@ -568,7 +580,7 @@ runDbSuite("API persistence mode", () => {
 
     const overrideOpenRes = await app!.inject({
       method: "POST",
-      url: `/v1/admin/disputes/${dispute.id}/override`,
+      url: `/v2/admin/disputes/${dispute.id}/override`,
       headers: { "x-admin-service-key": adminKey },
       payload: { result: "NOT_COMPLETED" }
     });
@@ -578,7 +590,7 @@ runDbSuite("API persistence mode", () => {
     for (const supervisor of supervisors.slice(1)) {
       const voteRes = await app!.inject({
         method: "POST",
-        url: `/v1/disputes/${dispute.id}/votes`,
+        url: `/v2/disputes/${dispute.id}/votes`,
         headers: { authorization: `Bearer ${bearer(supervisor)}` },
         payload: { vote: VoteChoice.COMPLETED }
       });
@@ -587,7 +599,7 @@ runDbSuite("API persistence mode", () => {
 
     const overrideCompletedRes = await app!.inject({
       method: "POST",
-      url: `/v1/admin/disputes/${dispute.id}/override`,
+      url: `/v2/admin/disputes/${dispute.id}/override`,
       headers: { "x-admin-service-key": adminKey },
       payload: { result: "COMPLETED" }
     });
@@ -596,7 +608,7 @@ runDbSuite("API persistence mode", () => {
 
     const taskAfterRes = await app!.inject({
       method: "GET",
-      url: `/v1/tasks/${task.id}`
+      url: `/v2/tasks/${task.id}`
     });
     expect(taskAfterRes.statusCode).toBe(200);
     const taskAfter = taskAfterRes.json() as { status: string; rewardEscrowRemaining: number };
@@ -605,7 +617,7 @@ runDbSuite("API persistence mode", () => {
 
     const workerAfterRes = await app!.inject({
       method: "GET",
-      url: `/v1/ledger/${worker}`
+      url: `/v2/ledger/${worker}`
     });
     expect(workerAfterRes.statusCode).toBe(200);
     const workerAfter = (workerAfterRes.json() as { available: number }).available;
@@ -613,7 +625,7 @@ runDbSuite("API persistence mode", () => {
 
     const voteAfterResolvedRes = await app!.inject({
       method: "POST",
-      url: `/v1/disputes/${dispute.id}/votes`,
+      url: `/v2/disputes/${dispute.id}/votes`,
       headers: { authorization: `Bearer ${bearer(addr("scenario-sup-late"))}` },
       payload: { vote: VoteChoice.COMPLETED }
     });
@@ -624,7 +636,7 @@ runDbSuite("API persistence mode", () => {
     await app.ready();
     const disputeAfterRestartRes = await app!.inject({
       method: "GET",
-      url: `/v1/disputes/${dispute.id}`
+      url: `/v2/disputes/${dispute.id}`
     });
     expect(disputeAfterRestartRes.statusCode).toBe(200);
     expect((disputeAfterRestartRes.json() as { status: string }).status).toBe("RESOLVED_COMPLETED");
@@ -637,14 +649,14 @@ runDbSuite("API persistence mode", () => {
 
     const workerBeforeRes = await app!.inject({
       method: "GET",
-      url: `/v1/ledger/${worker}`
+      url: `/v2/ledger/${worker}`
     });
     expect(workerBeforeRes.statusCode).toBe(200);
     const workerBefore = (workerBeforeRes.json() as { available: number }).available;
 
     const taskRes = await app!.inject({
       method: "POST",
-      url: "/v1/tasks",
+      url: "/v2/tasks",
       headers: { authorization: `Bearer ${bearer(publisher)}` },
       payload: {
         title: "single-open-dispute-across-phases",
@@ -662,14 +674,14 @@ runDbSuite("API persistence mode", () => {
 
     const acceptRes = await app!.inject({
       method: "POST",
-      url: `/v1/tasks/${task.id}/accept`,
+      url: `/v2/tasks/${task.id}/accept`,
       headers: { authorization: `Bearer ${bearer(worker)}` }
     });
     expect(acceptRes.statusCode).toBe(200);
 
     const submitRes = await app!.inject({
       method: "POST",
-      url: `/v1/tasks/${task.id}/submissions`,
+      url: `/v2/tasks/${task.id}/submissions`,
       headers: { authorization: `Bearer ${bearer(worker)}` },
       payload: { payloadMd: "result" }
     });
@@ -679,7 +691,7 @@ runDbSuite("API persistence mode", () => {
 
     const firstDisputeRes = await app!.inject({
       method: "POST",
-      url: "/v1/disputes",
+      url: "/v2/disputes",
       headers: { authorization: `Bearer ${bearer(worker)}` },
       payload: {
         taskId: task.id,
@@ -692,7 +704,7 @@ runDbSuite("API persistence mode", () => {
 
     const voteRes = await app!.inject({
       method: "POST",
-      url: `/v1/disputes/${dispute.id}/votes`,
+      url: `/v2/disputes/${dispute.id}/votes`,
       headers: { authorization: `Bearer ${bearer(supervisor)}` },
       payload: { vote: VoteChoice.NOT_COMPLETED }
     });
@@ -700,14 +712,14 @@ runDbSuite("API persistence mode", () => {
 
     const closeCycleRes = await app!.inject({
       method: "POST",
-      url: "/v1/admin/cycles/close",
+      url: "/v2/admin/cycles/close",
       headers: { "x-admin-service-key": adminKey }
     });
     expect(closeCycleRes.statusCode).toBe(200);
 
     const reopenRes = await app!.inject({
       method: "POST",
-      url: `/v1/admin/disputes/${dispute.id}/override`,
+      url: `/v2/admin/disputes/${dispute.id}/override`,
       headers: { "x-admin-service-key": adminKey },
       payload: { result: "NOT_COMPLETED" }
     });
@@ -716,7 +728,7 @@ runDbSuite("API persistence mode", () => {
 
     const duplicateWhileOpenRes = await app!.inject({
       method: "POST",
-      url: "/v1/disputes",
+      url: "/v2/disputes",
       headers: { authorization: `Bearer ${bearer(publisher)}` },
       payload: {
         taskId: task.id,
@@ -725,7 +737,7 @@ runDbSuite("API persistence mode", () => {
       }
     });
     expect(duplicateWhileOpenRes.statusCode).toBe(409);
-    expect(duplicateWhileOpenRes.json().error).toBe("OPEN_DISPUTE_ALREADY_EXISTS");
+    expect(errorCode(duplicateWhileOpenRes.json())).toBe("OPEN_DISPUTE_ALREADY_EXISTS");
 
     await app!.close();
     app = await buildApp();
@@ -733,7 +745,7 @@ runDbSuite("API persistence mode", () => {
 
     const duplicateAfterRestartRes = await app!.inject({
       method: "POST",
-      url: "/v1/disputes",
+      url: "/v2/disputes",
       headers: { authorization: `Bearer ${bearer(worker)}` },
       payload: {
         taskId: task.id,
@@ -742,11 +754,11 @@ runDbSuite("API persistence mode", () => {
       }
     });
     expect(duplicateAfterRestartRes.statusCode).toBe(409);
-    expect(duplicateAfterRestartRes.json().error).toBe("OPEN_DISPUTE_ALREADY_EXISTS");
+    expect(errorCode(duplicateAfterRestartRes.json())).toBe("OPEN_DISPUTE_ALREADY_EXISTS");
 
     const finalizeRes = await app!.inject({
       method: "POST",
-      url: `/v1/admin/disputes/${dispute.id}/override`,
+      url: `/v2/admin/disputes/${dispute.id}/override`,
       headers: { "x-admin-service-key": adminKey },
       payload: { result: "COMPLETED" }
     });
@@ -755,7 +767,7 @@ runDbSuite("API persistence mode", () => {
 
     const openAfterFinalizeRes = await app!.inject({
       method: "POST",
-      url: "/v1/disputes",
+      url: "/v2/disputes",
       headers: { authorization: `Bearer ${bearer(worker)}` },
       payload: {
         taskId: task.id,
@@ -764,11 +776,11 @@ runDbSuite("API persistence mode", () => {
       }
     });
     expect(openAfterFinalizeRes.statusCode).toBe(409);
-    expect(openAfterFinalizeRes.json().error).toBe("SUBMISSION_NOT_DISPUTABLE");
+    expect(errorCode(openAfterFinalizeRes.json())).toBe("SUBMISSION_NOT_DISPUTABLE");
 
     const workerAfterRes = await app!.inject({
       method: "GET",
-      url: `/v1/ledger/${worker}`
+      url: `/v2/ledger/${worker}`
     });
     expect(workerAfterRes.statusCode).toBe(200);
     const workerAfter = (workerAfterRes.json() as { available: number }).available;
@@ -776,7 +788,7 @@ runDbSuite("API persistence mode", () => {
 
     const taskAfterRes = await app!.inject({
       method: "GET",
-      url: `/v1/tasks/${task.id}`
+      url: `/v2/tasks/${task.id}`
     });
     expect(taskAfterRes.statusCode).toBe(200);
     const taskAfter = taskAfterRes.json() as { status: string; rewardEscrowRemaining: number };
@@ -794,7 +806,7 @@ runDbSuite("API persistence mode", () => {
     const createTask = async (publisher: Address, title: string, rewardPerSlot: number) => {
       const response = await app!.inject({
         method: "POST",
-        url: "/v1/tasks",
+        url: "/v2/tasks",
         headers: { authorization: `Bearer ${bearer(publisher)}` },
         payload: {
           title,
@@ -818,14 +830,14 @@ runDbSuite("API persistence mode", () => {
 
     const acceptBetaRes = await app!.inject({
       method: "POST",
-      url: `/v1/tasks/${beta.id}/accept`,
+      url: `/v2/tasks/${beta.id}/accept`,
       headers: { authorization: `Bearer ${bearer(worker)}` }
     });
     expect(acceptBetaRes.statusCode).toBe(200);
 
     const betaSubmissionRes = await app!.inject({
       method: "POST",
-      url: `/v1/tasks/${beta.id}/submissions`,
+      url: `/v2/tasks/${beta.id}/submissions`,
       headers: { authorization: `Bearer ${bearer(worker)}` },
       payload: { payloadMd: "beta result" }
     });
@@ -835,7 +847,7 @@ runDbSuite("API persistence mode", () => {
 
     const disputeRes = await app!.inject({
       method: "POST",
-      url: "/v1/disputes",
+      url: "/v2/disputes",
       headers: { authorization: `Bearer ${bearer(publisherA)}` },
       payload: {
         taskId: beta.id,
@@ -848,7 +860,7 @@ runDbSuite("API persistence mode", () => {
 
     const voteRes = await app!.inject({
       method: "POST",
-      url: `/v1/disputes/${dispute.id}/votes`,
+      url: `/v2/disputes/${dispute.id}/votes`,
       headers: { authorization: `Bearer ${bearer(supervisor)}` },
       payload: { vote: VoteChoice.COMPLETED }
     });
@@ -856,14 +868,14 @@ runDbSuite("API persistence mode", () => {
 
     const acceptGammaRes = await app!.inject({
       method: "POST",
-      url: `/v1/tasks/${gamma.id}/accept`,
+      url: `/v2/tasks/${gamma.id}/accept`,
       headers: { authorization: `Bearer ${bearer(worker)}` }
     });
     expect(acceptGammaRes.statusCode).toBe(200);
 
     const gammaSubmissionRes = await app!.inject({
       method: "POST",
-      url: `/v1/tasks/${gamma.id}/submissions`,
+      url: `/v2/tasks/${gamma.id}/submissions`,
       headers: { authorization: `Bearer ${bearer(worker)}` },
       payload: { payloadMd: "gamma result" }
     });
@@ -872,21 +884,21 @@ runDbSuite("API persistence mode", () => {
 
     const confirmGammaRes = await app!.inject({
       method: "POST",
-      url: `/v1/submissions/${gammaSubmission.id}/confirm`,
+      url: `/v2/submissions/${gammaSubmission.id}/confirm`,
       headers: { authorization: `Bearer ${bearer(publisherB)}` }
     });
     expect(confirmGammaRes.statusCode).toBe(200);
 
     const terminateDeltaRes = await app!.inject({
       method: "POST",
-      url: `/v1/tasks/${delta.id}/terminate`,
+      url: `/v2/tasks/${delta.id}/terminate`,
       headers: { authorization: `Bearer ${bearer(publisherA)}` }
     });
     expect(terminateDeltaRes.statusCode).toBe(200);
 
     const inactiveProfileRes = await app!.inject({
       method: "PATCH",
-      url: `/v1/agents/${inactive}/profile`,
+      url: `/v2/agents/${inactive}/profile`,
       headers: { authorization: `Bearer ${bearer(inactive)}` },
       payload: {
         name: "DormantReader"
@@ -896,7 +908,7 @@ runDbSuite("API persistence mode", () => {
 
     const tasksPageOneRes = await app!.inject({
       method: "GET",
-      url: `/v1/tasks?publisher=${publisherA}&sort=reward&order=desc&limit=2`
+      url: `/v2/tasks?publisher=${publisherA}&sort=reward&order=desc&limit=2`
     });
     expect(tasksPageOneRes.statusCode).toBe(200);
     const tasksPageOne = tasksPageOneRes.json() as {
@@ -908,7 +920,7 @@ runDbSuite("API persistence mode", () => {
 
     const tasksPageTwoRes = await app!.inject({
       method: "GET",
-      url: `/v1/tasks?publisher=${publisherA}&sort=reward&order=desc&limit=2&cursor=${tasksPageOne.nextCursor}`
+      url: `/v2/tasks?publisher=${publisherA}&sort=reward&order=desc&limit=2&cursor=${tasksPageOne.nextCursor}`
     });
     expect(tasksPageTwoRes.statusCode).toBe(200);
     const tasksPageTwo = tasksPageTwoRes.json() as {
@@ -920,7 +932,7 @@ runDbSuite("API persistence mode", () => {
 
     const alphaFilterRes = await app!.inject({
       method: "GET",
-      url: "/v1/tasks?q=alpha&status=OPEN&limit=10"
+      url: "/v2/tasks?q=alpha&status=OPEN&limit=10"
     });
     expect(alphaFilterRes.statusCode).toBe(200);
     const alphaFilter = alphaFilterRes.json() as {
@@ -930,7 +942,7 @@ runDbSuite("API persistence mode", () => {
 
     const disputesListRes = await app!.inject({
       method: "GET",
-      url: `/v1/disputes?taskId=${beta.id}&status=OPEN&opener=${publisherA}&limit=10`
+      url: `/v2/disputes?taskId=${beta.id}&status=OPEN&opener=${publisherA}&limit=10`
     });
     expect(disputesListRes.statusCode).toBe(200);
     const disputesList = disputesListRes.json() as {
@@ -942,7 +954,7 @@ runDbSuite("API persistence mode", () => {
 
     const activitiesPageOneRes = await app!.inject({
       method: "GET",
-      url: `/v1/activities?taskId=${beta.id}&order=asc&limit=2`
+      url: `/v2/activities?taskId=${beta.id}&order=asc&limit=2`
     });
     expect(activitiesPageOneRes.statusCode).toBe(200);
     const activitiesPageOne = activitiesPageOneRes.json() as {
@@ -957,7 +969,7 @@ runDbSuite("API persistence mode", () => {
 
     const activitiesPageTwoRes = await app!.inject({
       method: "GET",
-      url: `/v1/activities?taskId=${beta.id}&order=asc&limit=2&cursor=${activitiesPageOne.nextCursor}`
+      url: `/v2/activities?taskId=${beta.id}&order=asc&limit=2&cursor=${activitiesPageOne.nextCursor}`
     });
     expect(activitiesPageTwoRes.statusCode).toBe(200);
     const activitiesPageTwo = activitiesPageTwoRes.json() as {
@@ -969,7 +981,7 @@ runDbSuite("API persistence mode", () => {
 
     const dormantAgentsRes = await app!.inject({
       method: "GET",
-      url: "/v1/agents?q=DormantReader&activeOnly=false&limit=10"
+      url: "/v2/agents?q=DormantReader&activeOnly=false&limit=10"
     });
     expect(dormantAgentsRes.statusCode).toBe(200);
     const dormantAgents = dormantAgentsRes.json() as {
@@ -984,7 +996,7 @@ runDbSuite("API persistence mode", () => {
 
     const summaryRes = await app!.inject({
       method: "GET",
-      url: "/v1/dashboard/summary?tz=UTC"
+      url: "/v2/dashboard/summary?tz=UTC"
     });
     expect(summaryRes.statusCode).toBe(200);
     const summary = summaryRes.json() as {
@@ -1010,7 +1022,7 @@ runDbSuite("API persistence mode", () => {
 
     const trendsRes = await app!.inject({
       method: "GET",
-      url: "/v1/dashboard/trends?tz=UTC&window=7d"
+      url: "/v2/dashboard/trends?tz=UTC&window=7d"
     });
     expect(trendsRes.statusCode).toBe(200);
     const trends = trendsRes.json() as {

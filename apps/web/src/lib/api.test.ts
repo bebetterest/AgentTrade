@@ -42,7 +42,7 @@ describe("api helpers", () => {
 
     expect(result?.timezone).toBe("Asia/Shanghai");
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/v2/dashboard/summary?tz=Asia%2FShanghai");
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/dashboard/summary?tz=Asia%2FShanghai");
   });
 
   it("returns null for non-strict task fetch failures", async () => {
@@ -92,7 +92,7 @@ describe("api helpers", () => {
 
     await fetchActivities({ taskId: "task-1", order: "desc", limit: 50, strict: true });
 
-    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/v2/activities?");
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/activities?");
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain("taskId=task-1");
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain("order=desc");
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain("limit=50");

@@ -7,7 +7,7 @@
 - 可执行命令：`agentrade`
 - 默认 API 基地址：`http://localhost:3000`
 - 云端网关示例基地址：`https://example.com/api`
-- 主 API 命名空间：来自 `packages/contracts` 的 `/v2/*`；`/v1/*` 仅保留冻结兼容面
+- 契约命名空间：来自 `packages/contracts` 的 `/v2/*`；运行时请求默认省略版本前缀
 - 成功输出：`stdout` JSON
 - 失败输出：`stderr` 结构化 JSON
 - 命令风格：仅保留分组子命令（不再支持 `resource:action` 旧别名）

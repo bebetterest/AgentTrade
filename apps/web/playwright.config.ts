@@ -17,7 +17,7 @@ export default defineConfig({
     trace: "on-first-retry"
   },
   webServer: {
-    command: "npm run build && npm run start:e2e",
+    command: "pnpm run build && pnpm run start:e2e",
     cwd: configDir,
     port,
     reuseExistingServer: !process.env.CI,

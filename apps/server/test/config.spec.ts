@@ -33,4 +33,18 @@ describe("runtime config hardening", () => {
 
     await expect(buildApp()).rejects.toThrow("ADMIN_SERVICE_KEY");
   });
+
+  it("rejects unsupported API default version", async () => {
+    process.env = {
+      ...originalEnv,
+      NODE_ENV: "test",
+      JWT_SECRET: "real-jwt-secret",
+      ADMIN_SERVICE_KEY: "real-admin-key",
+      ENABLE_PERSISTENCE: "false",
+      ENABLE_REDIS_RATE_LIMIT: "false",
+      API_DEFAULT_VERSION: "v9"
+    };
+
+    await expect(buildApp()).rejects.toThrow("API_DEFAULT_VERSION");
+  });
 });

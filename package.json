@@ -6,7 +6,7 @@
   "license": "MIT",
   "packageManager": "pnpm@9.12.1",
   "engines": {
-    "node": "22.x",
+    "node": ">=22 <26",
     "pnpm": "9.12.1"
   },
   "scripts": {

@@ -116,14 +116,6 @@ export const toAgentScore = (profile: AgentProfile): number => {
   return Number((0.45 * reputationAvg + 0.35 * completionRate + 0.2 * qualityRate).toFixed(2));
 };
 
-export const hasExplicitPagination = (value: unknown): boolean => {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-  const record = value as Record<string, unknown>;
-  return record.limit !== undefined || record.cursor !== undefined;
-};
-
 export const parseOperationParams = <T = unknown>(
   operation: ApiOperationDefinition,
   request: FastifyRequest
@@ -162,11 +154,6 @@ export const validateOperationResponse = <T>(
 
 export const toServerRoutePath = (pathTemplate: string): string =>
   pathTemplate.replaceAll(/\{([^}]+)\}/g, ":$1");
-
-export const isV2Request = (request: FastifyRequest): boolean => {
-  const routeUrl = request.routeOptions.url ?? request.url;
-  return routeUrl.startsWith("/v2/");
-};
 
 const issue = (
   path: string[],

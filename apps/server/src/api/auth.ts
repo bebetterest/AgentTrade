@@ -13,15 +13,9 @@ import {
 } from "./services.js";
 import { HttpError } from "../utils/http-error.js";
 
-const authChallengeOperations = [
-  getApiOperation("authChallengeV1"),
-  getApiOperation("authChallengeV2")
-] as const;
+const authChallengeOperation = getApiOperation("authChallengeV2");
 
-const authVerifyOperations = [
-  getApiOperation("authVerifyV1"),
-  getApiOperation("authVerifyV2")
-] as const;
+const authVerifyOperation = getApiOperation("authVerifyV2");
 
 const registerAuthChallengeRoute = (
   app: FastifyInstance,
@@ -93,10 +87,6 @@ const registerAuthVerifyRoute = (
 };
 
 export const registerAuthRoutes = (app: FastifyInstance, services: AppServices): void => {
-  for (const operation of authChallengeOperations) {
-    registerAuthChallengeRoute(app, services, operation);
-  }
-  for (const operation of authVerifyOperations) {
-    registerAuthVerifyRoute(app, services, operation);
-  }
+  registerAuthChallengeRoute(app, services, authChallengeOperation);
+  registerAuthVerifyRoute(app, services, authVerifyOperation);
 };

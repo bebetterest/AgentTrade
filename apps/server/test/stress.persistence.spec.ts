@@ -16,6 +16,18 @@ const indexedAddr = (offset: number, index: number): Address =>
   `0x${(BigInt(offset) + BigInt(index) + 1n).toString(16).padStart(40, "0")}` as Address;
 const futureDeadline = (hours = 24): string =>
   new Date(Date.now() + hours * 3_600_000).toISOString();
+const errorCode = (payload: unknown): string | null => {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+  const error = (payload as { error?: unknown }).error;
+  if (!error || typeof error !== "object") {
+    return null;
+  }
+  return typeof (error as { code?: unknown }).code === "string"
+    ? ((error as { code: string }).code)
+    : null;
+};
 
 runDbSuite("Persistence Stress", () => {
   const secret = "persist-stress-secret";
@@ -28,7 +40,7 @@ runDbSuite("Persistence Stress", () => {
   const rejectSubmission = async (submissionId: string, publisher: Address) => {
     const rejectRes = await app!.inject({
       method: "POST",
-      url: `/v1/submissions/${submissionId}/reject`,
+      url: `/v2/submissions/${submissionId}/reject`,
       headers: { authorization: `Bearer ${bearer(publisher)}` }
     });
     expect(rejectRes.statusCode).toBe(200);
@@ -37,7 +49,7 @@ runDbSuite("Persistence Stress", () => {
   const createTask = async (publisher: Address, slotsTotal: number) => {
     const taskRes = await app!.inject({
       method: "POST",
-      url: "/v1/tasks",
+      url: "/v2/tasks",
       headers: { authorization: `Bearer ${bearer(publisher)}` },
       payload: {
         title: "stress-task",
@@ -100,7 +112,7 @@ runDbSuite("Persistence Stress", () => {
       workers.map((worker) =>
         app!.inject({
           method: "POST",
-          url: `/v1/tasks/${task.id}/accept`,
+          url: `/v2/tasks/${task.id}/accept`,
           headers: { authorization: `Bearer ${bearer(worker)}` }
         })
       )
@@ -113,7 +125,7 @@ runDbSuite("Persistence Stress", () => {
     expect(success).toBe(10);
     expect(conflicts).toBe(70);
 
-    const taskAfter = await app!.inject({ method: "GET", url: `/v1/tasks/${task.id}` });
+    const taskAfter = await app!.inject({ method: "GET", url: `/v2/tasks/${task.id}` });
     expect(taskAfter.statusCode).toBe(200);
     const snapshot = taskAfter.json() as { acceptedAgents: string[]; slotsTotal: number };
     expect(snapshot.acceptedAgents.length).toBe(snapshot.slotsTotal);
@@ -127,14 +139,14 @@ runDbSuite("Persistence Stress", () => {
 
     const accept = await app!.inject({
       method: "POST",
-      url: `/v1/tasks/${task.id}/accept`,
+      url: `/v2/tasks/${task.id}/accept`,
       headers: { authorization: `Bearer ${bearer(worker)}` }
     });
     expect(accept.statusCode).toBe(200);
 
     const submit = await app!.inject({
       method: "POST",
-      url: `/v1/tasks/${task.id}/submissions`,
+      url: `/v2/tasks/${task.id}/submissions`,
       headers: { authorization: `Bearer ${bearer(worker)}` },
       payload: { payloadMd: "stress result" }
     });
@@ -144,7 +156,7 @@ runDbSuite("Persistence Stress", () => {
 
     const disputeRes = await app!.inject({
       method: "POST",
-      url: "/v1/disputes",
+      url: "/v2/disputes",
       headers: { authorization: `Bearer ${bearer(publisher)}` },
       payload: {
         taskId: task.id,
@@ -160,7 +172,7 @@ runDbSuite("Persistence Stress", () => {
       supervisors.map((supervisor) =>
         app!.inject({
           method: "POST",
-          url: `/v1/disputes/${dispute.id}/votes`,
+          url: `/v2/disputes/${dispute.id}/votes`,
           headers: { authorization: `Bearer ${bearer(supervisor)}` },
           payload: { vote: VoteChoice.COMPLETED }
         })
@@ -170,21 +182,21 @@ runDbSuite("Persistence Stress", () => {
 
     const closeRes = await app!.inject({
       method: "POST",
-      url: "/v1/admin/cycles/close",
+      url: "/v2/admin/cycles/close",
       headers: { "x-admin-service-key": adminKey }
     });
     expect(closeRes.statusCode).toBe(200);
     const closePayload = closeRes.json() as { closedCycleId: string; finalizedDisputes: string[] };
     expect(closePayload.finalizedDisputes).toContain(dispute.id);
 
-    const disputeAfter = await app!.inject({ method: "GET", url: `/v1/disputes/${dispute.id}` });
+    const disputeAfter = await app!.inject({ method: "GET", url: `/v2/disputes/${dispute.id}` });
     expect(disputeAfter.statusCode).toBe(200);
     const disputeBody = disputeAfter.json() as { status: string };
     expect(disputeBody.status).toBe("RESOLVED_COMPLETED");
 
     const rewards = await app!.inject({
       method: "GET",
-      url: `/v1/cycles/${closePayload.closedCycleId}/rewards`
+      url: `/v2/cycles/${closePayload.closedCycleId}/rewards`
     });
     expect(rewards.statusCode).toBe(200);
     const rewardsBody = rewards.json() as {
@@ -203,14 +215,14 @@ runDbSuite("Persistence Stress", () => {
 
     const accept = await app!.inject({
       method: "POST",
-      url: `/v1/tasks/${task.id}/accept`,
+      url: `/v2/tasks/${task.id}/accept`,
       headers: { authorization: `Bearer ${bearer(worker)}` }
     });
     expect(accept.statusCode).toBe(200);
 
     const submit = await app!.inject({
       method: "POST",
-      url: `/v1/tasks/${task.id}/submissions`,
+      url: `/v2/tasks/${task.id}/submissions`,
       headers: { authorization: `Bearer ${bearer(worker)}` },
       payload: { payloadMd: "stress duplicate vote result" }
     });
@@ -220,7 +232,7 @@ runDbSuite("Persistence Stress", () => {
 
     const disputeRes = await app!.inject({
       method: "POST",
-      url: "/v1/disputes",
+      url: "/v2/disputes",
       headers: { authorization: `Bearer ${bearer(publisher)}` },
       payload: {
         taskId: task.id,
@@ -235,7 +247,7 @@ runDbSuite("Persistence Stress", () => {
       Array.from({ length: 40 }).map(() =>
         app!.inject({
           method: "POST",
-          url: `/v1/disputes/${dispute.id}/votes`,
+          url: `/v2/disputes/${dispute.id}/votes`,
           headers: { authorization: `Bearer ${bearer(supervisor)}` },
           payload: { vote: VoteChoice.COMPLETED }
         })
@@ -251,7 +263,7 @@ runDbSuite("Persistence Stress", () => {
 
     const closeRes = await app!.inject({
       method: "POST",
-      url: "/v1/admin/cycles/close",
+      url: "/v2/admin/cycles/close",
       headers: { "x-admin-service-key": adminKey }
     });
     expect(closeRes.statusCode).toBe(200);
@@ -259,7 +271,7 @@ runDbSuite("Persistence Stress", () => {
 
     const rewards = await app!.inject({
       method: "GET",
-      url: `/v1/cycles/${close.closedCycleId}/rewards`
+      url: `/v2/cycles/${close.closedCycleId}/rewards`
     });
     expect(rewards.statusCode).toBe(200);
     const rewardsBody = rewards.json() as {
@@ -277,14 +289,14 @@ runDbSuite("Persistence Stress", () => {
 
     const accept = await app!.inject({
       method: "POST",
-      url: `/v1/tasks/${task.id}/accept`,
+      url: `/v2/tasks/${task.id}/accept`,
       headers: { authorization: `Bearer ${bearer(worker)}` }
     });
     expect(accept.statusCode).toBe(200);
 
     const submit = await app!.inject({
       method: "POST",
-      url: `/v1/tasks/${task.id}/submissions`,
+      url: `/v2/tasks/${task.id}/submissions`,
       headers: { authorization: `Bearer ${bearer(worker)}` },
       payload: { payloadMd: "stress duplicate dispute result" }
     });
@@ -296,7 +308,7 @@ runDbSuite("Persistence Stress", () => {
       Array.from({ length: 40 }).map(() =>
         app!.inject({
           method: "POST",
-          url: "/v1/disputes",
+          url: "/v2/disputes",
           headers: { authorization: `Bearer ${bearer(publisher)}` },
           payload: {
             taskId: task.id,
@@ -314,7 +326,7 @@ runDbSuite("Persistence Stress", () => {
     expect(success).toBe(1);
     expect(conflicts).toBe(39);
     for (const response of attempts.filter((item) => item.statusCode === 409)) {
-      expect(response.json().error).toBe("OPEN_DISPUTE_ALREADY_EXISTS");
+      expect(errorCode(response.json())).toBe("OPEN_DISPUTE_ALREADY_EXISTS");
     }
   }, 30_000);
 
@@ -322,7 +334,7 @@ runDbSuite("Persistence Stress", () => {
     const publisher = addr("stress-pub-budget");
     const beforeLedger = await app!.inject({
       method: "GET",
-      url: `/v1/ledger/${publisher}`
+      url: `/v2/ledger/${publisher}`
     });
     expect(beforeLedger.statusCode).toBe(200);
     const initialBalance = (beforeLedger.json() as { available: number }).available;
@@ -331,7 +343,7 @@ runDbSuite("Persistence Stress", () => {
       Array.from({ length: 20 }).map(() =>
         app!.inject({
           method: "POST",
-          url: "/v1/tasks",
+          url: "/v2/tasks",
           headers: { authorization: `Bearer ${bearer(publisher)}` },
           payload: {
             title: "stress-budget-task",
@@ -361,12 +373,12 @@ runDbSuite("Persistence Stress", () => {
     expect(successResponses.length).toBe(maxAffordablePublishes);
     expect(conflictResponses.length).toBe(20 - maxAffordablePublishes);
     for (const response of conflictResponses) {
-      expect(response.json().error).toBe("INSUFFICIENT_BALANCE");
+      expect(errorCode(response.json())).toBe("INSUFFICIENT_BALANCE");
     }
 
     const afterLedger = await app!.inject({
       method: "GET",
-      url: `/v1/ledger/${publisher}`
+      url: `/v2/ledger/${publisher}`
     });
     expect(afterLedger.statusCode).toBe(200);
     const afterBalance = (afterLedger.json() as { available: number }).available;
@@ -380,7 +392,7 @@ runDbSuite("Persistence Stress", () => {
       Array.from({ length: 25 }, (_, index) =>
         app!.inject({
           method: "POST",
-          url: "/v1/tasks",
+          url: "/v2/tasks",
           headers: { authorization: `Bearer ${bearer(publisher)}` },
           payload: {
             title: `stress-read-${index + 1}`,
@@ -403,7 +415,7 @@ runDbSuite("Persistence Stress", () => {
 
     const pageOneRes = await app!.inject({
       method: "GET",
-      url: `/v1/tasks?publisher=${publisher}&sort=latest&order=desc&limit=10`
+      url: `/v2/tasks?publisher=${publisher}&sort=latest&order=desc&limit=10`
     });
     expect(pageOneRes.statusCode).toBe(200);
     const pageOne = pageOneRes.json() as {
@@ -415,7 +427,7 @@ runDbSuite("Persistence Stress", () => {
 
     const pageTwoRes = await app!.inject({
       method: "GET",
-      url: `/v1/tasks?publisher=${publisher}&sort=latest&order=desc&limit=10&cursor=${pageOne.nextCursor}`
+      url: `/v2/tasks?publisher=${publisher}&sort=latest&order=desc&limit=10&cursor=${pageOne.nextCursor}`
     });
     expect(pageTwoRes.statusCode).toBe(200);
     const pageTwo = pageTwoRes.json() as {
@@ -427,7 +439,7 @@ runDbSuite("Persistence Stress", () => {
 
     const pageThreeRes = await app!.inject({
       method: "GET",
-      url: `/v1/tasks?publisher=${publisher}&sort=latest&order=desc&limit=10&cursor=${pageTwo.nextCursor}`
+      url: `/v2/tasks?publisher=${publisher}&sort=latest&order=desc&limit=10&cursor=${pageTwo.nextCursor}`
     });
     expect(pageThreeRes.statusCode).toBe(200);
     const pageThree = pageThreeRes.json() as {

@@ -304,6 +304,10 @@ const sortByDate = (left: string, right: string, order: "asc" | "desc") =>
 interface InstallApiMocksOptions {
   failActivitiesByTaskIdOnce?: string;
   failActivitiesByAddressOnce?: string;
+  failTaskById?: string;
+  failAgentByAddress?: string;
+  failCycleById?: string;
+  failDisputeById?: string;
 }
 
 const installApiMocks = async (page: Page, options: InstallApiMocksOptions = {}) => {
@@ -351,6 +355,53 @@ const installApiMocks = async (page: Page, options: InstallApiMocksOptions = {})
       return;
     }
 
+    if (path === "/system/health") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ ok: true, service: "agentrade-server" })
+      });
+      return;
+    }
+
+    if (path === "/economy/params") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          appName: "Agentrade",
+          enablePersistence: true,
+          enableRedisRateLimit: false,
+          authChallengeTtlMinutes: 10,
+          rateLimitPerMinute: 60,
+          rateLimitBurst: 120,
+          taskTitleMaxLength: 120,
+          taskDescriptionMaxLength: 4000,
+          taskAcceptanceCriteriaMaxLength: 2000,
+          taskSubmissionPayloadMaxLength: 5000,
+          disputeReasonMaxLength: 2000,
+          taskSlotsMax: 5,
+          taskRewardPerSlotMax: 500,
+          taskDeadlineMaxHours: 72,
+          taxRateBps: 500,
+          taxMin: 1,
+          rewardMin: 1,
+          mintPerCycle: 1000,
+          terminationPenaltyBps: 2000,
+          submissionTimeoutHours: 24,
+          resubmitCooldownMinutes: 10,
+          disputeQuorum: 3,
+          disputeApprovalBps: 6000,
+          reputationWeightPublisherBps: 3000,
+          reputationWeightWorkerBps: 5000,
+          reputationWeightSupervisorBps: 2000,
+          bridgeChain: "base-sepolia",
+          bridgeMode: "OFFCHAIN_EXPORT_ONLY"
+        })
+      });
+      return;
+    }
+
     if (path === "/cycles/active") {
       await route.fulfill({
         status: 200,
@@ -373,6 +424,14 @@ const installApiMocks = async (page: Page, options: InstallApiMocksOptions = {})
 
     if (path.startsWith("/cycles/") && path.endsWith("/rewards")) {
       const cycleId = path.split("/")[2] ?? "";
+      if (options.failCycleById === cycleId) {
+        await route.fulfill({
+          status: 500,
+          contentType: "application/json",
+          body: JSON.stringify({ error: "forced failure for detail route" })
+        });
+        return;
+      }
       const rewards = cycleRewardsById[cycleId as keyof typeof cycleRewardsById];
       await route.fulfill({
         status: rewards ? 200 : 404,
@@ -428,6 +487,14 @@ const installApiMocks = async (page: Page, options: InstallApiMocksOptions = {})
 
     if (path.startsWith("/tasks/")) {
       const taskId = path.split("/").at(-1) ?? "";
+      if (options.failTaskById === taskId) {
+        await route.fulfill({
+          status: 500,
+          contentType: "application/json",
+          body: JSON.stringify({ error: "forced failure for detail route" })
+        });
+        return;
+      }
       const task = tasks.find((item) => item.id === taskId);
       await route.fulfill({
         status: task ? 200 : 404,
@@ -488,6 +555,14 @@ const installApiMocks = async (page: Page, options: InstallApiMocksOptions = {})
 
     if (path.startsWith("/agents/")) {
       const address = path.split("/").at(-1) ?? "";
+      if (options.failAgentByAddress === address) {
+        await route.fulfill({
+          status: 500,
+          contentType: "application/json",
+          body: JSON.stringify({ error: "forced failure for detail route" })
+        });
+        return;
+      }
       const profile = agentProfiles.find((item) => item.address === address);
       await route.fulfill({
         status: profile ? 200 : 404,
@@ -509,8 +584,23 @@ const installApiMocks = async (page: Page, options: InstallApiMocksOptions = {})
     }
 
     if (path === "/disputes") {
+      const q = (url.searchParams.get("q") ?? "").toLowerCase();
       const taskId = url.searchParams.get("taskId");
-      const filtered = taskId ? disputes.filter((item) => item.taskId === taskId) : disputes;
+      const status = url.searchParams.get("status");
+      const sort = (url.searchParams.get("sort") as "latest" | "created" | null) ?? "latest";
+      const order = (url.searchParams.get("order") as "asc" | "desc" | null) ?? "desc";
+      let filtered = taskId ? disputes.filter((item) => item.taskId === taskId) : [...disputes];
+      if (q) {
+        filtered = filtered.filter((item) =>
+          item.id.toLowerCase().includes(q) ||
+          item.taskId.toLowerCase().includes(q) ||
+          item.opener.toLowerCase().includes(q)
+        );
+      }
+      if (status) {
+        filtered = filtered.filter((item) => item.status === status);
+      }
+      filtered.sort((a, b) => sortByDate(sort === "created" ? a.createdAt : a.updatedAt, sort === "created" ? b.createdAt : b.updatedAt, order));
       const body = paginate(filtered, url.searchParams.get("cursor"), url.searchParams.get("limit"));
       await route.fulfill({
         status: 200,
@@ -522,6 +612,14 @@ const installApiMocks = async (page: Page, options: InstallApiMocksOptions = {})
 
     if (path.startsWith("/disputes/")) {
       const disputeId = path.split("/").at(-1) ?? "";
+      if (options.failDisputeById === disputeId) {
+        await route.fulfill({
+          status: 500,
+          contentType: "application/json",
+          body: JSON.stringify({ error: "forced failure for detail route" })
+        });
+        return;
+      }
       const dispute = disputes.find((item) => item.id === disputeId);
       await route.fulfill({
         status: dispute ? 200 : 404,
@@ -533,6 +631,7 @@ const installApiMocks = async (page: Page, options: InstallApiMocksOptions = {})
 
     if (path === "/activities") {
       const taskId = url.searchParams.get("taskId");
+      const disputeId = url.searchParams.get("disputeId");
       const address = url.searchParams.get("address");
       const order = (url.searchParams.get("order") as "asc" | "desc" | null) ?? "desc";
       if (taskId && options.failActivitiesByTaskIdOnce === taskId && !failedTaskActivity) {
@@ -556,6 +655,9 @@ const installApiMocks = async (page: Page, options: InstallApiMocksOptions = {})
       let filtered = [...activities];
       if (taskId) {
         filtered = filtered.filter((item) => item.taskId === taskId);
+      }
+      if (disputeId) {
+        filtered = filtered.filter((item) => item.disputeId === disputeId);
       }
       if (address) {
         filtered = filtered.filter((item) => item.actor.toLowerCase() === address.toLowerCase());
@@ -582,10 +684,49 @@ test.beforeEach(async ({ page }) => {
   await installApiMocks(page);
 });
 
-test("task list supports search/filter/sort and load more", async ({ page }) => {
+test("home page leads into the research center", async ({ page }) => {
   await page.goto("/");
+  await expect(page.getByText("Public Information Station")).toBeVisible();
+  await page.getByRole("link", { name: "Enter Research Center" }).click();
+  await expect(page).toHaveURL(/\/center/);
+  await expect(page.getByTestId("dashboard-page")).toBeVisible();
+});
+
+test("locale switch persists across home, center, and direct detail routes", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByText("Public Information Station")).toBeVisible();
+
+  await page.getByRole("button", { name: "Switch language to Chinese" }).click();
+  await expect(page.getByText("公开信息站")).toBeVisible();
+  await expect(page.getByRole("link", { name: "进入数据中心" })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.localStorage.getItem("agentrade.locale"))).toBe("zh");
+  await expect.poll(() => page.evaluate(() => document.cookie)).toContain("agentrade.locale=zh");
+
+  await page.getByRole("link", { name: "进入数据中心" }).click();
+  await expect(page).toHaveURL(/\/center/);
+  await expect(page.getByText("数据中心")).toBeVisible();
+  await expect(page.getByTestId("tab-tasks")).toContainText("任务");
+  await expect(page.getByTestId("task-card").filter({ hasText: "Beta Dataset Labeling" })).toContainText("进行中");
+
+  await page.goto("/tasks/task-beta");
+  await expect(page.getByText("任务档案")).toBeVisible();
+  await expect(page.getByRole("link", { name: "返回数据中心" })).toHaveAttribute("href", "/center?tab=tasks");
+  await expect(page.getByText("进行中")).toBeVisible();
+
+  await page.getByRole("button", { name: "切换语言到英文" }).click();
+  await expect(page.getByText("Task Dossier")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Back to research center" })).toHaveAttribute("href", "/center?tab=tasks");
+  await expect.poll(() => page.evaluate(() => window.localStorage.getItem("agentrade.locale"))).toBe("en");
+  await expect.poll(() => page.evaluate(() => document.cookie)).toContain("agentrade.locale=en");
+});
+
+test("task list supports search/filter/sort and load more", async ({ page }) => {
+  await page.goto("/center");
   const taskCards = page.getByTestId("task-card");
   await expect(taskCards).toHaveCount(2);
+  await expect(page.getByTestId("task-card").filter({ hasText: "Alpha Content Review" })).toContainText("Open");
+  await expect(page.getByTestId("task-card").filter({ hasText: "Beta Dataset Labeling" })).toContainText("In progress");
+  await expect(page.locator("body")).not.toContainText("IN_PROGRESS");
 
   // The page supports both manual "Load more" and auto-loading via intersection.
   // In CI the button can be detached while auto-loading completes, so we retry
@@ -604,6 +745,7 @@ test("task list supports search/filter/sort and load more", async ({ page }) => 
     intervals: [100, 250, 500]
   });
   await expect(taskCards).toHaveCount(3);
+  await expect(page.getByTestId("task-card").filter({ hasText: "Gamma Summary Draft" })).toContainText("Closed");
 
   await page.getByTestId("search-input").fill("alpha");
   await expect(page.getByTestId("task-card")).toHaveCount(1);
@@ -626,10 +768,12 @@ test("task list supports search/filter/sort and load more", async ({ page }) => 
 });
 
 test("user tab supports sorting and pagination", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/center");
 
   await page.getByTestId("tab-users").click();
   await expect(page.getByTestId("agent-card")).toHaveCount(2);
+  await expect(page.getByTestId("agent-card").filter({ hasText: "Agent One" })).toContainText("Active");
+  await expect(page.locator("body")).not.toContainText("ACTIVE");
 
   await page.getByTestId("agent-sort-select").selectOption("score");
   await page.getByTestId("sort-order-select").selectOption("desc");
@@ -653,10 +797,11 @@ test("user tab supports sorting and pagination", async ({ page }) => {
     intervals: [100, 250, 500]
   });
   await expect(agentCards).toHaveCount(3);
+  await expect(page.getByTestId("agent-card").filter({ hasText: "Agent Three" })).toContainText("Idle");
 });
 
 test("task and agent detail drawers show enriched fields", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/center");
 
   await page.getByTestId("task-card").filter({ hasText: "Beta Dataset Labeling" }).getByTestId("task-detail-trigger").click();
   await expect(page.getByTestId("detail-drawer")).toBeVisible();
@@ -671,8 +816,24 @@ test("task and agent detail drawers show enriched fields", async ({ page }) => {
   await expect(page.getByText("42 AGC")).toBeVisible();
 });
 
+test("direct task and agent detail pages use the unified detail shell", async ({ page }) => {
+  await page.goto("/tasks/task-beta");
+  await expect(page.getByText("Task Dossier")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Beta Dataset Labeling" })).toBeVisible();
+  await expect(page.getByText("Escrow Remaining")).toBeVisible();
+  await expect(page.getByText("related disputes")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Back to research center" })).toHaveAttribute("href", "/center?tab=tasks");
+
+  await page.goto("/agents/0x3333333333333333333333333333333333333333");
+  await expect(page.getByText("Agent Profile")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Agent One" })).toBeVisible();
+  await expect(page.getByText("Balance & Reputation")).toBeVisible();
+  await expect(page.getByText("42 AGC")).toBeVisible();
+});
+
 test("cycle tab and active cycle card open reward detail drawer", async ({ page }) => {
-  await page.goto("/");
+  await page.goto("/center");
+  await expect(page.locator("body")).not.toContainText("CLOSED");
 
   await page.getByRole("button", { name: "View details" }).click();
   await expect(page.getByTestId("detail-drawer")).toBeVisible();
@@ -682,14 +843,56 @@ test("cycle tab and active cycle card open reward detail drawer", async ({ page 
   await page.locator(".drawer-mask").click();
   await page.getByTestId("tab-cycles").click();
   await expect(page.getByTestId("cycle-card")).toHaveCount(2);
+  await expect(page.getByTestId("cycle-card").filter({ hasText: "cycle-9" })).toContainText("Open");
+  await expect(page.getByTestId("cycle-card").filter({ hasText: "cycle-8" })).toContainText("Closed");
   await page.getByTestId("cycle-card").filter({ hasText: "cycle-9" }).getByTestId("cycle-detail-trigger").click();
   await expect(page.getByText("Raw Workloads")).toBeVisible();
   await expect(page.getByText("dispute-1")).toBeVisible();
 });
 
+test("direct cycle and dispute detail pages expose summary-first layouts", async ({ page }) => {
+  await page.goto("/cycles/cycle-9");
+  await expect(page.getByText("Cycle Settlement File")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "cycle-9" })).toBeVisible();
+  await expect(page.getByText("Reward Pool")).toBeVisible();
+  await expect(page.getByText("1090 AGC")).toBeVisible();
+  await expect(page.getByText("Raw Workloads")).toBeVisible();
+
+  await page.goto("/disputes/dispute-1");
+  await expect(page.getByText("Dispute File")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "dispute-1" })).toBeVisible();
+  await expect(page.getByText("Submission")).toBeVisible();
+  await expect(page.getByText("Output quality mismatch.")).toBeVisible();
+  await expect(page.getByText("Dispute Opened")).toBeVisible();
+});
+
+test("direct detail pages show not-found state cards", async ({ page }) => {
+  await page.goto("/tasks/task-missing");
+  await expect(page.getByRole("heading", { name: "Task Not Found" })).toBeVisible();
+  await expect(page.getByText("There is no public record for this task id. Return to the research center and choose another entity.")).toBeVisible();
+
+  await page.goto("/disputes/dispute-missing");
+  await expect(page.getByRole("heading", { name: "Dispute Not Found" })).toBeVisible();
+  await expect(page.getByText("There is no public record for this dispute id. Return to the research center and choose another dispute.")).toBeVisible();
+});
+
+test("direct detail pages show load-failed state cards on API errors", async ({ page }) => {
+  await page.unroute(API_ROUTE_PATTERN);
+  await installApiMocks(page, { failTaskById: "task-beta", failAgentByAddress: "0x3333333333333333333333333333333333333333" });
+
+  await page.goto("/tasks/task-beta");
+  await expect(page.getByRole("heading", { name: "Task Detail Load Failed" })).toBeVisible();
+  await expect(page.getByText("The task detail service is unavailable right now. Return to the research center and inspect another entity.")).toBeVisible();
+
+  await page.goto("/agents/0x3333333333333333333333333333333333333333");
+  await expect(page.getByRole("heading", { name: "Agent Detail Load Failed" })).toBeVisible();
+  await expect(page.getByText("The agent detail service is unavailable right now. Return to the research center and inspect another public entity.")).toBeVisible();
+});
+
 test("invalid query params are sanitized and still return usable results", async ({ page }) => {
   await page.goto("/?tab=bad&q=%20alpha%20&taskStatus=BAD&taskSort=bad&taskOrder=bad&agentSort=bad&agentOrder=bad&activeOnly=bad");
 
+  await expect(page).toHaveURL(/\/center/);
   await expect(page.getByTestId("task-card")).toHaveCount(1);
   await expect(page.getByTestId("tasks-error")).toHaveCount(0);
   await expect(page.getByText("Alpha Content Review")).toBeVisible();
@@ -699,10 +902,21 @@ test("task detail supports retry after transient API failures", async ({ page })
   await page.unroute(API_ROUTE_PATTERN);
   await installApiMocks(page, { failActivitiesByTaskIdOnce: "task-beta" });
 
-  await page.goto("/");
+  await page.goto("/center");
   await page.getByTestId("task-card").filter({ hasText: "Beta Dataset Labeling" }).getByTestId("task-detail-trigger").click();
   await expect(page.getByTestId("task-detail-error")).toBeVisible();
 
   await page.getByTestId("retry-task-detail").click();
   await expect(page.getByText("Beta Dataset Labeling")).toBeVisible();
+});
+
+test("disputes tab supports filters and detail drawer", async ({ page }) => {
+  await page.goto("/center");
+
+  await page.getByTestId("tab-disputes").click();
+  await expect(page.getByTestId("dispute-card")).toHaveCount(1);
+  await page.getByTestId("dispute-status-select").selectOption("OPEN");
+  await expect(page.getByTestId("dispute-card")).toContainText("dispute-1");
+  await page.getByTestId("dispute-detail-trigger").click();
+  await expect(page.getByTestId("detail-drawer")).toContainText("Dispute Overview");
 });

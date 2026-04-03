@@ -4,6 +4,8 @@ import { ActivityEventType, CycleStatus, DisputeStatus, TaskStatus, type AgentPr
 import { AgentDetailDrawer } from "./agent-detail-drawer";
 import { CycleDetailContent } from "./cycle-detail-content";
 import { CycleListPanel } from "./cycle-list-panel";
+import { DisputeDetailContent } from "./dispute-detail-content";
+import { DisputeListPanel } from "./dispute-list-panel";
 import { TaskDetailDrawer } from "./task-detail-drawer";
 
 const ADDRESS_A = "0x1111111111111111111111111111111111111111";
@@ -78,8 +80,10 @@ describe("dashboard detail panels", () => {
 
     expect(listHtml).toContain("cycle-9");
     expect(listHtml).toContain("Load more cycles");
+    expect(listHtml).toContain("Closed");
     expect(detailHtml).toContain("Reward Pool");
     expect(detailHtml).toContain("1090 AGC");
+    expect(detailHtml).toContain("Closed");
     expect(detailHtml).toContain(`/agents/${ADDRESS_B}`);
     expect(detailHtml).toContain("Quality mismatch");
   });
@@ -145,6 +149,8 @@ describe("dashboard detail panels", () => {
     expect(html).toContain("Slot Progress");
     expect(html).toContain("Needs another review");
     expect(html).toContain("Task Accepted");
+    expect(html).toContain("In progress");
+    expect(html).not.toContain(">IN_PROGRESS<");
   });
 
   it("renders agent balance and stats", () => {
@@ -197,5 +203,87 @@ describe("dashboard detail panels", () => {
     expect(html).toContain("42 AGC");
     expect(html).toContain("Published");
     expect(html).toContain("Task Completed");
+  });
+
+  it("renders dispute list and dispute detail content", () => {
+    const dispute: Dispute = {
+      id: "dispute-1",
+      taskId: "task-1",
+      submissionId: "submission-1",
+      opener: ADDRESS_A,
+      reasonMd: "Output quality mismatch",
+      status: DisputeStatus.OPEN,
+      createdAt: "2026-03-31T00:00:00.000Z",
+      updatedAt: "2026-03-31T00:00:00.000Z"
+    };
+
+    const listHtml = render(
+      <DisputeListPanel
+        locale="en"
+        timeZone="UTC"
+        disputes={[dispute]}
+        disputeStatus={DisputeStatus.OPEN}
+        disputeStatusCounts={{ OPEN: 1 }}
+        hasDisputeFilters
+        loadingDisputes={false}
+        loadingMoreDisputes={false}
+        disputeLoadError={false}
+        nextCursor="2"
+        disputeSentinelRef={{ current: null }}
+        onOpenDisputeDetail={() => undefined}
+        onSetDisputeStatus={() => undefined}
+        onRefresh={() => undefined}
+        onLoadMore={() => undefined}
+      />
+    );
+
+    const detailHtml = render(
+      <DisputeDetailContent
+        locale="en"
+        timeZone="UTC"
+        dispute={dispute}
+        task={{
+          id: "task-1",
+          publisher: ADDRESS_A,
+          title: "Alpha Review",
+          descriptionMd: "Review alpha output.",
+          acceptanceCriteria: "Clear findings.",
+          status: TaskStatus.IN_PROGRESS,
+          deadlineUtc: "2026-04-01T00:00:00.000Z",
+          displayTimezone: "UTC",
+          slotsTotal: 2,
+          rewardPerSlot: 25,
+          allowRepeatCompletionsBySameAgent: false,
+          taxAmount: 3,
+          rewardEscrowRemaining: 25,
+          acceptedAgents: [ADDRESS_B],
+          completedAgents: [ADDRESS_C],
+          createdAt: "2026-03-30T00:00:00.000Z",
+          updatedAt: "2026-03-31T00:00:00.000Z"
+        }}
+        activities={[
+          {
+            id: "activity-1",
+            type: ActivityEventType.DISPUTE_OPENED,
+            cycleId: "cycle-9",
+            taskId: "task-1",
+            disputeId: "dispute-1",
+            actor: ADDRESS_A,
+            createdAt: "2026-03-31T00:00:00.000Z"
+          }
+        ]}
+        getAgentHref={(address) => `/agents/${address}`}
+        getTaskHref={(taskId) => `/tasks/${taskId}`}
+      />
+    );
+
+    expect(listHtml).toContain("Output quality mismatch");
+    expect(listHtml).toContain("Open");
+    expect(listHtml).toContain("Load more disputes");
+    expect(detailHtml).toContain("Dispute Overview");
+    expect(detailHtml).toContain("Task Context");
+    expect(detailHtml).toContain("Dispute Opened");
+    expect(detailHtml).not.toContain("DISPUTE_OPENED");
+    expect(detailHtml).toContain("/tasks/task-1");
   });
 });

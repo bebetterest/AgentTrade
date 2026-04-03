@@ -17,6 +17,20 @@
   - split top-level dashboard into state/data orchestration (`components/dashboard.tsx`) and presentation (`components/dashboard/dashboard-view.tsx`),
   - moved dashboard zh/en copy into a unified dictionary (`components/dashboard/i18n.ts`),
   - removed inline `locale === "zh"` branches inside dashboard component modules.
+- Completed Web V2 public-surface restructure:
+  - moved the old dashboard entry from `/` to `/center`,
+  - rebuilt `/` as a narrative public information station,
+  - added `Disputes` as a first-class research-center tab plus `/disputes/[id]` detail route,
+  - surfaced public economy params and system health in the web read layer with legacy `/?tab=...` compatibility redirecting into `/center`.
+- Added second-pass web presentation and interaction polish:
+  - upgraded the sticky header with a mobile menu panel instead of wrapped nav overflow,
+  - reworked the public-home economy/trust area into structured rule cards and trust blocks,
+  - added a clearer center-top summary strip for tracked tasks/agents/disputes and active-cycle state,
+  - unified detail drawers behind a focus-trapped shell and reflowed tabs/filter controls for mobile-first navigation,
+  - localized task/cycle/agent status labels end-to-end and extended unit/E2E regression coverage so public read surfaces no longer expose raw enum literals,
+  - added locale-persistence E2E coverage from `/` to `/center` to direct detail routes so zh/en switching is guarded across both client-state and SSR cookie paths,
+  - normalized remaining zh user-facing terms (`Agent`, `Mint`, `workload`) and tightened wrapping across detail surfaces/tables for long addresses and identifiers,
+  - made `apps/web` lint self-sufficient by generating Next route types before TypeScript validation.
 - Continued `state-repository` modularization by extracting shared transactional helpers (runtime lock, profile delta, activity append, slot/escrow invariants, runtime touch) into `state-repository-tx-helpers.ts`.
 - Extracted read-only direct-list/get primitives (tasks/disputes/agents/activities/cycles/ledger/active-cycle) into `state-repository-read-helpers.ts` and kept repository method signatures unchanged.
 - Started write-command extraction by moving profile patch transactional command orchestration into `state-repository-write-helpers.ts` while preserving API/repository behavior.

@@ -10,8 +10,10 @@ import type {
   DashboardSummaryResponse,
   DashboardTrendsResponse,
   Dispute,
+  HealthStatus,
   LedgerBalance,
   PaginatedResponse,
+  PublicEconomyParams,
   Task
 } from "@agentrade/types";
 
@@ -182,6 +184,44 @@ export const fetchCycleRewards = async (
     if (isApiRequestError(error) && error.status === 404) {
       return null;
     }
+    if (options?.strict) {
+      throw error;
+    }
+    return null;
+  }
+};
+
+export const fetchHealthStatus = async (options?: ApiFetchOptions): Promise<HealthStatus | null> => {
+  try {
+    return await readOperationJson<HealthStatus>(
+      "systemHealthV2",
+      {},
+      {
+        revalidate: 10,
+        signal: options?.signal
+      }
+    );
+  } catch (error) {
+    if (options?.strict) {
+      throw error;
+    }
+    return null;
+  }
+};
+
+export const fetchEconomyParams = async (
+  options?: ApiFetchOptions
+): Promise<PublicEconomyParams | null> => {
+  try {
+    return await readOperationJson<PublicEconomyParams>(
+      "economyGetParamsV2",
+      {},
+      {
+        revalidate: 10,
+        signal: options?.signal
+      }
+    );
+  } catch (error) {
     if (options?.strict) {
       throw error;
     }

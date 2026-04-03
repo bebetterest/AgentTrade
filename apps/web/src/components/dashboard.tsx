@@ -11,8 +11,10 @@ import type {
   DashboardSummaryResponse,
   DashboardTrendsResponse,
   Dispute,
+  HealthStatus,
   LedgerBalance,
   PaginatedResponse,
+  PublicEconomyParams,
   Task
 } from "@agentrade/types";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -28,6 +30,8 @@ import {
   fetchDashboardTrends,
   fetchDispute,
   fetchDisputes,
+  fetchEconomyParams,
+  fetchHealthStatus,
   fetchLedger,
   fetchTask,
   fetchTasks
@@ -47,6 +51,9 @@ interface DashboardProps {
   initialActiveCycle: Cycle | null;
   initialActivities: PaginatedResponse<ActivityEvent>;
   initialCycles: PaginatedResponse<Cycle>;
+  initialDisputes: PaginatedResponse<Dispute>;
+  initialEconomy: PublicEconomyParams | null;
+  initialHealth: HealthStatus | null;
 }
 
 const REFRESH_FEED_LIMIT = 12;
@@ -62,7 +69,10 @@ export const Dashboard = ({
   initialLeaders,
   initialActiveCycle,
   initialActivities,
-  initialCycles
+  initialCycles,
+  initialDisputes,
+  initialEconomy,
+  initialHealth
 }: DashboardProps) => {
   const [locale, setLocale] = useState<SupportedLocale>(initialLocale);
   const t = messages[locale];
@@ -77,26 +87,33 @@ export const Dashboard = ({
   const [leaders, setLeaders] = useState<AgentDirectoryItem[]>(initialLeaders);
   const [activeCycle, setActiveCycle] = useState<Cycle | null>(initialActiveCycle);
   const [activityFeed, setActivityFeed] = useState<ActivityEvent[]>(initialActivities.items.slice(0, REFRESH_FEED_LIMIT));
+  const [economy, setEconomy] = useState<PublicEconomyParams | null>(initialEconomy);
+  const [health, setHealth] = useState<HealthStatus | null>(initialHealth);
 
   const [tasksData, setTasksData] = useState<PaginatedResponse<Task>>(initialTasks);
   const [agentsData, setAgentsData] = useState<PaginatedResponse<AgentDirectoryItem>>(initialAgents);
   const [cyclesData, setCyclesData] = useState<PaginatedResponse<Cycle>>(initialCycles);
+  const [disputesData, setDisputesData] = useState<PaginatedResponse<Dispute>>(initialDisputes);
   const [loadingTasks, setLoadingTasks] = useState(false);
   const [loadingAgents, setLoadingAgents] = useState(false);
   const [loadingCycles, setLoadingCycles] = useState(false);
+  const [loadingDisputes, setLoadingDisputes] = useState(false);
   const [loadingMoreTasks, setLoadingMoreTasks] = useState(false);
   const [loadingMoreAgents, setLoadingMoreAgents] = useState(false);
   const [loadingMoreCycles, setLoadingMoreCycles] = useState(false);
+  const [loadingMoreDisputes, setLoadingMoreDisputes] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingFeed, setLoadingFeed] = useState(false);
   const [overviewError, setOverviewError] = useState(false);
   const [taskLoadError, setTaskLoadError] = useState(false);
   const [agentLoadError, setAgentLoadError] = useState(false);
   const [cycleLoadError, setCycleLoadError] = useState(false);
+  const [disputeLoadError, setDisputeLoadError] = useState(false);
   const [feedLoadError, setFeedLoadError] = useState(false);
   const [taskDetailReloadTick, setTaskDetailReloadTick] = useState(0);
   const [agentDetailReloadTick, setAgentDetailReloadTick] = useState(0);
   const [cycleDetailReloadTick, setCycleDetailReloadTick] = useState(0);
+  const [disputeDetailReloadTick, setDisputeDetailReloadTick] = useState(0);
 
   const [taskDetail, setTaskDetail] = useState<{
     loading: boolean;
@@ -135,12 +152,27 @@ export const Dashboard = ({
     rewards: null,
     disputes: []
   });
+  const [disputeDetail, setDisputeDetail] = useState<{
+    loading: boolean;
+    error: boolean;
+    dispute: Dispute | null;
+    task: Task | null;
+    activities: ActivityEvent[];
+  }>({
+    loading: false,
+    error: false,
+    dispute: null,
+    task: null,
+    activities: []
+  });
 
   const taskSentinelRef = useRef<HTMLDivElement | null>(null);
   const agentSentinelRef = useRef<HTMLDivElement | null>(null);
   const cycleSentinelRef = useRef<HTMLDivElement | null>(null);
+  const disputeSentinelRef = useRef<HTMLDivElement | null>(null);
   const taskQueryKeyRef = useRef("");
   const agentQueryKeyRef = useRef("");
+  const disputeQueryKeyRef = useRef("");
 
   const {
     tab,
@@ -150,18 +182,24 @@ export const Dashboard = ({
     taskOrder,
     agentSort,
     agentOrder,
+    disputeStatus,
+    disputeSort,
+    disputeOrder,
     activeOnly,
     trendWindow,
     taskDetailId,
     agentDetailAddress,
-    cycleDetailId
+    cycleDetailId,
+    disputeDetailId
   } = useMemo(() => parseDashboardQuery(searchParams), [searchParams]);
   const [searchDraft, setSearchDraft] = useState(q);
 
   const taskQueryKey = `${q}|${taskStatus ?? ""}|${taskSort}|${taskOrder}`;
   const agentQueryKey = `${q}|${activeOnly}|${agentSort}|${agentOrder}`;
+  const disputeQueryKey = `${q}|${disputeStatus ?? ""}|${disputeSort}|${disputeOrder}`;
   taskQueryKeyRef.current = taskQueryKey;
   agentQueryKeyRef.current = agentQueryKey;
+  disputeQueryKeyRef.current = disputeQueryKey;
 
   const updateQuery = useCallback((patch: Record<string, string | null>) => {
     const sanitizedPatch = sanitizeQueryPatch(patch);
@@ -178,16 +216,23 @@ export const Dashboard = ({
   }, [pathname, router, searchParams]);
 
   const openTaskDetail = useCallback((taskId: string) => {
-    updateQuery({ taskDetail: taskId, agentDetail: null, cycleDetail: null });
+    updateQuery({ taskDetail: taskId, agentDetail: null, cycleDetail: null, disputeDetail: null });
   }, [updateQuery]);
+
   const openAgentDetail = useCallback((address: string) => {
-    updateQuery({ agentDetail: address, taskDetail: null, cycleDetail: null });
+    updateQuery({ agentDetail: address, taskDetail: null, cycleDetail: null, disputeDetail: null });
   }, [updateQuery]);
+
   const openCycleDetail = useCallback((cycleId: string) => {
-    updateQuery({ cycleDetail: cycleId, taskDetail: null, agentDetail: null });
+    updateQuery({ cycleDetail: cycleId, taskDetail: null, agentDetail: null, disputeDetail: null });
   }, [updateQuery]);
+
+  const openDisputeDetail = useCallback((disputeId: string) => {
+    updateQuery({ disputeDetail: disputeId, taskDetail: null, agentDetail: null, cycleDetail: null });
+  }, [updateQuery]);
+
   const closeDetail = useCallback(() => {
-    updateQuery({ taskDetail: null, agentDetail: null, cycleDetail: null });
+    updateQuery({ taskDetail: null, agentDetail: null, cycleDetail: null, disputeDetail: null });
   }, [updateQuery]);
 
   const retryTaskDetail = () => {
@@ -205,6 +250,12 @@ export const Dashboard = ({
   const retryCycleDetail = () => {
     if (cycleDetailId) {
       setCycleDetailReloadTick((prev) => prev + 1);
+    }
+  };
+
+  const retryDisputeDetail = () => {
+    if (disputeDetailId) {
+      setDisputeDetailReloadTick((prev) => prev + 1);
     }
   };
 
@@ -302,9 +353,43 @@ export const Dashboard = ({
     }
   }, [cyclesData.nextCursor, loadingMoreCycles]);
 
+  const loadMoreDisputes = useCallback(async () => {
+    if (!disputesData.nextCursor || loadingMoreDisputes) {
+      return;
+    }
+    const expectedQueryKey = disputeQueryKey;
+    setLoadingMoreDisputes(true);
+    try {
+      const response = await fetchDisputes({
+        q: q || undefined,
+        status: disputeStatus ?? undefined,
+        sort: disputeSort,
+        order: disputeOrder,
+        cursor: disputesData.nextCursor ?? undefined,
+        limit: 20,
+        strict: true
+      });
+      if (disputeQueryKeyRef.current !== expectedQueryKey) {
+        return;
+      }
+      setDisputeLoadError(false);
+      setDisputesData((prev) => ({
+        items: [
+          ...prev.items,
+          ...response.items.filter((item) => !prev.items.some((prevItem) => prevItem.id === item.id))
+        ],
+        nextCursor: response.nextCursor
+      }));
+    } catch {
+      setDisputeLoadError(true);
+    } finally {
+      setLoadingMoreDisputes(false);
+    }
+  }, [disputeOrder, disputeQueryKey, disputeSort, disputeStatus, disputesData.nextCursor, loadingMoreDisputes, q]);
+
   const refreshAll = async () => {
     setRefreshing(true);
-    const [summaryRes, trendsRes, leadersRes, tasksRes, agentsRes, cyclesRes, cycleRes, feedRes] = await Promise.allSettled([
+    const [summaryRes, trendsRes, leadersRes, tasksRes, agentsRes, cyclesRes, disputesRes, cycleRes, feedRes, economyRes, healthRes] = await Promise.allSettled([
       fetchDashboardSummary(timeZone, { strict: true }),
       fetchDashboardTrends(timeZone, trendWindow, { strict: true }),
       fetchAgents({ activeOnly: true, sort: "score", order: "desc", limit: 5, strict: true }),
@@ -325,8 +410,18 @@ export const Dashboard = ({
         strict: true
       }),
       fetchCycles({ limit: 12, strict: true }),
+      fetchDisputes({
+        q: q || undefined,
+        status: disputeStatus ?? undefined,
+        sort: disputeSort,
+        order: disputeOrder,
+        limit: 20,
+        strict: true
+      }),
       fetchActiveCycle({ strict: true }),
-      fetchActivities({ limit: REFRESH_FEED_LIMIT, order: "desc", strict: true })
+      fetchActivities({ limit: REFRESH_FEED_LIMIT, order: "desc", strict: true }),
+      fetchEconomyParams({ strict: true }),
+      fetchHealthStatus({ strict: true })
     ]);
 
     if (summaryRes.status === "fulfilled" && trendsRes.status === "fulfilled" && leadersRes.status === "fulfilled" && cycleRes.status === "fulfilled") {
@@ -360,18 +455,33 @@ export const Dashboard = ({
       setCycleLoadError(true);
     }
 
+    if (disputesRes.status === "fulfilled") {
+      setDisputeLoadError(false);
+      setDisputesData(disputesRes.value);
+    } else {
+      setDisputeLoadError(true);
+    }
+
     if (feedRes.status === "fulfilled") {
       setFeedLoadError(false);
       setActivityFeed(feedRes.value.items);
     } else {
       setFeedLoadError(true);
     }
+
+    if (economyRes.status === "fulfilled") {
+      setEconomy(economyRes.value);
+    }
+
+    if (healthRes.status === "fulfilled") {
+      setHealth(healthRes.value);
+    }
+
     setRefreshing(false);
   };
 
   useEffect(() => {
-    const detectedTimeZone =
-      Intl.DateTimeFormat().resolvedOptions().timeZone || DEFAULT_TIMEZONE;
+    const detectedTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || DEFAULT_TIMEZONE;
     document.cookie = buildPreferenceCookie(TIMEZONE_COOKIE_NAME, detectedTimeZone);
     if (detectedTimeZone !== initialTimeZone) {
       setTimeZone(detectedTimeZone);
@@ -404,7 +514,7 @@ export const Dashboard = ({
   }, []);
 
   useEffect(() => {
-    const opened = Boolean(taskDetailId || agentDetailAddress || cycleDetailId);
+    const opened = Boolean(taskDetailId || agentDetailAddress || cycleDetailId || disputeDetailId);
     if (!opened) {
       document.body.style.overflow = "";
       return;
@@ -421,7 +531,7 @@ export const Dashboard = ({
       window.removeEventListener("keydown", onKeyDown);
       document.body.style.overflow = previousOverflow;
     };
-  }, [taskDetailId, agentDetailAddress, cycleDetailId, closeDetail]);
+  }, [taskDetailId, agentDetailAddress, cycleDetailId, disputeDetailId, closeDetail]);
 
   useEffect(() => {
     if (!timeZone) {
@@ -525,6 +635,36 @@ export const Dashboard = ({
 
   useEffect(() => {
     let cancelled = false;
+    setLoadingDisputes(true);
+    setDisputeLoadError(false);
+    const controller = new AbortController();
+    fetchDisputes({
+      q: q || undefined,
+      status: disputeStatus ?? undefined,
+      sort: disputeSort,
+      order: disputeOrder,
+      limit: 20,
+      signal: controller.signal,
+      strict: true
+    }).then((response) => {
+      if (!cancelled) {
+        setDisputesData(response);
+        setLoadingDisputes(false);
+      }
+    }).catch(() => {
+      if (!cancelled) {
+        setDisputeLoadError(true);
+        setLoadingDisputes(false);
+      }
+    });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [disputeQueryKey]);
+
+  useEffect(() => {
+    let cancelled = false;
     setLoadingCycles(true);
     setCycleLoadError(false);
     const controller = new AbortController();
@@ -613,6 +753,27 @@ export const Dashboard = ({
   }, [tab, cyclesData.nextCursor, loadingMoreCycles, loadMoreCycles]);
 
   useEffect(() => {
+    if (tab !== "disputes" || !disputesData.nextCursor || loadingMoreDisputes) {
+      return;
+    }
+    const target = disputeSentinelRef.current;
+    if (!target) {
+      return;
+    }
+    const observer = new IntersectionObserver((entries) => {
+      const first = entries[0];
+      if (!first?.isIntersecting || !disputesData.nextCursor) {
+        return;
+      }
+      void loadMoreDisputes();
+    });
+    observer.observe(target);
+    return () => {
+      observer.disconnect();
+    };
+  }, [tab, disputesData.nextCursor, loadingMoreDisputes, loadMoreDisputes]);
+
+  useEffect(() => {
     if (!taskDetailId) {
       setTaskDetail({ loading: false, error: false, task: null, disputes: [], activities: [] });
       return;
@@ -624,29 +785,22 @@ export const Dashboard = ({
       fetchTask(taskDetailId, { signal: controller.signal, strict: true }),
       fetchDisputes({ taskId: taskDetailId, limit: 50, signal: controller.signal, strict: true }),
       fetchActivities({ taskId: taskDetailId, limit: 50, order: "desc", signal: controller.signal, strict: true })
-    ])
-      .then(([task, disputes, activities]) => {
-        if (cancelled) {
-          return;
-        }
-        setTaskDetail({
-          loading: false,
-          error: false,
-          task,
-          disputes: disputes.items,
-          activities: activities.items
-        });
-      })
-      .catch(() => {
-        if (cancelled) {
-          return;
-        }
-        setTaskDetail((prev) => ({
-          ...prev,
-          loading: false,
-          error: true
-        }));
+    ]).then(([task, disputes, activities]) => {
+      if (cancelled) {
+        return;
+      }
+      setTaskDetail({
+        loading: false,
+        error: false,
+        task,
+        disputes: disputes.items,
+        activities: activities.items
       });
+    }).catch(() => {
+      if (!cancelled) {
+        setTaskDetail((prev) => ({ ...prev, loading: false, error: true }));
+      }
+    });
     return () => {
       cancelled = true;
       controller.abort();
@@ -664,36 +818,23 @@ export const Dashboard = ({
     Promise.all([
       fetchAgent(agentDetailAddress, { signal: controller.signal, strict: true }),
       fetchLedger(agentDetailAddress, { signal: controller.signal, strict: true }),
-      fetchActivities({
-        address: agentDetailAddress,
-        limit: 50,
-        order: "desc",
-        signal: controller.signal,
-        strict: true
-      })
-    ])
-      .then(([profile, ledger, activities]) => {
-        if (cancelled) {
-          return;
-        }
-        setAgentDetail({
-          loading: false,
-          error: false,
-          profile,
-          ledger,
-          activities: activities.items
-        });
-      })
-      .catch(() => {
-        if (cancelled) {
-          return;
-        }
-        setAgentDetail((prev) => ({
-          ...prev,
-          loading: false,
-          error: true
-        }));
+      fetchActivities({ address: agentDetailAddress, limit: 50, order: "desc", signal: controller.signal, strict: true })
+    ]).then(([profile, ledger, activities]) => {
+      if (cancelled) {
+        return;
+      }
+      setAgentDetail({
+        loading: false,
+        error: false,
+        profile,
+        ledger,
+        activities: activities.items
       });
+    }).catch(() => {
+      if (!cancelled) {
+        setAgentDetail((prev) => ({ ...prev, loading: false, error: true }));
+      }
+    });
     return () => {
       cancelled = true;
       controller.abort();
@@ -715,12 +856,7 @@ export const Dashboard = ({
           return;
         }
         if (!rewards) {
-          setCycleDetail({
-            loading: false,
-            error: false,
-            rewards: null,
-            disputes: []
-          });
+          setCycleDetail({ loading: false, error: false, rewards: null, disputes: [] });
           return;
         }
         const disputeIds = [...new Set(rewards.workloads.map((item) => item.disputeId).filter(Boolean))];
@@ -737,14 +873,9 @@ export const Dashboard = ({
           disputes: disputeItems.filter((item): item is Dispute => Boolean(item))
         });
       } catch {
-        if (cancelled) {
-          return;
+        if (!cancelled) {
+          setCycleDetail((prev) => ({ ...prev, loading: false, error: true }));
         }
-        setCycleDetail((prev) => ({
-          ...prev,
-          loading: false,
-          error: true
-        }));
       }
     })();
     return () => {
@@ -753,62 +884,100 @@ export const Dashboard = ({
     };
   }, [cycleDetailId, cycleDetailReloadTick]);
 
-  const trendPublished = useMemo(
-    () => trends?.points.map((item) => item.tasksPublished) ?? [],
-    [trends]
-  );
-  const trendAccepted = useMemo(
-    () => trends?.points.map((item) => item.tasksAccepted) ?? [],
-    [trends]
-  );
-  const trendCompleted = useMemo(
-    () => trends?.points.map((item) => item.tasksCompleted) ?? [],
-    [trends]
-  );
-  const trendDisputes = useMemo(
-    () => trends?.points.map((item) => item.disputesOpened) ?? [],
-    [trends]
-  );
+  useEffect(() => {
+    if (!disputeDetailId) {
+      setDisputeDetail({ loading: false, error: false, dispute: null, task: null, activities: [] });
+      return;
+    }
+    let cancelled = false;
+    const controller = new AbortController();
+    setDisputeDetail((prev) => ({ ...prev, loading: true, error: false }));
+    (async () => {
+      try {
+        const dispute = await fetchDispute(disputeDetailId, { signal: controller.signal, strict: true });
+        if (cancelled) {
+          return;
+        }
+        if (!dispute) {
+          setDisputeDetail({ loading: false, error: false, dispute: null, task: null, activities: [] });
+          return;
+        }
+        const [task, activities] = await Promise.all([
+          fetchTask(dispute.taskId, { signal: controller.signal, strict: true }),
+          fetchActivities({ disputeId: dispute.id, limit: 50, order: "desc", signal: controller.signal, strict: true })
+        ]);
+        if (cancelled) {
+          return;
+        }
+        setDisputeDetail({
+          loading: false,
+          error: false,
+          dispute,
+          task,
+          activities: activities.items
+        });
+      } catch {
+        if (!cancelled) {
+          setDisputeDetail((prev) => ({ ...prev, loading: false, error: true }));
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [disputeDetailId, disputeDetailReloadTick]);
+
+  const trendPublished = useMemo(() => trends?.points.map((item) => item.tasksPublished) ?? [], [trends]);
+  const trendAccepted = useMemo(() => trends?.points.map((item) => item.tasksAccepted) ?? [], [trends]);
+  const trendCompleted = useMemo(() => trends?.points.map((item) => item.tasksCompleted) ?? [], [trends]);
+  const trendDisputes = useMemo(() => trends?.points.map((item) => item.disputesOpened) ?? [], [trends]);
   const cycleUptime = useMemo(() => {
     if (!activeCycle) {
       return "-";
     }
-    const startedAtMs = new Date(activeCycle.startedAt).getTime();
-    return formatDuration(nowMs - startedAtMs, locale);
+    return formatDuration(nowMs - new Date(activeCycle.startedAt).getTime(), locale);
   }, [activeCycle, nowMs, locale]);
-  const taskStatusCounts = useMemo(() => {
-    return tasksData.items.reduce<Record<string, number>>((acc, item) => {
-      acc[item.status] = (acc[item.status] ?? 0) + 1;
-      return acc;
-    }, {});
-  }, [tasksData.items]);
+  const taskStatusCounts = useMemo(() => tasksData.items.reduce<Record<string, number>>((acc, item) => {
+    acc[item.status] = (acc[item.status] ?? 0) + 1;
+    return acc;
+  }, {}), [tasksData.items]);
+  const disputeStatusCounts = useMemo(() => disputesData.items.reduce<Record<string, number>>((acc, item) => {
+    acc[item.status] = (acc[item.status] ?? 0) + 1;
+    return acc;
+  }, {}), [disputesData.items]);
   const hasTaskFilters = q.trim().length > 0 || Boolean(taskStatus);
   const hasAgentFilters = q.trim().length > 0 || !activeOnly;
+  const hasDisputeFilters = q.trim().length > 0 || Boolean(disputeStatus);
+
   const clearSearch = () => {
     setSearchDraft("");
     updateQuery({ q: null });
   };
+
   const commitSearch = () => {
     updateQuery({ q: searchDraft });
   };
+
   const resetFilters = () => {
     if (tab === "tasks") {
-      updateQuery({
-        q: null,
-        taskStatus: null,
-        taskSort: "latest",
-        taskOrder: "desc"
-      });
+      updateQuery({ q: null, taskStatus: null, taskSort: "latest", taskOrder: "desc" });
       return;
     }
-    updateQuery({
-      q: null,
-      activeOnly: "true",
-      agentSort: "latest",
-      agentOrder: "desc"
-    });
+    if (tab === "users") {
+      updateQuery({ q: null, activeOnly: "true", agentSort: "latest", agentOrder: "desc" });
+      return;
+    }
+    if (tab === "disputes") {
+      updateQuery({ q: null, disputeStatus: null, disputeSort: "latest", disputeOrder: "desc" });
+    }
   };
+
   const openByActivity = (item: ActivityEvent) => {
+    if (item.disputeId) {
+      openDisputeDetail(item.disputeId);
+      return;
+    }
     if (item.taskId) {
       openTaskDetail(item.taskId);
       return;
@@ -818,7 +987,6 @@ export const Dashboard = ({
 
   return (
     <DashboardView
-      initialLocale={initialLocale}
       locale={locale}
       setLocale={setLocale}
       appTitle={t.appTitle}
@@ -833,34 +1001,46 @@ export const Dashboard = ({
       tasksData={tasksData}
       agentsData={agentsData}
       cyclesData={cyclesData}
+      disputesData={disputesData}
+      economy={economy}
+      health={health}
       loadingTasks={loadingTasks}
       loadingAgents={loadingAgents}
       loadingCycles={loadingCycles}
+      loadingDisputes={loadingDisputes}
       loadingMoreTasks={loadingMoreTasks}
       loadingMoreAgents={loadingMoreAgents}
       loadingMoreCycles={loadingMoreCycles}
+      loadingMoreDisputes={loadingMoreDisputes}
       loadingFeed={loadingFeed}
       taskLoadError={taskLoadError}
       agentLoadError={agentLoadError}
       cycleLoadError={cycleLoadError}
+      disputeLoadError={disputeLoadError}
       feedLoadError={feedLoadError}
       taskDetail={taskDetail}
       agentDetail={agentDetail}
       cycleDetail={cycleDetail}
+      disputeDetail={disputeDetail}
       taskSentinelRef={taskSentinelRef}
       agentSentinelRef={agentSentinelRef}
       cycleSentinelRef={cycleSentinelRef}
+      disputeSentinelRef={disputeSentinelRef}
       tab={tab}
       taskStatus={taskStatus}
       taskSort={taskSort}
       taskOrder={taskOrder}
       agentSort={agentSort}
       agentOrder={agentOrder}
+      disputeStatus={disputeStatus}
+      disputeSort={disputeSort}
+      disputeOrder={disputeOrder}
       activeOnly={activeOnly}
       trendWindow={trendWindow}
       taskDetailId={taskDetailId}
       agentDetailAddress={agentDetailAddress}
       cycleDetailId={cycleDetailId}
+      disputeDetailId={disputeDetailId}
       searchDraft={searchDraft}
       setSearchDraft={setSearchDraft}
       trendPublished={trendPublished}
@@ -869,8 +1049,10 @@ export const Dashboard = ({
       trendDisputes={trendDisputes}
       cycleUptime={cycleUptime}
       taskStatusCounts={taskStatusCounts}
+      disputeStatusCounts={disputeStatusCounts}
       hasTaskFilters={hasTaskFilters}
       hasAgentFilters={hasAgentFilters}
+      hasDisputeFilters={hasDisputeFilters}
       updateQuery={updateQuery}
       refreshAll={refreshAll}
       clearSearch={clearSearch}
@@ -879,13 +1061,16 @@ export const Dashboard = ({
       openTaskDetail={openTaskDetail}
       openAgentDetail={openAgentDetail}
       openCycleDetail={openCycleDetail}
+      openDisputeDetail={openDisputeDetail}
       closeDetail={closeDetail}
       retryTaskDetail={retryTaskDetail}
       retryAgentDetail={retryAgentDetail}
       retryCycleDetail={retryCycleDetail}
+      retryDisputeDetail={retryDisputeDetail}
       loadMoreTasks={() => void loadMoreTasks()}
       loadMoreAgents={() => void loadMoreAgents()}
       loadMoreCycles={() => void loadMoreCycles()}
+      loadMoreDisputes={() => void loadMoreDisputes()}
       openByActivity={openByActivity}
     />
   );

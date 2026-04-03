@@ -1,8 +1,11 @@
-import Link from "next/link";
 import { cookies, headers } from "next/headers";
 import type { SupportedLocale } from "@agentrade/i18n";
+import { getCycleStatusLabel } from "../../../components/dashboard/i18n";
+import { DetailPageShell } from "../../../components/detail-page-shell";
+import { DetailStateCard } from "../../../components/detail-state-card";
 import { fetchCycleRewards, fetchDispute } from "../../../lib/api";
 import { CycleDetailContent } from "../../../components/dashboard/cycle-detail-content";
+import { formatDateTime } from "../../../lib/dashboard-format";
 import {
   LOCALE_COOKIE_NAME,
   TIMEZONE_COOKIE_NAME,
@@ -18,14 +21,34 @@ const copy = (locale: SupportedLocale) =>
     ? {
         loadFailed: "周期详情加载失败",
         loadUnavailable: "详情服务暂时不可用。",
-        back: "返回看板",
-        notFound: "周期不存在"
+        back: "返回数据中心",
+        notFound: "周期不存在",
+        loadHint: "周期详情服务当前不可用，可以返回数据中心查看其他周期。",
+        notFoundHint: "这个周期 ID 当前没有公开记录，请返回数据中心重新选择。",
+        eyebrow: "周期结算档案",
+        description: "查看周期奖励池、关联争议与监督工作量，理解公开结算信号的构成。",
+        cycleId: "周期 ID",
+        mint: "铸造量",
+        rewardPool: "奖励池",
+        workloads: "工作量记录",
+        disputes: "争议数",
+        startedAt: "开始时间"
       }
     : {
         loadFailed: "Cycle Detail Load Failed",
         loadUnavailable: "The detail service is temporarily unavailable.",
-        back: "Back to dashboard",
-        notFound: "Cycle Not Found"
+        back: "Back to research center",
+        notFound: "Cycle Not Found",
+        loadHint: "The cycle detail service is unavailable right now. Return to the research center and inspect another cycle.",
+        notFoundHint: "There is no public record for this cycle id. Return to the research center and choose another cycle.",
+        eyebrow: "Cycle Settlement File",
+        description: "Inspect reward pool composition, linked disputes, and supervision workloads behind public settlement signals.",
+        cycleId: "Cycle ID",
+        mint: "Mint",
+        rewardPool: "Reward Pool",
+        workloads: "Workloads",
+        disputes: "Disputes",
+        startedAt: "Started"
       };
 
 export default async function CycleDetailPage({ params }: CycleDetailPageProps) {
@@ -57,42 +80,89 @@ export default async function CycleDetailPage({ params }: CycleDetailPageProps) 
 
   if (loadError) {
     return (
-      <main className="page">
-        <section className="card">
-          <h1>{t.loadFailed}</h1>
-          <p className="sub">{t.loadUnavailable}</p>
-          <Link href="/?tab=cycles">{t.back}</Link>
-        </section>
-      </main>
+      <DetailPageShell
+        locale={requestPreferences.locale}
+        active="cycles"
+        eyebrow={t.eyebrow}
+        title={t.loadFailed}
+        description={t.loadUnavailable}
+        backHref="/center?tab=cycles"
+        backLabel={t.back}
+        metaLabel={t.cycleId}
+        metaValue={id}
+        summary={[]}
+      >
+        <DetailStateCard
+          title={t.loadFailed}
+          body={t.loadHint}
+          actionHref="/center?tab=cycles"
+          actionLabel={t.back}
+        />
+      </DetailPageShell>
     );
   }
 
   if (!rewards) {
     return (
-      <main className="page">
-        <section className="card">
-          <h1>{t.notFound}</h1>
-          <Link href="/?tab=cycles">{t.back}</Link>
-        </section>
-      </main>
+      <DetailPageShell
+        locale={requestPreferences.locale}
+        active="cycles"
+        eyebrow={t.eyebrow}
+        title={t.notFound}
+        description={t.description}
+        backHref="/center?tab=cycles"
+        backLabel={t.back}
+        metaLabel={t.cycleId}
+        metaValue={id}
+        summary={[]}
+      >
+        <DetailStateCard
+          title={t.notFound}
+          body={t.notFoundHint}
+          actionHref="/center?tab=cycles"
+          actionLabel={t.back}
+        />
+      </DetailPageShell>
     );
   }
 
   return (
-    <main className="page detail-page">
+    <DetailPageShell
+      locale={requestPreferences.locale}
+      active="cycles"
+      eyebrow={t.eyebrow}
+      title={rewards.cycle.id}
+      description={t.description}
+      backHref="/center?tab=cycles"
+      backLabel={t.back}
+      metaLabel={t.cycleId}
+      metaValue={rewards.cycle.id}
+      statusLabel={getCycleStatusLabel(requestPreferences.locale, rewards.cycle.status)}
+      statusTone={rewards.cycle.status}
+      summary={[
+        { label: t.mint, value: `${rewards.cycle.mintedAmount} AGC`, note: `${t.startedAt}: ${formatDateTime(rewards.cycle.startedAt, requestPreferences.locale, requestPreferences.timeZone)}` },
+        {
+          label: t.rewardPool,
+          value: `${rewards.rewardPool} AGC`,
+          note:
+            requestPreferences.locale === "zh"
+              ? `税池 ${rewards.cycle.taxPool} AGC / 罚没池 ${rewards.cycle.penaltyPool} AGC`
+              : `Tax ${rewards.cycle.taxPool} AGC / Penalty ${rewards.cycle.penaltyPool} AGC`
+        },
+        { label: t.disputes, value: String(disputes.length), note: `${requestPreferences.locale === "zh" ? "已关联到当前周期" : "linked to this cycle"}` },
+        { label: t.workloads, value: String(rewards.workloads.length), note: rewards.cycle.closedAt ? `${requestPreferences.locale === "zh" ? "关闭于" : "Closed"} ${formatDateTime(rewards.cycle.closedAt, requestPreferences.locale, requestPreferences.timeZone)}` : (requestPreferences.locale === "zh" ? "周期仍在进行中" : "Cycle is still open") }
+      ]}
+    >
       <section className="card">
-        <div className="card-actions">
-          <span className="muted">{rewards.cycle.id}</span>
-          <Link href="/?tab=cycles">{t.back}</Link>
-        </div>
         <CycleDetailContent
           locale={requestPreferences.locale}
           timeZone={requestPreferences.timeZone}
           rewards={rewards}
           disputes={disputes}
           getAgentHref={(address) => `/agents/${address}`}
+          showHeading={false}
         />
       </section>
-    </main>
+    </DetailPageShell>
   );
 }

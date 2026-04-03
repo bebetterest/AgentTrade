@@ -6,7 +6,7 @@ import type {
 } from "@agentrade/types";
 import type { SupportedLocale } from "@agentrade/i18n";
 import { formatDateTime, toSparklinePath } from "../../lib/dashboard-format";
-import { getDashboardCopy } from "./i18n";
+import { getCycleStatusLabel, getDashboardCopy } from "./i18n";
 
 const Sparkline = ({ title, values }: { title: string; values: number[] }) => {
   const path = toSparklinePath(values);
@@ -90,7 +90,7 @@ export const OverviewPanels = ({
           </div>
           <div className="metric-line">
             <span>{copy.overview.status}</span>
-            <strong>{activeCycle?.status ?? "-"}</strong>
+            <strong>{activeCycle ? getCycleStatusLabel(locale, activeCycle.status) : "-"}</strong>
           </div>
           <div className="metric-line">
             <span>{copy.overview.startedAt}</span>
@@ -150,7 +150,7 @@ export const OverviewPanels = ({
       <section className="card">
         <div className="section-head">
           <h2>{copy.overview.leaderboard}</h2>
-          <Link href="/?tab=users">{copy.overview.seeAll}</Link>
+          <Link href="/center?tab=users">{copy.overview.seeAll}</Link>
         </div>
         <div className="leader-list">
           {leaders.map((item, index) => (

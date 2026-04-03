@@ -2,8 +2,8 @@ import Link from "next/link";
 import type { Task } from "@agentrade/types";
 import type { SupportedLocale } from "@agentrade/i18n";
 import { formatDateTime, shortAddress } from "../../lib/dashboard-format";
-import { getDashboardCopy } from "./i18n";
-import { TASK_STATUS_FILTERS } from "./shared";
+import { getDashboardCopy, getTaskStatusLabel } from "./i18n";
+import { buildStateChipClass, TASK_STATUS_FILTERS } from "./shared";
 
 interface TaskListPanelProps {
   locale: SupportedLocale;
@@ -61,7 +61,7 @@ export const TaskListPanel = ({
             type="button"
             onClick={() => onSetTaskStatus(status)}
           >
-            {status} ({taskStatusCounts[status] ?? 0})
+            {getTaskStatusLabel(locale, status)} ({taskStatusCounts[status] ?? 0})
           </button>
         ))}
       </div>
@@ -80,12 +80,18 @@ export const TaskListPanel = ({
       <div className="masonry-grid">
         {tasks.map((task) => (
           <article key={task.id} className="masonry-card" data-testid="task-card">
+            <div className="card-kicker">
+              <span className={buildStateChipClass(task.status)}>{getTaskStatusLabel(locale, task.status)}</span>
+              <span className="muted">{task.id}</span>
+            </div>
             <h3>{task.title}</h3>
             <p className="muted">{shortAddress(task.publisher)}</p>
-            <span className="state-chip">{task.status}</span>
-            <p>{copy.taskList.reward}: {task.rewardPerSlot} AGC</p>
-            <p>{copy.taskList.slots}: {task.completedAgents.length}/{task.slotsTotal}</p>
-            <p>{copy.taskList.deadline}: {formatDateTime(task.deadlineUtc, locale, timeZone)}</p>
+            <p className="card-primary-number">{task.rewardPerSlot} AGC</p>
+            <div className="card-meta">
+              <p>{copy.taskList.reward}</p>
+              <p>{copy.taskList.slots}: {task.completedAgents.length}/{task.slotsTotal}</p>
+              <p>{copy.taskList.deadline}: {formatDateTime(task.deadlineUtc, locale, timeZone)}</p>
+            </div>
             <div className="card-actions">
               <button type="button" className="link-btn" data-testid="task-detail-trigger" onClick={() => onOpenTaskDetail(task.id)}>
                 {copy.common.details}

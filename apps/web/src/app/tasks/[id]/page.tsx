@@ -1,9 +1,11 @@
-import Link from "next/link";
 import { cookies, headers } from "next/headers";
 import type { SupportedLocale } from "@agentrade/i18n";
+import { getTaskStatusLabel } from "../../../components/dashboard/i18n";
+import { DetailPageShell } from "../../../components/detail-page-shell";
+import { DetailStateCard } from "../../../components/detail-state-card";
+import { TaskDetailContent } from "../../../components/dashboard/task-detail-content";
 import { fetchActivities, fetchDisputes, fetchTask } from "../../../lib/api";
-import { formatDateTime, shortAddress } from "../../../lib/dashboard-format";
-import { renderSafeMarkdown } from "../../../lib/markdown";
+import { formatDateTime } from "../../../lib/dashboard-format";
 import {
   LOCALE_COOKIE_NAME,
   TIMEZONE_COOKIE_NAME,
@@ -19,48 +21,40 @@ const copy = (locale: SupportedLocale) =>
     ? {
         loadFailed: "任务详情加载失败",
         loadUnavailable: "详情服务暂时不可用。",
-        back: "返回看板",
+        back: "返回数据中心",
         notFound: "任务不存在",
+        loadHint: "任务详情服务当前不可用，可以返回数据中心查看其他实体。",
+        notFoundHint: "这个任务 ID 当前没有公开记录，请返回数据中心重新选择。",
+        eyebrow: "任务档案",
+        description: "查看该任务的托管余额、槽位进度、关联争议与公开活动，不跨越 Web 只读边界。",
         taskId: "任务 ID",
         publisher: "发布者",
+        status: "状态",
         reward: "奖励",
         tax: "税额",
         escrow: "剩余托管",
         slots: "槽位进度",
-        acceptedAgents: "已接受 Agent",
-        completedAgents: "已完成 Agent",
-        none: "暂无",
         deadline: "截止时间",
-        description: "任务说明",
-        acceptanceCriteria: "验收标准",
-        relatedDisputes: "关联争议",
-        opener: "发起人",
-        noDisputes: "暂无关联争议",
-        timeline: "事件时间线",
-        noActivity: "暂无事件"
+        updatedAt: "更新时间"
       }
     : {
         loadFailed: "Task Detail Load Failed",
         loadUnavailable: "The detail service is temporarily unavailable.",
-        back: "Back to dashboard",
+        back: "Back to research center",
         notFound: "Task Not Found",
+        loadHint: "The task detail service is unavailable right now. Return to the research center and inspect another entity.",
+        notFoundHint: "There is no public record for this task id. Return to the research center and choose another entity.",
+        eyebrow: "Task Dossier",
+        description: "Inspect escrow, slot progress, related disputes, and public activity for this task without crossing the web write boundary.",
         taskId: "Task ID",
         publisher: "Publisher",
+        status: "Status",
         reward: "Reward",
         tax: "Tax",
         escrow: "Escrow Remaining",
         slots: "Slot Progress",
-        acceptedAgents: "Accepted Agents",
-        completedAgents: "Completed Agents",
-        none: "None",
         deadline: "Deadline",
-        description: "Description",
-        acceptanceCriteria: "Acceptance Criteria",
-        relatedDisputes: "Related Disputes",
-        opener: "Opener",
-        noDisputes: "No related disputes yet",
-        timeline: "Activity Timeline",
-        noActivity: "No activity yet"
+        updatedAt: "Updated"
       };
 
 export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
@@ -90,133 +84,82 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
 
   if (loadError) {
     return (
-      <main className="page">
-        <section className="card">
-          <h1>{t.loadFailed}</h1>
-          <p className="sub">{t.loadUnavailable}</p>
-          <Link href="/">{t.back}</Link>
-        </section>
-      </main>
+      <DetailPageShell
+        locale={requestPreferences.locale}
+        active="tasks"
+        eyebrow={t.eyebrow}
+        title={t.loadFailed}
+        description={t.loadUnavailable}
+        backHref="/center?tab=tasks"
+        backLabel={t.back}
+        metaLabel={t.taskId}
+        metaValue={id}
+        summary={[]}
+      >
+        <DetailStateCard
+          title={t.loadFailed}
+          body={t.loadHint}
+          actionHref="/center?tab=tasks"
+          actionLabel={t.back}
+        />
+      </DetailPageShell>
     );
   }
 
   if (!task) {
     return (
-      <main className="page">
-        <section className="card">
-          <h1>{t.notFound}</h1>
-          <Link href="/">{t.back}</Link>
-        </section>
-      </main>
+      <DetailPageShell
+        locale={requestPreferences.locale}
+        active="tasks"
+        eyebrow={t.eyebrow}
+        title={t.notFound}
+        description={t.description}
+        backHref="/center?tab=tasks"
+        backLabel={t.back}
+        metaLabel={t.taskId}
+        metaValue={id}
+        summary={[]}
+      >
+        <DetailStateCard
+          title={t.notFound}
+          body={t.notFoundHint}
+          actionHref="/center?tab=tasks"
+          actionLabel={t.back}
+        />
+      </DetailPageShell>
     );
   }
 
   return (
-    <main className="page detail-page">
+    <DetailPageShell
+      locale={requestPreferences.locale}
+      active="tasks"
+      eyebrow={t.eyebrow}
+      title={task.title}
+      description={t.description}
+      backHref="/center?tab=tasks"
+      backLabel={t.back}
+      metaLabel={t.taskId}
+      metaValue={task.id}
+      statusLabel={getTaskStatusLabel(requestPreferences.locale, task.status)}
+      statusTone={task.status}
+      summary={[
+        { label: t.reward, value: `${task.rewardPerSlot} AGC`, note: `${t.tax}: ${task.taxAmount} AGC` },
+        { label: t.escrow, value: `${task.rewardEscrowRemaining} AGC`, note: `${t.publisher}: ${task.publisher}` },
+        { label: t.slots, value: `${task.completedAgents.length}/${task.slotsTotal}`, note: `${disputes.items.length} ${requestPreferences.locale === "zh" ? "个关联争议" : "related disputes"}` },
+        { label: t.deadline, value: formatDateTime(task.deadlineUtc, requestPreferences.locale, requestPreferences.timeZone), note: `${t.updatedAt}: ${formatDateTime(task.updatedAt, requestPreferences.locale, requestPreferences.timeZone)}` }
+      ]}
+    >
       <section className="card">
-        <div className="card-actions">
-          <span className="muted">
-            {t.taskId}: {task.id}
-          </span>
-          <Link href="/">{t.back}</Link>
-        </div>
-        <h1>{task.title}</h1>
-        <span className="state-chip">{task.status}</span>
-        <div className="detail-grid">
-          <div className="detail-card">
-            <div className="metric-line">
-              <span>{t.publisher}</span>
-              <strong>
-                <Link className="inline-link" href={`/agents/${task.publisher}`}>
-                  {shortAddress(task.publisher)}
-                </Link>
-              </strong>
-            </div>
-            <div className="metric-line"><span>{t.reward}</span><strong>{task.rewardPerSlot} AGC</strong></div>
-            <div className="metric-line"><span>{t.tax}</span><strong>{task.taxAmount} AGC</strong></div>
-            <div className="metric-line"><span>{t.escrow}</span><strong>{task.rewardEscrowRemaining} AGC</strong></div>
-            <div className="metric-line"><span>{t.slots}</span><strong>{task.completedAgents.length}/{task.slotsTotal}</strong></div>
-            <div className="metric-line">
-              <span>{t.deadline}</span>
-              <strong>{formatDateTime(task.deadlineUtc, requestPreferences.locale, requestPreferences.timeZone)}</strong>
-            </div>
-          </div>
-          <div className="detail-card">
-            <h2>{t.acceptedAgents}</h2>
-            {task.acceptedAgents.length > 0 ? (
-              <div className="chip-list">
-                {task.acceptedAgents.map((address) => (
-                  <Link key={address} className="link-btn" href={`/agents/${address}`}>
-                    {shortAddress(address)}
-                  </Link>
-                ))}
-              </div>
-            ) : (
-              <p className="empty-line">{t.none}</p>
-            )}
-            <h2>{t.completedAgents}</h2>
-            {task.completedAgents.length > 0 ? (
-              <div className="chip-list">
-                {task.completedAgents.map((address) => (
-                  <Link key={address} className="link-btn" href={`/agents/${address}`}>
-                    {shortAddress(address)}
-                  </Link>
-                ))}
-              </div>
-            ) : (
-              <p className="empty-line">{t.none}</p>
-            )}
-          </div>
-        </div>
+        <TaskDetailContent
+          locale={requestPreferences.locale}
+          timeZone={requestPreferences.timeZone}
+          task={task}
+          disputes={disputes.items}
+          activities={activities.items}
+          getAgentHref={(address) => `/agents/${address}`}
+        />
       </section>
-
-      <section className="card markdown">
-        <h2>{t.description}</h2>
-        {renderSafeMarkdown(task.descriptionMd)}
-        <h2>{t.acceptanceCriteria}</h2>
-        {renderSafeMarkdown(task.acceptanceCriteria)}
-      </section>
-
-      <section className="card">
-        <h2>{t.relatedDisputes}</h2>
-        {disputes.items.length > 0 ? (
-          <ul className="detail-list">
-            {disputes.items.map((item) => (
-              <li key={item.id} className="detail-card">
-                <div className="section-head compact-head">
-                  <strong>{item.id}</strong>
-                  <span className="state-chip">{item.status}</span>
-                </div>
-                <p className="muted">
-                  {t.opener}:{" "}
-                  <Link className="inline-link" href={`/agents/${item.opener}`}>
-                    {shortAddress(item.opener)}
-                  </Link>
-                </p>
-                <p>{item.reasonMd}</p>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="sub">{t.noDisputes}</p>
-        )}
-      </section>
-
-      <section className="card">
-        <h2>{t.timeline}</h2>
-        {activities.items.length > 0 ? (
-          <ul className="detail-list">
-            {activities.items.map((item) => (
-              <li key={item.id} className="detail-list-row">
-                <span>{item.type}</span>
-                <strong>{formatDateTime(item.createdAt, requestPreferences.locale, requestPreferences.timeZone)}</strong>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="sub">{t.noActivity}</p>
-        )}
-      </section>
-    </main>
+    </DetailPageShell>
   );
 }

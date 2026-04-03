@@ -4,11 +4,12 @@
 
 交付只读 Web 信息中心，包含：
 
+- `/` 叙事型公开首页与 `/center` 研究型数据中心的分层结构。
 - 首页总览指标（`当日` 与 `本周期` 的任务发布/接单/完成/争议数量）。
-- 三个 tab 视图（`Tasks`、`Users`、`Cycles`），支持瀑布流卡片、无限滚动，以及在适用场景下的搜索/筛选/排序。
+- 四个 tab 视图（`Tasks`、`Users`、`Cycles`、`Disputes`），支持瀑布流/列表卡片、无限滚动或 `Load more` 兜底，以及在适用场景下的搜索/筛选/排序。
 - 抽屉详情 + 独立详情页联动。
 - 周期奖励池/分配/workload 下钻，以及 Agent 余额展示。
-- 趋势与榜单模块。
+- 趋势与榜单模块，以及 economy/health 的公开信任读面。
 - URL 状态全量同步。
 
 ## 模块跟踪
@@ -50,6 +51,14 @@
 | M13 | 更丰富的 task/agent 详情面 | DONE | 任务详情补齐 escrow/slot/dispute；Agent 详情补齐 ledger balance 与扩展统计 |
 | M14 | 奖励分配契约对齐 | DONE* | `cycles/{id}/rewards` 现暴露 `rewardPool` + `distributions`；单测与 E2E mock 已更新，但当前环境仍受 Chromium 启动权限限制 |
 
+## 第六阶段模块跟踪
+
+| 模块 | 范围 | 状态 | 备注 |
+| --- | --- | --- | --- |
+| M15 | 公开首页 + 数据中心分层 | DONE | `/` 重建为叙事型公开首页，旧 dashboard 迁移到 `/center`，旧 `/?tab=...` 分享链接保持兼容跳转 |
+| M16 | Disputes tab + 争议详情路由 | DONE | 新增 `Disputes` 一级 tab、状态/排序 query-state、详情抽屉与 `/disputes/[id]` 独立详情页 |
+| M17 | 信任模块 + 视觉重构 | DONE | 新增 economy/health 公开读面、sticky 站点导航、统一卡片层级与研究型视觉 token |
+
 ## 第二阶段 API 变更
 
 - 扩展 `GET /v2/cycles/{id}/rewards`，返回 `cycle`、`rewardPool`、`distributions[]` 与 `workloads[]`。
@@ -62,8 +71,11 @@
 - [x] `Tasks` tab 支持瀑布流 + 无限滚动 + 搜索/筛选/排序。
 - [x] `Users` tab 默认活跃 agent，并支持榜单综合评分排序。
 - [x] `Cycles` tab 支持列表分页、active cycle 深链与奖励/workload 下钻。
+- [x] `Disputes` tab 支持列表浏览、状态筛选、排序、抽屉详情与可分享的独立详情页。
 - [x] 抽屉详情与独立详情页联动，且 URL 可分享/可回退。
+- [x] `/` 公开首页与 `/center` 数据中心已分层，同时保留旧 dashboard query 链接兼容跳转。
 - [x] Agent 详情展示当前 ledger balance，task 详情展示 escrow/slot/dispute 上下文。
+- [x] economy params 与 system health 已作为只读信任模块对外展示。
 - [x] Markdown 字段按安全子集渲染。
 - [x] SDK 与 CLI 暴露新读接口能力。
 - [x] OpenAPI 与中英文文档在同提交同步更新。
@@ -80,6 +92,32 @@
 - `npm --prefix apps/web run build` 通过（Next.js 15 生产构建）。
 
 ## 增量更新日志
+
+- 2026-04-03：完成 Web V2 第二轮打磨：
+  - 将 `apps/web/src/components/site-header.tsx` 升级为支持移动端覆盖菜单的导航壳层。
+  - 将 `apps/web/src/components/public-home-view.tsx` 的 economy/trust 区重构为更具研究感的规则卡片与信任块，不再只是平铺指标列表。
+  - 在 `apps/web/src/components/dashboard/dashboard-view.tsx` 中补齐追踪实体摘要 chip，并让数据中心 trust 卡显式展示 persistence/bridge 状态。
+  - 详情抽屉已统一为可 focus-trap 的复用壳层，task/agent 抽屉补齐 full-page 深链，tabs/filter 也已按移动端优先方式重排。
+  - 为中心页 tabs 补齐方向键与 Home/End 键盘导航，并增强键盘 focus-visible 反馈。
+  - 为 task/agent/cycle/dispute 状态补齐分层色彩的 state chip，同时将首页与争议详情时间线中的原始枚举值替换为更可读的事件/状态标签。
+  - 继续将 task、cycle、agent 的状态标签全链路本地化，使卡片、完整页 detail shell 与 task 筛选控件不再直接暴露 `IN_PROGRESS`、`ACTIVE` 这类原始枚举值。
+  - 新增可复用的完整页 detail shell，使 `/tasks/[id]`、`/agents/[address]`、`/cycles/[id]`、`/disputes/[id]` 统一为同一套 hero + 摘要结构，不再各自分叉。
+  - 抽出 task/agent 详情正文组件，让抽屉视图与独立详情页保持同一套信息层级与行为语义。
+  - 扩展 Playwright 覆盖，新增 task/agent/cycle/dispute 独立详情页直达路径检查，使 standalone detail URL 进入 Web 回归面。
+  - 为 task/cycle/agent 主路径补齐 Playwright 状态文案断言，确保公开读面展示 `Open`、`In progress`、`Closed`、`Active`、`Idle` 这类可读标签，而不是原始枚举字面量。
+  - 新增 locale 持久化端到端路径，覆盖首页切换、`/center` 的 client-state 继承，以及独立详情页通过 locale cookie/localStorage 触发的 SSR 刷新。
+  - 为独立详情页补齐 `404` 与 API 失败时的显式状态卡，并继续扩展 Playwright，使 standalone detail page 覆盖成功态、未找到态与加载失败态。
+  - 新增中英文 dashboard 状态标签 helper 的单测覆盖，锁定公开读面所使用的术语与共享 copy 源保持一致。
+  - 将 `apps/web` 的 lint 流程改为先执行 `next typegen`，避免 route type 校验依赖已有 `.next/types` 产物。
+  - 清理剩余中文用户可见文案中的 `Agent`、`Mint`、`workload` 等英文术语混用，并为 detail 读面与数据表中的长 ID、地址、摘要值补齐防溢出换行。
+  - 已复验 `npm --prefix apps/web run lint`、`npm --prefix apps/web run test:unit` 与 `npm --prefix apps/web run build`。
+
+- 2026-04-03：完成 Web V2 对外信息面重构：
+  - 将旧 dashboard 入口从 `/` 迁移到 `/center`，并将 `/` 重建为叙事型公开信息站。
+  - 将 `Disputes` 升级为一级 tab，补齐状态/排序 URL 状态、详情抽屉行为与独立详情页 `apps/web/src/app/disputes/[id]/page.tsx`。
+  - 新增 economy params 与 system health 的公开信任模块，并在 `apps/web/src/app/globals.css` 中完成共享 sticky 导航与研究型卡片体系刷新。
+  - 新增旧分享链接兼容：`/?tab=...` 会无损重定向到 `/center` 并保留 query-state。
+  - 已复验 `npm --prefix apps/web run lint`、`npm --prefix apps/web run test:unit`、`npm --prefix apps/web run build` 与 `npm --prefix apps/server run test`。
 
 - 2026-04-03：完成第二阶段 Web 产品收口：
   - 新增 `Cycles` tab、周期详情抽屉与独立详情页 `apps/web/src/app/cycles/[id]/page.tsx`。

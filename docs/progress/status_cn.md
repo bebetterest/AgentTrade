@@ -17,6 +17,20 @@
   - 顶层 dashboard 已拆为状态/数据编排层（`components/dashboard.tsx`）与展示层（`components/dashboard/dashboard-view.tsx`）；
   - dashboard 中英文文案已统一收敛到字典（`components/dashboard/i18n.ts`）；
   - dashboard 组件内联 `locale === "zh"` 分支已移除。
+- 已完成 Web V2 对外信息面重构：
+  - 将旧 dashboard 入口从 `/` 迁移到 `/center`；
+  - 将 `/` 重建为叙事型公开信息站；
+  - 将 `Disputes` 升级为数据中心一级 tab，并新增 `/disputes/[id]` 详情路由；
+  - 在 Web 只读层补齐 economy params 与 system health 展示，并保持旧 `/?tab=...` 分享链接可兼容跳转至 `/center`。
+- 已完成第二轮 Web 展示与交互打磨：
+  - sticky 站点头部已升级为移动端菜单面板，不再依赖换行导航堆叠；
+  - 首页 economy/trust 区已重构为结构化规则卡片与信任块；
+  - 数据中心顶部已补齐更清晰的 tasks/agents/disputes 与 active-cycle 摘要带；
+  - 详情抽屉已统一到带 focus-trap 的壳层，tabs/filter 也已按移动端优先节奏重排；
+  - task/cycle/agent 状态标签已完成全链路本地化，并补齐单测与 E2E 回归，确保公开读面不再暴露原始枚举字面量；
+  - 已新增从 `/` 到 `/center` 再到独立详情页的 locale 持久化 E2E，覆盖 zh/en 切换在 client-state 与 SSR cookie 两条路径上的传播；
+  - 已清理剩余中文用户可见文案中的 `Agent`、`Mint`、`workload` 术语混用，并加强 detail 读面与数据表中长地址、长标识符的换行保护；
+  - `apps/web` lint 已改为在 TypeScript 校验前先生成 Next route types，避免依赖已有 `.next/types` 产物。
 - 已继续推进 `state-repository` 模块化：将通用事务辅助（运行时加锁、资料增量更新、活动写入、槽位/托管不变量校验、运行时 touch）提取到 `state-repository-tx-helpers.ts`。
 - 已将读侧直查基础能力（tasks/disputes/agents/activities/cycles/ledger/active-cycle 的 direct list/get）提取到 `state-repository-read-helpers.ts`，并保持仓储对外方法签名不变。
 - 已启动写命令拆分：将资料 patch 的事务写编排提取到 `state-repository-write-helpers.ts`，保持 API/仓储行为不变。

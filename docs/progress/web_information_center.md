@@ -4,11 +4,12 @@
 
 Deliver a read-only web information center with:
 
+- A narrative public home at `/` plus a data-heavy research center at `/center`.
 - Home overview metrics (`today` and `current cycle`) for task publish/accept/complete/dispute counts.
-- Three tab views (`Tasks`, `Users`, and `Cycles`) with masonry cards, infinite scroll, search/filter/sort where applicable.
+- Four tab views (`Tasks`, `Users`, `Cycles`, and `Disputes`) with masonry/list cards, infinite scroll or load-more fallback, and search/filter/sort where applicable.
 - Drawer + detail page drill-down.
 - Cycle reward pool/distribution/workload drill-down and agent balance readout.
-- Trend and leaderboard modules.
+- Trend and leaderboard modules plus public economy/health trust surfaces.
 - Full URL state sync.
 
 ## Module Tracker
@@ -50,6 +51,14 @@ Deliver a read-only web information center with:
 | M13 | Richer task/agent detail surfaces | DONE | Task detail now shows escrow/slot/dispute detail; agent detail now shows ledger balance and expanded stats |
 | M14 | Reward/distribution contract alignment | DONE* | `cycles/{id}/rewards` now exposes `rewardPool` + `distributions`; unit tests updated and E2E mocks aligned, but full browser execution remains environment-blocked here |
 
+## Phase 6 Module Tracker
+
+| Module | Scope | Status | Notes |
+| --- | --- | --- | --- |
+| M15 | Public home + research center split | DONE | `/` rebuilt as narrative public home, old dashboard moved to `/center`, legacy `/?tab=...` share links redirect compatibly |
+| M16 | Disputes tab + dispute detail routes | DONE | Added `Disputes` top-level tab, status/sort query state, drawer flow, and `/disputes/[id]` full page route |
+| M17 | Trust surfaces + visual refresh | DONE | Added public economy/health readouts, sticky site header, unified card hierarchy, and research-style visual tokens across home/center |
+
 ## Phase 2 API Delta
 
 - Extended `GET /v2/cycles/{id}/rewards` to return `cycle`, `rewardPool`, `distributions[]`, and `workloads[]`.
@@ -62,8 +71,11 @@ Deliver a read-only web information center with:
 - [x] `Tasks` tab supports masonry + infinite scroll + search/filter/sort.
 - [x] `Users` tab defaults to active agents and supports leaderboard score sort.
 - [x] `Cycles` tab supports list pagination, active-cycle deep links, and reward/workload drill-down.
+- [x] `Disputes` tab supports list browse, status filter, sort, drawer detail, and shareable full page detail.
 - [x] Drawer detail and full detail pages are linked and URL-shareable.
+- [x] `/` public home and `/center` research center are separated while preserving legacy dashboard query-link compatibility.
 - [x] Agent detail shows current ledger balance and task detail shows escrow/slot/dispute context.
+- [x] Public economy params and system health are visible in read-only trust modules.
 - [x] Markdown fields are rendered via safe subset strategy.
 - [x] SDK and CLI expose new read routes.
 - [x] OpenAPI and bilingual docs are updated in the same commit.
@@ -80,6 +92,32 @@ Deliver a read-only web information center with:
 - `npm --prefix apps/web run build` passed (Next.js 15 production build).
 
 ## Incremental Update Log
+
+- 2026-04-03: Delivered second-pass Web V2 polish:
+  - Upgraded `apps/web/src/components/site-header.tsx` into a mobile-aware navigation shell with overlay menu behavior.
+  - Restructured `apps/web/src/components/public-home-view.tsx` into richer rule-card and trust-block sections so public economy/guardrail data reads as a research surface instead of a plain metric list.
+  - Added compact tracked-entity summary chips to `apps/web/src/components/dashboard/dashboard-view.tsx` and extended the center trust card with persistence/bridge visibility.
+  - Unified detail drawers behind a reusable focus-trapped shell, restored consistent full-page deep links from task/agent drawers, and reflowed tabs/filter controls for mobile-first use.
+  - Added arrow-key/Home/End keyboard navigation for center tabs, plus stronger focus-visible feedback for keyboard use.
+  - Applied state-specific chip tones across task/agent/cycle/dispute cards and replaced raw dispute/event enums with reader-friendly labels in public home and dispute detail timelines.
+  - Localized task, cycle, and agent status labels end-to-end so cards, detail shells, and task filter controls no longer expose raw enum values like `IN_PROGRESS` or `ACTIVE`.
+  - Added a shared full-page detail shell so `/tasks/[id]`, `/agents/[address]`, `/cycles/[id]`, and `/disputes/[id]` now use the same hero-summary structure instead of four diverging layouts.
+  - Extracted reusable task/agent detail content modules so drawer views and standalone detail pages stay behaviorally aligned.
+  - Extended Playwright coverage with direct-route checks for task/agent/cycle/dispute full pages, so standalone detail URLs are now part of the web regression surface.
+  - Added Playwright assertions that task, cycle, and agent surfaces render reader-facing status labels (`Open`, `In progress`, `Closed`, `Active`, `Idle`) rather than leaking raw enum literals.
+  - Added an end-to-end locale persistence path covering home-page switch, `/center` client-state carryover, and direct detail-page SSR refresh via locale cookies/localStorage.
+  - Added explicit detail-state cards for direct-route `404` and API-failure cases, and extended Playwright coverage so standalone detail pages now cover success, not-found, and load-failed states.
+  - Added unit coverage for localized dashboard status helpers in both English and Chinese to keep public-facing terminology aligned with the shared copy source.
+  - Hardened `apps/web` lint execution by prefixing `next typegen`, so route-type validation no longer depends on pre-existing `.next/types` artifacts.
+  - Normalized remaining zh user-facing copy that still mixed in raw English domain terms such as `Agent`, `Mint`, and `workload`, and added overflow wrapping across detail surfaces/data tables for long ids, addresses, and summary values.
+  - Revalidated with `npm --prefix apps/web run lint`, `npm --prefix apps/web run test:unit`, and `npm --prefix apps/web run build`.
+
+- 2026-04-03: Delivered Web V2 public-surface restructure:
+  - Moved the old dashboard entry from `/` to `/center` and rebuilt `/` as a narrative public information station.
+  - Added `Disputes` as a first-class tab with status/sort URL state, detail drawer behavior, and full page route at `apps/web/src/app/disputes/[id]/page.tsx`.
+  - Added public trust modules for economy params and system health, plus a shared sticky site header and refreshed research-style card system in `apps/web/src/app/globals.css`.
+  - Added legacy share-link compatibility so old `/?tab=...` dashboard URLs redirect to `/center` without losing query state.
+  - Revalidated with `npm --prefix apps/web run lint`, `npm --prefix apps/web run test:unit`, `npm --prefix apps/web run build`, and `npm --prefix apps/server run test`.
 
 - 2026-04-03: Delivered Phase 2 web product closure:
   - Added `Cycles` tab, cycle detail drawer, and full page route at `apps/web/src/app/cycles/[id]/page.tsx`.

@@ -7,6 +7,8 @@ import {
   fetchCycles,
   fetchDashboardSummary,
   fetchDispute,
+  fetchEconomyParams,
+  fetchHealthStatus,
   fetchLedger,
   fetchTask,
   fetchTasks
@@ -163,5 +165,61 @@ describe("api helpers", () => {
 
     expect(result?.available).toBe(42);
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain(`/ledger/${ADDRESS_A}`);
+  });
+
+  it("fetches health status", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(
+      makeResponse(200, {
+        ok: true,
+        service: "agentrade-server"
+      })
+    );
+
+    const result = await fetchHealthStatus({ strict: true });
+
+    expect(result?.ok).toBe(true);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/system/health");
+  });
+
+  it("fetches public economy params", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(
+      makeResponse(200, {
+        appName: "Agentrade",
+        enablePersistence: true,
+        enableRedisRateLimit: false,
+        authChallengeTtlMinutes: 10,
+        rateLimitPerMinute: 60,
+        rateLimitBurst: 120,
+        taskTitleMaxLength: 120,
+        taskDescriptionMaxLength: 4000,
+        taskAcceptanceCriteriaMaxLength: 2000,
+        taskSubmissionPayloadMaxLength: 5000,
+        disputeReasonMaxLength: 2000,
+        taskSlotsMax: 5,
+        taskRewardPerSlotMax: 500,
+        taskDeadlineMaxHours: 72,
+        taxRateBps: 500,
+        taxMin: 1,
+        rewardMin: 1,
+        mintPerCycle: 1000,
+        terminationPenaltyBps: 2000,
+        submissionTimeoutHours: 24,
+        resubmitCooldownMinutes: 10,
+        disputeQuorum: 3,
+        disputeApprovalBps: 6000,
+        reputationWeightPublisherBps: 3000,
+        reputationWeightWorkerBps: 5000,
+        reputationWeightSupervisorBps: 2000,
+        bridgeChain: "base-sepolia",
+        bridgeMode: "OFFCHAIN_EXPORT_ONLY"
+      })
+    );
+
+    const result = await fetchEconomyParams({ strict: true });
+
+    expect(result?.mintPerCycle).toBe(1000);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/economy/params");
   });
 });

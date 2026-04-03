@@ -1,5 +1,7 @@
 import type { SupportedLocale } from "@agentrade/i18n";
-import { ActivityEventType } from "@agentrade/types";
+import { ActivityEventType, CycleStatus, DisputeStatus, TaskStatus } from "@agentrade/types";
+
+type AgentStateLabel = "ACTIVE" | "IDLE";
 
 interface DashboardCopy {
   common: {
@@ -9,8 +11,20 @@ interface DashboardCopy {
     fullPage: string;
     noActivityYet: string;
     loadingMore: string;
+    on: string;
+    off: string;
   };
   page: {
+    centerEyebrow: string;
+    centerTitle: string;
+    centerBody: string;
+    centerUpdated: string;
+    centerSource: string;
+    centerBoundary: string;
+    centerRateLimit: string;
+    centerHealth: string;
+    centerPersistence: string;
+    centerBridge: string;
     refresh: string;
     refreshing: string;
     overviewError: string;
@@ -32,8 +46,23 @@ interface DashboardCopy {
     orderAsc: string;
     reset: string;
     cyclesHint: string;
+    disputesHint: string;
     drawerTitle: string;
+    drawerTask: string;
+    drawerAgent: string;
+    drawerCycle: string;
+    drawerDispute: string;
+    drawerHint: string;
     close: string;
+    tabTasks: string;
+    tabUsers: string;
+    tabCycles: string;
+    tabDisputes: string;
+    openOnly: string;
+    resolvedCompleted: string;
+    resolvedNotCompleted: string;
+    contractSource: string;
+    listingsTitle: string;
   };
   activityFeed: {
     title: string;
@@ -151,6 +180,10 @@ interface DashboardCopy {
     leaderboard: string;
     seeAll: string;
   };
+  taskStatuses: Record<TaskStatus, string>;
+  cycleStatuses: Record<CycleStatus, string>;
+  agentStates: Record<AgentStateLabel, string>;
+  disputeStatuses: Record<DisputeStatus, string>;
   events: Record<ActivityEventType, string>;
 }
 
@@ -162,14 +195,26 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       details: "Details",
       fullPage: "Full page",
       noActivityYet: "No activity yet",
-      loadingMore: "Loading more..."
+      loadingMore: "Loading more...",
+      on: "ON",
+      off: "OFF"
     },
     page: {
+      centerEyebrow: "Research Center",
+      centerTitle: "Public state, disputes, and settlement signals in one read-only surface.",
+      centerBody: "Use the research center to compare task supply, agent quality, dispute pressure, and cycle distribution without crossing the write boundary.",
+      centerUpdated: "Updated",
+      centerSource: "Source",
+      centerBoundary: "Boundary",
+      centerRateLimit: "Rate limit",
+      centerHealth: "Health",
+      centerPersistence: "Persistence",
+      centerBridge: "Bridge",
       refresh: "Refresh",
       refreshing: "Refreshing...",
       overviewError: "Overview modules failed to load. Try refresh.",
       search: "Search",
-      searchPlaceholder: "Search title, address...",
+      searchPlaceholder: "Search title, address, dispute id...",
       clear: "Clear",
       allStatus: "All status",
       latest: "Latest",
@@ -186,8 +231,23 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       orderAsc: "Asc",
       reset: "Reset",
       cyclesHint: "Browse cycles, reward distributions, and supervision workloads.",
+      disputesHint: "Track dispute status, opener, task linkage, and detail timeline.",
       drawerTitle: "Details",
-      close: "Close"
+      drawerTask: "Task Detail",
+      drawerAgent: "Agent Detail",
+      drawerCycle: "Cycle Detail",
+      drawerDispute: "Dispute Detail",
+      drawerHint: "Read-only detail panel. Press Escape or use Tab to stay within the panel.",
+      close: "Close",
+      tabTasks: "Tasks",
+      tabUsers: "Agents",
+      tabCycles: "Cycles",
+      tabDisputes: "Disputes",
+      openOnly: "Open",
+      resolvedCompleted: "Resolved completed",
+      resolvedNotCompleted: "Resolved not completed",
+      contractSource: "packages/contracts -> /v2",
+      listingsTitle: "Entity Streams"
     },
     activityFeed: {
       title: "Live Activity",
@@ -305,6 +365,25 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       leaderboard: "Agent Leaderboard",
       seeAll: "See all"
     },
+    taskStatuses: {
+      [TaskStatus.OPEN]: "Open",
+      [TaskStatus.IN_PROGRESS]: "In progress",
+      [TaskStatus.CLOSED]: "Closed",
+      [TaskStatus.TERMINATED]: "Terminated"
+    },
+    cycleStatuses: {
+      [CycleStatus.OPEN]: "Open",
+      [CycleStatus.CLOSED]: "Closed"
+    },
+    agentStates: {
+      ACTIVE: "Active",
+      IDLE: "Idle"
+    },
+    disputeStatuses: {
+      [DisputeStatus.OPEN]: "Open",
+      [DisputeStatus.RESOLVED_COMPLETED]: "Completed",
+      [DisputeStatus.RESOLVED_NOT_COMPLETED]: "Not completed"
+    },
     events: {
       [ActivityEventType.TASK_PUBLISHED]: "Task Published",
       [ActivityEventType.TASK_ACCEPTED]: "Task Accepted",
@@ -320,14 +399,26 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       details: "详情",
       fullPage: "完整页",
       noActivityYet: "暂无事件",
-      loadingMore: "加载更多..."
+      loadingMore: "加载更多...",
+      on: "开启",
+      off: "关闭"
     },
     page: {
-      refresh: "手动刷新",
+      centerEyebrow: "数据中心",
+      centerTitle: "在同一只读视图中查看公开状态、争议压力与周期结算信号。",
+      centerBody: "数据中心用于对比任务供给、代理人表现、争议密度与周期奖励分配，同时保持 Web 只读边界。",
+      centerUpdated: "更新时间",
+      centerSource: "数据来源",
+      centerBoundary: "边界",
+      centerRateLimit: "限流",
+      centerHealth: "健康状态",
+      centerPersistence: "持久化",
+      centerBridge: "桥接",
+      refresh: "刷新",
       refreshing: "刷新中...",
       overviewError: "概览模块拉取失败，请重试。",
       search: "搜索",
-      searchPlaceholder: "搜索标题、地址...",
+      searchPlaceholder: "搜索标题、地址、争议 ID...",
       clear: "清除",
       allStatus: "全部状态",
       latest: "最新",
@@ -342,10 +433,25 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       accepted: "接单量",
       orderDesc: "降序",
       orderAsc: "升序",
-      reset: "重置筛选",
-      cyclesHint: "查看周期、奖励分配与监督 workload。",
+      reset: "重置",
+      cyclesHint: "查看周期、奖励分配与监督工作量。",
+      disputesHint: "跟踪争议状态、发起人、关联任务与明细时间线。",
       drawerTitle: "详情",
-      close: "关闭"
+      drawerTask: "任务详情",
+      drawerAgent: "代理人详情",
+      drawerCycle: "周期详情",
+      drawerDispute: "争议详情",
+      drawerHint: "只读详情面板。可按 Escape 关闭，Tab 键会保持在面板内导航。",
+      close: "关闭",
+      tabTasks: "任务",
+      tabUsers: "代理人",
+      tabCycles: "周期",
+      tabDisputes: "争议",
+      openOnly: "开放中",
+      resolvedCompleted: "已判定完成",
+      resolvedNotCompleted: "已判定未完成",
+      contractSource: "packages/contracts -> /v2",
+      listingsTitle: "实体流"
     },
     activityFeed: {
       title: "实时事件流",
@@ -363,18 +469,18 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       loadMore: "加载更多任务"
     },
     agentList: {
-      loadError: "Agent 列表加载失败，请重试。",
+      loadError: "代理人列表加载失败，请重试。",
       score: "综合分",
       summary: "发布/接单/完成",
       latest: "最新活动",
-      emptyFiltered: "筛选后暂无 Agent",
-      empty: "暂无 Agent",
-      loadMore: "加载更多 Agent"
+      emptyFiltered: "筛选后暂无代理人",
+      empty: "暂无代理人",
+      loadMore: "加载更多代理人"
     },
     cycleList: {
       loadError: "周期列表加载失败，请重试。",
       started: "开始时间",
-      mint: "Mint",
+      mint: "铸造量",
       tax: "税池",
       penalty: "罚没池",
       empty: "暂无周期",
@@ -389,7 +495,7 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       escrowRemaining: "剩余托管",
       slotProgress: "槽位进度",
       deadline: "截止时间",
-      participants: "参与 Agent",
+      participants: "参与代理人",
       accepted: "已接受",
       none: "暂无",
       completed: "已完成",
@@ -400,8 +506,8 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       activityTimeline: "事件时间线"
     },
     agentDetail: {
-      loadError: "Agent 详情加载失败，请重试。",
-      notFound: "Agent 不存在",
+      loadError: "代理人详情加载失败，请重试。",
+      notFound: "代理人不存在",
       balanceAndReputation: "余额与信誉",
       balance: "当前余额",
       publisherRep: "发布信誉",
@@ -424,7 +530,7 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       status: "状态",
       startedAt: "开始时间",
       closedAt: "关闭时间",
-      mint: "Mint",
+      mint: "铸造量",
       taxPool: "税池",
       penaltyPool: "罚没池",
       rewardPool: "奖励池",
@@ -433,13 +539,13 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       disputeSummary: "争议摘要",
       opener: "发起人",
       noDisputes: "当前周期没有争议记录。",
-      rawWorkloads: "原始 workload",
-      agent: "Agent",
+      rawWorkloads: "原始工作量",
+      agent: "代理人",
       dispute: "争议",
       workload: "工作量",
       createdAt: "创建时间",
       settledAt: "结算时间",
-      noWorkloads: "当前周期没有 workload。"
+      noWorkloads: "当前周期没有工作量记录。"
     },
     overview: {
       today: "当日统计",
@@ -450,18 +556,37 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       completed: "完成",
       disputes: "争议",
       tasks: "任务",
-      agents: "Agent",
+      agents: "代理人",
       cycleStatus: "周期状态",
       status: "状态",
       startedAt: "开始时间",
       uptime: "运行时长",
-      mintTaxPenalty: "Mint/税/罚没",
+      mintTaxPenalty: "铸造/税/罚没",
       generatedAt: "数据更新时间",
       drillIntoCycle: "下钻当前周期",
       viewDetails: "查看详情",
       trend: "趋势",
-      leaderboard: "Agent 榜单",
+      leaderboard: "代理人榜单",
       seeAll: "查看全部"
+    },
+    taskStatuses: {
+      [TaskStatus.OPEN]: "开放中",
+      [TaskStatus.IN_PROGRESS]: "进行中",
+      [TaskStatus.CLOSED]: "已关闭",
+      [TaskStatus.TERMINATED]: "已终止"
+    },
+    cycleStatuses: {
+      [CycleStatus.OPEN]: "开放中",
+      [CycleStatus.CLOSED]: "已关闭"
+    },
+    agentStates: {
+      ACTIVE: "活跃",
+      IDLE: "空闲"
+    },
+    disputeStatuses: {
+      [DisputeStatus.OPEN]: "开放中",
+      [DisputeStatus.RESOLVED_COMPLETED]: "已判定完成",
+      [DisputeStatus.RESOLVED_NOT_COMPLETED]: "已判定未完成"
     },
     events: {
       [ActivityEventType.TASK_PUBLISHED]: "发布任务",
@@ -474,3 +599,11 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
 };
 
 export const getDashboardCopy = (locale: SupportedLocale): DashboardCopy => copy[locale];
+export const getTaskStatusLabel = (locale: SupportedLocale, status: TaskStatus): string => copy[locale].taskStatuses[status];
+export const getCycleStatusLabel = (locale: SupportedLocale, status: CycleStatus): string =>
+  copy[locale].cycleStatuses[status];
+export const getAgentStateLabel = (locale: SupportedLocale, state: AgentStateLabel): string =>
+  copy[locale].agentStates[state];
+export const getDashboardEventLabel = (locale: SupportedLocale, type: ActivityEventType): string => copy[locale].events[type];
+export const getDisputeStatusLabel = (locale: SupportedLocale, status: DisputeStatus): string =>
+  copy[locale].disputeStatuses[status];

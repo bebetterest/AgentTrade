@@ -41,7 +41,7 @@
 
 ### 1.4 Product Surfaces
 
-- Web: read-only information center with zh/en locale switch, SSR locale/timezone preference resolution (`cookie -> Accept-Language/UTC`), timezone-aware summary/trends, `Tasks` / `Users` / `Cycles` tabs, shareable drill-down routes, cycle reward distributions, and agent balance views.
+- Web: read-only public information station plus research center with zh/en locale switch, SSR locale/timezone preference resolution (`cookie -> Accept-Language/UTC`), narrative landing page at `/`, research center at `/center`, timezone-aware summary/trends, `Tasks` / `Users` / `Cycles` / `Disputes` tabs, shareable drill-down routes, cycle reward distributions, dispute detail routes, agent balance views, and public economy/health readouts.
 - Web dashboard composition is now layered: top-level state/data orchestration is separated from display rendering, and dashboard zh/en copy is centralized in a unified dictionary module.
 - CLI: grouped subcommands covering all implemented routes, with default JSON success output and machine-readable structured error output.
 - CLI documentation and skills: command-level parameter/error/playbook references are maintained in bilingual mirrors for autonomous-agent operation.
@@ -67,7 +67,7 @@
 
 - Keep `packages/contracts` as the only external contract source and continue tightening drift gates around generated docs, SDK wrappers, CLI bindings, and server responses.
 - Keep `/v2` as the only public API surface and continue tightening drift gates across docs, SDK, CLI bindings, and server responses.
-- Keep the read-only web boundary while refining richer cycle/agent drill-down and regression coverage around those read surfaces.
+- Keep the read-only web boundary while refining the `/` public-home plus `/center` research-center split, richer dispute/cycle/agent drill-down, and regression coverage around those read surfaces.
 - Add observability baseline (request tracing fields, metrics hooks, and structured operational dashboards).
 - Prepare bridge export hardening and chain-integration test scaffolding for Base Sepolia handoff.
 

@@ -2,7 +2,8 @@ import Link from "next/link";
 import type { CycleRewardsResponse, Dispute } from "@agentrade/types";
 import type { SupportedLocale } from "@agentrade/i18n";
 import { formatDateTime, shortAddress } from "../../lib/dashboard-format";
-import { getDashboardCopy } from "./i18n";
+import { getCycleStatusLabel, getDashboardCopy, getDisputeStatusLabel } from "./i18n";
+import { buildStateChipClass } from "./shared";
 
 interface CycleDetailContentProps {
   locale: SupportedLocale;
@@ -11,6 +12,7 @@ interface CycleDetailContentProps {
   disputes: Dispute[];
   onOpenAgentDetail?: (address: string) => void;
   getAgentHref?: (address: string) => string;
+  showHeading?: boolean;
 }
 
 const renderAddress = (
@@ -41,20 +43,25 @@ export const CycleDetailContent = ({
   rewards,
   disputes,
   onOpenAgentDetail,
-  getAgentHref
+  getAgentHref,
+  showHeading = true
 }: CycleDetailContentProps) => {
   const copy = getDashboardCopy(locale);
   const { cycle, rewardPool, distributions, workloads } = rewards;
 
   return (
     <div className="detail-block">
-      <h3>{cycle.id}</h3>
-      <span className="state-chip">{cycle.status}</span>
+      {showHeading ? (
+        <>
+          <h3>{cycle.id}</h3>
+          <span className={buildStateChipClass(cycle.status)}>{getCycleStatusLabel(locale, cycle.status)}</span>
+        </>
+      ) : null}
 
       <div className="detail-grid">
         <div className="detail-card">
           <h4>{copy.cycleDetail.cycleOverview}</h4>
-          <div className="metric-line"><span>{copy.cycleDetail.status}</span><strong>{cycle.status}</strong></div>
+          <div className="metric-line"><span>{copy.cycleDetail.status}</span><strong>{getCycleStatusLabel(locale, cycle.status)}</strong></div>
           <div className="metric-line"><span>{copy.cycleDetail.startedAt}</span><strong>{formatDateTime(cycle.startedAt, locale, timeZone)}</strong></div>
           <div className="metric-line"><span>{copy.cycleDetail.closedAt}</span><strong>{cycle.closedAt ? formatDateTime(cycle.closedAt, locale, timeZone) : "-"}</strong></div>
           <div className="metric-line"><span>{copy.cycleDetail.mint}</span><strong>{cycle.mintedAmount} AGC</strong></div>
@@ -87,7 +94,7 @@ export const CycleDetailContent = ({
             <li key={item.id} className="detail-card">
               <div className="section-head compact-head">
                 <strong>{item.id}</strong>
-                <span className="state-chip">{item.status}</span>
+                <span className={buildStateChipClass(item.status)}>{getDisputeStatusLabel(locale, item.status)}</span>
               </div>
               <p className="muted">
                 {copy.cycleDetail.opener}: {renderAddress(item.opener, onOpenAgentDetail, getAgentHref)}

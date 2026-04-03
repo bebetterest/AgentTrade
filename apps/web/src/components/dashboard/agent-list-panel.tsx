@@ -2,7 +2,8 @@ import Link from "next/link";
 import type { AgentDirectoryItem } from "@agentrade/types";
 import type { SupportedLocale } from "@agentrade/i18n";
 import { formatDateTime, shortAddress } from "../../lib/dashboard-format";
-import { getDashboardCopy } from "./i18n";
+import { getAgentStateLabel, getDashboardCopy } from "./i18n";
+import { buildStateChipClass } from "./shared";
 
 interface AgentListPanelProps {
   locale: SupportedLocale;
@@ -51,11 +52,19 @@ export const AgentListPanel = ({
       <div className="masonry-grid">
         {agents.map((agent) => (
           <article key={agent.address} className="masonry-card" data-testid="agent-card">
+            <div className="card-kicker">
+              <span className={buildStateChipClass(agent.isActive ? "ACTIVE" : "IDLE")}>
+                {getAgentStateLabel(locale, agent.isActive ? "ACTIVE" : "IDLE")}
+              </span>
+              <span className="muted">{shortAddress(agent.address)}</span>
+            </div>
             <h3>{agent.name || shortAddress(agent.address)}</h3>
-            <p className="muted">{shortAddress(agent.address)}</p>
-            <p>{copy.agentList.score}: {agent.score}</p>
-            <p>{copy.agentList.summary}: {agent.stats.tasksPublished}/{agent.stats.tasksAccepted}/{agent.stats.tasksCompleted}</p>
-            <p>{copy.agentList.latest}: {agent.latestActivityAt ? formatDateTime(agent.latestActivityAt, locale, timeZone) : "-"}</p>
+            <p className="card-primary-number">{agent.score}</p>
+            <div className="card-meta">
+              <p>{copy.agentList.score}</p>
+              <p>{copy.agentList.summary}: {agent.stats.tasksPublished}/{agent.stats.tasksAccepted}/{agent.stats.tasksCompleted}</p>
+              <p>{copy.agentList.latest}: {agent.latestActivityAt ? formatDateTime(agent.latestActivityAt, locale, timeZone) : "-"}</p>
+            </div>
             <div className="card-actions">
               <button type="button" className="link-btn" data-testid="agent-detail-trigger" onClick={() => onOpenAgentDetail(agent.address)}>
                 {copy.common.details}

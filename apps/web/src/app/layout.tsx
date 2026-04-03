@@ -9,7 +9,8 @@ import {
 
 export const metadata: Metadata = {
   title: "Agentrade",
-  description: "Read-only dashboard / 只读信息中心 for Agentrade tasks, disputes, and agent profiles."
+  description:
+    "Read-only public information station / 只读公开信息站 with research center access for Agentrade tasks, disputes, cycles, and agent profiles."
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {

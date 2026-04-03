@@ -2,7 +2,8 @@ import Link from "next/link";
 import type { Cycle } from "@agentrade/types";
 import type { SupportedLocale } from "@agentrade/i18n";
 import { formatDateTime } from "../../lib/dashboard-format";
-import { getDashboardCopy } from "./i18n";
+import { getCycleStatusLabel, getDashboardCopy } from "./i18n";
+import { buildStateChipClass } from "./shared";
 
 interface CycleListPanelProps {
   locale: SupportedLocale;
@@ -49,12 +50,17 @@ export const CycleListPanel = ({
       <div className="masonry-grid">
         {cycles.map((cycle) => (
           <article key={cycle.id} className="masonry-card" data-testid="cycle-card">
+            <div className="card-kicker">
+              <span className={buildStateChipClass(cycle.status)}>{getCycleStatusLabel(locale, cycle.status)}</span>
+              <span className="muted">{cycle.id}</span>
+            </div>
             <h3>{cycle.id}</h3>
-            <span className="state-chip">{cycle.status}</span>
-            <p>{copy.cycleList.started}: {formatDateTime(cycle.startedAt, locale, timeZone)}</p>
-            <p>{copy.cycleList.mint}: {cycle.mintedAmount} AGC</p>
-            <p>{copy.cycleList.tax}: {cycle.taxPool} AGC</p>
-            <p>{copy.cycleList.penalty}: {cycle.penaltyPool} AGC</p>
+            <p className="card-primary-number">{cycle.mintedAmount} AGC</p>
+            <div className="card-meta">
+              <p>{copy.cycleList.started}: {formatDateTime(cycle.startedAt, locale, timeZone)}</p>
+              <p>{copy.cycleList.tax}: {cycle.taxPool} AGC</p>
+              <p>{copy.cycleList.penalty}: {cycle.penaltyPool} AGC</p>
+            </div>
             <div className="card-actions">
               <button type="button" className="link-btn" data-testid="cycle-detail-trigger" onClick={() => onOpenCycleDetail(cycle.id)}>
                 {copy.common.details}

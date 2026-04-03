@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { TaskStatus } from "@agentrade/types";
+import { DisputeStatus, TaskStatus } from "@agentrade/types";
 import { parseDashboardQuery, sanitizeQueryPatch } from "./dashboard-query";
+import { getDashboardTabNavigationTarget } from "../components/dashboard/shared";
 
 const fromObject = (input: Record<string, string>) => {
   const search = new URLSearchParams();
@@ -21,11 +22,15 @@ describe("parseDashboardQuery", () => {
         taskOrder: "asc",
         agentSort: "score",
         agentOrder: "asc",
+        disputeStatus: DisputeStatus.OPEN,
+        disputeSort: "created",
+        disputeOrder: "asc",
         activeOnly: "false",
         trendWindow: "30d",
         taskDetail: " task-a ",
         agentDetail: " 0xabc ",
-        cycleDetail: " cycle-9 "
+        cycleDetail: " cycle-9 ",
+        disputeDetail: " dispute-1 "
       })
     );
 
@@ -37,11 +42,15 @@ describe("parseDashboardQuery", () => {
       taskOrder: "asc",
       agentSort: "score",
       agentOrder: "asc",
+      disputeStatus: DisputeStatus.OPEN,
+      disputeSort: "created",
+      disputeOrder: "asc",
       activeOnly: false,
       trendWindow: "30d",
       taskDetailId: "task-a",
       agentDetailAddress: "0xabc",
-      cycleDetailId: "cycle-9"
+      cycleDetailId: "cycle-9",
+      disputeDetailId: "dispute-1"
     });
   });
 
@@ -55,11 +64,15 @@ describe("parseDashboardQuery", () => {
         taskOrder: "bad",
         agentSort: "bad",
         agentOrder: "bad",
+        disputeStatus: "bad",
+        disputeSort: "bad",
+        disputeOrder: "bad",
         activeOnly: "bad",
         trendWindow: "bad",
         taskDetail: "",
         agentDetail: "",
-        cycleDetail: ""
+        cycleDetail: "",
+        disputeDetail: ""
       })
     );
 
@@ -71,17 +84,26 @@ describe("parseDashboardQuery", () => {
       taskOrder: "desc",
       agentSort: "latest",
       agentOrder: "desc",
+      disputeStatus: null,
+      disputeSort: "latest",
+      disputeOrder: "desc",
       activeOnly: true,
       trendWindow: "7d",
       taskDetailId: null,
       agentDetailAddress: null,
-      cycleDetailId: null
+      cycleDetailId: null,
+      disputeDetailId: null
     });
   });
 
   it("accepts the cycles tab", () => {
     const query = parseDashboardQuery(fromObject({ tab: "cycles" }));
     expect(query.tab).toBe("cycles");
+  });
+
+  it("accepts the disputes tab", () => {
+    const query = parseDashboardQuery(fromObject({ tab: "disputes" }));
+    expect(query.tab).toBe("disputes");
   });
 
   it("limits search query length", () => {
@@ -98,13 +120,15 @@ describe("sanitizeQueryPatch", () => {
         q: "  hello world  ",
         taskDetail: "   task-1 ",
         agentDetail: "\n\t0xabc   ",
-        cycleDetail: "\ncycle-9 "
+        cycleDetail: "\ncycle-9 ",
+        disputeDetail: "\ndispute-1 "
       })
     ).toEqual({
       q: "hello world",
       taskDetail: "task-1",
       agentDetail: "0xabc",
-      cycleDetail: "cycle-9"
+      cycleDetail: "cycle-9",
+      disputeDetail: "dispute-1"
     });
   });
 
@@ -114,13 +138,32 @@ describe("sanitizeQueryPatch", () => {
         q: "   ",
         taskDetail: "",
         agentDetail: "\t",
-        cycleDetail: " "
+        cycleDetail: " ",
+        disputeDetail: "\n"
       })
     ).toEqual({
       q: null,
       taskDetail: null,
       agentDetail: null,
-      cycleDetail: null
+      cycleDetail: null,
+      disputeDetail: null
     });
+  });
+});
+
+describe("getDashboardTabNavigationTarget", () => {
+  it("moves across tabs with arrow keys and wraps", () => {
+    expect(getDashboardTabNavigationTarget("tasks", "ArrowRight")).toBe("users");
+    expect(getDashboardTabNavigationTarget("tasks", "ArrowLeft")).toBe("disputes");
+    expect(getDashboardTabNavigationTarget("disputes", "ArrowRight")).toBe("tasks");
+  });
+
+  it("supports Home and End keys", () => {
+    expect(getDashboardTabNavigationTarget("cycles", "Home")).toBe("tasks");
+    expect(getDashboardTabNavigationTarget("tasks", "End")).toBe("disputes");
+  });
+
+  it("ignores unrelated keys", () => {
+    expect(getDashboardTabNavigationTarget("users", "Enter")).toBeNull();
   });
 });

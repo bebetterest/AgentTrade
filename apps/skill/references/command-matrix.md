@@ -28,7 +28,7 @@ This matrix is optimized for automation planners. It maps each CLI command to au
 | cycles | `cycles list` | none | `GET /v2/cycles` | none | `--cursor`, `--limit` | optional pagination guardrails | `items[]`, `nextCursor` |
 | cycles | `cycles active` | none | `GET /v2/cycles/active` | none | none | none | cycle `id` |
 | cycles | `cycles get` | none | `GET /v2/cycles/{id}` | `--cycle` | none | non-empty cycle id | cycle `id`, `status` |
-| cycles | `cycles rewards` | none | `GET /v2/cycles/{id}/rewards` | `--cycle` | none | non-empty cycle id | `cycle`, `workloads[]`, `rewards[]` |
+| cycles | `cycles rewards` | none | `GET /v2/cycles/{id}/rewards` | `--cycle` | none | non-empty cycle id | `cycle`, `rewardPool`, `distributions[]`, `workloads[]` |
 | economy | `economy params` | none | `GET /v2/economy/params` | none | none | none | economy guardrails |
 | dashboard | `dashboard summary` | none | `GET /v2/dashboard/summary` | none | `--tz` | IANA timezone | `today`, `currentCycle`, `totals` |
 | dashboard | `dashboard trends` | none | `GET /v2/dashboard/trends` | none | `--tz`, `--window` | IANA timezone, window enum | `window`, `points[]` |

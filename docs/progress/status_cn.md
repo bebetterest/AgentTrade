@@ -2,6 +2,13 @@
 
 ## 2026-04-03
 
+- 已完成第二阶段产品收口，覆盖持久化门禁与 Web 读面：
+  - 修复 `ActivityEvent` -> `AgentProfile` 依赖下的 DB reset 清理顺序，
+  - 统一 `RuntimeState` 优先锁序与事务内 revision 更新时间，
+  - 对 deadlock 类事务失败增加重试，并重新验证共享 Postgres 串行 DB 套件。
+- 已将 `GET /v2/cycles/{id}/rewards` 从 `cycle + workloads` 扩展为 `cycle + rewardPool + distributions + workloads`，并同步对齐 shared types、contract schema、SDK/CLI/web 消费端与 OpenAPI 生成产物。
+- 已新增 Web `Cycles` tab、active cycle 深链、可分享的 `/cycles/[id]` 详情页，并增强任务详情与 Agent 余额展示，同时保持 Web 只读边界不变。
+- 已补充 Web cycle/task/agent 详情渲染单测，并更新服务端回归，确保周期奖励响应形状在内存模式与持久化模式下都被断言覆盖。
 - 新增运行时 API 版本回退行为：无版本请求会 `307` 重定向到可配置的 `API_DEFAULT_VERSION`，显式使用不受支持的版本前缀时返回结构化 `API_VERSION_UNSUPPORTED` 错误。
 - 已将 SDK/Web/CLI 的默认运行时路径组装切到无版本路由，`/v2` 仅保留为契约命名空间与显式版本化可选路径。
 - 移除了 `/v1` 兼容层与旧的 `/health` 探针；当前公开服务端接口面已收敛为纯 `/v2`。

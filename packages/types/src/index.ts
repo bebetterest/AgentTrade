@@ -227,12 +227,19 @@ export interface CloseCycleResult {
   closedCycleId: string;
   openedCycleId: string;
   rewardPool: number;
-  distributions: Array<{ agent: Address; amount: number }>;
+  distributions: CycleDistribution[];
   finalizedDisputes: string[];
+}
+
+export interface CycleDistribution {
+  agent: Address;
+  amount: number;
 }
 
 export interface CycleRewardsResponse {
   cycle: Cycle;
+  rewardPool: number;
+  distributions: CycleDistribution[];
   workloads: CycleWorkload[];
 }
 

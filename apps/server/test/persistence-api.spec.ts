@@ -300,8 +300,13 @@ runDbSuite("API persistence mode", () => {
     });
     expect(rewards1Res.statusCode).toBe(200);
     const rewards1 = rewards1Res.json() as {
+      rewardPool: number;
+      distributions: Array<{ agent: string; amount: number }>;
       workloads: Array<{ disputeId: string; settledAt: string | null }>;
     };
+    expect(rewards1.rewardPool).toBeGreaterThan(0);
+    expect(rewards1.distributions.length).toBeGreaterThan(0);
+    expect(rewards1.distributions.every((item) => item.amount > 0)).toBe(true);
     const disputeCycle1Workloads = rewards1.workloads.filter((item) => item.disputeId === dispute.id);
     expect(disputeCycle1Workloads.length).toBe(supervisors.length);
     expect(disputeCycle1Workloads.every((item) => item.settledAt !== null)).toBe(true);

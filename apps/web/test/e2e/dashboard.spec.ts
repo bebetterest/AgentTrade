@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { stripApiVersionPrefix } from "@agentrade/contracts";
-import { ActivityEventType, DisputeStatus, TaskStatus, type ActivityEvent, type AgentDirectoryItem, type AgentProfile, type Dispute, type Task } from "@agentrade/types";
+import { ActivityEventType, CycleStatus, DisputeStatus, TaskStatus, type ActivityEvent, type AgentDirectoryItem, type AgentProfile, type Cycle, type Dispute, type Task } from "@agentrade/types";
 
 const ISO_NOW = "2026-03-31T12:00:00.000Z";
 const API_ROUTE_PATTERN = "**/*";
@@ -137,6 +137,36 @@ const agents: AgentDirectoryItem[] = [
   }
 ];
 
+const cycles: Cycle[] = [
+  {
+    id: "cycle-9",
+    status: CycleStatus.OPEN,
+    mintedAmount: 1000,
+    taxPool: 80,
+    penaltyPool: 10,
+    startedAt: "2026-03-28T00:00:00.000Z",
+    closedAt: null
+  },
+  {
+    id: "cycle-8",
+    status: CycleStatus.CLOSED,
+    mintedAmount: 980,
+    taxPool: 60,
+    penaltyPool: 5,
+    startedAt: "2026-03-20T00:00:00.000Z",
+    closedAt: "2026-03-27T23:59:59.000Z"
+  },
+  {
+    id: "cycle-7",
+    status: CycleStatus.CLOSED,
+    mintedAmount: 950,
+    taxPool: 55,
+    penaltyPool: 0,
+    startedAt: "2026-03-13T00:00:00.000Z",
+    closedAt: "2026-03-19T23:59:59.000Z"
+  }
+];
+
 const disputes: Dispute[] = [
   {
     id: "dispute-1",
@@ -149,6 +179,77 @@ const disputes: Dispute[] = [
     updatedAt: "2026-03-31T11:20:00.000Z"
   }
 ];
+
+const cycleRewardsById = {
+  "cycle-9": {
+    cycle: cycles[0],
+    rewardPool: 1090,
+    distributions: [
+      { agent: "0x3333333333333333333333333333333333333333", amount: 545 },
+      { agent: "0x4444444444444444444444444444444444444444", amount: 545 }
+    ],
+    workloads: [
+      {
+        id: "workload-1",
+        cycleId: "cycle-9",
+        disputeId: "dispute-1",
+        agent: "0x3333333333333333333333333333333333333333",
+        workload: 1,
+        createdAt: "2026-03-31T11:21:00.000Z",
+        settledAt: null
+      },
+      {
+        id: "workload-2",
+        cycleId: "cycle-9",
+        disputeId: "dispute-1",
+        agent: "0x4444444444444444444444444444444444444444",
+        workload: 1,
+        createdAt: "2026-03-31T11:22:00.000Z",
+        settledAt: null
+      }
+    ]
+  },
+  "cycle-8": {
+    cycle: cycles[1],
+    rewardPool: 1045,
+    distributions: [{ agent: "0x4444444444444444444444444444444444444444", amount: 1045 }],
+    workloads: [
+      {
+        id: "workload-3",
+        cycleId: "cycle-8",
+        disputeId: "dispute-1",
+        agent: "0x4444444444444444444444444444444444444444",
+        workload: 2,
+        createdAt: "2026-03-26T11:22:00.000Z",
+        settledAt: "2026-03-27T23:00:00.000Z"
+      }
+    ]
+  },
+  "cycle-7": {
+    cycle: cycles[2],
+    rewardPool: 1005,
+    distributions: [],
+    workloads: []
+  }
+} as const;
+
+const ledgerByAddress: Record<string, { address: string; available: number; updatedAt: string }> = {
+  "0x3333333333333333333333333333333333333333": {
+    address: "0x3333333333333333333333333333333333333333",
+    available: 42,
+    updatedAt: ISO_NOW
+  },
+  "0x4444444444444444444444444444444444444444": {
+    address: "0x4444444444444444444444444444444444444444",
+    available: 88,
+    updatedAt: ISO_NOW
+  },
+  "0x5555555555555555555555555555555555555555": {
+    address: "0x5555555555555555555555555555555555555555",
+    available: 9,
+    updatedAt: ISO_NOW
+  }
+};
 
 const activities: ActivityEvent[] = [
   {
@@ -254,15 +355,40 @@ const installApiMocks = async (page: Page, options: InstallApiMocksOptions = {})
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({
-          id: "cycle-9",
-          status: "OPEN",
-          mintedAmount: 1000,
-          taxPool: 80,
-          penaltyPool: 10,
-          startedAt: "2026-03-28T00:00:00.000Z",
-          closedAt: null
-        })
+        body: JSON.stringify(cycles[0])
+      });
+      return;
+    }
+
+    if (path === "/cycles") {
+      const sorted = [...cycles].sort((a, b) => sortByDate(a.startedAt, b.startedAt, "desc"));
+      const body = paginate(sorted, url.searchParams.get("cursor"), url.searchParams.get("limit") ?? "2");
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(body)
+      });
+      return;
+    }
+
+    if (path.startsWith("/cycles/") && path.endsWith("/rewards")) {
+      const cycleId = path.split("/")[2] ?? "";
+      const rewards = cycleRewardsById[cycleId as keyof typeof cycleRewardsById];
+      await route.fulfill({
+        status: rewards ? 200 : 404,
+        contentType: "application/json",
+        body: JSON.stringify(rewards ?? { error: "not found" })
+      });
+      return;
+    }
+
+    if (path.startsWith("/cycles/")) {
+      const cycleId = path.split("/").at(-1) ?? "";
+      const cycle = cycles.find((item) => item.id === cycleId);
+      await route.fulfill({
+        status: cycle ? 200 : 404,
+        contentType: "application/json",
+        body: JSON.stringify(cycle ?? { error: "not found" })
       });
       return;
     }
@@ -371,6 +497,17 @@ const installApiMocks = async (page: Page, options: InstallApiMocksOptions = {})
       return;
     }
 
+    if (path.startsWith("/ledger/")) {
+      const address = path.split("/").at(-1) ?? "";
+      const ledger = ledgerByAddress[address];
+      await route.fulfill({
+        status: ledger ? 200 : 404,
+        contentType: "application/json",
+        body: JSON.stringify(ledger ?? { error: "not found" })
+      });
+      return;
+    }
+
     if (path === "/disputes") {
       const taskId = url.searchParams.get("taskId");
       const filtered = taskId ? disputes.filter((item) => item.taskId === taskId) : disputes;
@@ -379,6 +516,17 @@ const installApiMocks = async (page: Page, options: InstallApiMocksOptions = {})
         status: 200,
         contentType: "application/json",
         body: JSON.stringify(body)
+      });
+      return;
+    }
+
+    if (path.startsWith("/disputes/")) {
+      const disputeId = path.split("/").at(-1) ?? "";
+      const dispute = disputes.find((item) => item.id === disputeId);
+      await route.fulfill({
+        status: dispute ? 200 : 404,
+        contentType: "application/json",
+        body: JSON.stringify(dispute ?? { error: "not found" })
       });
       return;
     }
@@ -507,17 +655,36 @@ test("user tab supports sorting and pagination", async ({ page }) => {
   await expect(agentCards).toHaveCount(3);
 });
 
-test("task and agent detail drawers can be opened", async ({ page }) => {
+test("task and agent detail drawers show enriched fields", async ({ page }) => {
   await page.goto("/");
 
-  await page.getByTestId("task-detail-trigger").first().click();
+  await page.getByTestId("task-card").filter({ hasText: "Beta Dataset Labeling" }).getByTestId("task-detail-trigger").click();
   await expect(page.getByTestId("detail-drawer")).toBeVisible();
-  await expect(page.getByText("Alpha Content Review")).toBeVisible();
+  await expect(page.getByText("Beta Dataset Labeling")).toBeVisible();
+  await expect(page.getByText("Escrow Remaining")).toBeVisible();
+  await expect(page.getByText("Output quality mismatch.")).toBeVisible();
 
   await page.locator(".drawer-mask").click();
   await page.getByTestId("tab-users").click();
-  await page.getByTestId("agent-detail-trigger").first().click();
+  await page.getByTestId("agent-card").filter({ hasText: "Agent One" }).getByTestId("agent-detail-trigger").click();
   await expect(page.getByTestId("detail-drawer")).toBeVisible();
+  await expect(page.getByText("42 AGC")).toBeVisible();
+});
+
+test("cycle tab and active cycle card open reward detail drawer", async ({ page }) => {
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "View details" }).click();
+  await expect(page.getByTestId("detail-drawer")).toBeVisible();
+  await expect(page.getByText("Reward Pool")).toBeVisible();
+  await expect(page.getByText("1090 AGC")).toBeVisible();
+
+  await page.locator(".drawer-mask").click();
+  await page.getByTestId("tab-cycles").click();
+  await expect(page.getByTestId("cycle-card")).toHaveCount(2);
+  await page.getByTestId("cycle-card").filter({ hasText: "cycle-9" }).getByTestId("cycle-detail-trigger").click();
+  await expect(page.getByText("Raw Workloads")).toBeVisible();
+  await expect(page.getByText("dispute-1")).toBeVisible();
 });
 
 test("invalid query params are sanitized and still return usable results", async ({ page }) => {
@@ -533,9 +700,9 @@ test("task detail supports retry after transient API failures", async ({ page })
   await installApiMocks(page, { failActivitiesByTaskIdOnce: "task-beta" });
 
   await page.goto("/");
-  await page.getByTestId("task-detail-trigger").first().click();
+  await page.getByTestId("task-card").filter({ hasText: "Beta Dataset Labeling" }).getByTestId("task-detail-trigger").click();
   await expect(page.getByTestId("task-detail-error")).toBeVisible();
 
   await page.getByTestId("retry-task-detail").click();
-  await expect(page.getByText("Alpha Content Review")).toBeVisible();
+  await expect(page.getByText("Beta Dataset Labeling")).toBeVisible();
 });

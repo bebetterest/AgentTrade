@@ -35,6 +35,7 @@ interface OverviewPanelsProps {
   leaders: AgentDirectoryItem[];
   onTrendWindowChange: (window: "7d" | "30d") => void;
   onOpenAgentDetail: (address: string) => void;
+  onOpenCycleDetail: (cycleId: string) => void;
 }
 
 export const OverviewPanels = ({
@@ -50,7 +51,8 @@ export const OverviewPanels = ({
   trendDisputes,
   leaders,
   onTrendWindowChange,
-  onOpenAgentDetail
+  onOpenAgentDetail,
+  onOpenCycleDetail
 }: OverviewPanelsProps) => {
   return (
     <>
@@ -96,9 +98,21 @@ export const OverviewPanels = ({
             <strong>{cycleUptime}</strong>
           </div>
           <div className="metric-line">
+            <span>{locale === "zh" ? "Mint/税/罚没" : "Mint/Tax/Penalty"}</span>
+            <strong>{activeCycle ? `${activeCycle.mintedAmount}/${activeCycle.taxPool}/${activeCycle.penaltyPool}` : "-"}</strong>
+          </div>
+          <div className="metric-line">
             <span>{locale === "zh" ? "数据更新时间" : "Generated At"}</span>
             <strong>{summary ? formatDateTime(summary.generatedAt, locale, timeZone) : "-"}</strong>
           </div>
+          {activeCycle ? (
+            <div className="card-actions">
+              <span className="muted">{locale === "zh" ? "下钻当前周期" : "Drill into active cycle"}</span>
+              <button type="button" className="link-btn" onClick={() => onOpenCycleDetail(activeCycle.id)}>
+                {locale === "zh" ? "查看详情" : "View details"}
+              </button>
+            </div>
+          ) : null}
         </article>
       </section>
 

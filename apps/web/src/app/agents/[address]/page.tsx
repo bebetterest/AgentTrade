@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { cookies, headers } from "next/headers";
 import type { SupportedLocale } from "@agentrade/i18n";
-import { fetchActivities, fetchAgent } from "../../../lib/api";
+import { fetchActivities, fetchAgent, fetchLedger } from "../../../lib/api";
 import { formatDateTime, shortAddress } from "../../../lib/dashboard-format";
 import { renderSafeMarkdown } from "../../../lib/markdown";
 import {
@@ -24,6 +24,8 @@ const copy = (locale: SupportedLocale) =>
         publisherRep: "发布者信誉",
         workerRep: "执行者信誉",
         supervisorRep: "监督者信誉",
+        balance: "当前余额",
+        updatedAt: "账本更新时间",
         bio: "简介",
         stats: "统计",
         published: "已发布",
@@ -43,6 +45,8 @@ const copy = (locale: SupportedLocale) =>
         publisherRep: "Publisher Rep",
         workerRep: "Worker Rep",
         supervisorRep: "Supervisor Rep",
+        balance: "Balance",
+        updatedAt: "Ledger Updated",
         bio: "Bio",
         stats: "Stats",
         published: "Tasks Published",
@@ -68,10 +72,12 @@ export default async function AgentDetailPage({ params }: AgentDetailPageProps) 
 
   let loadError = false;
   let profile: Awaited<ReturnType<typeof fetchAgent>> = null;
+  let ledger: Awaited<ReturnType<typeof fetchLedger>> = null;
   let activities: Awaited<ReturnType<typeof fetchActivities>> = { items: [], nextCursor: null };
   try {
-    [profile, activities] = await Promise.all([
+    [profile, ledger, activities] = await Promise.all([
       fetchAgent(address, { strict: true }),
+      fetchLedger(address, { strict: true }),
       fetchActivities({ address, limit: 100, order: "desc", strict: true })
     ]);
   } catch {
@@ -84,7 +90,7 @@ export default async function AgentDetailPage({ params }: AgentDetailPageProps) 
         <section className="card">
           <h1>{t.loadFailed}</h1>
           <p className="sub">{t.loadUnavailable}</p>
-          <Link href="/">{t.back}</Link>
+          <Link href="/?tab=users">{t.back}</Link>
         </section>
       </main>
     );
@@ -95,7 +101,7 @@ export default async function AgentDetailPage({ params }: AgentDetailPageProps) 
       <main className="page">
         <section className="card">
           <h1>{t.notFound}</h1>
-          <Link href="/">{t.back}</Link>
+          <Link href="/?tab=users">{t.back}</Link>
         </section>
       </main>
     );
@@ -104,11 +110,35 @@ export default async function AgentDetailPage({ params }: AgentDetailPageProps) 
   return (
     <main className="page detail-page">
       <section className="card">
+        <div className="card-actions">
+          <span className="muted">{shortAddress(profile.address)}</span>
+          <Link href="/?tab=users">{t.back}</Link>
+        </div>
         <h1>{profile.name || shortAddress(profile.address)}</h1>
-        <p className="sub">{shortAddress(profile.address)}</p>
-        <p>{t.publisherRep}: {profile.reputation.publisher}</p>
-        <p>{t.workerRep}: {profile.reputation.worker}</p>
-        <p>{t.supervisorRep}: {profile.reputation.supervisor}</p>
+        <div className="detail-grid">
+          <div className="detail-card">
+            <h2>{requestPreferences.locale === "zh" ? "余额与信誉" : "Balance & Reputation"}</h2>
+            <div className="metric-line"><span>{t.balance}</span><strong>{ledger?.available ?? 0} AGC</strong></div>
+            <div className="metric-line">
+              <span>{t.updatedAt}</span>
+              <strong>{ledger ? formatDateTime(ledger.updatedAt, requestPreferences.locale, requestPreferences.timeZone) : "-"}</strong>
+            </div>
+            <div className="metric-line"><span>{t.publisherRep}</span><strong>{profile.reputation.publisher}</strong></div>
+            <div className="metric-line"><span>{t.workerRep}</span><strong>{profile.reputation.worker}</strong></div>
+            <div className="metric-line"><span>{t.supervisorRep}</span><strong>{profile.reputation.supervisor}</strong></div>
+          </div>
+          <div className="detail-card">
+            <h2>{t.stats}</h2>
+            <ul className="detail-list compact-list">
+              <li>{t.published}: {profile.stats.tasksPublished}</li>
+              <li>{t.accepted}: {profile.stats.tasksAccepted}</li>
+              <li>{t.completed}: {profile.stats.tasksCompleted}</li>
+              <li>{t.terminated}: {profile.stats.tasksTerminated}</li>
+              <li>{t.rejected}: {profile.stats.submissionsRejected}</li>
+              <li>{t.votes}: {profile.stats.supervisionVotes}</li>
+            </ul>
+          </div>
+        </div>
       </section>
 
       <section className="card markdown">
@@ -117,24 +147,13 @@ export default async function AgentDetailPage({ params }: AgentDetailPageProps) 
       </section>
 
       <section className="card">
-        <h2>{t.stats}</h2>
-        <ul>
-          <li>{t.published}: {profile.stats.tasksPublished}</li>
-          <li>{t.accepted}: {profile.stats.tasksAccepted}</li>
-          <li>{t.completed}: {profile.stats.tasksCompleted}</li>
-          <li>{t.terminated}: {profile.stats.tasksTerminated}</li>
-          <li>{t.rejected}: {profile.stats.submissionsRejected}</li>
-          <li>{t.votes}: {profile.stats.supervisionVotes}</li>
-        </ul>
-      </section>
-
-      <section className="card">
         <h2>{t.timeline}</h2>
         {activities.items.length > 0 ? (
-          <ul>
+          <ul className="detail-list">
             {activities.items.map((item) => (
-              <li key={item.id}>
-                {item.type} · {formatDateTime(item.createdAt, requestPreferences.locale, requestPreferences.timeZone)}
+              <li key={item.id} className="detail-list-row">
+                <span>{item.type}</span>
+                <strong>{formatDateTime(item.createdAt, requestPreferences.locale, requestPreferences.timeZone)}</strong>
               </li>
             ))}
           </ul>

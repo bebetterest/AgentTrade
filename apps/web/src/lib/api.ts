@@ -5,9 +5,11 @@ import type {
   AgentDirectoryItem,
   AgentProfile,
   Cycle,
+  CycleRewardsResponse,
   DashboardSummaryResponse,
   DashboardTrendsResponse,
   Dispute,
+  LedgerBalance,
   PaginatedResponse,
   Task
 } from "@agentrade/types";
@@ -132,6 +134,58 @@ export const fetchActiveCycle = async (options?: ApiFetchOptions): Promise<Cycle
   }
 };
 
+export const fetchCycles = async (params?: {
+  cursor?: string;
+  limit?: number;
+  signal?: AbortSignal;
+  strict?: boolean;
+}): Promise<PaginatedResponse<Cycle>> => {
+  try {
+    return await readOperationJson<PaginatedResponse<Cycle>>(
+      "cyclesListV2",
+      {
+        query: {
+          cursor: params?.cursor,
+          limit: params?.limit
+        }
+      },
+      {
+        revalidate: 10,
+        signal: params?.signal
+      }
+    );
+  } catch (error) {
+    if (params?.strict) {
+      throw error;
+    }
+    return { items: [], nextCursor: null };
+  }
+};
+
+export const fetchCycleRewards = async (
+  cycleId: string,
+  options?: ApiFetchOptions
+): Promise<CycleRewardsResponse | null> => {
+  try {
+    return await readOperationJson<CycleRewardsResponse>(
+      "cyclesGetRewardsV2",
+      { pathParams: { id: cycleId } },
+      {
+        revalidate: 10,
+        signal: options?.signal
+      }
+    );
+  } catch (error) {
+    if (isApiRequestError(error) && error.status === 404) {
+      return null;
+    }
+    if (options?.strict) {
+      throw error;
+    }
+    return null;
+  }
+};
+
 export const fetchTasks = async (params?: {
   q?: string;
   status?: Task["status"];
@@ -231,10 +285,55 @@ export const fetchDisputes = async (params?: {
   }
 };
 
+export const fetchDispute = async (disputeId: string, options?: ApiFetchOptions): Promise<Dispute | null> => {
+  try {
+    return await readOperationJson<Dispute>(
+      "disputesGetV2",
+      { pathParams: { id: disputeId } },
+      {
+        revalidate: 10,
+        signal: options?.signal
+      }
+    );
+  } catch (error) {
+    if (isApiRequestError(error) && error.status === 404) {
+      return null;
+    }
+    if (options?.strict) {
+      throw error;
+    }
+    return null;
+  }
+};
+
 export const fetchAgent = async (address: string, options?: ApiFetchOptions): Promise<AgentProfile | null> => {
   try {
     return await readOperationJson<AgentProfile>(
       "agentsGetProfileV2",
+      { pathParams: { address } },
+      {
+        revalidate: 10,
+        signal: options?.signal
+      }
+    );
+  } catch (error) {
+    if (isApiRequestError(error) && error.status === 404) {
+      return null;
+    }
+    if (options?.strict) {
+      throw error;
+    }
+    return null;
+  }
+};
+
+export const fetchLedger = async (
+  address: string,
+  options?: ApiFetchOptions
+): Promise<LedgerBalance | null> => {
+  try {
+    return await readOperationJson<LedgerBalance>(
+      "ledgerGetV2",
       { pathParams: { address } },
       {
         revalidate: 10,

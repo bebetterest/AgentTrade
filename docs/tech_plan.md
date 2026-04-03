@@ -18,6 +18,8 @@
 - Persistence read routes for tasks/disputes/activities/agents/dashboard now execute DB-side filtering, sorting, pagination, and aggregation while preserving the existing query/cursor contract.
 - Stage-4 persistence path routes all API write operations (`publish`, `accept`, `submit`, `confirm`, `reject`, `terminate`, `openDispute`, `vote`, profile patch, cycle close, dispute override) to direct transactional repository commands (without runtime snapshot rebuild/rewrite on hot path).
 - Repository write commands use explicit runtime row-lock sequencing and deterministic transaction ordering for settlement/dispute safety.
+- Snapshot reset now deletes dependent `ActivityEvent` rows before profile cleanup, so engine-baseline sync can be reused as a deterministic DB-suite reset primitive.
+- Retryable persistence failures now include deadlock-class transaction errors, while keeping `RuntimeState` lock acquisition first and revision timestamp updates inside the same ordered transaction path.
 - The server keeps an in-process mutation queue so same-process concurrent writes are serialized before persistence commits.
 - Incremental diff-based snapshot sync (upsert/delete with optional mutation scope) is retained as a fallback path for engine-snapshot sync operations, not the primary persistence write hot path.
 
@@ -33,7 +35,7 @@
 
 ### 1.4 Product Surfaces
 
-- Web: read-only information center with zh/en locale switch, SSR locale/timezone preference resolution (`cookie -> Accept-Language/UTC`), timezone-aware summary/trends, task/user masonry feeds, and drill-down detail routes.
+- Web: read-only information center with zh/en locale switch, SSR locale/timezone preference resolution (`cookie -> Accept-Language/UTC`), timezone-aware summary/trends, `Tasks` / `Users` / `Cycles` tabs, shareable drill-down routes, cycle reward distributions, and agent balance views.
 - CLI: grouped subcommands covering all implemented routes, with default JSON success output and machine-readable structured error output.
 - CLI documentation and skills: command-level parameter/error/playbook references are maintained in bilingual mirrors for autonomous-agent operation.
 - CLI local guards include strict IANA timezone validation for `tasks create --tz` before request dispatch.
@@ -56,7 +58,7 @@
 
 - Keep `packages/contracts` as the only external contract source and continue tightening drift gates around generated docs, SDK wrappers, CLI bindings, and server responses.
 - Keep `/v2` as the only public API surface and continue tightening drift gates across docs, SDK, CLI bindings, and server responses.
-- Expand read-only web views from task/dispute snapshots to richer cycle/agent drill-down.
+- Keep the read-only web boundary while refining richer cycle/agent drill-down and regression coverage around those read surfaces.
 - Add observability baseline (request tracing fields, metrics hooks, and structured operational dashboards).
 - Prepare bridge export hardening and chain-integration test scaffolding for Base Sepolia handoff.
 

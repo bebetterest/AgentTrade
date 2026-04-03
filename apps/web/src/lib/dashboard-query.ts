@@ -1,6 +1,6 @@
 import { TaskStatus } from "@agentrade/types";
 
-export type DashboardTab = "tasks" | "users";
+export type DashboardTab = "tasks" | "users" | "cycles";
 export type SortOrder = "asc" | "desc";
 export type TaskSort = "latest" | "created" | "deadline" | "reward";
 export type AgentSort = "latest" | "score" | "reputation" | "completed" | "published" | "accepted";
@@ -69,7 +69,12 @@ const toBooleanParam = (value: string | null, fallback: boolean): boolean => {
   return fallback;
 };
 
-const toTab = (value: string | null): DashboardTab => (value === "users" ? "users" : DEFAULT_TAB);
+const toTab = (value: string | null): DashboardTab => {
+  if (value === "users" || value === "cycles") {
+    return value;
+  }
+  return DEFAULT_TAB;
+};
 
 const normalizeIdentifier = (value: string | null): string | null => {
   if (!value) {
@@ -91,6 +96,7 @@ export interface DashboardQueryState {
   trendWindow: TrendWindow;
   taskDetailId: string | null;
   agentDetailAddress: string | null;
+  cycleDetailId: string | null;
 }
 
 export const parseDashboardQuery = (searchParams: SearchParamsReader): DashboardQueryState => {
@@ -105,7 +111,8 @@ export const parseDashboardQuery = (searchParams: SearchParamsReader): Dashboard
     activeOnly: toBooleanParam(searchParams.get("activeOnly"), true),
     trendWindow: toTrendWindow(searchParams.get("trendWindow")),
     taskDetailId: normalizeIdentifier(searchParams.get("taskDetail")),
-    agentDetailAddress: normalizeIdentifier(searchParams.get("agentDetail"))
+    agentDetailAddress: normalizeIdentifier(searchParams.get("agentDetail")),
+    cycleDetailId: normalizeIdentifier(searchParams.get("cycleDetail"))
   };
 };
 
@@ -119,6 +126,9 @@ export const sanitizeQueryPatch = (patch: Record<string, string | null>): Record
   }
   if ("agentDetail" in next) {
     next.agentDetail = normalizeIdentifier(next.agentDetail ?? null);
+  }
+  if ("cycleDetail" in next) {
+    next.cycleDetail = normalizeIdentifier(next.cycleDetail ?? null);
   }
   return next;
 };

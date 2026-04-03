@@ -4,12 +4,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { messages, type SupportedLocale } from "@agentrade/i18n";
 import type {
   ActivityEvent,
-  Cycle,
   AgentDirectoryItem,
   AgentProfile,
+  Cycle,
+  CycleRewardsResponse,
   DashboardSummaryResponse,
   DashboardTrendsResponse,
   Dispute,
+  LedgerBalance,
   PaginatedResponse,
   Task
 } from "@agentrade/types";
@@ -17,6 +19,8 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { AgentDetailDrawer } from "./dashboard/agent-detail-drawer";
 import { AgentListPanel } from "./dashboard/agent-list-panel";
 import { ActivityFeed } from "./dashboard/activity-feed";
+import { CycleDetailDrawer } from "./dashboard/cycle-detail-drawer";
+import { CycleListPanel } from "./dashboard/cycle-list-panel";
 import { OverviewPanels } from "./dashboard/overview-panels";
 import { TaskDetailDrawer } from "./dashboard/task-detail-drawer";
 import { TaskListPanel } from "./dashboard/task-list-panel";
@@ -26,9 +30,13 @@ import {
   fetchActiveCycle,
   fetchAgent,
   fetchAgents,
+  fetchCycleRewards,
+  fetchCycles,
   fetchDashboardSummary,
   fetchDashboardTrends,
+  fetchDispute,
   fetchDisputes,
+  fetchLedger,
   fetchTask,
   fetchTasks
 } from "../lib/api";
@@ -46,6 +54,7 @@ interface DashboardProps {
   initialLeaders: AgentDirectoryItem[];
   initialActiveCycle: Cycle | null;
   initialActivities: PaginatedResponse<ActivityEvent>;
+  initialCycles: PaginatedResponse<Cycle>;
 }
 
 const REFRESH_FEED_LIMIT = 12;
@@ -60,7 +69,8 @@ export const Dashboard = ({
   initialAgents,
   initialLeaders,
   initialActiveCycle,
-  initialActivities
+  initialActivities,
+  initialCycles
 }: DashboardProps) => {
   const [locale, setLocale] = useState<SupportedLocale>(initialLocale);
   const t = messages[locale];
@@ -78,18 +88,23 @@ export const Dashboard = ({
 
   const [tasksData, setTasksData] = useState<PaginatedResponse<Task>>(initialTasks);
   const [agentsData, setAgentsData] = useState<PaginatedResponse<AgentDirectoryItem>>(initialAgents);
+  const [cyclesData, setCyclesData] = useState<PaginatedResponse<Cycle>>(initialCycles);
   const [loadingTasks, setLoadingTasks] = useState(false);
   const [loadingAgents, setLoadingAgents] = useState(false);
+  const [loadingCycles, setLoadingCycles] = useState(false);
   const [loadingMoreTasks, setLoadingMoreTasks] = useState(false);
   const [loadingMoreAgents, setLoadingMoreAgents] = useState(false);
+  const [loadingMoreCycles, setLoadingMoreCycles] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingFeed, setLoadingFeed] = useState(false);
   const [overviewError, setOverviewError] = useState(false);
   const [taskLoadError, setTaskLoadError] = useState(false);
   const [agentLoadError, setAgentLoadError] = useState(false);
+  const [cycleLoadError, setCycleLoadError] = useState(false);
   const [feedLoadError, setFeedLoadError] = useState(false);
   const [taskDetailReloadTick, setTaskDetailReloadTick] = useState(0);
   const [agentDetailReloadTick, setAgentDetailReloadTick] = useState(0);
+  const [cycleDetailReloadTick, setCycleDetailReloadTick] = useState(0);
 
   const [taskDetail, setTaskDetail] = useState<{
     loading: boolean;
@@ -108,16 +123,30 @@ export const Dashboard = ({
     loading: boolean;
     error: boolean;
     profile: AgentProfile | null;
+    ledger: LedgerBalance | null;
     activities: ActivityEvent[];
   }>({
     loading: false,
     error: false,
     profile: null,
+    ledger: null,
     activities: []
+  });
+  const [cycleDetail, setCycleDetail] = useState<{
+    loading: boolean;
+    error: boolean;
+    rewards: CycleRewardsResponse | null;
+    disputes: Dispute[];
+  }>({
+    loading: false,
+    error: false,
+    rewards: null,
+    disputes: []
   });
 
   const taskSentinelRef = useRef<HTMLDivElement | null>(null);
   const agentSentinelRef = useRef<HTMLDivElement | null>(null);
+  const cycleSentinelRef = useRef<HTMLDivElement | null>(null);
   const taskQueryKeyRef = useRef("");
   const agentQueryKeyRef = useRef("");
 
@@ -132,7 +161,8 @@ export const Dashboard = ({
     activeOnly,
     trendWindow,
     taskDetailId,
-    agentDetailAddress
+    agentDetailAddress,
+    cycleDetailId
   } = useMemo(() => parseDashboardQuery(searchParams), [searchParams]);
   const [searchDraft, setSearchDraft] = useState(q);
 
@@ -156,13 +186,16 @@ export const Dashboard = ({
   }, [pathname, router, searchParams]);
 
   const openTaskDetail = useCallback((taskId: string) => {
-    updateQuery({ taskDetail: taskId, agentDetail: null });
+    updateQuery({ taskDetail: taskId, agentDetail: null, cycleDetail: null });
   }, [updateQuery]);
   const openAgentDetail = useCallback((address: string) => {
-    updateQuery({ agentDetail: address, taskDetail: null });
+    updateQuery({ agentDetail: address, taskDetail: null, cycleDetail: null });
+  }, [updateQuery]);
+  const openCycleDetail = useCallback((cycleId: string) => {
+    updateQuery({ cycleDetail: cycleId, taskDetail: null, agentDetail: null });
   }, [updateQuery]);
   const closeDetail = useCallback(() => {
-    updateQuery({ taskDetail: null, agentDetail: null });
+    updateQuery({ taskDetail: null, agentDetail: null, cycleDetail: null });
   }, [updateQuery]);
 
   const retryTaskDetail = () => {
@@ -174,6 +207,12 @@ export const Dashboard = ({
   const retryAgentDetail = () => {
     if (agentDetailAddress) {
       setAgentDetailReloadTick((prev) => prev + 1);
+    }
+  };
+
+  const retryCycleDetail = () => {
+    if (cycleDetailId) {
+      setCycleDetailReloadTick((prev) => prev + 1);
     }
   };
 
@@ -245,9 +284,35 @@ export const Dashboard = ({
     }
   }, [activeOnly, agentOrder, agentQueryKey, agentSort, agentsData.nextCursor, loadingMoreAgents, q]);
 
+  const loadMoreCycles = useCallback(async () => {
+    if (!cyclesData.nextCursor || loadingMoreCycles) {
+      return;
+    }
+    setLoadingMoreCycles(true);
+    try {
+      const response = await fetchCycles({
+        cursor: cyclesData.nextCursor ?? undefined,
+        limit: 12,
+        strict: true
+      });
+      setCycleLoadError(false);
+      setCyclesData((prev) => ({
+        items: [
+          ...prev.items,
+          ...response.items.filter((item) => !prev.items.some((prevItem) => prevItem.id === item.id))
+        ],
+        nextCursor: response.nextCursor
+      }));
+    } catch {
+      setCycleLoadError(true);
+    } finally {
+      setLoadingMoreCycles(false);
+    }
+  }, [cyclesData.nextCursor, loadingMoreCycles]);
+
   const refreshAll = async () => {
     setRefreshing(true);
-    const [summaryRes, trendsRes, leadersRes, tasksRes, agentsRes, cycleRes, feedRes] = await Promise.allSettled([
+    const [summaryRes, trendsRes, leadersRes, tasksRes, agentsRes, cyclesRes, cycleRes, feedRes] = await Promise.allSettled([
       fetchDashboardSummary(timeZone, { strict: true }),
       fetchDashboardTrends(timeZone, trendWindow, { strict: true }),
       fetchAgents({ activeOnly: true, sort: "score", order: "desc", limit: 5, strict: true }),
@@ -267,6 +332,7 @@ export const Dashboard = ({
         limit: 20,
         strict: true
       }),
+      fetchCycles({ limit: 12, strict: true }),
       fetchActiveCycle({ strict: true }),
       fetchActivities({ limit: REFRESH_FEED_LIMIT, order: "desc", strict: true })
     ]);
@@ -293,6 +359,13 @@ export const Dashboard = ({
       setAgentsData(agentsRes.value);
     } else {
       setAgentLoadError(true);
+    }
+
+    if (cyclesRes.status === "fulfilled") {
+      setCycleLoadError(false);
+      setCyclesData(cyclesRes.value);
+    } else {
+      setCycleLoadError(true);
     }
 
     if (feedRes.status === "fulfilled") {
@@ -339,7 +412,7 @@ export const Dashboard = ({
   }, []);
 
   useEffect(() => {
-    const opened = Boolean(taskDetailId || agentDetailAddress);
+    const opened = Boolean(taskDetailId || agentDetailAddress || cycleDetailId);
     if (!opened) {
       document.body.style.overflow = "";
       return;
@@ -356,7 +429,7 @@ export const Dashboard = ({
       window.removeEventListener("keydown", onKeyDown);
       document.body.style.overflow = previousOverflow;
     };
-  }, [taskDetailId, agentDetailAddress, closeDetail]);
+  }, [taskDetailId, agentDetailAddress, cycleDetailId, closeDetail]);
 
   useEffect(() => {
     if (!timeZone) {
@@ -459,6 +532,32 @@ export const Dashboard = ({
   }, [agentQueryKey]);
 
   useEffect(() => {
+    let cancelled = false;
+    setLoadingCycles(true);
+    setCycleLoadError(false);
+    const controller = new AbortController();
+    fetchCycles({
+      limit: 12,
+      signal: controller.signal,
+      strict: true
+    }).then((response) => {
+      if (!cancelled) {
+        setCyclesData(response);
+        setLoadingCycles(false);
+      }
+    }).catch(() => {
+      if (!cancelled) {
+        setCycleLoadError(true);
+        setLoadingCycles(false);
+      }
+    });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, []);
+
+  useEffect(() => {
     if (tab !== "tasks" || !tasksData.nextCursor || loadingMoreTasks) {
       return;
     }
@@ -499,6 +598,27 @@ export const Dashboard = ({
       observer.disconnect();
     };
   }, [tab, agentsData.nextCursor, loadingMoreAgents, loadMoreAgents]);
+
+  useEffect(() => {
+    if (tab !== "cycles" || !cyclesData.nextCursor || loadingMoreCycles) {
+      return;
+    }
+    const target = cycleSentinelRef.current;
+    if (!target) {
+      return;
+    }
+    const observer = new IntersectionObserver((entries) => {
+      const first = entries[0];
+      if (!first?.isIntersecting || !cyclesData.nextCursor) {
+        return;
+      }
+      void loadMoreCycles();
+    });
+    observer.observe(target);
+    return () => {
+      observer.disconnect();
+    };
+  }, [tab, cyclesData.nextCursor, loadingMoreCycles, loadMoreCycles]);
 
   useEffect(() => {
     if (!taskDetailId) {
@@ -543,7 +663,7 @@ export const Dashboard = ({
 
   useEffect(() => {
     if (!agentDetailAddress) {
-      setAgentDetail({ loading: false, error: false, profile: null, activities: [] });
+      setAgentDetail({ loading: false, error: false, profile: null, ledger: null, activities: [] });
       return;
     }
     let cancelled = false;
@@ -551,6 +671,7 @@ export const Dashboard = ({
     setAgentDetail((prev) => ({ ...prev, loading: true, error: false }));
     Promise.all([
       fetchAgent(agentDetailAddress, { signal: controller.signal, strict: true }),
+      fetchLedger(agentDetailAddress, { signal: controller.signal, strict: true }),
       fetchActivities({
         address: agentDetailAddress,
         limit: 50,
@@ -559,7 +680,7 @@ export const Dashboard = ({
         strict: true
       })
     ])
-      .then(([profile, activities]) => {
+      .then(([profile, ledger, activities]) => {
         if (cancelled) {
           return;
         }
@@ -567,6 +688,7 @@ export const Dashboard = ({
           loading: false,
           error: false,
           profile,
+          ledger,
           activities: activities.items
         });
       })
@@ -585,6 +707,59 @@ export const Dashboard = ({
       controller.abort();
     };
   }, [agentDetailAddress, agentDetailReloadTick]);
+
+  useEffect(() => {
+    if (!cycleDetailId) {
+      setCycleDetail({ loading: false, error: false, rewards: null, disputes: [] });
+      return;
+    }
+    let cancelled = false;
+    const controller = new AbortController();
+    setCycleDetail((prev) => ({ ...prev, loading: true, error: false }));
+    (async () => {
+      try {
+        const rewards = await fetchCycleRewards(cycleDetailId, { signal: controller.signal, strict: true });
+        if (cancelled) {
+          return;
+        }
+        if (!rewards) {
+          setCycleDetail({
+            loading: false,
+            error: false,
+            rewards: null,
+            disputes: []
+          });
+          return;
+        }
+        const disputeIds = [...new Set(rewards.workloads.map((item) => item.disputeId).filter(Boolean))];
+        const disputeItems = await Promise.all(
+          disputeIds.map((id) => fetchDispute(id, { signal: controller.signal, strict: true }))
+        );
+        if (cancelled) {
+          return;
+        }
+        setCycleDetail({
+          loading: false,
+          error: false,
+          rewards,
+          disputes: disputeItems.filter((item): item is Dispute => Boolean(item))
+        });
+      } catch {
+        if (cancelled) {
+          return;
+        }
+        setCycleDetail((prev) => ({
+          ...prev,
+          loading: false,
+          error: true
+        }));
+      }
+    })();
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [cycleDetailId, cycleDetailReloadTick]);
 
   const trendPublished = useMemo(
     () => trends?.points.map((item) => item.tasksPublished) ?? [],
@@ -688,6 +863,7 @@ export const Dashboard = ({
         leaders={leaders}
         onTrendWindowChange={(window) => updateQuery({ trendWindow: window })}
         onOpenAgentDetail={openAgentDetail}
+        onOpenCycleDetail={openCycleDetail}
       />
 
       <section className="insight-grid">
@@ -709,7 +885,7 @@ export const Dashboard = ({
             type="button"
             className={`tab-btn ${tab === "tasks" ? "active" : ""}`}
             data-testid="tab-tasks"
-            onClick={() => updateQuery({ tab: "tasks", agentDetail: null, taskDetail: null })}
+            onClick={() => updateQuery({ tab: "tasks", agentDetail: null, taskDetail: null, cycleDetail: null })}
           >
             Task
           </button>
@@ -717,95 +893,107 @@ export const Dashboard = ({
             type="button"
             className={`tab-btn ${tab === "users" ? "active" : ""}`}
             data-testid="tab-users"
-            onClick={() => updateQuery({ tab: "users", agentDetail: null, taskDetail: null })}
+            onClick={() => updateQuery({ tab: "users", agentDetail: null, taskDetail: null, cycleDetail: null })}
           >
             User
           </button>
-        </div>
-
-        <div className="filter-row">
-          <label className="sr-only" htmlFor="dashboard-search-input">
-            {locale === "zh" ? "搜索" : "Search"}
-          </label>
-          <input
-            id="dashboard-search-input"
-            data-testid="search-input"
-            value={searchDraft}
-            onChange={(event) => setSearchDraft(event.target.value)}
-            onBlur={commitSearch}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                commitSearch();
-              }
-            }}
-            placeholder={locale === "zh" ? "搜索标题、地址..." : "Search title, address..."}
-          />
-          {searchDraft.length > 0 ? (
-            <button type="button" className="link-btn" data-testid="clear-search-button" onClick={clearSearch}>
-              {locale === "zh" ? "清除" : "Clear"}
-            </button>
-          ) : null}
-          {tab === "tasks" ? (
-            <>
-              <select
-                data-testid="task-status-select"
-                value={taskStatus ?? ""}
-                onChange={(event) => updateQuery({ taskStatus: event.target.value || null })}
-              >
-                <option value="">{locale === "zh" ? "全部状态" : "All status"}</option>
-                <option value="OPEN">OPEN</option>
-                <option value="IN_PROGRESS">IN_PROGRESS</option>
-                <option value="CLOSED">CLOSED</option>
-                <option value="TERMINATED">TERMINATED</option>
-              </select>
-              <select
-                data-testid="task-sort-select"
-                value={taskSort}
-                onChange={(event) => updateQuery({ taskSort: event.target.value })}
-              >
-                <option value="latest">{locale === "zh" ? "最新" : "Latest"}</option>
-                <option value="created">{locale === "zh" ? "创建时间" : "Created"}</option>
-                <option value="deadline">{locale === "zh" ? "截止时间" : "Deadline"}</option>
-                <option value="reward">{locale === "zh" ? "奖励" : "Reward"}</option>
-              </select>
-            </>
-          ) : (
-            <>
-              <label className="switch-line">
-                <input
-                  data-testid="active-only-checkbox"
-                  type="checkbox"
-                  checked={activeOnly}
-                  onChange={(event) => updateQuery({ activeOnly: event.target.checked ? "true" : "false" })}
-                />
-                {locale === "zh" ? "仅活跃" : "Active only"}
-              </label>
-              <select
-                data-testid="agent-sort-select"
-                value={agentSort}
-                onChange={(event) => updateQuery({ agentSort: event.target.value })}
-              >
-                <option value="latest">{locale === "zh" ? "最新" : "Latest"}</option>
-                <option value="score">{locale === "zh" ? "综合分" : "Score"}</option>
-                <option value="reputation">{locale === "zh" ? "信誉" : "Reputation"}</option>
-                <option value="completed">{locale === "zh" ? "完成量" : "Completed"}</option>
-                <option value="published">{locale === "zh" ? "发布量" : "Published"}</option>
-                <option value="accepted">{locale === "zh" ? "接单量" : "Accepted"}</option>
-              </select>
-            </>
-          )}
-          <select
-            data-testid="sort-order-select"
-            value={tab === "tasks" ? taskOrder : agentOrder}
-            onChange={(event) => updateQuery(tab === "tasks" ? { taskOrder: event.target.value } : { agentOrder: event.target.value })}
+          <button
+            type="button"
+            className={`tab-btn ${tab === "cycles" ? "active" : ""}`}
+            data-testid="tab-cycles"
+            onClick={() => updateQuery({ tab: "cycles", agentDetail: null, taskDetail: null, cycleDetail: null })}
           >
-            <option value="desc">{locale === "zh" ? "降序" : "Desc"}</option>
-            <option value="asc">{locale === "zh" ? "升序" : "Asc"}</option>
-          </select>
-          <button type="button" className="action-btn" data-testid="reset-filters" onClick={resetFilters}>
-            {locale === "zh" ? "重置筛选" : "Reset"}
+            Cycle
           </button>
         </div>
+
+        {tab !== "cycles" ? (
+          <div className="filter-row">
+            <label className="sr-only" htmlFor="dashboard-search-input">
+              {locale === "zh" ? "搜索" : "Search"}
+            </label>
+            <input
+              id="dashboard-search-input"
+              data-testid="search-input"
+              value={searchDraft}
+              onChange={(event) => setSearchDraft(event.target.value)}
+              onBlur={commitSearch}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  commitSearch();
+                }
+              }}
+              placeholder={locale === "zh" ? "搜索标题、地址..." : "Search title, address..."}
+            />
+            {searchDraft.length > 0 ? (
+              <button type="button" className="link-btn" data-testid="clear-search-button" onClick={clearSearch}>
+                {locale === "zh" ? "清除" : "Clear"}
+              </button>
+            ) : null}
+            {tab === "tasks" ? (
+              <>
+                <select
+                  data-testid="task-status-select"
+                  value={taskStatus ?? ""}
+                  onChange={(event) => updateQuery({ taskStatus: event.target.value || null })}
+                >
+                  <option value="">{locale === "zh" ? "全部状态" : "All status"}</option>
+                  <option value="OPEN">OPEN</option>
+                  <option value="IN_PROGRESS">IN_PROGRESS</option>
+                  <option value="CLOSED">CLOSED</option>
+                  <option value="TERMINATED">TERMINATED</option>
+                </select>
+                <select
+                  data-testid="task-sort-select"
+                  value={taskSort}
+                  onChange={(event) => updateQuery({ taskSort: event.target.value })}
+                >
+                  <option value="latest">{locale === "zh" ? "最新" : "Latest"}</option>
+                  <option value="created">{locale === "zh" ? "创建时间" : "Created"}</option>
+                  <option value="deadline">{locale === "zh" ? "截止时间" : "Deadline"}</option>
+                  <option value="reward">{locale === "zh" ? "奖励" : "Reward"}</option>
+                </select>
+              </>
+            ) : (
+              <>
+                <label className="switch-line">
+                  <input
+                    data-testid="active-only-checkbox"
+                    type="checkbox"
+                    checked={activeOnly}
+                    onChange={(event) => updateQuery({ activeOnly: event.target.checked ? "true" : "false" })}
+                  />
+                  {locale === "zh" ? "仅活跃" : "Active only"}
+                </label>
+                <select
+                  data-testid="agent-sort-select"
+                  value={agentSort}
+                  onChange={(event) => updateQuery({ agentSort: event.target.value })}
+                >
+                  <option value="latest">{locale === "zh" ? "最新" : "Latest"}</option>
+                  <option value="score">{locale === "zh" ? "综合分" : "Score"}</option>
+                  <option value="reputation">{locale === "zh" ? "信誉" : "Reputation"}</option>
+                  <option value="completed">{locale === "zh" ? "完成量" : "Completed"}</option>
+                  <option value="published">{locale === "zh" ? "发布量" : "Published"}</option>
+                  <option value="accepted">{locale === "zh" ? "接单量" : "Accepted"}</option>
+                </select>
+              </>
+            )}
+            <select
+              data-testid="sort-order-select"
+              value={tab === "tasks" ? taskOrder : agentOrder}
+              onChange={(event) => updateQuery(tab === "tasks" ? { taskOrder: event.target.value } : { agentOrder: event.target.value })}
+            >
+              <option value="desc">{locale === "zh" ? "降序" : "Desc"}</option>
+              <option value="asc">{locale === "zh" ? "升序" : "Asc"}</option>
+            </select>
+            <button type="button" className="action-btn" data-testid="reset-filters" onClick={resetFilters}>
+              {locale === "zh" ? "重置筛选" : "Reset"}
+            </button>
+          </div>
+        ) : (
+          <p className="sub">{locale === "zh" ? "查看周期、奖励分配与监督 workload。" : "Browse cycles, reward distributions, and supervision workloads."}</p>
+        )}
         {tab === "tasks" ? (
           <TaskListPanel
             locale={locale}
@@ -824,7 +1012,7 @@ export const Dashboard = ({
             onRefresh={refreshAll}
             onLoadMore={() => void loadMoreTasks()}
           />
-        ) : (
+        ) : tab === "users" ? (
           <AgentListPanel
             locale={locale}
             timeZone={timeZone}
@@ -839,10 +1027,24 @@ export const Dashboard = ({
             onRefresh={refreshAll}
             onLoadMore={() => void loadMoreAgents()}
           />
+        ) : (
+          <CycleListPanel
+            locale={locale}
+            timeZone={timeZone}
+            cycles={cyclesData.items}
+            loadingCycles={loadingCycles}
+            loadingMoreCycles={loadingMoreCycles}
+            cycleLoadError={cycleLoadError}
+            nextCursor={cyclesData.nextCursor}
+            cycleSentinelRef={cycleSentinelRef}
+            onOpenCycleDetail={openCycleDetail}
+            onRefresh={refreshAll}
+            onLoadMore={() => void loadMoreCycles()}
+          />
         )}
       </section>
 
-      {taskDetailId || agentDetailAddress ? (
+      {taskDetailId || agentDetailAddress || cycleDetailId ? (
         <section className="drawer-mask" onClick={closeDetail}>
           <aside
             className="drawer"
@@ -863,6 +1065,15 @@ export const Dashboard = ({
                 timeZone={timeZone}
                 taskDetail={taskDetail}
                 onRetry={retryTaskDetail}
+                onOpenAgentDetail={openAgentDetail}
+              />
+            ) : cycleDetailId ? (
+              <CycleDetailDrawer
+                locale={locale}
+                timeZone={timeZone}
+                cycleDetail={cycleDetail}
+                onRetry={retryCycleDetail}
+                onOpenAgentDetail={openAgentDetail}
               />
             ) : (
               <AgentDetailDrawer

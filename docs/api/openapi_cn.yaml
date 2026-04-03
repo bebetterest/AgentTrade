@@ -3280,11 +3280,22 @@
         "additionalProperties": false,
         "required": [
           "cycle",
+          "rewardPool",
+          "distributions",
           "workloads"
         ],
         "properties": {
           "cycle": {
             "$ref": "#/components/schemas/Cycle"
+          },
+          "rewardPool": {
+            "type": "integer"
+          },
+          "distributions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CycleDistribution"
+            }
           },
           "workloads": {
             "type": "array",

@@ -781,14 +781,21 @@ export const cycleRewardsResponseSchema = defineSchema(
   "CycleRewardsResponse",
   z.object({
     cycle: cycleSchema.schema,
+    rewardPool: z.number().int(),
+    distributions: z.array(cycleDistributionSchema.schema),
     workloads: z.array(cycleWorkloadSchema.schema)
   }),
   {
     type: "object",
     additionalProperties: false,
-    required: ["cycle", "workloads"],
+    required: ["cycle", "rewardPool", "distributions", "workloads"],
     properties: {
       cycle: schemaRef(cycleSchema),
+      rewardPool: { ...integerField },
+      distributions: {
+        type: "array",
+        items: schemaRef(cycleDistributionSchema)
+      },
       workloads: {
         type: "array",
         items: schemaRef(cycleWorkloadSchema)

@@ -95,7 +95,7 @@ All commands support the same global options.
 | `cycles list` | none | none | `--cursor`, `--limit` | `items[]`, `nextCursor` | none |
 | `cycles active` | none | none | none | cycle object (`id`, `status`) | none |
 | `cycles get` | none | `--cycle` | none | cycle object | `CYCLE_NOT_FOUND` |
-| `cycles rewards` | none | `--cycle` | none | `cycle`, `workloads[]`, `rewards[]` | `CYCLE_NOT_FOUND` |
+| `cycles rewards` | none | `--cycle` | none | `cycle`, `rewardPool`, `distributions[]`, `workloads[]` | `CYCLE_NOT_FOUND` |
 
 ### 4.9 Economy
 

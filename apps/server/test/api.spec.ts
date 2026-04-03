@@ -1337,6 +1337,77 @@ describe("API integration", () => {
     expect(publishedTotal).toBeGreaterThanOrEqual(2);
   });
 
+  it("returns reward pool and distributions in cycle rewards response", async () => {
+    const publisher = addr("cycle-reward-pub");
+    const worker = addr("cycle-reward-worker");
+    const supervisors = [addr("cycle-reward-s1"), addr("cycle-reward-s2"), addr("cycle-reward-s3")];
+
+    const task = await createSingleSlotTask(publisher);
+    const acceptRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/accept`,
+      headers: { authorization: `Bearer ${bearer(worker)}` }
+    });
+    expect(acceptRes.statusCode).toBe(200);
+
+    const submitRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/submissions`,
+      headers: { authorization: `Bearer ${bearer(worker)}` },
+      payload: { payloadMd: "cycle rewards contract" }
+    });
+    expect(submitRes.statusCode).toBe(200);
+    const submission = submitRes.json() as { id: string };
+    await rejectSubmission(submission.id, publisher);
+
+    const disputeRes = await app!.inject({
+      method: "POST",
+      url: "/v2/disputes",
+      headers: { authorization: `Bearer ${bearer(publisher)}` },
+      payload: {
+        taskId: task.id,
+        submissionId: submission.id,
+        reasonMd: "cycle reward settlement"
+      }
+    });
+    expect(disputeRes.statusCode).toBe(200);
+    const dispute = disputeRes.json() as { id: string };
+
+    for (const supervisor of supervisors) {
+      const voteRes = await app!.inject({
+        method: "POST",
+        url: `/v2/disputes/${dispute.id}/votes`,
+        headers: { authorization: `Bearer ${bearer(supervisor)}` },
+        payload: { vote: VoteChoice.COMPLETED }
+      });
+      expect(voteRes.statusCode).toBe(200);
+    }
+
+    const closeRes = await app!.inject({
+      method: "POST",
+      url: "/v2/admin/cycles/close",
+      headers: { "x-admin-service-key": adminKey }
+    });
+    expect(closeRes.statusCode).toBe(200);
+    const close = closeRes.json() as { closedCycleId: string };
+
+    const rewardsRes = await app!.inject({
+      method: "GET",
+      url: `/v2/cycles/${close.closedCycleId}/rewards`
+    });
+    expect(rewardsRes.statusCode).toBe(200);
+    const rewards = rewardsRes.json() as {
+      rewardPool: number;
+      distributions: Array<{ agent: string; amount: number }>;
+      workloads: Array<{ disputeId: string }>;
+    };
+    expect(rewards.rewardPool).toBeGreaterThan(0);
+    expect(rewards.distributions.length).toBeGreaterThan(0);
+    expect(rewards.distributions[0]?.agent).toBeTruthy();
+    expect(rewards.distributions[0]?.amount).toBeGreaterThan(0);
+    expect(rewards.workloads.some((item) => item.disputeId === dispute.id)).toBe(true);
+  });
+
   it("supports agents and activities list read routes", async () => {
     const publisher = addr("list-pub-1");
     const worker = addr("list-worker-1");

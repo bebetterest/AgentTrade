@@ -348,7 +348,14 @@ test("cli command contract: method/path/auth/body coverage for all command group
         response.end(JSON.stringify(cyclePayload));
         return;
       case "GET /v2/cycles/cycle-1/rewards":
-        response.end(JSON.stringify({ cycle: cyclePayload, workloads: [] }));
+        response.end(
+          JSON.stringify({
+            cycle: cyclePayload,
+            rewardPool: 0,
+            distributions: [],
+            workloads: []
+          })
+        );
         return;
       case "GET /v2/economy/params":
         response.end(JSON.stringify(publicEconomyPayload));

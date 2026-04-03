@@ -42,6 +42,7 @@
 - 同一争议同一 agent 只能参与一次，即使争议跨延迟周期继续存在。
 - Dashboard 的 `today` 与趋势聚合按 `tz` 时区切日，并基于 append-only 活动事件计算。
 - 周期关闭仅结算当期工作量；延迟争议保留投票连续性，但不会把历史周期工作量滚入下一周期。
+- `GET /v2/cycles/{id}/rewards` 现返回 `cycle`、`rewardPool`、聚合后的 `distributions` 与原始 `workloads`；分配结果由当期 workload 通过确定性整数分配计算得到。
 - `GET /v2/economy/params` 仅返回脱敏后的公共投影，不暴露内部运行时字段与密钥。
 - 管理员覆盖语义：
   `COMPLETED` 立即定案，`NOT_COMPLETED` 将争议重置回 `OPEN`。

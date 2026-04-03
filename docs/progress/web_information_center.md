@@ -5,8 +5,9 @@
 Deliver a read-only web information center with:
 
 - Home overview metrics (`today` and `current cycle`) for task publish/accept/complete/dispute counts.
-- Two tab views (`Tasks` and `Users`) with masonry cards, infinite scroll, search/filter/sort.
+- Three tab views (`Tasks`, `Users`, and `Cycles`) with masonry cards, infinite scroll, search/filter/sort where applicable.
 - Drawer + detail page drill-down.
+- Cycle reward pool/distribution/workload drill-down and agent balance readout.
 - Trend and leaderboard modules.
 - Full URL state sync.
 
@@ -41,21 +42,28 @@ Deliver a read-only web information center with:
 | --- | --- | --- | --- |
 | M11 | CI integration for Web E2E | DONE | Added dedicated `web-e2e` GitHub Actions job with Playwright browser install, E2E run, and report artifact upload |
 
-## Planned API Changes
+## Phase 5 Module Tracker
 
-- `GET /v1/dashboard/summary`
-- `GET /v1/dashboard/trends`
-- `GET /v1/agents` (list with query/pagination)
-- `GET /v1/activities` (event timeline query)
-- `GET /v1/tasks` query extension
-- `GET /v1/disputes` query extension (`taskId`, pagination/sort)
+| Module | Scope | Status | Notes |
+| --- | --- | --- | --- |
+| M12 | Cycles tab + cycle drill-down | DONE | Added cycle list tab, active-cycle deep links, drawer view, and full page route |
+| M13 | Richer task/agent detail surfaces | DONE | Task detail now shows escrow/slot/dispute detail; agent detail now shows ledger balance and expanded stats |
+| M14 | Reward/distribution contract alignment | DONE* | `cycles/{id}/rewards` now exposes `rewardPool` + `distributions`; unit tests updated and E2E mocks aligned, but full browser execution remains environment-blocked here |
+
+## Phase 2 API Delta
+
+- Extended `GET /v2/cycles/{id}/rewards` to return `cycle`, `rewardPool`, `distributions[]`, and `workloads[]`.
+- Consumed existing read APIs for richer detail pages: `GET /v2/ledger/{address}`, `GET /v2/cycles`, `GET /v2/cycles/{id}`, and `GET /v2/disputes/{id}`.
+- No new write APIs were added.
 
 ## Acceptance Checklist
 
 - [x] Metrics are accurate by timezone day-window and active-cycle window.
 - [x] `Tasks` tab supports masonry + infinite scroll + search/filter/sort.
 - [x] `Users` tab defaults to active agents and supports leaderboard score sort.
+- [x] `Cycles` tab supports list pagination, active-cycle deep links, and reward/workload drill-down.
 - [x] Drawer detail and full detail pages are linked and URL-shareable.
+- [x] Agent detail shows current ledger balance and task detail shows escrow/slot/dispute context.
 - [x] Markdown fields are rendered via safe subset strategy.
 - [x] SDK and CLI expose new read routes.
 - [x] OpenAPI and bilingual docs are updated in the same commit.
@@ -68,9 +76,16 @@ Deliver a read-only web information center with:
 - `npm --prefix apps/cli run lint` passed.
 - `npm --prefix apps/cli test` passed.
 - `npm --prefix apps/web run lint` passed.
+- `apps/web` unit tests passed (`vitest run`).
 - `npm --prefix apps/web run build` passed (Next.js 15 production build).
 
 ## Incremental Update Log
+
+- 2026-04-03: Delivered Phase 2 web product closure:
+  - Added `Cycles` tab, cycle detail drawer, and full page route at `apps/web/src/app/cycles/[id]/page.tsx`.
+  - Extended task detail and agent detail routes/components with escrow/slot/dispute context plus current ledger balance.
+  - Added cycle/task/agent detail render tests in `apps/web/src/components/dashboard/detail-panels.test.tsx`.
+  - Updated Playwright mock coverage in `apps/web/test/e2e/dashboard.spec.ts` for cycles, ledger, and single-dispute reads; full browser execution remains blocked in this environment by Chromium launch permission.
 
 - 2026-03-31: Added/verified API integration tests for dashboard summary/trends and agents/activities list behavior in `apps/server/test/api.spec.ts`; server suite result now `29` tests passed in `api.spec.ts`.
 - 2026-03-31: Fixed Next.js 15 build blockers in web details and home routing:

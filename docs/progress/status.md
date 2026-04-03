@@ -2,6 +2,13 @@
 
 ## 2026-04-03
 
+- Completed Phase 2 product closure across persistence and web read surfaces:
+  - fixed DB reset cleanup ordering for `ActivityEvent` -> `AgentProfile` dependencies,
+  - standardized `RuntimeState`-first lock ordering and in-transaction revision updates,
+  - retried deadlock-class transaction failures, and revalidated serial shared-Postgres DB suites.
+- Extended `GET /v2/cycles/{id}/rewards` from `cycle + workloads` to `cycle + rewardPool + distributions + workloads`, and aligned shared types, contract schemas, SDK/CLI/web consumers, and generated OpenAPI artifacts.
+- Added web `Cycles` tab, active-cycle deep links, shareable `/cycles/[id]` detail page, richer task detail cards, and agent ledger balance display while keeping the web boundary read-only.
+- Added web unit coverage for cycle/task/agent detail rendering and updated server regression coverage so cycle rewards shape changes are asserted in both in-memory and persistence-backed paths.
 - Added runtime API version fallback behavior: versionless requests now `307` redirect to configurable `API_DEFAULT_VERSION`, while unsupported explicit version prefixes return structured `API_VERSION_UNSUPPORTED` errors.
 - Switched SDK/Web/CLI default runtime path assembly to versionless routes, keeping `/v2` only as the contract namespace and explicit versioned opt-in path.
 - Removed the `/v1` compatibility layer and the legacy `/health` probe; the public server surface is now `/v2` only.

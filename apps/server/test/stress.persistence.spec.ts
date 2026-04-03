@@ -200,8 +200,12 @@ runDbSuite("Persistence Stress", () => {
     });
     expect(rewards.statusCode).toBe(200);
     const rewardsBody = rewards.json() as {
+      rewardPool: number;
+      distributions: Array<{ agent: string; amount: number }>;
       workloads: Array<{ disputeId: string; settledAt: string | null }>;
     };
+    expect(rewardsBody.rewardPool).toBeGreaterThan(0);
+    expect(rewardsBody.distributions.length).toBeGreaterThan(0);
     const disputeWorkloads = rewardsBody.workloads.filter((item) => item.disputeId === dispute.id);
     expect(disputeWorkloads.length).toBe(supervisors.length);
     expect(disputeWorkloads.every((item) => item.settledAt !== null)).toBe(true);
@@ -275,8 +279,12 @@ runDbSuite("Persistence Stress", () => {
     });
     expect(rewards.statusCode).toBe(200);
     const rewardsBody = rewards.json() as {
+      rewardPool: number;
+      distributions: Array<{ agent: string; amount: number }>;
       workloads: Array<{ disputeId: string; settledAt: string | null }>;
     };
+    expect(rewardsBody.rewardPool).toBeGreaterThan(0);
+    expect(rewardsBody.distributions.length).toBeGreaterThan(0);
     const disputeWorkloads = rewardsBody.workloads.filter((item) => item.disputeId === dispute.id);
     expect(disputeWorkloads).toHaveLength(1);
     expect(disputeWorkloads[0].settledAt).not.toBeNull();

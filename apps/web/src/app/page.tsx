@@ -5,6 +5,7 @@ import {
   fetchActivities,
   fetchActiveCycle,
   fetchAgents,
+  fetchCycles,
   fetchDashboardSummary,
   fetchDashboardTrends,
   fetchTasks
@@ -24,14 +25,15 @@ export default async function HomePage() {
     timeZoneCookie: cookieStore.get(TIMEZONE_COOKIE_NAME)?.value
   });
 
-  const [summary, trends, tasks, agents, leaders, activeCycle, activities] = await Promise.all([
+  const [summary, trends, tasks, agents, leaders, activeCycle, activities, cycles] = await Promise.all([
     fetchDashboardSummary(requestPreferences.timeZone),
     fetchDashboardTrends(requestPreferences.timeZone, "7d"),
     fetchTasks({ limit: 20, sort: "latest", order: "desc" }),
     fetchAgents({ limit: 20, activeOnly: true, sort: "latest", order: "desc" }),
     fetchAgents({ limit: 5, activeOnly: true, sort: "score", order: "desc" }),
     fetchActiveCycle(),
-    fetchActivities({ limit: 12, order: "desc" })
+    fetchActivities({ limit: 12, order: "desc" }),
+    fetchCycles({ limit: 12 })
   ]);
   return (
     <Suspense
@@ -53,6 +55,7 @@ export default async function HomePage() {
         initialLeaders={leaders.items}
         initialActiveCycle={activeCycle}
         initialActivities={activities}
+        initialCycles={cycles}
       />
     </Suspense>
   );

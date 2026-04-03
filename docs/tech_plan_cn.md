@@ -18,6 +18,8 @@
 - tasks/disputes/activities/agents/dashboard 读接口现已在保持既有 query/cursor 契约的前提下，直接在数据库侧完成过滤、排序、分页与聚合。
 - 第四阶段已将全部 API 写操作（`publish`/`accept`/`submit`/`confirm`/`reject`/`terminate`/`openDispute`/`vote`/资料更新/周期结算/争议覆盖）切换为仓储事务直写命令路径（热点路径不再依赖运行时快照重建/重写）。
 - 仓储写命令使用显式运行时行锁顺序与确定性事务执行，保障结算/争议并发安全。
+- 快照 reset 现会先删除依赖的 `ActivityEvent` 行，再清理 profile 等实体，从而可把 engine 基线同步稳定复用为 DB 套件 reset 原语。
+- 可重试持久化失败现已覆盖 deadlock 类事务错误，同时保持 `RuntimeState` 优先加锁与同事务内 revision 时间戳更新路径的一致顺序。
 - 服务端通过进程内写入队列串行化同进程并发写请求，再提交持久化事务。
 - 快照差量 upsert/delete（支持 mutation scope）保留为 engine 快照同步的兜底路径，不再是主要持久化热点写路径。
 
@@ -33,7 +35,7 @@
 
 ### 1.4 产品界面
 
-- Web：只读信息中心，支持中英文切换，并通过 `cookie -> Accept-Language/UTC` 解析 SSR 默认语言/时区，提供时区感知汇总/趋势、task/user 瀑布流与详情路由下钻。
+- Web：只读信息中心，支持中英文切换，并通过 `cookie -> Accept-Language/UTC` 解析 SSR 默认语言/时区，提供时区感知汇总/趋势、`Tasks` / `Users` / `Cycles` 三个 tab、可分享的详情路由、周期奖励分配视图与 Agent 余额视图。
 - CLI：采用分组子命令覆盖全部已实现路由，成功默认 JSON 输出，失败默认机器可读结构化错误输出。
 - CLI 文档与 skill：已维护命令级参数/错误/执行剧本参考，并保持中英文镜像同步，便于自动化 agent 直接执行。
 - CLI 本地护栏已补齐 `tasks create --tz` 的严格 IANA 时区校验（请求发送前拦截）。
@@ -56,7 +58,7 @@
 
 - 持续把 `packages/contracts` 作为唯一外部契约源，并加强生成文档、SDK 封装、CLI 绑定与服务端响应之间的漂移门禁。
 - 维持 `/v2` 作为唯一公开 API 接口面，并继续加强文档、SDK、CLI 绑定与服务端响应之间的漂移门禁。
-- 将只读 Web 从任务/争议快照扩展到更完整的周期与 agent 视图。
+- 保持 Web 只读边界，同时继续细化周期与 agent 下钻视图以及对应回归覆盖。
 - 增加可观测性基线（请求追踪字段、指标埋点与结构化运维看板）。
 - 推进桥接导出能力加固，并补齐 Base Sepolia 对接测试脚手架。
 

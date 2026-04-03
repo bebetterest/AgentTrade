@@ -1,0 +1,201 @@
+import { describe, expect, it } from "vitest";
+import { renderToStaticMarkup } from "react-dom/server";
+import { ActivityEventType, CycleStatus, DisputeStatus, TaskStatus, type AgentProfile, type CycleRewardsResponse, type Dispute, type Task } from "@agentrade/types";
+import { AgentDetailDrawer } from "./agent-detail-drawer";
+import { CycleDetailContent } from "./cycle-detail-content";
+import { CycleListPanel } from "./cycle-list-panel";
+import { TaskDetailDrawer } from "./task-detail-drawer";
+
+const ADDRESS_A = "0x1111111111111111111111111111111111111111";
+const ADDRESS_B = "0x2222222222222222222222222222222222222222";
+const ADDRESS_C = "0x3333333333333333333333333333333333333333";
+
+const render = (node: React.ReactElement): string => renderToStaticMarkup(node);
+
+describe("dashboard detail panels", () => {
+  it("renders cycle list and enriched cycle detail content", () => {
+    const rewards: CycleRewardsResponse = {
+      cycle: {
+        id: "cycle-9",
+        status: CycleStatus.CLOSED,
+        mintedAmount: 1000,
+        taxPool: 80,
+        penaltyPool: 10,
+        startedAt: "2026-03-28T00:00:00.000Z",
+        closedAt: "2026-03-31T00:00:00.000Z"
+      },
+      rewardPool: 1090,
+      distributions: [{ agent: ADDRESS_B, amount: 1090 }],
+      workloads: [
+        {
+          id: "workload-1",
+          cycleId: "cycle-9",
+          disputeId: "dispute-1",
+          agent: ADDRESS_B,
+          workload: 3,
+          createdAt: "2026-03-30T00:00:00.000Z",
+          settledAt: "2026-03-31T00:00:00.000Z"
+        }
+      ]
+    };
+    const disputes: Dispute[] = [
+      {
+        id: "dispute-1",
+        taskId: "task-1",
+        submissionId: "submission-1",
+        opener: ADDRESS_A,
+        reasonMd: "Quality mismatch",
+        status: DisputeStatus.OPEN,
+        createdAt: "2026-03-30T00:00:00.000Z",
+        updatedAt: "2026-03-30T00:00:00.000Z"
+      }
+    ];
+
+    const listHtml = render(
+      <CycleListPanel
+        locale="en"
+        timeZone="UTC"
+        cycles={[rewards.cycle]}
+        loadingCycles={false}
+        loadingMoreCycles={false}
+        cycleLoadError={false}
+        nextCursor="2"
+        cycleSentinelRef={{ current: null }}
+        onOpenCycleDetail={() => undefined}
+        onRefresh={() => undefined}
+        onLoadMore={() => undefined}
+      />
+    );
+    const detailHtml = render(
+      <CycleDetailContent
+        locale="en"
+        timeZone="UTC"
+        rewards={rewards}
+        disputes={disputes}
+        getAgentHref={(address) => `/agents/${address}`}
+      />
+    );
+
+    expect(listHtml).toContain("cycle-9");
+    expect(listHtml).toContain("Load more cycles");
+    expect(detailHtml).toContain("Reward Pool");
+    expect(detailHtml).toContain("1090 AGC");
+    expect(detailHtml).toContain(`/agents/${ADDRESS_B}`);
+    expect(detailHtml).toContain("Quality mismatch");
+  });
+
+  it("renders enriched task detail fields", () => {
+    const task: Task = {
+      id: "task-1",
+      publisher: ADDRESS_A,
+      title: "Alpha Review",
+      descriptionMd: "Review alpha output.",
+      acceptanceCriteria: "Clear findings.",
+      status: TaskStatus.IN_PROGRESS,
+      deadlineUtc: "2026-04-01T00:00:00.000Z",
+      displayTimezone: "UTC",
+      slotsTotal: 2,
+      rewardPerSlot: 25,
+      allowRepeatCompletionsBySameAgent: false,
+      taxAmount: 3,
+      rewardEscrowRemaining: 25,
+      acceptedAgents: [ADDRESS_B],
+      completedAgents: [ADDRESS_C],
+      createdAt: "2026-03-30T00:00:00.000Z",
+      updatedAt: "2026-03-31T00:00:00.000Z"
+    };
+    const html = render(
+      <TaskDetailDrawer
+        locale="en"
+        timeZone="UTC"
+        taskDetail={{
+          loading: false,
+          error: false,
+          task,
+          disputes: [
+            {
+              id: "dispute-1",
+              taskId: "task-1",
+              submissionId: "submission-1",
+              opener: ADDRESS_A,
+              reasonMd: "Needs another review",
+              status: DisputeStatus.OPEN,
+              createdAt: "2026-03-31T00:00:00.000Z",
+              updatedAt: "2026-03-31T00:00:00.000Z"
+            }
+          ],
+          activities: [
+            {
+              id: "activity-1",
+              type: ActivityEventType.TASK_ACCEPTED,
+              cycleId: "cycle-9",
+              taskId: "task-1",
+              disputeId: null,
+              actor: ADDRESS_B,
+              createdAt: "2026-03-31T00:00:00.000Z"
+            }
+          ]
+        }}
+        onRetry={() => undefined}
+        onOpenAgentDetail={() => undefined}
+      />
+    );
+
+    expect(html).toContain("Escrow Remaining");
+    expect(html).toContain("Slot Progress");
+    expect(html).toContain("Needs another review");
+    expect(html).toContain("Task Accepted");
+  });
+
+  it("renders agent balance and stats", () => {
+    const profile: AgentProfile = {
+      address: ADDRESS_A,
+      name: "Agent Alpha",
+      bio: "Focus on QA.",
+      reputation: { publisher: 1.2, worker: 2.1, supervisor: 1.4 },
+      stats: {
+        tasksPublished: 2,
+        tasksAccepted: 5,
+        tasksCompleted: 4,
+        tasksTerminated: 1,
+        submissionsRejected: 1,
+        supervisionVotes: 3
+      },
+      createdAt: "2026-03-20T00:00:00.000Z",
+      updatedAt: "2026-03-31T00:00:00.000Z"
+    };
+    const html = render(
+      <AgentDetailDrawer
+        locale="en"
+        timeZone="UTC"
+        agentDetail={{
+          loading: false,
+          error: false,
+          profile,
+          ledger: {
+            address: ADDRESS_A,
+            available: 42,
+            updatedAt: "2026-03-31T00:00:00.000Z"
+          },
+          activities: [
+            {
+              id: "activity-1",
+              type: ActivityEventType.TASK_COMPLETED,
+              cycleId: "cycle-9",
+              taskId: "task-1",
+              disputeId: null,
+              actor: ADDRESS_A,
+              createdAt: "2026-03-31T00:00:00.000Z"
+            }
+          ]
+        }}
+        onRetry={() => undefined}
+      />
+    );
+
+    expect(html).toContain("Balance &amp; Reputation");
+    expect(html).toContain("42 AGC");
+    expect(html).toContain("Published");
+    expect(html).toContain("Task Completed");
+  });
+});

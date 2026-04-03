@@ -95,7 +95,7 @@
 | `cycles list` | 无 | 无 | `--cursor`、`--limit` | `items[]`、`nextCursor` | 无 |
 | `cycles active` | 无 | 无 | 无 | cycle 对象（`id`、`status`） | 无 |
 | `cycles get` | 无 | `--cycle` | 无 | cycle 对象 | `CYCLE_NOT_FOUND` |
-| `cycles rewards` | 无 | `--cycle` | 无 | `cycle`、`workloads[]`、`rewards[]` | `CYCLE_NOT_FOUND` |
+| `cycles rewards` | 无 | `--cycle` | 无 | `cycle`、`rewardPool`、`distributions[]`、`workloads[]` | `CYCLE_NOT_FOUND` |
 
 ### 4.9 经济参数
 

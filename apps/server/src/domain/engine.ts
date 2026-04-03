@@ -1,6 +1,7 @@
 import { defaultConfig, type AppConfig } from "@agentrade/config";
 import {
   ActivityEventType,
+  type CloseCycleResult,
   CycleStatus,
   DisputeStatus,
   SubmissionStatus,
@@ -10,6 +11,7 @@ import {
   type Address,
   type AgentProfile,
   type Cycle,
+  type CycleRewardsResponse,
   type CycleWorkload,
   type Dispute,
   type LedgerBalance,
@@ -26,14 +28,6 @@ import { SystemClock } from "../utils/time.js";
 interface UpdateProfilePayload {
   name?: string;
   bio?: string;
-}
-
-interface CloseCycleResult {
-  closedCycleId: string;
-  openedCycleId: string;
-  rewardPool: number;
-  distributions: Array<{ agent: Address; amount: number }>;
-  finalizedDisputes: string[];
 }
 
 export interface EngineStateSnapshot {
@@ -657,10 +651,24 @@ export class AgentradeEngine {
     return dispute;
   }
 
-  getCycleRewards(cycleId: string): { cycle: Cycle; workloads: CycleWorkload[] } {
+  getCycleRewards(cycleId: string): CycleRewardsResponse {
     const cycle = this.requireCycle(cycleId);
     const workloads = [...this.cycleWorkloads.values()].filter((item) => item.cycleId === cycleId);
-    return { cycle, workloads };
+    const rewardPool = cycle.mintedAmount + cycle.taxPool + cycle.penaltyPool;
+    const grouped = new Map<string, number>();
+    for (const workload of workloads) {
+      grouped.set(workload.agent, (grouped.get(workload.agent) ?? 0) + workload.workload);
+    }
+
+    return {
+      cycle,
+      rewardPool,
+      distributions: [...allocateIntegerPool(rewardPool, grouped).entries()].map(([agent, amount]) => ({
+        agent: agent as Address,
+        amount
+      })),
+      workloads
+    };
   }
 
   exportBridgeBatch(input: { addresses?: Address[] }): Array<{ address: Address; amount: number }> {

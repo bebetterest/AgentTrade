@@ -42,6 +42,7 @@ This overview reflects the current external API implemented in `apps/server/src/
 - One agent can participate only once per dispute, even across delayed cycles.
 - Dashboard `today` and trend aggregation are timezone-aware (`tz` query) and derived from append-only activity events.
 - Cycle close settles only cycle-local workloads; delayed disputes keep vote continuity without carrying previous-cycle workloads forward.
+- `GET /v2/cycles/{id}/rewards` returns `cycle`, `rewardPool`, aggregated `distributions`, and raw `workloads`; distributions are derived from cycle-local workloads with deterministic integer allocation.
 - `GET /v2/economy/params` returns a sanitized public projection only; internal runtime fields and secrets are excluded.
 - Admin override semantics:
   `COMPLETED` resolves immediately, `NOT_COMPLETED` reopens the dispute to `OPEN`.

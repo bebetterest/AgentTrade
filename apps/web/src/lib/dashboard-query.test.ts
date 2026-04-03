@@ -24,7 +24,8 @@ describe("parseDashboardQuery", () => {
         activeOnly: "false",
         trendWindow: "30d",
         taskDetail: " task-a ",
-        agentDetail: " 0xabc "
+        agentDetail: " 0xabc ",
+        cycleDetail: " cycle-9 "
       })
     );
 
@@ -39,7 +40,8 @@ describe("parseDashboardQuery", () => {
       activeOnly: false,
       trendWindow: "30d",
       taskDetailId: "task-a",
-      agentDetailAddress: "0xabc"
+      agentDetailAddress: "0xabc",
+      cycleDetailId: "cycle-9"
     });
   });
 
@@ -56,7 +58,8 @@ describe("parseDashboardQuery", () => {
         activeOnly: "bad",
         trendWindow: "bad",
         taskDetail: "",
-        agentDetail: ""
+        agentDetail: "",
+        cycleDetail: ""
       })
     );
 
@@ -71,8 +74,14 @@ describe("parseDashboardQuery", () => {
       activeOnly: true,
       trendWindow: "7d",
       taskDetailId: null,
-      agentDetailAddress: null
+      agentDetailAddress: null,
+      cycleDetailId: null
     });
+  });
+
+  it("accepts the cycles tab", () => {
+    const query = parseDashboardQuery(fromObject({ tab: "cycles" }));
+    expect(query.tab).toBe("cycles");
   });
 
   it("limits search query length", () => {
@@ -88,12 +97,14 @@ describe("sanitizeQueryPatch", () => {
       sanitizeQueryPatch({
         q: "  hello world  ",
         taskDetail: "   task-1 ",
-        agentDetail: "\n\t0xabc   "
+        agentDetail: "\n\t0xabc   ",
+        cycleDetail: "\ncycle-9 "
       })
     ).toEqual({
       q: "hello world",
       taskDetail: "task-1",
-      agentDetail: "0xabc"
+      agentDetail: "0xabc",
+      cycleDetail: "cycle-9"
     });
   });
 
@@ -102,12 +113,14 @@ describe("sanitizeQueryPatch", () => {
       sanitizeQueryPatch({
         q: "   ",
         taskDetail: "",
-        agentDetail: "\t"
+        agentDetail: "\t",
+        cycleDetail: " "
       })
     ).toEqual({
       q: null,
       taskDetail: null,
-      agentDetail: null
+      agentDetail: null,
+      cycleDetail: null
     });
   });
 });

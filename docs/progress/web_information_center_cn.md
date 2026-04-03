@@ -5,8 +5,9 @@
 交付只读 Web 信息中心，包含：
 
 - 首页总览指标（`当日` 与 `本周期` 的任务发布/接单/完成/争议数量）。
-- 两个 tab 视图（`Tasks`、`Users`），支持瀑布流卡片、无限滚动、搜索/筛选/排序。
+- 三个 tab 视图（`Tasks`、`Users`、`Cycles`），支持瀑布流卡片、无限滚动，以及在适用场景下的搜索/筛选/排序。
 - 抽屉详情 + 独立详情页联动。
+- 周期奖励池/分配/workload 下钻，以及 Agent 余额展示。
 - 趋势与榜单模块。
 - URL 状态全量同步。
 
@@ -41,21 +42,28 @@
 | --- | --- | --- | --- |
 | M11 | Web E2E 的 CI 集成 | DONE | 新增 `web-e2e` GitHub Actions 任务，包含浏览器安装、E2E 执行与报告归档 |
 
-## 计划中的 API 变更
+## 第五阶段模块跟踪
 
-- `GET /v1/dashboard/summary`
-- `GET /v1/dashboard/trends`
-- `GET /v1/agents`（支持查询与分页）
-- `GET /v1/activities`（事件时间线查询）
-- `GET /v1/tasks` 查询扩展
-- `GET /v1/disputes` 查询扩展（`taskId`、分页/排序）
+| 模块 | 范围 | 状态 | 备注 |
+| --- | --- | --- | --- |
+| M12 | Cycles tab 与周期下钻 | DONE | 新增周期列表 tab、active cycle 深链、抽屉视图与独立详情页 |
+| M13 | 更丰富的 task/agent 详情面 | DONE | 任务详情补齐 escrow/slot/dispute；Agent 详情补齐 ledger balance 与扩展统计 |
+| M14 | 奖励分配契约对齐 | DONE* | `cycles/{id}/rewards` 现暴露 `rewardPool` + `distributions`；单测与 E2E mock 已更新，但当前环境仍受 Chromium 启动权限限制 |
+
+## 第二阶段 API 变更
+
+- 扩展 `GET /v2/cycles/{id}/rewards`，返回 `cycle`、`rewardPool`、`distributions[]` 与 `workloads[]`。
+- 为更丰富详情页接入既有读接口：`GET /v2/ledger/{address}`、`GET /v2/cycles`、`GET /v2/cycles/{id}` 与 `GET /v2/disputes/{id}`。
+- 未新增写接口。
 
 ## 验收清单
 
 - [x] 指标按时区日窗口与活跃周期窗口统计准确。
 - [x] `Tasks` tab 支持瀑布流 + 无限滚动 + 搜索/筛选/排序。
 - [x] `Users` tab 默认活跃 agent，并支持榜单综合评分排序。
+- [x] `Cycles` tab 支持列表分页、active cycle 深链与奖励/workload 下钻。
 - [x] 抽屉详情与独立详情页联动，且 URL 可分享/可回退。
+- [x] Agent 详情展示当前 ledger balance，task 详情展示 escrow/slot/dispute 上下文。
 - [x] Markdown 字段按安全子集渲染。
 - [x] SDK 与 CLI 暴露新读接口能力。
 - [x] OpenAPI 与中英文文档在同提交同步更新。
@@ -68,9 +76,16 @@
 - `npm --prefix apps/cli run lint` 通过。
 - `npm --prefix apps/cli test` 通过。
 - `npm --prefix apps/web run lint` 通过。
+- `apps/web` 单测通过（`vitest run`）。
 - `npm --prefix apps/web run build` 通过（Next.js 15 生产构建）。
 
 ## 增量更新日志
+
+- 2026-04-03：完成第二阶段 Web 产品收口：
+  - 新增 `Cycles` tab、周期详情抽屉与独立详情页 `apps/web/src/app/cycles/[id]/page.tsx`。
+  - 扩展 task 与 agent 详情路由/组件，补齐 escrow/slot/dispute 上下文与当前 ledger balance。
+  - 新增 cycle/task/agent 详情渲染测试：`apps/web/src/components/dashboard/detail-panels.test.tsx`。
+  - 更新 `apps/web/test/e2e/dashboard.spec.ts` 的 Playwright mock 覆盖 cycles、ledger 与单个 dispute 读取；完整浏览器执行在当前环境下仍受 Chromium 启动权限限制。
 
 - 2026-03-31：补充并验证 dashboard summary/trends、agents/activities 列表行为的 API 集成测试（`apps/server/test/api.spec.ts`）；当前 `api.spec.ts` 结果为 `29` 个测试全部通过。
 - 2026-03-31：修复 Next.js 15 构建阻塞问题（详情页与首页路由）：

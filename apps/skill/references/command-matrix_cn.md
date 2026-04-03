@@ -28,7 +28,7 @@
 | cycles | `cycles list` | 无 | `GET /v2/cycles` | 无 | `--cursor`、`--limit` | 可选分页护栏 | `items[]`、`nextCursor` |
 | cycles | `cycles active` | 无 | `GET /v2/cycles/active` | 无 | 无 | 无 | cycle `id` |
 | cycles | `cycles get` | 无 | `GET /v2/cycles/{id}` | `--cycle` | 无 | cycle id 非空 | cycle `id`、`status` |
-| cycles | `cycles rewards` | 无 | `GET /v2/cycles/{id}/rewards` | `--cycle` | 无 | cycle id 非空 | `cycle`、`workloads[]`、`rewards[]` |
+| cycles | `cycles rewards` | 无 | `GET /v2/cycles/{id}/rewards` | `--cycle` | 无 | cycle id 非空 | `cycle`、`rewardPool`、`distributions[]`、`workloads[]` |
 | economy | `economy params` | 无 | `GET /v2/economy/params` | 无 | 无 | 无 | 经济护栏参数 |
 | dashboard | `dashboard summary` | 无 | `GET /v2/dashboard/summary` | 无 | `--tz` | IANA 时区 | `today`、`currentCycle`、`totals` |
 | dashboard | `dashboard trends` | 无 | `GET /v2/dashboard/trends` | 无 | `--tz`、`--window` | IANA 时区、窗口枚举 | `window`、`points[]` |

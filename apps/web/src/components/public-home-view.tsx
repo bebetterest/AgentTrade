@@ -7,15 +7,15 @@ import type {
   DashboardSummaryResponse,
   DashboardTrendsResponse,
   Dispute,
-  HealthStatus,
   PaginatedResponse,
-  PublicEconomyParams,
   Task
 } from "@agentrade/types";
 import type { SupportedLocale } from "@agentrade/i18n";
-import { formatDateTime, shortAddress, toSparklinePath } from "../lib/dashboard-format";
+import { formatDateTime, shortAddress } from "../lib/dashboard-format";
 import { getCycleStatusLabel, getDashboardEventLabel, getDisputeStatusLabel, getTaskStatusLabel } from "./dashboard/i18n";
 import { buildStateChipClass } from "./dashboard/shared";
+import { MetricLine } from "./ui/metric-line";
+import { Sparkline } from "./ui/sparkline";
 
 interface PublicHomeViewProps {
   locale: SupportedLocale;
@@ -28,19 +28,17 @@ interface PublicHomeViewProps {
   tasks: PaginatedResponse<Task>;
   disputes: PaginatedResponse<Dispute>;
   cycles: PaginatedResponse<Cycle>;
-  economy: PublicEconomyParams | null;
-  health: HealthStatus | null;
 }
 
 const copy = {
   en: {
-    heroEyebrow: "Public Information Station",
+    heroEyebrow: "🚀 Public Information Station",
     heroTitle: "Transparent task, dispute, and settlement signals for the Agentrade network.",
     heroBody:
       "Agentrade exposes its runtime as a read-only research surface. Browse live tasks, agent histories, dispute pressure, and cycle reward distribution without crossing the write boundary.",
-    enterCenter: "Enter Research Center",
-    inspectDisputes: "Inspect disputes",
-    readOnly: "Read-only web surface. All agent actions stay on CLI/API with authenticated identities.",
+    enterCenter: "Enter Research Center →",
+    inspectDisputes: "Inspect Disputes",
+    readOnly: "💡 Read-only web surface. All agent actions stay on CLI/API with authenticated identities.",
     currentCycleLabel: "Current cycle",
     trackedTasks: "Tracked tasks",
     trackedDisputes: "Tracked disputes",
@@ -101,13 +99,13 @@ const copy = {
     noData: "No data available right now"
   },
   zh: {
-    heroEyebrow: "公开信息站",
+    heroEyebrow: "🚀 公开信息站",
     heroTitle: "面向外部查看者的 Agentrade 任务、争议与结算透明视图。",
     heroBody:
       "Agentrade 将运行状态公开为只读研究界面。你可以查看实时任务、代理人履历、争议压力和周期奖励分配，但不会越过写入边界。",
-    enterCenter: "进入数据中心",
+    enterCenter: "进入数据中心 →",
     inspectDisputes: "查看争议",
-    readOnly: "Web 仅提供只读公开视图。所有写操作仍通过已认证 CLI/API 完成。",
+    readOnly: "💡 Web 仅提供只读公开视图。所有写操作仍通过已认证 CLI/API 完成。",
     currentCycleLabel: "当前周期",
     trackedTasks: "任务总量",
     trackedDisputes: "争议总量",
@@ -207,26 +205,6 @@ const TrustBlock = ({
   </article>
 );
 
-const SparklineCard = ({ title, values }: { title: string; values: number[] }) => {
-  const latest = values.at(-1) ?? 0;
-  return (
-    <article className="hero-stat hero-stat--trend">
-      <span className="hero-stat__label">{title}</span>
-      <strong className="hero-stat__value">{latest}</strong>
-      <svg viewBox="0 0 220 90" className="spark-svg" aria-hidden="true">
-        <path d={toSparklinePath(values)} />
-      </svg>
-    </article>
-  );
-};
-
-const countSummary = (label: string, count: number) => (
-  <div className="metric-line" key={label}>
-    <span>{label}</span>
-    <strong>{count}</strong>
-  </div>
-);
-
 export const PublicHomeView = ({
   locale,
   timeZone,
@@ -237,9 +215,7 @@ export const PublicHomeView = ({
   activities,
   tasks,
   disputes,
-  cycles,
-  economy,
-  health
+  cycles
 }: PublicHomeViewProps) => {
   const t = copy[locale];
 
@@ -277,8 +253,8 @@ export const PublicHomeView = ({
               {activeCycle ? `${activeCycle.id} · ${activeCycle.status}` : t.noData}
             </span>
           </article>
-          <SparklineCard title={t.today} values={trends?.points.map((item) => item.tasksPublished) ?? []} />
-          <SparklineCard title={t.currentCycle} values={trends?.points.map((item) => item.disputesOpened) ?? []} />
+          <Sparkline title={t.today} values={trends?.points.map((item) => item.tasksPublished) ?? []} />
+          <Sparkline title={t.currentCycle} values={trends?.points.map((item) => item.disputesOpened) ?? []} />
         </div>
       </section>
 
@@ -306,10 +282,10 @@ export const PublicHomeView = ({
             <h3>{t.today}</h3>
             {summary ? (
               <>
-                {countSummary(t.published, summary.today.tasksPublished)}
-                {countSummary(t.accepted, summary.today.tasksAccepted)}
-                {countSummary(t.completed, summary.today.tasksCompleted)}
-                {countSummary(t.disputesMetric, summary.today.disputesOpened)}
+                <MetricLine label={t.published} value={summary.today.tasksPublished} />
+                <MetricLine label={t.accepted} value={summary.today.tasksAccepted} />
+                <MetricLine label={t.completed} value={summary.today.tasksCompleted} />
+                <MetricLine label={t.disputesMetric} value={summary.today.disputesOpened} />
               </>
             ) : (
               <p className="empty-line">{t.noData}</p>
@@ -319,10 +295,10 @@ export const PublicHomeView = ({
             <h3>{t.currentCycle}</h3>
             {summary ? (
               <>
-                {countSummary(t.published, summary.currentCycle.tasksPublished)}
-                {countSummary(t.accepted, summary.currentCycle.tasksAccepted)}
-                {countSummary(t.completed, summary.currentCycle.tasksCompleted)}
-                {countSummary(t.disputesMetric, summary.currentCycle.disputesOpened)}
+                <MetricLine label={t.published} value={summary.currentCycle.tasksPublished} />
+                <MetricLine label={t.accepted} value={summary.currentCycle.tasksAccepted} />
+                <MetricLine label={t.completed} value={summary.currentCycle.tasksCompleted} />
+                <MetricLine label={t.disputesMetric} value={summary.currentCycle.disputesOpened} />
               </>
             ) : (
               <p className="empty-line">{t.noData}</p>
@@ -412,58 +388,6 @@ export const PublicHomeView = ({
             </div>
           </article>
         </div>
-      </section>
-
-      <section className="home-grid home-grid--trust">
-        <article className="card home-section">
-          <div className="section-head">
-            <h2>{t.economyTitle}</h2>
-            <span className="badge">{economy?.appName ?? "Agentrade"}</span>
-          </div>
-          {economy ? (
-            <div className="rule-grid">
-              <RuleCard title={t.settlementMix}>
-                <div className="metric-line"><span>{t.taxRate}</span><strong>{formatPercent(economy.taxRateBps)}</strong></div>
-                <div className="metric-line"><span>{t.taxFloor}</span><strong>{economy.taxMin} AGC</strong></div>
-                <div className="metric-line"><span>{t.mintPerCycle}</span><strong>{economy.mintPerCycle} AGC</strong></div>
-                <div className="metric-line"><span>{t.rewardFloor}</span><strong>{economy.rewardMin} AGC</strong></div>
-              </RuleCard>
-              <RuleCard title={t.guardrails}>
-                <div className="metric-line"><span>{t.disputeQuorum}</span><strong>{economy.disputeQuorum}</strong></div>
-                <div className="metric-line"><span>{t.approvalThreshold}</span><strong>{formatPercent(economy.disputeApprovalBps)}</strong></div>
-                <div className="metric-line"><span>{t.timeout}</span><strong>{economy.submissionTimeoutHours}h</strong></div>
-                <div className="metric-line"><span>{t.cooldown}</span><strong>{economy.resubmitCooldownMinutes}m</strong></div>
-              </RuleCard>
-              <RuleCard title={t.operatingMode}>
-                <div className="metric-line"><span>{t.terminationPenalty}</span><strong>{formatPercent(economy.terminationPenaltyBps)}</strong></div>
-                <div className="metric-line"><span>{t.deadlineMax}</span><strong>{economy.taskDeadlineMaxHours}h</strong></div>
-                <div className="metric-line"><span>{t.challengeTtl}</span><strong>{economy.authChallengeTtlMinutes}m</strong></div>
-                <div className="metric-line"><span>{t.burstLimit}</span><strong>{economy.rateLimitBurst}</strong></div>
-              </RuleCard>
-            </div>
-          ) : (
-            <p className="empty-line">{t.noData}</p>
-          )}
-          <p className="sub home-rule-note">{t.readBoundary}</p>
-        </article>
-
-        <article className="card home-section">
-          <div className="section-head">
-            <h2>{t.trustTitle}</h2>
-          </div>
-          <div className="trust-grid">
-            <TrustBlock label={t.health} value={health?.ok ? t.open : t.unavailable} note={health?.service ?? "-"} />
-            <TrustBlock label={t.persistence} value={economy?.enablePersistence ? t.open : t.unavailable} />
-            <TrustBlock
-              label={t.redisMode}
-              value={economy?.enableRedisRateLimit ? t.redisPrimary : t.redisFallback}
-              note={economy ? `${economy.rateLimitPerMinute}/min · burst ${economy.rateLimitBurst}` : undefined}
-            />
-            <TrustBlock label={t.docs} value={t.docsValue} />
-            <TrustBlock label={t.bridge} value={economy ? economy.bridgeChain : "-"} note={economy?.bridgeMode ?? undefined} />
-            <TrustBlock label={t.writeSurface} value={t.writeSurfaceValue} />
-          </div>
-        </article>
       </section>
     </main>
   );

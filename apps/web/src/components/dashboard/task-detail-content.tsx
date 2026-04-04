@@ -1,10 +1,12 @@
-import Link from "next/link";
 import type { ActivityEvent, Dispute, Task } from "@agentrade/types";
 import type { SupportedLocale } from "@agentrade/i18n";
 import { formatDateTime, shortAddress } from "../../lib/dashboard-format";
 import { renderSafeMarkdown } from "../../lib/markdown";
-import { getDashboardCopy, getDashboardEventLabel, getDisputeStatusLabel } from "./i18n";
-import { buildStateChipClass } from "./shared";
+import { getDashboardCopy, getDisputeStatusLabel } from "./i18n";
+import { EntityLink } from "../ui/entity-link";
+import { MetricLine } from "../ui/metric-line";
+import { StateChip } from "../ui/state-chip";
+import { ActivityTimeline } from "../ui/activity-timeline";
 
 interface TaskDetailContentProps {
   locale: SupportedLocale;
@@ -15,30 +17,6 @@ interface TaskDetailContentProps {
   onOpenAgentDetail?: (address: string) => void;
   getAgentHref?: (address: string) => string;
 }
-
-const renderAgent = (
-  address: string,
-  onOpenAgentDetail: ((address: string) => void) | undefined,
-  getAgentHref: ((address: string) => string) | undefined
-) => {
-  if (onOpenAgentDetail) {
-    return (
-      <button type="button" className="link-btn inline-link" onClick={() => onOpenAgentDetail(address)}>
-        {shortAddress(address)}
-      </button>
-    );
-  }
-
-  if (getAgentHref) {
-    return (
-      <Link className="inline-link" href={getAgentHref(address)}>
-        {shortAddress(address)}
-      </Link>
-    );
-  }
-
-  return <span>{shortAddress(address)}</span>;
-};
 
 export const TaskDetailContent = ({
   locale,
@@ -55,15 +33,15 @@ export const TaskDetailContent = ({
     <div className="detail-block">
       <div className="detail-grid">
         <div className="detail-card">
-          <div className="metric-line">
-            <span>{copy.taskDetail.publisher}</span>
-            <strong>{renderAgent(task.publisher, onOpenAgentDetail, getAgentHref)}</strong>
-          </div>
-          <div className="metric-line"><span>{copy.taskDetail.reward}</span><strong>{task.rewardPerSlot} AGC</strong></div>
-          <div className="metric-line"><span>{copy.taskDetail.tax}</span><strong>{task.taxAmount} AGC</strong></div>
-          <div className="metric-line"><span>{copy.taskDetail.escrowRemaining}</span><strong>{task.rewardEscrowRemaining} AGC</strong></div>
-          <div className="metric-line"><span>{copy.taskDetail.slotProgress}</span><strong>{task.completedAgents.length}/{task.slotsTotal}</strong></div>
-          <div className="metric-line"><span>{copy.taskDetail.deadline}</span><strong>{formatDateTime(task.deadlineUtc, locale, timeZone)}</strong></div>
+          <MetricLine
+            label={copy.taskDetail.publisher}
+            value={<EntityLink address={task.publisher} label={shortAddress(task.publisher)} onClick={onOpenAgentDetail ? () => onOpenAgentDetail(task.publisher) : undefined} href={getAgentHref?.(task.publisher)} />}
+          />
+          <MetricLine label={copy.taskDetail.reward} value={`${task.rewardPerSlot} AGC`} />
+          <MetricLine label={copy.taskDetail.tax} value={`${task.taxAmount} AGC`} />
+          <MetricLine label={copy.taskDetail.escrowRemaining} value={`${task.rewardEscrowRemaining} AGC`} />
+          <MetricLine label={copy.taskDetail.slotProgress} value={`${task.completedAgents.length}/${task.slotsTotal}`} />
+          <MetricLine label={copy.taskDetail.deadline} value={formatDateTime(task.deadlineUtc, locale, timeZone)} />
         </div>
 
         <div className="detail-card">
@@ -72,7 +50,9 @@ export const TaskDetailContent = ({
           {task.acceptedAgents.length > 0 ? (
             <div className="chip-list">
               {task.acceptedAgents.map((address) => (
-                <span key={address}>{renderAgent(address, onOpenAgentDetail, getAgentHref)}</span>
+                <span key={address}>
+                  <EntityLink address={address} label={shortAddress(address)} onClick={onOpenAgentDetail ? () => onOpenAgentDetail(address) : undefined} href={getAgentHref?.(address)} />
+                </span>
               ))}
             </div>
           ) : (
@@ -83,7 +63,9 @@ export const TaskDetailContent = ({
           {task.completedAgents.length > 0 ? (
             <div className="chip-list">
               {task.completedAgents.map((address) => (
-                <span key={address}>{renderAgent(address, onOpenAgentDetail, getAgentHref)}</span>
+                <span key={address}>
+                  <EntityLink address={address} label={shortAddress(address)} onClick={onOpenAgentDetail ? () => onOpenAgentDetail(address) : undefined} href={getAgentHref?.(address)} />
+                </span>
               ))}
             </div>
           ) : (
@@ -105,10 +87,10 @@ export const TaskDetailContent = ({
             <li key={item.id} className="detail-card">
               <div className="section-head compact-head">
                 <strong>{item.id}</strong>
-                <span className={buildStateChipClass(item.status)}>{getDisputeStatusLabel(locale, item.status)}</span>
+                <StateChip status={item.status} label={getDisputeStatusLabel(locale, item.status)} />
               </div>
               <p className="muted">
-                {copy.taskDetail.opener}: {renderAgent(item.opener, onOpenAgentDetail, getAgentHref)}
+                {copy.taskDetail.opener}: <EntityLink address={item.opener} label={shortAddress(item.opener)} onClick={onOpenAgentDetail ? () => onOpenAgentDetail(item.opener) : undefined} href={getAgentHref?.(item.opener)} />
               </p>
               <p>{item.reasonMd}</p>
             </li>
@@ -120,23 +102,18 @@ export const TaskDetailContent = ({
 
       <h4>{copy.taskDetail.activityTimeline}</h4>
       {activities.length > 0 ? (
-        <ul className="detail-list">
-          {activities.map((item) => (
-            <li key={item.id} className="detail-list-row detail-event-row">
-              <div className="detail-event-row__main">
-                <span className={`event-chip event-${item.type.toLowerCase()}`}>
-                  {getDashboardEventLabel(locale, item.type)}
-                </span>
-                <strong>{formatDateTime(item.createdAt, locale, timeZone)}</strong>
-              </div>
-              <div className="detail-subline">
-                <span>{locale === "zh" ? "执行方" : "Actor"}: {renderAgent(item.actor, onOpenAgentDetail, getAgentHref)}</span>
-                <span>{locale === "zh" ? "周期" : "Cycle"}: {item.cycleId}</span>
-                {item.disputeId ? <span>{locale === "zh" ? "争议" : "Dispute"}: {item.disputeId}</span> : null}
-              </div>
-            </li>
-          ))}
-        </ul>
+        <ActivityTimeline
+          activities={activities}
+          locale={locale}
+          timeZone={timeZone}
+          renderLinks={(item) => (
+            <>
+              <span>{locale === "zh" ? "执行方" : "Actor"}: <EntityLink address={item.actor} label={shortAddress(item.actor)} onClick={onOpenAgentDetail ? () => onOpenAgentDetail(item.actor) : undefined} href={getAgentHref?.(item.actor)} /></span>
+              <span>{locale === "zh" ? "周期" : "Cycle"}: {item.cycleId}</span>
+              {item.disputeId ? <span>{locale === "zh" ? "争议" : "Dispute"}: {item.disputeId}</span> : null}
+            </>
+          )}
+        />
       ) : (
         <p className="empty-line">{copy.common.noActivityYet}</p>
       )}

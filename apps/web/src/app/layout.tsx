@@ -1,4 +1,5 @@
 import "./globals.css";
+import "./brutal.css";
 import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
 import {

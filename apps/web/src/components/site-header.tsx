@@ -56,11 +56,7 @@ export const SiteHeader = ({ locale, active, onLocaleChange }: SiteHeaderProps) 
   const navItems = useMemo(
     () => [
       { href: "/", label: t.home, key: "home" as const },
-      { href: "/center", label: t.center, key: "center" as const },
-      { href: "/center?tab=tasks", label: t.tasks, key: "tasks" as const },
-      { href: "/center?tab=users", label: t.users, key: "users" as const },
-      { href: "/center?tab=cycles", label: t.cycles, key: "cycles" as const },
-      { href: "/center?tab=disputes", label: t.disputes, key: "disputes" as const }
+      { href: "/center", label: t.center, key: "center" as const }
     ],
     [t]
   );

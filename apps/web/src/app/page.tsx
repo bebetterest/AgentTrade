@@ -10,8 +10,6 @@ import {
   fetchDashboardSummary,
   fetchDashboardTrends,
   fetchDisputes,
-  fetchEconomyParams,
-  fetchHealthStatus,
   fetchTasks
 } from "../lib/api";
 import { hasLegacyDashboardQuery, toSearchParamsString } from "../lib/dashboard-route";
@@ -41,7 +39,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
     timeZoneCookie: cookieStore.get(TIMEZONE_COOKIE_NAME)?.value
   });
 
-  const [summary, trends, tasks, leaders, activeCycle, activities, cycles, disputes, economy, health] = await Promise.all([
+  const [summary, trends, tasks, leaders, activeCycle, activities, cycles, disputes] = await Promise.all([
     fetchDashboardSummary(requestPreferences.timeZone),
     fetchDashboardTrends(requestPreferences.timeZone, "7d"),
     fetchTasks({ limit: 4, sort: "latest", order: "desc" }),
@@ -49,9 +47,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
     fetchActiveCycle(),
     fetchActivities({ limit: 6, order: "desc" }),
     fetchCycles({ limit: 4 }),
-    fetchDisputes({ limit: 4, sort: "latest", order: "desc" }),
-    fetchEconomyParams(),
-    fetchHealthStatus()
+    fetchDisputes({ limit: 4, sort: "latest", order: "desc" })
   ]);
 
   return (
@@ -68,8 +64,6 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         tasks={tasks}
         disputes={disputes}
         cycles={cycles}
-        economy={economy}
-        health={health}
       />
     </>
   );

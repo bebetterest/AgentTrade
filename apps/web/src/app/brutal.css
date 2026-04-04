@@ -1,0 +1,258 @@
+/* Neo-Brutalism 核心覆盖 - 最小化改动 */
+
+:root {
+  --bg-primary: #FAFAFA;
+  --bg-secondary: #FFFFFF;
+  --bg-tertiary: #F5F5F5;
+  --text-primary: #0A0A0A;
+  --text-secondary: #525252;
+  --text-tertiary: #A3A3A3;
+  --accent-blue: #2563EB;
+  --accent-yellow: #FBBF24;
+  --accent-green: #10B981;
+  --accent-red: #EF4444;
+  --border-primary: #0A0A0A;
+  --border-secondary: #D4D4D4;
+  --shadow-brutal: 4px 4px 0 #0A0A0A;
+  --shadow-brutal-lg: 6px 6px 0 #0A0A0A;
+  --shadow-brutal-hover: 8px 8px 0 #0A0A0A;
+  --space-1: 8px;
+  --space-2: 16px;
+  --space-3: 24px;
+  --space-4: 32px;
+  --space-6: 48px;
+  --radius: 4px;
+  --radius-lg: 8px;
+}
+
+/* 移除紫色渐变背景 */
+body {
+  background: var(--bg-primary) !important;
+  color: var(--text-primary) !important;
+}
+
+body::before,
+body::after {
+  display: none !important;
+}
+
+/* 移除所有毛玻璃效果 */
+.site-header,
+.hero-panel,
+.center-hero,
+.card,
+.detail-summary-card,
+.fact-chip,
+.hero-stat,
+.preview-card,
+.leader-row,
+.feed-item,
+.detail-card,
+.masonry-card,
+.flow-card,
+.rule-card,
+.trust-block,
+.drawer,
+.drawer-topbar,
+.site-header__mobile-panel {
+  backdrop-filter: none !important;
+}
+
+/* 粗黑边框 + 硬阴影 */
+.card,
+.hero-panel,
+.center-hero,
+.detail-summary-card,
+.fact-chip,
+.hero-stat,
+.preview-card,
+.flow-card,
+.rule-card,
+.trust-block,
+.masonry-card,
+.spark-card,
+.detail-card {
+  border: 3px solid var(--border-primary) !important;
+  background: var(--bg-secondary) !important;
+  box-shadow: var(--shadow-brutal) !important;
+  border-radius: var(--radius) !important;
+}
+
+/* 列表项 */
+.leader-row,
+.feed-item,
+.detail-list-row {
+  border: 2px solid var(--border-primary) !important;
+  background: var(--bg-secondary) !important;
+  box-shadow: 2px 2px 0 var(--border-primary) !important;
+}
+
+/* 按钮样式 */
+.action-btn,
+.link-btn,
+.tab-btn,
+.seg-btn,
+.locale-btn {
+  border: 3px solid var(--border-primary) !important;
+  background: var(--bg-secondary) !important;
+  box-shadow: var(--shadow-brutal) !important;
+  border-radius: 0 !important;
+  font-weight: 700 !important;
+}
+
+.action-btn--primary {
+  background: var(--accent-blue) !important;
+  color: white !important;
+}
+
+.tab-btn.active,
+.seg-btn.active,
+.locale-btn.active {
+  background: var(--border-primary) !important;
+  color: white !important;
+}
+
+/* 状态徽章 */
+.state-chip,
+.event-chip {
+  border: 2px solid var(--border-primary) !important;
+  font-weight: 700 !important;
+  border-radius: var(--radius) !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+}
+
+.state-chip--open {
+  background: #DBEAFE !important;
+  color: #1E40AF !important;
+}
+
+.state-chip--in-progress,
+.state-chip--active {
+  background: #FEF3C7 !important;
+  color: #92400E !important;
+}
+
+.state-chip--closed,
+.state-chip--resolved-completed {
+  background: #D1FAE5 !important;
+  color: #065F46 !important;
+}
+
+.state-chip--terminated,
+.state-chip--resolved-not-completed,
+.state-chip--idle {
+  background: #FEE2E2 !important;
+  color: #991B1B !important;
+}
+
+/* 事件徽章 */
+.event-task_published {
+  background: #DBEAFE !important;
+  color: #1E40AF !important;
+}
+
+.event-task_accepted,
+.event-task_completed {
+  background: #D1FAE5 !important;
+  color: #065F46 !important;
+}
+
+.event-dispute_opened {
+  background: #FEF3C7 !important;
+  color: #92400E !important;
+}
+
+.event-task_terminated {
+  background: #FEE2E2 !important;
+  color: #991B1B !important;
+}
+
+/* 抽屉 */
+.drawer {
+  background: var(--bg-secondary) !important;
+  border-left: 4px solid var(--border-primary) !important;
+  box-shadow: -12px 0 0 var(--border-primary) !important;
+}
+
+.drawer-mask {
+  background: rgba(0, 0, 0, 0.6) !important;
+  backdrop-filter: none !important;
+}
+
+/* 头部 */
+.site-header {
+  background: var(--bg-secondary) !important;
+  border-bottom: 3px solid var(--border-primary) !important;
+  box-shadow: 0 4px 0 var(--border-primary) !important;
+}
+
+.site-brand__mark {
+  background: var(--accent-blue) !important;
+  border: 3px solid var(--border-primary) !important;
+  box-shadow: 3px 3px 0 var(--border-primary) !important;
+  border-radius: var(--radius) !important;
+}
+
+/* 输入框 */
+input,
+select {
+  border: 2px solid var(--border-primary) !important;
+  background: var(--bg-secondary) !important;
+  border-radius: 0 !important;
+}
+
+input:focus,
+select:focus {
+  outline: 4px solid var(--accent-blue) !important;
+  outline-offset: 0 !important;
+}
+
+/* 悬停效果 */
+.card:hover,
+.preview-card:hover,
+.masonry-card:hover,
+.flow-card:hover,
+.hero-stat:hover,
+.fact-chip:hover,
+.rule-card:hover,
+.trust-block:hover {
+  transform: translate(-2px, -2px) !important;
+  box-shadow: 6px 6px 0 var(--border-primary) !important;
+}
+
+.action-btn:hover,
+.link-btn:hover,
+.tab-btn:hover {
+  transform: translate(-2px, -2px) !important;
+  box-shadow: 6px 6px 0 var(--border-primary) !important;
+}
+
+.leader-row:hover,
+.feed-item:hover {
+  transform: translate(-1px, -1px) !important;
+  box-shadow: 3px 3px 0 var(--border-primary) !important;
+}
+
+/* 移除渐变 */
+.title,
+.hero-title {
+  background: none !important;
+  -webkit-text-fill-color: var(--text-primary) !important;
+  color: var(--text-primary) !important;
+}
+
+.hero-stat--focus {
+  background: #FEF3C7 !important;
+  border-color: var(--border-primary) !important;
+}
+
+/* 徽章 */
+.badge,
+.eyebrow {
+  border: 2px solid var(--border-primary) !important;
+  background: #DBEAFE !important;
+  color: #1E40AF !important;
+  border-radius: var(--radius) !important;
+}
+

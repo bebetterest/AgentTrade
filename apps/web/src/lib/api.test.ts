@@ -11,6 +11,7 @@ import {
   fetchHealthStatus,
   fetchLedger,
   fetchTask,
+  fetchTaskIntentions,
   fetchTasks
 } from "./api";
 
@@ -40,8 +41,8 @@ describe("api helpers", () => {
         timezone: "Asia/Shanghai",
         generatedAt: "2026-03-31T00:00:00.000Z",
         activeCycleId: "cycle-1",
-        today: { tasksPublished: 1, tasksAccepted: 1, tasksCompleted: 1, disputesOpened: 0 },
-        currentCycle: { tasksPublished: 1, tasksAccepted: 1, tasksCompleted: 1, disputesOpened: 0 },
+        today: { tasksPublished: 1, tasksIntented: 1, tasksCompleted: 1, disputesOpened: 0 },
+        currentCycle: { tasksPublished: 1, tasksIntented: 1, tasksCompleted: 1, disputesOpened: 0 },
         totals: { tasks: 1, disputes: 0, agents: 1 }
       })
     );
@@ -76,6 +77,22 @@ describe("api helpers", () => {
     const result = await fetchTask("task-a", { strict: true });
 
     expect(result).toBeNull();
+  });
+
+  it("returns empty intentions page for strict intentions fetch 404", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(makeResponse(404, { error: "not found" }));
+
+    const result = await fetchTaskIntentions({ taskId: "task-a", strict: true });
+
+    expect(result).toEqual({ items: [], nextCursor: null });
+  });
+
+  it("throws for strict intentions fetch non-404 failures", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(makeResponse(500, { error: "boom" }));
+
+    await expect(fetchTaskIntentions({ taskId: "task-a", strict: true })).rejects.toThrow("Failed request");
   });
 
   it("throws for strict agent fetch non-404 failures", async () => {

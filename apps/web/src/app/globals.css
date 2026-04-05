@@ -1030,7 +1030,7 @@ main {
   background: rgba(59, 130, 246, 0.15);
 }
 
-.event-task_accepted {
+.event-task_intended {
   color: var(--success);
   background: var(--success-soft);
 }

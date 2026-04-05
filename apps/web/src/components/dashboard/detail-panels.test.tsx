@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
+import type { ReactElement } from "react";
 import { ActivityEventType, CycleStatus, DisputeStatus, TaskStatus, type AgentProfile, type CycleRewardsResponse, type Dispute, type Task } from "@agentrade/types";
 import { AgentDetailDrawer } from "./agent-detail-drawer";
 import { CycleDetailContent } from "./cycle-detail-content";
@@ -12,7 +13,7 @@ const ADDRESS_A = "0x1111111111111111111111111111111111111111";
 const ADDRESS_B = "0x2222222222222222222222222222222222222222";
 const ADDRESS_C = "0x3333333333333333333333333333333333333333";
 
-const render = (node: React.ReactElement): string => renderToStaticMarkup(node);
+const render = (node: ReactElement): string => renderToStaticMarkup(node);
 
 describe("dashboard detail panels", () => {
   it("renders cycle list and enriched cycle detail content", () => {
@@ -103,7 +104,8 @@ describe("dashboard detail panels", () => {
       allowRepeatCompletionsBySameAgent: false,
       taxAmount: 3,
       rewardEscrowRemaining: 25,
-      acceptedAgents: [ADDRESS_B],
+      intentCount: 1,
+      competitionRatio: 0.5,
       completedAgents: [ADDRESS_C],
       createdAt: "2026-03-30T00:00:00.000Z",
       updatedAt: "2026-03-31T00:00:00.000Z"
@@ -116,6 +118,14 @@ describe("dashboard detail panels", () => {
           loading: false,
           error: false,
           task,
+          intentions: [
+            {
+              id: "intention-1",
+              taskId: task.id,
+              agent: ADDRESS_B,
+              createdAt: "2026-03-30T12:00:00.000Z"
+            }
+          ],
           disputes: [
             {
               id: "dispute-1",
@@ -131,7 +141,7 @@ describe("dashboard detail panels", () => {
           activities: [
             {
               id: "activity-1",
-              type: ActivityEventType.TASK_ACCEPTED,
+              type: ActivityEventType.TASK_INTENDED,
               cycleId: "cycle-9",
               taskId: "task-1",
               disputeId: null,
@@ -148,7 +158,7 @@ describe("dashboard detail panels", () => {
     expect(html).toContain("Escrow Remaining");
     expect(html).toContain("Slot Progress");
     expect(html).toContain("Needs another review");
-    expect(html).toContain("Task Accepted");
+    expect(html).toContain("Task Intended");
     expect(html).toContain("In progress");
     expect(html).not.toContain(">IN_PROGRESS<");
   });
@@ -161,7 +171,7 @@ describe("dashboard detail panels", () => {
       reputation: { publisher: 1.2, worker: 2.1, supervisor: 1.4 },
       stats: {
         tasksPublished: 2,
-        tasksAccepted: 5,
+        tasksIntented: 5,
         tasksCompleted: 4,
         tasksTerminated: 1,
         submissionsRejected: 1,
@@ -256,7 +266,8 @@ describe("dashboard detail panels", () => {
           allowRepeatCompletionsBySameAgent: false,
           taxAmount: 3,
           rewardEscrowRemaining: 25,
-          acceptedAgents: [ADDRESS_B],
+          intentCount: 1,
+          competitionRatio: 0.5,
           completedAgents: [ADDRESS_C],
           createdAt: "2026-03-30T00:00:00.000Z",
           updatedAt: "2026-03-31T00:00:00.000Z"

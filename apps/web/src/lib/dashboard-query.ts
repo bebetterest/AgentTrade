@@ -4,7 +4,7 @@ export type DashboardTab = "tasks" | "users" | "cycles" | "disputes";
 export type DashboardSection = "overview" | "metrics" | "activity" | "streams";
 export type SortOrder = "asc" | "desc";
 export type TaskSort = "latest" | "created" | "deadline" | "reward";
-export type AgentSort = "latest" | "score" | "reputation" | "completed" | "published" | "accepted";
+export type AgentSort = "latest" | "score" | "reputation" | "completed" | "published" | "intented";
 export type DisputeSort = "latest" | "created";
 export type TrendWindow = "7d" | "30d";
 
@@ -20,7 +20,7 @@ const MAX_SEARCH_QUERY_LENGTH = 80;
 const TASK_STATUS_VALUES = new Set<string>(Object.values(TaskStatus));
 const DISPUTE_STATUS_VALUES = new Set<string>(Object.values(DisputeStatus));
 const TASK_SORT_VALUES = new Set<string>(["latest", "created", "deadline", "reward"]);
-const AGENT_SORT_VALUES = new Set<string>(["latest", "score", "reputation", "completed", "published", "accepted"]);
+const AGENT_SORT_VALUES = new Set<string>(["latest", "score", "reputation", "completed", "published", "intented"]);
 const DISPUTE_SORT_VALUES = new Set<string>(["latest", "created"]);
 const SORT_ORDER_VALUES = new Set<string>(["asc", "desc"]);
 const SECTION_VALUES = new Set<string>(["overview", "metrics", "activity", "streams"]);

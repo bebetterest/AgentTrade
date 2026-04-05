@@ -62,7 +62,7 @@ export const AgentListPanel = ({
             <p className="card-primary-number">{agent.score}</p>
             <div className="card-meta">
               <p>{copy.agentList.score}</p>
-              <p>{copy.agentList.summary}: {agent.stats.tasksPublished}/{agent.stats.tasksAccepted}/{agent.stats.tasksCompleted}</p>
+              <p>{copy.agentList.summary}: {agent.stats.tasksPublished}/{agent.stats.tasksIntented}/{agent.stats.tasksCompleted}</p>
               <p>{copy.agentList.latest}: {agent.latestActivityAt ? formatDateTime(agent.latestActivityAt, locale, timeZone) : "-"}</p>
             </div>
             <div className="card-actions">

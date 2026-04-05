@@ -12,7 +12,8 @@ import type {
   LedgerBalance,
   PaginatedResponse,
   PublicEconomyParams,
-  Task
+  Task,
+  TaskIntention
 } from "@agentrade/types";
 import { AgentDetailDrawer } from "./agent-detail-drawer";
 import { AgentListPanel } from "./agent-list-panel";
@@ -68,6 +69,7 @@ interface DashboardViewProps {
     loading: boolean;
     error: boolean;
     task: Task | null;
+    intentions: TaskIntention[];
     disputes: Dispute[];
     activities: ActivityEvent[];
   };
@@ -100,7 +102,7 @@ interface DashboardViewProps {
   taskStatus: Task["status"] | null;
   taskSort: "latest" | "created" | "deadline" | "reward";
   taskOrder: "asc" | "desc";
-  agentSort: "latest" | "score" | "reputation" | "completed" | "published" | "accepted";
+  agentSort: "latest" | "score" | "reputation" | "completed" | "published" | "intented";
   agentOrder: "asc" | "desc";
   disputeStatus: Dispute["status"] | null;
   disputeSort: "latest" | "created";
@@ -114,7 +116,7 @@ interface DashboardViewProps {
   searchDraft: string;
   setSearchDraft: Dispatch<SetStateAction<string>>;
   trendPublished: number[];
-  trendAccepted: number[];
+  trendIntentions: number[];
   trendCompleted: number[];
   trendDisputes: number[];
   cycleUptime: string;
@@ -202,7 +204,7 @@ export const DashboardView = ({
   searchDraft,
   setSearchDraft,
   trendPublished,
-  trendAccepted,
+  trendIntentions,
   trendCompleted,
   trendDisputes,
   cycleUptime,
@@ -390,7 +392,7 @@ export const DashboardView = ({
                 locale={locale}
                 trendWindow={trendWindow}
                 trendPublished={trendPublished}
-                trendAccepted={trendAccepted}
+                trendIntentions={trendIntentions}
                 trendCompleted={trendCompleted}
                 trendDisputes={trendDisputes}
                 leaders={leaders}
@@ -584,7 +586,7 @@ export const DashboardView = ({
                               <option value="reputation">{copy.page.reputation}</option>
                               <option value="completed">{copy.page.completed}</option>
                               <option value="published">{copy.page.published}</option>
-                              <option value="accepted">{copy.page.accepted}</option>
+                              <option value="intented">{copy.page.intended}</option>
                             </select>
                           </>
                         ) : (

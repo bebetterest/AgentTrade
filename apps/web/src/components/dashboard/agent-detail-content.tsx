@@ -75,7 +75,7 @@ export const AgentDetailContent = ({
           <h4>{copy.agentDetail.stats}</h4>
           <ul className="detail-list compact-list">
             <li>{copy.agentDetail.published}: {profile.stats.tasksPublished}</li>
-            <li>{copy.agentDetail.accepted}: {profile.stats.tasksAccepted}</li>
+            <li>{copy.agentDetail.intended}: {profile.stats.tasksIntented}</li>
             <li>{copy.agentDetail.completed}: {profile.stats.tasksCompleted}</li>
             <li>{copy.agentDetail.terminated}: {profile.stats.tasksTerminated}</li>
             <li>{copy.agentDetail.rejected}: {profile.stats.submissionsRejected}</li>

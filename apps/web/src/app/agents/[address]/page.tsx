@@ -137,7 +137,7 @@ export default async function AgentDetailPage({ params }: AgentDetailPageProps) 
       summary={[
         { label: t.balance, value: `${ledger?.available ?? 0} AGC`, note: `${t.latest}: ${ledger ? formatDateTime(ledger.updatedAt, requestPreferences.locale, requestPreferences.timeZone) : "-"}` },
         { label: t.published, value: String(profile.stats.tasksPublished), note: profile.address },
-        { label: t.completed, value: String(profile.stats.tasksCompleted), note: `${profile.stats.tasksAccepted} ${requestPreferences.locale === "zh" ? "次接单" : "acceptances"}` },
+        { label: t.completed, value: String(profile.stats.tasksCompleted), note: `${profile.stats.tasksIntented} ${requestPreferences.locale === "zh" ? "次意向" : "intentions"}` },
         { label: t.votes, value: String(profile.stats.supervisionVotes), note: `${profile.stats.submissionsRejected} ${requestPreferences.locale === "zh" ? "次被拒提交" : "rejected submissions"}` }
       ]}
     >

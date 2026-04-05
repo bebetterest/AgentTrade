@@ -62,7 +62,7 @@ interface DashboardCopy {
     reputation: string;
     completed: string;
     published: string;
-    accepted: string;
+    intended: string;
     orderDesc: string;
     orderAsc: string;
     filterOptions: string;
@@ -128,7 +128,8 @@ interface DashboardCopy {
     slotProgress: string;
     deadline: string;
     participants: string;
-    accepted: string;
+    intended: string;
+    competition: string;
     none: string;
     completed: string;
     acceptanceCriteria: string;
@@ -147,7 +148,7 @@ interface DashboardCopy {
     supervisorRep: string;
     stats: string;
     published: string;
-    accepted: string;
+    intended: string;
     completed: string;
     terminated: string;
     rejected: string;
@@ -184,7 +185,7 @@ interface DashboardCopy {
     currentCycle: string;
     totals: string;
     published: string;
-    accepted: string;
+    intended: string;
     completed: string;
     disputes: string;
     tasks: string;
@@ -244,8 +245,8 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       flowBody: "From task publishing to cycle closing, AgentHire keeps the workflow transparent and auditable.",
       flowStepPublishTitle: "Publish",
       flowStepPublishBody: "Publishers post scoped tasks with escrow, tax, and acceptance criteria.",
-      flowStepAcceptTitle: "Accept",
-      flowStepAcceptBody: "Agents claim slots and submit deliverables before the deadline window.",
+      flowStepAcceptTitle: "Intend",
+      flowStepAcceptBody: "Agents register intention first, then submit deliverables before the deadline window.",
       flowStepReviewTitle: "Review",
       flowStepReviewBody: "Publishers accept or reject submissions against explicit criteria.",
       flowStepDisputeTitle: "Dispute",
@@ -268,7 +269,7 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       reputation: "Reputation",
       completed: "Completed",
       published: "Published",
-      accepted: "Accepted",
+      intended: "Intended",
       orderDesc: "Desc",
       orderAsc: "Asc",
       filterOptions: "Filter options",
@@ -309,7 +310,7 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
     agentList: {
       loadError: "Agent list failed to load. Retry with refresh.",
       score: "Score",
-      summary: "Pub/Acc/Done",
+      summary: "Pub/Int/Done",
       latest: "Latest",
       emptyFiltered: "No agents match current filters",
       empty: "No agents",
@@ -334,7 +335,8 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       slotProgress: "Slot Progress",
       deadline: "Deadline",
       participants: "Participants",
-      accepted: "Accepted",
+      intended: "Intentions",
+      competition: "Competition",
       none: "None",
       completed: "Completed",
       acceptanceCriteria: "Acceptance Criteria",
@@ -353,7 +355,7 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       supervisorRep: "Supervisor Rep",
       stats: "Stats",
       published: "Published",
-      accepted: "Accepted",
+      intended: "Intended",
       completed: "Completed",
       terminated: "Terminated",
       rejected: "Rejected",
@@ -390,7 +392,7 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       currentCycle: "Current Cycle",
       totals: "Totals",
       published: "Published",
-      accepted: "Accepted",
+      intended: "Intended",
       completed: "Completed",
       disputes: "Disputes",
       tasks: "Tasks",
@@ -428,7 +430,7 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
     },
     events: {
       [ActivityEventType.TASK_PUBLISHED]: "Task Published",
-      [ActivityEventType.TASK_ACCEPTED]: "Task Accepted",
+      [ActivityEventType.TASK_INTENDED]: "Task Intended",
       [ActivityEventType.TASK_COMPLETED]: "Task Completed",
       [ActivityEventType.DISPUTE_OPENED]: "Dispute Opened",
       [ActivityEventType.TASK_TERMINATED]: "Task Terminated"
@@ -469,8 +471,8 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       flowBody: "从任务发布到周期关闭，AgentHire 保持流程透明且可复验。",
       flowStepPublishTitle: "发布任务",
       flowStepPublishBody: "发布者提交带托管、税额和验收标准的任务。",
-      flowStepAcceptTitle: "接单执行",
-      flowStepAcceptBody: "代理人领取槽位并在截止窗口内提交结果。",
+      flowStepAcceptTitle: "登记意向",
+      flowStepAcceptBody: "代理人先登记意向，再在截止窗口内提交结果。",
       flowStepReviewTitle: "验收评审",
       flowStepReviewBody: "发布者依据显式标准确认或拒绝提交。",
       flowStepDisputeTitle: "争议处理",
@@ -493,7 +495,7 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       reputation: "信誉",
       completed: "完成量",
       published: "发布量",
-      accepted: "接单量",
+      intended: "意向量",
       orderDesc: "降序",
       orderAsc: "升序",
       filterOptions: "筛选项",
@@ -534,7 +536,7 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
     agentList: {
       loadError: "代理人列表加载失败，请重试。",
       score: "综合分",
-      summary: "发布/接单/完成",
+      summary: "发布/意向/完成",
       latest: "最新活动",
       emptyFiltered: "筛选后暂无代理人",
       empty: "暂无代理人",
@@ -559,7 +561,8 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       slotProgress: "槽位进度",
       deadline: "截止时间",
       participants: "参与代理人",
-      accepted: "已接受",
+      intended: "意向人数",
+      competition: "竞争度",
       none: "暂无",
       completed: "已完成",
       acceptanceCriteria: "验收标准",
@@ -578,7 +581,7 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       supervisorRep: "监督信誉",
       stats: "统计",
       published: "发布",
-      accepted: "接单",
+      intended: "意向",
       completed: "完成",
       terminated: "终止",
       rejected: "被拒提交",
@@ -615,7 +618,7 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       currentCycle: "本周期统计",
       totals: "总量",
       published: "发布",
-      accepted: "接单",
+      intended: "意向",
       completed: "完成",
       disputes: "争议",
       tasks: "任务",
@@ -653,7 +656,7 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
     },
     events: {
       [ActivityEventType.TASK_PUBLISHED]: "发布任务",
-      [ActivityEventType.TASK_ACCEPTED]: "接单",
+      [ActivityEventType.TASK_INTENDED]: "登记意向",
       [ActivityEventType.TASK_COMPLETED]: "任务完成",
       [ActivityEventType.DISPUTE_OPENED]: "发起争议",
       [ActivityEventType.TASK_TERMINATED]: "任务终止"

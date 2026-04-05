@@ -4,7 +4,7 @@ import { getTaskStatusLabel } from "../../../components/dashboard/i18n";
 import { DetailPageShell } from "../../../components/detail-page-shell";
 import { DetailStateCard } from "../../../components/detail-state-card";
 import { TaskDetailContent } from "../../../components/dashboard/task-detail-content";
-import { fetchActivities, fetchDisputes, fetchTask } from "../../../lib/api";
+import { fetchActivities, fetchDisputes, fetchTask, fetchTaskIntentions } from "../../../lib/api";
 import { formatDateTime } from "../../../lib/dashboard-format";
 import {
   LOCALE_COOKIE_NAME,
@@ -70,11 +70,13 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
 
   let loadError = false;
   let task: Awaited<ReturnType<typeof fetchTask>> = null;
+  let intentions: Awaited<ReturnType<typeof fetchTaskIntentions>> = { items: [], nextCursor: null };
   let disputes: Awaited<ReturnType<typeof fetchDisputes>> = { items: [], nextCursor: null };
   let activities: Awaited<ReturnType<typeof fetchActivities>> = { items: [], nextCursor: null };
   try {
-    [task, disputes, activities] = await Promise.all([
+    [task, intentions, disputes, activities] = await Promise.all([
       fetchTask(id, { strict: true }),
+      fetchTaskIntentions({ taskId: id, limit: 100, strict: true }),
       fetchDisputes({ taskId: id, limit: 100, sort: "latest", order: "desc", strict: true }),
       fetchActivities({ taskId: id, limit: 100, order: "desc", strict: true })
     ]);
@@ -155,6 +157,7 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
           locale={requestPreferences.locale}
           timeZone={requestPreferences.timeZone}
           task={task}
+          intentions={intentions.items}
           disputes={disputes.items}
           activities={activities.items}
           getAgentHref={(address) => `/agents/${address}`}

@@ -20,7 +20,8 @@ const tasks: Task[] = [
     allowRepeatCompletionsBySameAgent: false,
     taxAmount: 2,
     rewardEscrowRemaining: 40,
-    acceptedAgents: [],
+    intentCount: 0,
+    competitionRatio: 0,
     completedAgents: [],
     createdAt: "2026-03-29T08:00:00.000Z",
     updatedAt: "2026-03-31T10:00:00.000Z"
@@ -39,7 +40,8 @@ const tasks: Task[] = [
     allowRepeatCompletionsBySameAgent: false,
     taxAmount: 5,
     rewardEscrowRemaining: 100,
-    acceptedAgents: ["0x3333333333333333333333333333333333333333"],
+    intentCount: 1,
+    competitionRatio: 0.3333,
     completedAgents: [],
     createdAt: "2026-03-30T09:00:00.000Z",
     updatedAt: "2026-03-31T11:00:00.000Z"
@@ -58,12 +60,33 @@ const tasks: Task[] = [
     allowRepeatCompletionsBySameAgent: false,
     taxAmount: 3,
     rewardEscrowRemaining: 0,
-    acceptedAgents: ["0x4444444444444444444444444444444444444444"],
+    intentCount: 1,
+    competitionRatio: 1,
     completedAgents: ["0x4444444444444444444444444444444444444444"],
     createdAt: "2026-03-28T09:00:00.000Z",
     updatedAt: "2026-03-31T09:00:00.000Z"
   }
 ];
+
+const taskIntentionsByTaskId: Record<string, Array<{ id: string; taskId: string; agent: string; createdAt: string }>> = {
+  "task-alpha": [],
+  "task-beta": [
+    {
+      id: "intention-1",
+      taskId: "task-beta",
+      agent: "0x3333333333333333333333333333333333333333",
+      createdAt: "2026-03-31T10:10:00.000Z"
+    }
+  ],
+  "task-gamma": [
+    {
+      id: "intention-2",
+      taskId: "task-gamma",
+      agent: "0x4444444444444444444444444444444444444444",
+      createdAt: "2026-03-30T09:30:00.000Z"
+    }
+  ]
+};
 
 const agentProfiles: AgentProfile[] = [
   {
@@ -73,7 +96,7 @@ const agentProfiles: AgentProfile[] = [
     reputation: { publisher: 1.2, worker: 1.6, supervisor: 1.1 },
     stats: {
       tasksPublished: 1,
-      tasksAccepted: 3,
+      tasksIntented: 3,
       tasksCompleted: 2,
       tasksTerminated: 0,
       submissionsRejected: 0,
@@ -89,7 +112,7 @@ const agentProfiles: AgentProfile[] = [
     reputation: { publisher: 1.4, worker: 2.2, supervisor: 1.3 },
     stats: {
       tasksPublished: 2,
-      tasksAccepted: 4,
+      tasksIntented: 4,
       tasksCompleted: 4,
       tasksTerminated: 0,
       submissionsRejected: 0,
@@ -105,7 +128,7 @@ const agentProfiles: AgentProfile[] = [
     reputation: { publisher: 1, worker: 1.1, supervisor: 1 },
     stats: {
       tasksPublished: 0,
-      tasksAccepted: 1,
+      tasksIntented: 1,
       tasksCompleted: 0,
       tasksTerminated: 1,
       submissionsRejected: 1,
@@ -263,7 +286,7 @@ const activities: ActivityEvent[] = [
   },
   {
     id: "activity-2",
-    type: ActivityEventType.TASK_ACCEPTED,
+    type: ActivityEventType.TASK_INTENDED,
     cycleId: "cycle-9",
     taskId: "task-beta",
     disputeId: null,
@@ -329,8 +352,8 @@ const installApiMocks = async (page: Page, options: InstallApiMocksOptions = {})
           timezone: url.searchParams.get("tz") ?? "UTC",
           generatedAt: ISO_NOW,
           activeCycleId: "cycle-9",
-          today: { tasksPublished: 2, tasksAccepted: 1, tasksCompleted: 1, disputesOpened: 1 },
-          currentCycle: { tasksPublished: 7, tasksAccepted: 6, tasksCompleted: 5, disputesOpened: 2 },
+          today: { tasksPublished: 2, tasksIntented: 1, tasksCompleted: 1, disputesOpened: 1 },
+          currentCycle: { tasksPublished: 7, tasksIntented: 6, tasksCompleted: 5, disputesOpened: 2 },
           totals: { tasks: 3, disputes: 1, agents: 3 }
         })
       });
@@ -346,9 +369,9 @@ const installApiMocks = async (page: Page, options: InstallApiMocksOptions = {})
           generatedAt: ISO_NOW,
           window: url.searchParams.get("window") === "30d" ? "30d" : "7d",
           points: [
-            { bucketStart: "2026-03-29T00:00:00.000Z", label: "03-29", tasksPublished: 1, tasksAccepted: 1, tasksCompleted: 0, disputesOpened: 0 },
-            { bucketStart: "2026-03-30T00:00:00.000Z", label: "03-30", tasksPublished: 2, tasksAccepted: 2, tasksCompleted: 1, disputesOpened: 0 },
-            { bucketStart: "2026-03-31T00:00:00.000Z", label: "03-31", tasksPublished: 2, tasksAccepted: 1, tasksCompleted: 1, disputesOpened: 1 }
+            { bucketStart: "2026-03-29T00:00:00.000Z", label: "03-29", tasksPublished: 1, tasksIntented: 1, tasksCompleted: 0, disputesOpened: 0 },
+            { bucketStart: "2026-03-30T00:00:00.000Z", label: "03-30", tasksPublished: 2, tasksIntented: 2, tasksCompleted: 1, disputesOpened: 0 },
+            { bucketStart: "2026-03-31T00:00:00.000Z", label: "03-31", tasksPublished: 2, tasksIntented: 1, tasksCompleted: 1, disputesOpened: 1 }
           ]
         })
       });
@@ -485,6 +508,18 @@ const installApiMocks = async (page: Page, options: InstallApiMocksOptions = {})
       return;
     }
 
+    if (path.startsWith("/tasks/") && path.endsWith("/intentions")) {
+      const taskId = path.split("/")[2] ?? "";
+      const intentions = taskIntentionsByTaskId[taskId] ?? [];
+      const body = paginate(intentions, url.searchParams.get("cursor"), url.searchParams.get("limit"));
+      await route.fulfill({
+        status: tasks.some((item) => item.id === taskId) ? 200 : 404,
+        contentType: "application/json",
+        body: JSON.stringify(tasks.some((item) => item.id === taskId) ? body : { error: "not found" })
+      });
+      return;
+    }
+
     if (path.startsWith("/tasks/")) {
       const taskId = path.split("/").at(-1) ?? "";
       if (options.failTaskById === taskId) {
@@ -507,7 +542,7 @@ const installApiMocks = async (page: Page, options: InstallApiMocksOptions = {})
     if (path === "/agents") {
       const q = (url.searchParams.get("q") ?? "").toLowerCase();
       const activeOnly = url.searchParams.get("activeOnly") !== "false";
-      const sort = (url.searchParams.get("sort") as "latest" | "score" | "reputation" | "completed" | "published" | "accepted" | null) ?? "latest";
+      const sort = (url.searchParams.get("sort") as "latest" | "score" | "reputation" | "completed" | "published" | "intented" | null) ?? "latest";
       const order = (url.searchParams.get("order") as "asc" | "desc" | null) ?? "desc";
       let filtered = [...agents];
       if (q) {
@@ -535,10 +570,10 @@ const installApiMocks = async (page: Page, options: InstallApiMocksOptions = {})
             ? a.stats.tasksPublished - b.stats.tasksPublished
             : b.stats.tasksPublished - a.stats.tasksPublished;
         }
-        if (sort === "accepted") {
+        if (sort === "intented") {
           return order === "asc"
-            ? a.stats.tasksAccepted - b.stats.tasksAccepted
-            : b.stats.tasksAccepted - a.stats.tasksAccepted;
+            ? a.stats.tasksIntented - b.stats.tasksIntented
+            : b.stats.tasksIntented - a.stats.tasksIntented;
         }
         const left = a.latestActivityAt ?? "";
         const right = b.latestActivityAt ?? "";

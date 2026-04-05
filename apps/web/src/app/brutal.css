@@ -144,7 +144,7 @@ body::after {
   color: #1E40AF !important;
 }
 
-.event-task_accepted,
+.event-task_intended,
 .event-task_completed {
   background: #D1FAE5 !important;
   color: #065F46 !important;

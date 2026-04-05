@@ -1,4 +1,4 @@
-import type { ActivityEvent, Dispute, Task } from "@agentrade/types";
+import type { ActivityEvent, Dispute, Task, TaskIntention } from "@agentrade/types";
 import type { SupportedLocale } from "@agentrade/i18n";
 import { formatDateTime, shortAddress } from "../../lib/dashboard-format";
 import { renderSafeMarkdown } from "../../lib/markdown";
@@ -12,6 +12,7 @@ interface TaskDetailContentProps {
   locale: SupportedLocale;
   timeZone: string;
   task: Task;
+  intentions: TaskIntention[];
   disputes: Dispute[];
   activities: ActivityEvent[];
   onOpenAgentDetail?: (address: string) => void;
@@ -22,6 +23,7 @@ export const TaskDetailContent = ({
   locale,
   timeZone,
   task,
+  intentions,
   disputes,
   activities,
   onOpenAgentDetail,
@@ -41,17 +43,19 @@ export const TaskDetailContent = ({
           <MetricLine label={copy.taskDetail.tax} value={`${task.taxAmount} AGC`} />
           <MetricLine label={copy.taskDetail.escrowRemaining} value={`${task.rewardEscrowRemaining} AGC`} />
           <MetricLine label={copy.taskDetail.slotProgress} value={`${task.completedAgents.length}/${task.slotsTotal}`} />
+          <MetricLine label={copy.taskDetail.intended} value={String(task.intentCount)} />
+          <MetricLine label={copy.taskDetail.competition} value={`${(task.competitionRatio * 100).toFixed(0)}%`} />
           <MetricLine label={copy.taskDetail.deadline} value={formatDateTime(task.deadlineUtc, locale, timeZone)} />
         </div>
 
         <div className="detail-card">
           <h4>{copy.taskDetail.participants}</h4>
-          <p className="muted">{copy.taskDetail.accepted}</p>
-          {task.acceptedAgents.length > 0 ? (
+          <p className="muted">{copy.taskDetail.intended}</p>
+          {intentions.length > 0 ? (
             <div className="chip-list">
-              {task.acceptedAgents.map((address) => (
-                <span key={address}>
-                  <EntityLink address={address} label={shortAddress(address)} onClick={onOpenAgentDetail ? () => onOpenAgentDetail(address) : undefined} href={getAgentHref?.(address)} />
+              {intentions.map((item) => (
+                <span key={item.id}>
+                  <EntityLink address={item.agent} label={shortAddress(item.agent)} onClick={onOpenAgentDetail ? () => onOpenAgentDetail(item.agent) : undefined} href={getAgentHref?.(item.agent)} />
                 </span>
               ))}
             </div>

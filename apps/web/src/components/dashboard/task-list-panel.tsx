@@ -90,6 +90,8 @@ export const TaskListPanel = ({
             <div className="card-meta">
               <p>{copy.taskList.reward}</p>
               <p>{copy.taskList.slots}: {task.completedAgents.length}/{task.slotsTotal}</p>
+              <p>{copy.taskDetail.intended}: {task.intentCount}</p>
+              <p>{copy.taskDetail.competition}: {(task.competitionRatio * 100).toFixed(0)}%</p>
               <p>{copy.taskList.deadline}: {formatDateTime(task.deadlineUtc, locale, timeZone)}</p>
             </div>
             <div className="card-actions">

@@ -15,7 +15,8 @@ import type {
   LedgerBalance,
   PaginatedResponse,
   PublicEconomyParams,
-  Task
+  Task,
+  TaskIntention
 } from "@agentrade/types";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { DashboardView } from "./dashboard/dashboard-view";
@@ -34,6 +35,7 @@ import {
   fetchHealthStatus,
   fetchLedger,
   fetchTask,
+  fetchTaskIntentions,
   fetchTasks
 } from "../lib/api";
 import { DEFAULT_TIMEZONE, formatDuration } from "../lib/dashboard-format";
@@ -128,12 +130,14 @@ export const Dashboard = ({
     loading: boolean;
     error: boolean;
     task: Task | null;
+    intentions: TaskIntention[];
     disputes: Dispute[];
     activities: ActivityEvent[];
   }>({
     loading: false,
     error: false,
     task: null,
+    intentions: [],
     disputes: [],
     activities: []
   });
@@ -895,7 +899,7 @@ export const Dashboard = ({
 
   useEffect(() => {
     if (!taskDetailId) {
-      setTaskDetail({ loading: false, error: false, task: null, disputes: [], activities: [] });
+      setTaskDetail({ loading: false, error: false, task: null, intentions: [], disputes: [], activities: [] });
       return;
     }
     let cancelled = false;
@@ -903,9 +907,10 @@ export const Dashboard = ({
     setTaskDetail((prev) => ({ ...prev, loading: true, error: false }));
     Promise.all([
       fetchTask(taskDetailId, { signal: controller.signal, strict: true }),
+      fetchTaskIntentions({ taskId: taskDetailId, limit: 100, signal: controller.signal, strict: true }),
       fetchDisputes({ taskId: taskDetailId, limit: 50, signal: controller.signal, strict: true }),
       fetchActivities({ taskId: taskDetailId, limit: 50, order: "desc", signal: controller.signal, strict: true })
-    ]).then(([task, disputes, activities]) => {
+    ]).then(([task, intentions, disputes, activities]) => {
       if (cancelled) {
         return;
       }
@@ -913,6 +918,7 @@ export const Dashboard = ({
         loading: false,
         error: false,
         task,
+        intentions: intentions.items,
         disputes: disputes.items,
         activities: activities.items
       });
@@ -1049,7 +1055,7 @@ export const Dashboard = ({
   }, [disputeDetailId, disputeDetailReloadTick]);
 
   const trendPublished = useMemo(() => trends?.points.map((item) => item.tasksPublished) ?? [], [trends]);
-  const trendAccepted = useMemo(() => trends?.points.map((item) => item.tasksAccepted) ?? [], [trends]);
+  const trendIntentions = useMemo(() => trends?.points.map((item) => item.tasksIntented) ?? [], [trends]);
   const trendCompleted = useMemo(() => trends?.points.map((item) => item.tasksCompleted) ?? [], [trends]);
   const trendDisputes = useMemo(() => trends?.points.map((item) => item.disputesOpened) ?? [], [trends]);
   const cycleUptime = useMemo(() => {
@@ -1164,7 +1170,7 @@ export const Dashboard = ({
       searchDraft={searchDraft}
       setSearchDraft={setSearchDraft}
       trendPublished={trendPublished}
-      trendAccepted={trendAccepted}
+      trendIntentions={trendIntentions}
       trendCompleted={trendCompleted}
       trendDisputes={trendDisputes}
       cycleUptime={cycleUptime}

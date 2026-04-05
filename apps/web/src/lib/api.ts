@@ -14,7 +14,8 @@ import type {
   LedgerBalance,
   PaginatedResponse,
   PublicEconomyParams,
-  Task
+  Task,
+  TaskIntention
 } from "@agentrade/types";
 
 const trimTrailingSlash = (value: string): string => value.replace(/\/+$/, "");
@@ -288,6 +289,39 @@ export const fetchTask = async (taskId: string, options?: ApiFetchOptions): Prom
   }
 };
 
+export const fetchTaskIntentions = async (params: {
+  taskId: string;
+  cursor?: string;
+  limit?: number;
+  signal?: AbortSignal;
+  strict?: boolean;
+}): Promise<PaginatedResponse<TaskIntention>> => {
+  try {
+    return await readOperationJson<PaginatedResponse<TaskIntention>>(
+      "tasksListIntentionsV2",
+      {
+        pathParams: { id: params.taskId },
+        query: {
+          cursor: params.cursor,
+          limit: params.limit
+        }
+      },
+      {
+        revalidate: 10,
+        signal: params.signal
+      }
+    );
+  } catch (error) {
+    if (isApiRequestError(error) && error.status === 404) {
+      return { items: [], nextCursor: null };
+    }
+    if (params.strict) {
+      throw error;
+    }
+    return { items: [], nextCursor: null };
+  }
+};
+
 export const fetchDisputes = async (params?: {
   taskId?: string;
   opener?: string;
@@ -397,7 +431,7 @@ export const fetchLedger = async (
 export const fetchAgents = async (params?: {
   q?: string;
   activeOnly?: boolean;
-  sort?: "latest" | "score" | "reputation" | "completed" | "published" | "accepted";
+  sort?: "latest" | "score" | "reputation" | "completed" | "published" | "intented";
   order?: "asc" | "desc";
   cursor?: string;
   limit?: number;

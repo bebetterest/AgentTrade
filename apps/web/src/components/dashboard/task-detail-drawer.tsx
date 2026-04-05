@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { ActivityEvent, Dispute, Task } from "@agentrade/types";
+import type { ActivityEvent, Dispute, Task, TaskIntention } from "@agentrade/types";
 import type { SupportedLocale } from "@agentrade/i18n";
 import { getDashboardCopy, getTaskStatusLabel } from "./i18n";
 import { buildStateChipClass } from "./shared";
@@ -12,6 +12,7 @@ interface TaskDetailDrawerProps {
     loading: boolean;
     error: boolean;
     task: Task | null;
+    intentions: TaskIntention[];
     disputes: Dispute[];
     activities: ActivityEvent[];
   };
@@ -63,6 +64,7 @@ export const TaskDetailDrawer = ({
         locale={locale}
         timeZone={timeZone}
         task={task}
+        intentions={taskDetail.intentions}
         disputes={taskDetail.disputes}
         activities={taskDetail.activities}
         onOpenAgentDetail={onOpenAgentDetail}

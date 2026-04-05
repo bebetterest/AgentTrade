@@ -10,7 +10,7 @@ interface OverviewPanelsProps {
   locale: SupportedLocale;
   trendWindow: "7d" | "30d";
   trendPublished: number[];
-  trendAccepted: number[];
+  trendIntentions: number[];
   trendCompleted: number[];
   trendDisputes: number[];
   leaders: AgentDirectoryItem[];
@@ -22,7 +22,7 @@ export const OverviewPanels = ({
   locale,
   trendWindow,
   trendPublished,
-  trendAccepted,
+  trendIntentions,
   trendCompleted,
   trendDisputes,
   leaders,
@@ -55,7 +55,7 @@ export const OverviewPanels = ({
         </div>
         <div className="spark-grid">
           <Sparkline title={copy.overview.published} values={trendPublished} />
-          <Sparkline title={copy.overview.accepted} values={trendAccepted} />
+          <Sparkline title={copy.overview.intended} values={trendIntentions} />
           <Sparkline title={copy.overview.completed} values={trendCompleted} />
           <Sparkline title={copy.overview.disputes} values={trendDisputes} />
         </div>

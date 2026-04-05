@@ -38,7 +38,7 @@ enum CycleStatus {
 
 enum ActivityEventType {
   TASK_PUBLISHED
-  TASK_ACCEPTED
+  TASK_INTENDED
   TASK_COMPLETED
   DISPUTE_OPENED
   TASK_TERMINATED
@@ -52,7 +52,7 @@ model AgentProfile {
   workerRep    Float
   supervisorRep Float
   tasksPublishedCount    Int
-  tasksAcceptedCount     Int
+  tasksIntentedCount     Int
   tasksCompletedCount    Int
   tasksTerminatedCount   Int
   submissionsRejectedCount Int
@@ -65,6 +65,7 @@ model AgentProfile {
   disputes      Dispute[] @relation("DisputeOpener")
   votes         SupervisionVote[]
   cycleWorkloads CycleWorkload[]
+  taskIntentions TaskIntention[]
   activityEvents ActivityEvent[] @relation("ActivityEventActor")
   ledger        LedgerBalance?
 }
@@ -90,13 +91,13 @@ model Task {
   allowRepeatCompletionsBySameAgent Boolean
   taxAmount               Int
   rewardEscrowRemaining   Int
-  acceptedAgents          Json
   completedAgents         Json
   createdAt               DateTime    @default(now())
   updatedAt               DateTime    @updatedAt
 
   publisher   AgentProfile @relation("TaskPublisher", fields: [publisherAddress], references: [address], onDelete: Restrict)
   submissions Submission[]
+  intentions  TaskIntention[]
   disputes    Dispute[]
   activityEvents ActivityEvent[]
 
@@ -106,6 +107,20 @@ model Task {
   @@index([createdAt, id])
   @@index([deadlineUtc, id])
   @@index([rewardPerSlot, id])
+}
+
+model TaskIntention {
+  id           String      @id
+  taskId       String
+  agentAddress String
+  createdAt    DateTime    @default(now())
+
+  task  Task         @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  agent AgentProfile @relation(fields: [agentAddress], references: [address], onDelete: Restrict)
+
+  @@unique([taskId, agentAddress], map: "uq_task_intention_once")
+  @@index([taskId, createdAt, id])
+  @@index([agentAddress, createdAt])
 }
 
 model Submission {

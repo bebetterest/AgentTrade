@@ -29,7 +29,7 @@ describe("AgentradeEngine disputes and cycle settlement", () => {
       rewardPerSlot: 10,
       allowRepeatCompletionsBySameAgent: false
     });
-    engine.acceptTask(task.id, worker);
+    engine.addTaskIntention(task.id, worker);
     clock.advanceMinutes(31);
     const submission = engine.submitTask(task.id, worker, "work");
     engine.rejectSubmission(submission.id, publisher);
@@ -62,7 +62,7 @@ describe("AgentradeEngine disputes and cycle settlement", () => {
       rewardPerSlot: 20,
       allowRepeatCompletionsBySameAgent: false
     });
-    engine.acceptTask(task.id, worker);
+    engine.addTaskIntention(task.id, worker);
     clock.advanceMinutes(31);
     const submission = engine.submitTask(task.id, worker, "work");
     engine.rejectSubmission(submission.id, publisher);
@@ -99,7 +99,7 @@ describe("AgentradeEngine disputes and cycle settlement", () => {
       rewardPerSlot: 20,
       allowRepeatCompletionsBySameAgent: false
     });
-    engine.acceptTask(task.id, worker);
+    engine.addTaskIntention(task.id, worker);
     clock.advanceMinutes(31);
     const submission = engine.submitTask(task.id, worker, "work");
     engine.rejectSubmission(submission.id, publisher);
@@ -140,7 +140,7 @@ describe("AgentradeEngine disputes and cycle settlement", () => {
       rewardPerSlot: 20,
       allowRepeatCompletionsBySameAgent: false
     });
-    engine.acceptTask(task.id, worker);
+    engine.addTaskIntention(task.id, worker);
     clock.advanceMinutes(31);
     const submission = engine.submitTask(task.id, worker, "work");
     engine.rejectSubmission(submission.id, publisher);
@@ -159,7 +159,7 @@ describe("AgentradeEngine disputes and cycle settlement", () => {
     ).toThrowError(/only once per dispute/i);
   });
 
-  it("runs end-to-end publish->accept->submit->reject->dispute->settlement lifecycle", () => {
+  it("runs end-to-end publish->intend->submit->reject->dispute->settlement lifecycle", () => {
     const { engine, clock } = makeEngine();
     const publisher = addr("61");
     const worker = addr("62");
@@ -176,7 +176,7 @@ describe("AgentradeEngine disputes and cycle settlement", () => {
       rewardPerSlot: 20,
       allowRepeatCompletionsBySameAgent: false
     });
-    engine.acceptTask(task.id, worker);
+    engine.addTaskIntention(task.id, worker);
     clock.advanceMinutes(31);
     const submission = engine.submitTask(task.id, worker, "work");
     engine.rejectSubmission(submission.id, publisher);
@@ -212,7 +212,7 @@ describe("AgentradeEngine disputes and cycle settlement", () => {
       rewardPerSlot: 20,
       allowRepeatCompletionsBySameAgent: false
     });
-    engine.acceptTask(task.id, worker);
+    engine.addTaskIntention(task.id, worker);
     clock.advanceMinutes(31);
     const submission = engine.submitTask(task.id, worker, "work");
     engine.rejectSubmission(submission.id, publisher);
@@ -247,7 +247,7 @@ describe("AgentradeEngine disputes and cycle settlement", () => {
       rewardPerSlot: 20,
       allowRepeatCompletionsBySameAgent: false
     });
-    engine.acceptTask(task.id, worker);
+    engine.addTaskIntention(task.id, worker);
     clock.advanceMinutes(31);
     const submission = engine.submitTask(task.id, worker, "work");
     engine.rejectSubmission(submission.id, publisher);
@@ -273,7 +273,7 @@ describe("AgentradeEngine disputes and cycle settlement", () => {
     expect(vote.vote.disputeId).toBe(dispute.id);
   });
 
-  it("prevents oversell by rejecting second accept when slots are full", () => {
+  it("allows intention registration beyond slot count and updates competition metrics", () => {
     const { engine } = makeEngine();
     const publisher = addr("91");
     const workerA = addr("92");
@@ -289,8 +289,11 @@ describe("AgentradeEngine disputes and cycle settlement", () => {
       rewardPerSlot: 10,
       allowRepeatCompletionsBySameAgent: false
     });
-    engine.acceptTask(task.id, workerA);
-    expect(() => engine.acceptTask(task.id, workerB)).toThrowError(/no available slots/i);
+    engine.addTaskIntention(task.id, workerA);
+    engine.addTaskIntention(task.id, workerB);
+    const afterIntentions = engine.getTask(task.id);
+    expect(afterIntentions.intentCount).toBe(2);
+    expect(afterIntentions.competitionRatio).toBe(2);
   });
 
   it("closes repeatable multi-slot task by confirmed slot count and avoids zombie state", () => {
@@ -309,14 +312,13 @@ describe("AgentradeEngine disputes and cycle settlement", () => {
       allowRepeatCompletionsBySameAgent: true
     });
 
-    engine.acceptTask(task.id, worker);
+    engine.addTaskIntention(task.id, worker);
     const firstSubmission = engine.submitTask(task.id, worker, "first");
     engine.confirmSubmission(firstSubmission.id, publisher);
     const afterFirstConfirm = engine.getTask(task.id);
     expect(afterFirstConfirm.status).toBe("IN_PROGRESS");
     expect(afterFirstConfirm.rewardEscrowRemaining).toBe(10);
 
-    engine.acceptTask(task.id, worker);
     clock.advanceMinutes(31);
     const secondSubmission = engine.submitTask(task.id, worker, "second");
     engine.confirmSubmission(secondSubmission.id, publisher);
@@ -324,7 +326,7 @@ describe("AgentradeEngine disputes and cycle settlement", () => {
     expect(afterSecondConfirm.status).toBe("CLOSED");
     expect(afterSecondConfirm.rewardEscrowRemaining).toBe(0);
     expect(afterSecondConfirm.completedAgents).toEqual([worker]);
-    expect(() => engine.acceptTask(task.id, worker)).toThrowError(/not open for acceptance/i);
+    expect(() => engine.addTaskIntention(task.id, worker)).toThrowError(/not open for intentions/i);
   });
 
   it("requires submission to be rejected before dispute can be opened", () => {
@@ -342,7 +344,7 @@ describe("AgentradeEngine disputes and cycle settlement", () => {
       rewardPerSlot: 10,
       allowRepeatCompletionsBySameAgent: false
     });
-    engine.acceptTask(task.id, worker);
+    engine.addTaskIntention(task.id, worker);
     clock.advanceMinutes(31);
     const submission = engine.submitTask(task.id, worker, "result");
     expect(() =>
@@ -371,7 +373,7 @@ describe("AgentradeEngine disputes and cycle settlement", () => {
       rewardPerSlot: 10,
       allowRepeatCompletionsBySameAgent: false
     });
-    engine.acceptTask(task.id, worker);
+    engine.addTaskIntention(task.id, worker);
     clock.advanceMinutes(31);
     const submission = engine.submitTask(task.id, worker, "result");
     engine.rejectSubmission(submission.id, publisher);
@@ -400,7 +402,7 @@ describe("AgentradeEngine disputes and cycle settlement", () => {
       rewardPerSlot: 10,
       allowRepeatCompletionsBySameAgent: false
     });
-    engine.acceptTask(task.id, worker);
+    engine.addTaskIntention(task.id, worker);
     clock.advanceMinutes(31);
     const submission = engine.submitTask(task.id, worker, "result");
     engine.rejectSubmission(submission.id, publisher);
@@ -491,7 +493,7 @@ describe("AgentradeEngine disputes and cycle settlement", () => {
       rewardPerSlot: 10,
       allowRepeatCompletionsBySameAgent: false
     });
-    engine.acceptTask(task.id, worker);
+    engine.addTaskIntention(task.id, worker);
     const firstSubmission = engine.submitTask(task.id, worker, "first");
     clock.advanceMinutes(31);
     const secondSubmission = engine.submitTask(task.id, worker, "second");
@@ -517,7 +519,7 @@ describe("AgentradeEngine disputes and cycle settlement", () => {
       rewardPerSlot: 10,
       allowRepeatCompletionsBySameAgent: false
     });
-    engine.acceptTask(task.id, worker);
+    engine.addTaskIntention(task.id, worker);
     const first = engine.submitTask(task.id, worker, "first");
     expect(first.status).toBe("SUBMITTED");
     expect(() => engine.submitTask(task.id, worker, "retry-too-fast")).toThrowError(/cooldown/i);
@@ -527,7 +529,7 @@ describe("AgentradeEngine disputes and cycle settlement", () => {
     expect(second.status).toBe("SUBMITTED");
   });
 
-  it("rejects submission after task deadline even when agent already accepted", () => {
+  it("rejects submission after task deadline even when agent already intended", () => {
     const { engine, clock } = makeEngine();
     const publisher = addr("dl1");
     const worker = addr("dl2");
@@ -542,7 +544,7 @@ describe("AgentradeEngine disputes and cycle settlement", () => {
       rewardPerSlot: 10,
       allowRepeatCompletionsBySameAgent: false
     });
-    engine.acceptTask(task.id, worker);
+    engine.addTaskIntention(task.id, worker);
     clock.advanceMinutes(11);
     expect(() => engine.submitTask(task.id, worker, "late")).toThrowError(/deadline has passed/i);
   });
@@ -562,7 +564,7 @@ describe("AgentradeEngine disputes and cycle settlement", () => {
       rewardPerSlot: 20,
       allowRepeatCompletionsBySameAgent: false
     });
-    engine.acceptTask(task.id, worker);
+    engine.addTaskIntention(task.id, worker);
     engine.terminateTask(task.id, publisher);
     expect(() => engine.submitTask(task.id, worker, "should fail")).toThrowError(
       /not open for submissions/i
@@ -584,7 +586,7 @@ describe("AgentradeEngine disputes and cycle settlement", () => {
       rewardPerSlot: 30,
       allowRepeatCompletionsBySameAgent: false
     });
-    engine.acceptTask(task.id, worker);
+    engine.addTaskIntention(task.id, worker);
     clock.advanceMinutes(31);
     const submission = engine.submitTask(task.id, worker, "done");
     const before = engine.getLedger(worker).available;

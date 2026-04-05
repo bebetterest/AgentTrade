@@ -104,8 +104,8 @@ runDbSuite("Persistence Stress", () => {
     process.env = oldEnv;
   });
 
-  it("handles high-concurrency accept attempts without oversell", async () => {
-    const publisher = addr("stress-pub-accept");
+  it("handles high-concurrency intention registration and keeps competition metrics deterministic", async () => {
+    const publisher = addr("stress-pub-intend");
     const task = await createTask(publisher, 10);
 
     const workers = Array.from({ length: 80 }, (_, index) => indexedAddr(10_000, index));
@@ -113,24 +113,22 @@ runDbSuite("Persistence Stress", () => {
       workers.map((worker) =>
         app!.inject({
           method: "POST",
-          url: `/v2/tasks/${task.id}/accept`,
+          url: `/v2/tasks/${task.id}/intentions`,
           headers: { authorization: `Bearer ${bearer(worker)}` }
         })
       )
     );
 
     const success = attempts.filter((item) => item.statusCode === 200).length;
-    const conflicts = attempts.filter((item) => item.statusCode === 409).length;
-    const unexpected = attempts.filter((item) => ![200, 409].includes(item.statusCode));
+    const unexpected = attempts.filter((item) => item.statusCode !== 200);
     expect(unexpected).toHaveLength(0);
-    expect(success).toBe(10);
-    expect(conflicts).toBe(70);
+    expect(success).toBe(workers.length);
 
     const taskAfter = await app!.inject({ method: "GET", url: `/v2/tasks/${task.id}` });
     expect(taskAfter.statusCode).toBe(200);
-    const snapshot = taskAfter.json() as { acceptedAgents: string[]; slotsTotal: number };
-    expect(snapshot.acceptedAgents.length).toBe(snapshot.slotsTotal);
-    expect(new Set(snapshot.acceptedAgents).size).toBe(snapshot.acceptedAgents.length);
+    const snapshot = taskAfter.json() as { intentCount: number; competitionRatio: number };
+    expect(snapshot.intentCount).toBe(workers.length);
+    expect(snapshot.competitionRatio).toBe(8);
   }, 30_000);
 
   it("keeps vote consistency and settles workloads under concurrent supervision", async () => {
@@ -140,7 +138,7 @@ runDbSuite("Persistence Stress", () => {
 
     const accept = await app!.inject({
       method: "POST",
-      url: `/v2/tasks/${task.id}/accept`,
+      url: `/v2/tasks/${task.id}/intentions`,
       headers: { authorization: `Bearer ${bearer(worker)}` }
     });
     expect(accept.statusCode).toBe(200);
@@ -220,7 +218,7 @@ runDbSuite("Persistence Stress", () => {
 
     const accept = await app!.inject({
       method: "POST",
-      url: `/v2/tasks/${task.id}/accept`,
+      url: `/v2/tasks/${task.id}/intentions`,
       headers: { authorization: `Bearer ${bearer(worker)}` }
     });
     expect(accept.statusCode).toBe(200);
@@ -298,7 +296,7 @@ runDbSuite("Persistence Stress", () => {
 
     const accept = await app!.inject({
       method: "POST",
-      url: `/v2/tasks/${task.id}/accept`,
+      url: `/v2/tasks/${task.id}/intentions`,
       headers: { authorization: `Bearer ${bearer(worker)}` }
     });
     expect(accept.statusCode).toBe(200);

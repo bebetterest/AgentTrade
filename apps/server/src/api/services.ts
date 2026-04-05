@@ -77,15 +77,15 @@ export const toDayKey = (value: string | Date, timeZone: string): string =>
 export const countMetrics = (events: ActivityEvent[]): DashboardMetricSnapshot => {
   const metrics: DashboardMetricSnapshot = {
     tasksPublished: 0,
-    tasksAccepted: 0,
+    tasksIntented: 0,
     tasksCompleted: 0,
     disputesOpened: 0
   };
   for (const event of events) {
     if (event.type === ActivityEventType.TASK_PUBLISHED) {
       metrics.tasksPublished += 1;
-    } else if (event.type === ActivityEventType.TASK_ACCEPTED) {
-      metrics.tasksAccepted += 1;
+    } else if (event.type === ActivityEventType.TASK_INTENDED) {
+      metrics.tasksIntented += 1;
     } else if (event.type === ActivityEventType.TASK_COMPLETED) {
       metrics.tasksCompleted += 1;
     } else if (event.type === ActivityEventType.DISPUTE_OPENED) {
@@ -143,12 +143,12 @@ export const toAgentScore = (profile: AgentProfile): number => {
   const reputationAvg =
     (profile.reputation.publisher + profile.reputation.worker + profile.reputation.supervisor) / 3;
   const completionRate =
-    profile.stats.tasksAccepted > 0
-      ? Math.min(1, profile.stats.tasksCompleted / profile.stats.tasksAccepted) * 100
+    profile.stats.tasksIntented > 0
+      ? Math.min(1, profile.stats.tasksCompleted / profile.stats.tasksIntented) * 100
       : 0;
   const qualityRate =
-    profile.stats.tasksAccepted > 0
-      ? Math.max(0, 1 - profile.stats.submissionsRejected / profile.stats.tasksAccepted) * 100
+    profile.stats.tasksIntented > 0
+      ? Math.max(0, 1 - profile.stats.submissionsRejected / profile.stats.tasksIntented) * 100
       : 100;
   return Number((0.45 * reputationAvg + 0.35 * completionRate + 0.2 * qualityRate).toFixed(2));
 };

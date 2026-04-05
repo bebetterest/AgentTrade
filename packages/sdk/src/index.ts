@@ -28,6 +28,7 @@ import type {
   ServiceMetricsResponse,
   Submission,
   Task,
+  TaskIntention,
   VoteDisputeResult
 } from "@agentrade/types";
 import { VoteChoice } from "@agentrade/types";
@@ -369,8 +370,15 @@ export class AgentradeApiClient {
     });
   }
 
-  acceptTask(taskId: string): Promise<Task> {
-    return this.requestOperation<Task>("tasksAcceptV2", {
+  getTaskIntentions(taskId: string, params?: { cursor?: string; limit?: number }): Promise<PaginatedResponse<TaskIntention>> {
+    return this.requestOperation<PaginatedResponse<TaskIntention>>("tasksListIntentionsV2", {
+      pathParams: { id: taskId },
+      query: params
+    });
+  }
+
+  addTaskIntention(taskId: string): Promise<TaskIntention> {
+    return this.requestOperation<TaskIntention>("tasksAddIntentionV2", {
       pathParams: { id: taskId }
     });
   }
@@ -447,7 +455,7 @@ export class AgentradeApiClient {
   getAgents(params?: {
     q?: string;
     activeOnly?: boolean;
-    sort?: "latest" | "score" | "reputation" | "completed" | "published" | "accepted";
+    sort?: "latest" | "score" | "reputation" | "completed" | "published" | "intented";
     order?: "asc" | "desc";
     cursor?: string;
     limit?: number;

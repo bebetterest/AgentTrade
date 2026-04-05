@@ -5,6 +5,7 @@ import type {
   Submission as PrismaSubmission,
   SupervisionVote as PrismaSupervisionVote,
   Task as PrismaTask,
+  TaskIntention as PrismaTaskIntention,
   Prisma,
   PrismaClient
 } from "@prisma/client";
@@ -62,7 +63,7 @@ interface RejectSubmissionWriteDeps extends CommonWriteDeps {
       workerReputationDelta?: number;
       supervisorReputationDelta?: number;
       tasksPublished?: number;
-      tasksAccepted?: number;
+      tasksIntented?: number;
       tasksCompleted?: number;
       tasksTerminated?: number;
       submissionsRejected?: number;
@@ -71,7 +72,7 @@ interface RejectSubmissionWriteDeps extends CommonWriteDeps {
   ): Promise<void>;
 }
 
-interface AcceptTaskWriteDeps extends RejectSubmissionWriteDeps {
+interface AddTaskIntentionWriteDeps extends RejectSubmissionWriteDeps {
   appendActivityEventWithTx(
     tx: Prisma.TransactionClient,
     input: {
@@ -83,7 +84,6 @@ interface AcceptTaskWriteDeps extends RejectSubmissionWriteDeps {
       createdAt: Date;
     }
   ): Promise<void>;
-  getConfirmedSlots(slotsTotal: number, rewardPerSlot: number, rewardEscrowRemaining: number): number;
 }
 
 interface SubmitTaskWriteDeps extends CommonWriteDeps {
@@ -122,7 +122,6 @@ interface ConfirmSubmissionWriteDeps extends CommonWriteDeps {
       rewardPerSlot: number;
       rewardEscrowRemaining: number;
       allowRepeatCompletionsBySameAgent: boolean;
-      acceptedAgents: Prisma.JsonValue;
       completedAgents: Prisma.JsonValue;
     },
     now: Date,
@@ -186,6 +185,12 @@ export interface SubmitTaskDirectInput {
   payloadMd: string;
   taskSubmissionPayloadMaxLength: number;
   resubmitCooldownMinutes: number;
+}
+
+export interface TaskIntentionListDirectInput {
+  taskId: string;
+  cursor?: string;
+  limit: number;
 }
 
 export interface VoteDisputeDirectInput {
@@ -280,12 +285,12 @@ export const writeRejectSubmissionDirect = async (
   );
 };
 
-export const writeAcceptTaskDirect = async (
+export const writeAddTaskIntentionDirect = async (
   prisma: PrismaClient,
-  deps: AcceptTaskWriteDeps,
+  deps: AddTaskIntentionWriteDeps,
   taskId: string,
   agent: Address
-): Promise<PrismaTask> => {
+): Promise<PrismaTaskIntention> => {
   return deps.executeWithRetry(async () =>
     prisma.$transaction(async (tx) => {
       const now = new Date();
@@ -299,44 +304,45 @@ export const writeAcceptTaskDirect = async (
       }
 
       if (taskRow.status === DomainTaskStatus.TERMINATED || taskRow.status === DomainTaskStatus.CLOSED) {
-        throw new DomainError("TASK_NOT_ACCEPTABLE", "task is not open for acceptance", 409);
+        throw new DomainError("TASK_NOT_INTENTABLE", "task is not open for intentions", 409);
       }
       if (taskRow.deadlineUtc.getTime() <= now.getTime()) {
-        throw new DomainError("TASK_EXPIRED", "task deadline has passed", 409);
+        throw new DomainError("TASK_NOT_INTENTABLE", "task deadline has passed", 409);
       }
 
-      const acceptedAgents = asAddressArray(taskRow.acceptedAgents);
       const completedAgents = asAddressArray(taskRow.completedAgents);
-      const confirmedSlots = deps.getConfirmedSlots(
-        taskRow.slotsTotal,
-        taskRow.rewardPerSlot,
-        taskRow.rewardEscrowRemaining
-      );
 
-      if (confirmedSlots >= taskRow.slotsTotal || acceptedAgents.length + confirmedSlots >= taskRow.slotsTotal) {
-        throw new DomainError("TASK_SLOTS_FULL", "task has no available slots", 409);
-      }
       if (!taskRow.allowRepeatCompletionsBySameAgent && completedAgents.includes(agent)) {
         throw new DomainError("REPEAT_NOT_ALLOWED", "agent already completed this task", 409);
       }
-      if (acceptedAgents.includes(agent)) {
-        throw new DomainError("ALREADY_ACCEPTED", "agent already accepted this task", 409);
+      const existing = await tx.taskIntention.findFirst({
+        where: {
+          taskId,
+          agentAddress: agent
+        },
+        select: { id: true }
+      });
+      if (existing) {
+        throw new DomainError(
+          "TASK_INTENT_ALREADY_EXISTS",
+          "agent already added intention for this task",
+          409
+        );
       }
 
-      acceptedAgents.push(agent);
-      const updatedTask = await tx.task.update({
-        where: { id: taskRow.id },
+      const created = await tx.taskIntention.create({
         data: {
-          acceptedAgents: toJsonAddressArray(acceptedAgents),
-          status: DomainTaskStatus.IN_PROGRESS,
-          updatedAt: now
+          id: nanoid(),
+          taskId,
+          agentAddress: agent,
+          createdAt: now
         }
       });
       await deps.applyProfileDeltaWithTx(tx, agent, now, {
-        tasksAccepted: 1
+        tasksIntented: 1
       });
       await deps.appendActivityEventWithTx(tx, {
-        type: DomainActivityEventType.TASK_ACCEPTED,
+        type: DomainActivityEventType.TASK_INTENDED,
         cycleId: runtime.activeCycleId,
         taskId: taskRow.id,
         disputeId: null,
@@ -344,7 +350,7 @@ export const writeAcceptTaskDirect = async (
         createdAt: now
       });
       await deps.touchRuntimeStateWithTx(tx);
-      return updatedTask;
+      return created;
     })
   );
 };
@@ -390,9 +396,15 @@ export const writeSubmitTaskDirect = async (
         throw new DomainError("TASK_EXPIRED", "task deadline has passed", 409);
       }
 
-      const acceptedAgents = asAddressArray(taskRow.acceptedAgents);
-      if (!acceptedAgents.includes(input.agent)) {
-        throw new DomainError("TASK_NOT_ACCEPTED_BY_AGENT", "agent has not accepted this task", 403);
+      const intention = await tx.taskIntention.findFirst({
+        where: {
+          taskId: taskRow.id,
+          agentAddress: input.agent
+        },
+        select: { id: true }
+      });
+      if (!intention) {
+        throw new DomainError("TASK_INTENT_REQUIRED", "agent must add task intention before submission", 403);
       }
 
       const lastSubmission = await tx.submission.findFirst({
@@ -425,6 +437,15 @@ export const writeSubmitTaskDirect = async (
           updatedAt: now
         }
       });
+      if (taskRow.status === DomainTaskStatus.OPEN) {
+        await tx.task.update({
+          where: { id: taskRow.id },
+          data: {
+            status: DomainTaskStatus.IN_PROGRESS,
+            updatedAt: now
+          }
+        });
+      }
       await deps.touchRuntimeStateWithTx(tx);
       return created;
     })
@@ -571,7 +592,6 @@ export const writePublishTaskDirect = async (
           allowRepeatCompletionsBySameAgent: input.allowRepeatCompletionsBySameAgent,
           taxAmount,
           rewardEscrowRemaining: totalReward,
-          acceptedAgents: toJsonAddressArray([]),
           completedAgents: toJsonAddressArray([]),
           createdAt: now,
           updatedAt: now
@@ -960,7 +980,6 @@ export const writeCloseCurrentCycleDirect = async (
             where: { id: task.id },
             data: {
               status: DomainTaskStatus.CLOSED,
-              acceptedAgents: toJsonAddressArray([]),
               updatedAt: now
             }
           });

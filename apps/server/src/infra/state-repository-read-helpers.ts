@@ -18,16 +18,30 @@ import {
 } from "./state-repository-mappers.js";
 
 export const readListTasksDirect = async (prisma: PrismaClient): Promise<Task[]> => {
-  const tasks = await prisma.task.findMany({ orderBy: { createdAt: "asc" } });
-  return tasks.map((item) => mapTask(item));
+  const tasks = await prisma.task.findMany({
+    orderBy: { createdAt: "asc" },
+    include: {
+      _count: {
+        select: { intentions: true }
+      }
+    }
+  });
+  return tasks.map((item) => mapTask({ ...item, intentCount: item._count.intentions }));
 };
 
 export const readGetTaskDirect = async (
   prisma: PrismaClient,
   taskId: string
 ): Promise<Task | null> => {
-  const task = await prisma.task.findUnique({ where: { id: taskId } });
-  return task ? mapTask(task) : null;
+  const task = await prisma.task.findUnique({
+    where: { id: taskId },
+    include: {
+      _count: {
+        select: { intentions: true }
+      }
+    }
+  });
+  return task ? mapTask({ ...task, intentCount: task._count.intentions }) : null;
 };
 
 export const readListDisputesDirect = async (prisma: PrismaClient): Promise<Dispute[]> => {

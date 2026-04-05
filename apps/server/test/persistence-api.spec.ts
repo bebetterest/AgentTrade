@@ -164,7 +164,7 @@ runDbSuite("API persistence mode", () => {
 
     await app!.inject({
       method: "POST",
-      url: `/v2/tasks/${task.id}/accept`,
+      url: `/v2/tasks/${task.id}/intentions`,
       headers: { authorization: `Bearer ${bearer(worker)}` }
     });
     const submissionRes = await app!.inject({
@@ -234,7 +234,7 @@ runDbSuite("API persistence mode", () => {
 
     const acceptRes = await app!.inject({
       method: "POST",
-      url: `/v2/tasks/${task.id}/accept`,
+      url: `/v2/tasks/${task.id}/intentions`,
       headers: { authorization: `Bearer ${bearer(worker)}` }
     });
     expect(acceptRes.statusCode).toBe(200);
@@ -360,7 +360,7 @@ runDbSuite("API persistence mode", () => {
 
     const acceptRes = await app!.inject({
       method: "POST",
-      url: `/v2/tasks/${task.id}/accept`,
+      url: `/v2/tasks/${task.id}/intentions`,
       headers: { authorization: `Bearer ${bearer(worker)}` }
     });
     expect(acceptRes.statusCode).toBe(200);
@@ -435,7 +435,7 @@ runDbSuite("API persistence mode", () => {
 
     const accept1 = await app!.inject({
       method: "POST",
-      url: `/v2/tasks/${task.id}/accept`,
+      url: `/v2/tasks/${task.id}/intentions`,
       headers: { authorization: `Bearer ${bearer(worker)}` }
     });
     expect(accept1.statusCode).toBe(200);
@@ -458,12 +458,6 @@ runDbSuite("API persistence mode", () => {
     app = await buildApp();
     await app.ready();
 
-    const accept2 = await app!.inject({
-      method: "POST",
-      url: `/v2/tasks/${task.id}/accept`,
-      headers: { authorization: `Bearer ${bearer(worker)}` }
-    });
-    expect(accept2.statusCode).toBe(200);
     const submit2 = await app!.inject({
       method: "POST",
       url: `/v2/tasks/${task.id}/submissions`,
@@ -529,7 +523,7 @@ runDbSuite("API persistence mode", () => {
 
     const acceptRes = await app!.inject({
       method: "POST",
-      url: `/v2/tasks/${task.id}/accept`,
+      url: `/v2/tasks/${task.id}/intentions`,
       headers: { authorization: `Bearer ${bearer(worker)}` }
     });
     expect(acceptRes.statusCode).toBe(200);
@@ -680,7 +674,7 @@ runDbSuite("API persistence mode", () => {
 
     const acceptRes = await app!.inject({
       method: "POST",
-      url: `/v2/tasks/${task.id}/accept`,
+      url: `/v2/tasks/${task.id}/intentions`,
       headers: { authorization: `Bearer ${bearer(worker)}` }
     });
     expect(acceptRes.statusCode).toBe(200);
@@ -836,7 +830,7 @@ runDbSuite("API persistence mode", () => {
 
     const acceptBetaRes = await app!.inject({
       method: "POST",
-      url: `/v2/tasks/${beta.id}/accept`,
+      url: `/v2/tasks/${beta.id}/intentions`,
       headers: { authorization: `Bearer ${bearer(worker)}` }
     });
     expect(acceptBetaRes.statusCode).toBe(200);
@@ -874,7 +868,7 @@ runDbSuite("API persistence mode", () => {
 
     const acceptGammaRes = await app!.inject({
       method: "POST",
-      url: `/v2/tasks/${gamma.id}/accept`,
+      url: `/v2/tasks/${gamma.id}/intentions`,
       headers: { authorization: `Bearer ${bearer(worker)}` }
     });
     expect(acceptGammaRes.statusCode).toBe(200);
@@ -969,7 +963,7 @@ runDbSuite("API persistence mode", () => {
     };
     expect(activitiesPageOne.items.map((item) => item.type)).toEqual([
       "TASK_PUBLISHED",
-      "TASK_ACCEPTED"
+      "TASK_INTENDED"
     ]);
     expect(parseCursorOffset(activitiesPageOne.nextCursor ?? undefined)).toBe(2);
 
@@ -1008,7 +1002,7 @@ runDbSuite("API persistence mode", () => {
     const summary = summaryRes.json() as {
       currentCycle: {
         tasksPublished: number;
-        tasksAccepted: number;
+        tasksIntented: number;
         tasksCompleted: number;
         disputesOpened: number;
       };
@@ -1016,7 +1010,7 @@ runDbSuite("API persistence mode", () => {
     };
     expect(summary.currentCycle).toEqual({
       tasksPublished: 4,
-      tasksAccepted: 2,
+      tasksIntented: 2,
       tasksCompleted: 1,
       disputesOpened: 1
     });
@@ -1034,14 +1028,14 @@ runDbSuite("API persistence mode", () => {
     const trends = trendsRes.json() as {
       points: Array<{
         tasksPublished: number;
-        tasksAccepted: number;
+        tasksIntented: number;
         tasksCompleted: number;
         disputesOpened: number;
       }>;
     };
     expect(trends.points).toHaveLength(7);
     expect(trends.points.reduce((sum, item) => sum + item.tasksPublished, 0)).toBe(4);
-    expect(trends.points.reduce((sum, item) => sum + item.tasksAccepted, 0)).toBe(2);
+    expect(trends.points.reduce((sum, item) => sum + item.tasksIntented, 0)).toBe(2);
     expect(trends.points.reduce((sum, item) => sum + item.tasksCompleted, 0)).toBe(1);
     expect(trends.points.reduce((sum, item) => sum + item.disputesOpened, 0)).toBe(1);
   });

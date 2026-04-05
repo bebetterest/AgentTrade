@@ -23,6 +23,7 @@ import {
   SubmissionStatus as DomainSubmissionStatus,
   type SupervisionVote,
   type Task,
+  type TaskIntention,
   TaskStatus as DomainTaskStatus,
   VoteChoice as DomainVoteChoice,
   type Address
@@ -39,6 +40,7 @@ import {
   mapLedgerBalance,
   mapSubmission,
   mapTask,
+  mapTaskIntention,
   mapVote
 } from "./state-repository-mappers.js";
 import {
@@ -75,11 +77,16 @@ import {
   type TaskListQuery
 } from "./state-repository-query-helpers.js";
 import {
+  encodeKeysetCursor,
+  nextCursorOffset,
+  parseListCursor
+} from "../pagination/cursor.js";
+import {
   type OpenDisputeDirectInput,
   type PublishTaskDirectInput,
   type SubmitTaskDirectInput,
   type VoteDisputeDirectInput,
-  writeAcceptTaskDirect,
+  writeAddTaskIntentionDirect,
   writeCloseCurrentCycleDirect,
   writeConfirmSubmissionDirect,
   writeOpenDisputeDirect,
@@ -115,7 +122,7 @@ const asAddressArray = (value: Prisma.JsonValue): Address[] =>
 
 interface DashboardMetricRow {
   tasksPublished: number | bigint | Prisma.Decimal | string | null;
-  tasksAccepted: number | bigint | Prisma.Decimal | string | null;
+  tasksIntented: number | bigint | Prisma.Decimal | string | null;
   tasksCompleted: number | bigint | Prisma.Decimal | string | null;
   disputesOpened: number | bigint | Prisma.Decimal | string | null;
 }
@@ -134,6 +141,7 @@ export type PersistenceMutationScope =
   | "profiles"
   | "balances"
   | "tasks"
+  | "intentions"
   | "submissions"
   | "disputes"
   | "votes"
@@ -316,6 +324,78 @@ export class PrismaStateRepository {
     return readGetTaskDirect(this.prisma, taskId);
   }
 
+  async queryTaskIntentionsDirect(input: {
+    taskId: string;
+    cursor?: string;
+    limit: number;
+  }): Promise<PaginatedResponse<TaskIntention>> {
+    const task = await this.prisma.task.findUnique({
+      where: { id: input.taskId },
+      select: { id: true }
+    });
+    if (!task) {
+      throw new DomainError("TASK_NOT_FOUND", `Task ${input.taskId} does not exist`, 404);
+    }
+
+    const boundedLimit = Math.min(100, Math.max(1, input.limit));
+    const cursor = input.cursor ? parseListCursor(input.cursor, { resource: "task-intentions" }) : null;
+    const keysetWhere =
+      cursor?.mode === "keyset"
+        ? (() => {
+            const cursorId = cursor.values.id;
+            const cursorPrimary = cursor.values.primary;
+            if (typeof cursorId !== "string" || cursorId.length === 0) {
+              throw new DomainError("INVALID_CURSOR", "cursor id must be a non-empty string", 400);
+            }
+            if (typeof cursorPrimary !== "string" || cursorPrimary.length === 0) {
+              throw new DomainError(
+                "INVALID_CURSOR",
+                "cursor primary must be a non-empty ISO datetime string",
+                400
+              );
+            }
+            const createdAt = new Date(cursorPrimary);
+            if (Number.isNaN(createdAt.getTime())) {
+              throw new DomainError("INVALID_CURSOR", "cursor primary must be valid ISO datetime", 400);
+            }
+            return {
+              OR: [
+                { createdAt: { gt: createdAt } },
+                {
+                  AND: [{ createdAt }, { id: { gt: cursorId } }]
+                }
+              ]
+            } satisfies Prisma.TaskIntentionWhereInput;
+          })()
+        : null;
+
+    const intentions = await this.prisma.taskIntention.findMany({
+      where: {
+        taskId: input.taskId,
+        ...(keysetWhere ? { AND: [keysetWhere] } : {})
+      },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      ...(cursor?.mode === "legacy-offset"
+        ? { skip: cursor.offset, take: boundedLimit + 1 }
+        : { take: boundedLimit + 1 })
+    });
+    const mapped = intentions.map((item) => mapTaskIntention(item));
+    const hasMore = mapped.length > boundedLimit;
+    const items = hasMore ? mapped.slice(0, boundedLimit) : mapped;
+    const nextCursor =
+      hasMore && items.length > 0
+        ? encodeKeysetCursor({
+            resource: "task-intentions",
+            offset: nextCursorOffset(cursor ?? { mode: "start", offset: 0 }, items.length),
+            values: {
+              primary: items[items.length - 1]!.createdAt,
+              id: items[items.length - 1]!.id
+            }
+          })
+        : null;
+    return { items, nextCursor };
+  }
+
   async listDisputesDirect(): Promise<Dispute[]> {
     return readListDisputesDirect(this.prisma);
   }
@@ -440,7 +520,7 @@ export class PrismaStateRepository {
         SELECT
           date_trunc('day', timezone(${timeZone}, "createdAt")) AS local_day,
           COUNT(*) FILTER (WHERE type = CAST(${DomainActivityEventType.TASK_PUBLISHED} AS "ActivityEventType")) AS "tasksPublished",
-          COUNT(*) FILTER (WHERE type = CAST(${DomainActivityEventType.TASK_ACCEPTED} AS "ActivityEventType")) AS "tasksAccepted",
+          COUNT(*) FILTER (WHERE type = CAST(${DomainActivityEventType.TASK_INTENDED} AS "ActivityEventType")) AS "tasksIntented",
           COUNT(*) FILTER (WHERE type = CAST(${DomainActivityEventType.TASK_COMPLETED} AS "ActivityEventType")) AS "tasksCompleted",
           COUNT(*) FILTER (WHERE type = CAST(${DomainActivityEventType.DISPUTE_OPENED} AS "ActivityEventType")) AS "disputesOpened"
         FROM "ActivityEvent"
@@ -452,7 +532,7 @@ export class PrismaStateRepository {
         to_char(ds.local_day, 'YYYY-MM-DD') AS label,
         to_char(ds.local_day, 'YYYY-MM-DD') || 'T00:00:00.000Z' AS "bucketStart",
         COALESCE(ac."tasksPublished", 0) AS "tasksPublished",
-        COALESCE(ac."tasksAccepted", 0) AS "tasksAccepted",
+        COALESCE(ac."tasksIntented", 0) AS "tasksIntented",
         COALESCE(ac."tasksCompleted", 0) AS "tasksCompleted",
         COALESCE(ac."disputesOpened", 0) AS "disputesOpened"
       FROM day_series ds
@@ -464,7 +544,7 @@ export class PrismaStateRepository {
       bucketStart: item.bucketStart,
       label: item.label,
       tasksPublished: toNumber(item.tasksPublished),
-      tasksAccepted: toNumber(item.tasksAccepted),
+      tasksIntented: toNumber(item.tasksIntented),
       tasksCompleted: toNumber(item.tasksCompleted),
       disputesOpened: toNumber(item.disputesOpened)
     }));
@@ -527,7 +607,7 @@ export class PrismaStateRepository {
       },
       input
     );
-    return mapTask(task);
+    return mapTask({ ...task, intentCount: 0 });
   }
 
   async rejectSubmissionDirect(submissionId: string, publisher: Address): Promise<Submission> {
@@ -566,7 +646,8 @@ export class PrismaStateRepository {
       publisher,
       config
     );
-    return mapTask(task);
+    const intentCount = await this.prisma.taskIntention.count({ where: { taskId: task.id } });
+    return mapTask({ ...task, intentCount });
   }
 
   async openDisputeDirect(input: OpenDisputeDirectInput): Promise<Dispute> {
@@ -630,8 +711,8 @@ export class PrismaStateRepository {
     return mapDispute(dispute);
   }
 
-  async acceptTaskDirect(taskId: string, agent: Address): Promise<Task> {
-    const task = await writeAcceptTaskDirect(
+  async addTaskIntentionDirect(taskId: string, agent: Address): Promise<TaskIntention> {
+    const intention = await writeAddTaskIntentionDirect(
       this.prisma,
       {
         executeWithRetry: (operation) => this.executeWithRetry(operation),
@@ -641,15 +722,13 @@ export class PrismaStateRepository {
         touchRuntimeStateWithTx: (tx) => this.touchRuntimeStateWithTx(tx),
         applyProfileDeltaWithTx: (tx, address, now, input) =>
           this.applyProfileDeltaWithTx(tx, address, now, input),
-        appendActivityEventWithTx: (tx, input) => this.appendActivityEventWithTx(tx, input),
-        getConfirmedSlots: (slotsTotal, rewardPerSlot, rewardEscrowRemaining) =>
-          this.getConfirmedSlots(slotsTotal, rewardPerSlot, rewardEscrowRemaining)
+        appendActivityEventWithTx: (tx, input) => this.appendActivityEventWithTx(tx, input)
       },
       taskId,
       agent
     );
 
-    return mapTask(task);
+    return mapTaskIntention(intention);
   }
 
   async submitTaskDirect(input: SubmitTaskDirectInput): Promise<Submission> {
@@ -734,7 +813,6 @@ export class PrismaStateRepository {
       rewardPerSlot: number;
       rewardEscrowRemaining: number;
       allowRepeatCompletionsBySameAgent: boolean;
-      acceptedAgents: Prisma.JsonValue;
       completedAgents: Prisma.JsonValue;
     },
     now: Date,
@@ -772,7 +850,6 @@ export class PrismaStateRepository {
         where: { id: task.id },
         data: {
           status: DomainTaskStatus.CLOSED,
-          acceptedAgents: toJsonAddressArray([]),
           updatedAt: now
         }
       });
@@ -791,7 +868,6 @@ export class PrismaStateRepository {
     if (!completedAgents.includes(submissionAgent)) {
       completedAgents.push(submissionAgent);
     }
-    const acceptedAgents = asAddressArray(task.acceptedAgents).filter((agent) => agent !== submissionAgent);
     const confirmedSlots = this.getConfirmedSlots(
       task.slotsTotal,
       task.rewardPerSlot,
@@ -811,7 +887,6 @@ export class PrismaStateRepository {
       data: {
         rewardEscrowRemaining,
         completedAgents: toJsonAddressArray(completedAgents),
-        acceptedAgents: toJsonAddressArray(shouldClose ? [] : acceptedAgents),
         status: shouldClose ? DomainTaskStatus.CLOSED : (task.status as DomainTaskStatus),
         updatedAt: now
       }
@@ -967,6 +1042,7 @@ export class PrismaStateRepository {
     const includeProfiles = !scopeSet || scopeSet.has("profiles");
     const includeBalances = !scopeSet || scopeSet.has("balances");
     const includeTasks = !scopeSet || scopeSet.has("tasks");
+    const includeIntentions = !scopeSet || scopeSet.has("intentions");
     const includeSubmissions = !scopeSet || scopeSet.has("submissions");
     const includeDisputes = !scopeSet || scopeSet.has("disputes");
     const includeVotes = !scopeSet || scopeSet.has("votes");
@@ -984,6 +1060,9 @@ export class PrismaStateRepository {
       : { upserts: [], deletes: [] };
     const taskDiff = includeTasks
       ? diffByKey(currentSnapshot?.tasks ?? [], nextSnapshot.tasks, (item) => item.id)
+      : { upserts: [], deletes: [] };
+    const intentionDiff = includeIntentions
+      ? diffByKey(currentSnapshot?.intentions ?? [], nextSnapshot.intentions ?? [], (item) => item.id)
       : { upserts: [], deletes: [] };
     const submissionDiff = includeSubmissions
       ? diffByKey(currentSnapshot?.submissions ?? [], nextSnapshot.submissions, (item) => item.id)
@@ -1035,7 +1114,7 @@ export class PrismaStateRepository {
           workerRep: item.reputation.worker,
           supervisorRep: item.reputation.supervisor,
           tasksPublishedCount: item.stats.tasksPublished,
-          tasksAcceptedCount: item.stats.tasksAccepted,
+          tasksIntentedCount: item.stats.tasksIntented,
           tasksCompletedCount: item.stats.tasksCompleted,
           tasksTerminatedCount: item.stats.tasksTerminated,
           submissionsRejectedCount: item.stats.submissionsRejected,
@@ -1050,7 +1129,7 @@ export class PrismaStateRepository {
           workerRep: item.reputation.worker,
           supervisorRep: item.reputation.supervisor,
           tasksPublishedCount: item.stats.tasksPublished,
-          tasksAcceptedCount: item.stats.tasksAccepted,
+          tasksIntentedCount: item.stats.tasksIntented,
           tasksCompletedCount: item.stats.tasksCompleted,
           tasksTerminatedCount: item.stats.tasksTerminated,
           submissionsRejectedCount: item.stats.submissionsRejected,
@@ -1093,7 +1172,6 @@ export class PrismaStateRepository {
           allowRepeatCompletionsBySameAgent: item.allowRepeatCompletionsBySameAgent,
           taxAmount: item.taxAmount,
           rewardEscrowRemaining: item.rewardEscrowRemaining,
-          acceptedAgents: toJsonAddressArray(item.acceptedAgents),
           completedAgents: toJsonAddressArray(item.completedAgents),
           createdAt: toDate(item.createdAt),
           updatedAt: toDate(item.updatedAt)
@@ -1111,10 +1189,26 @@ export class PrismaStateRepository {
           allowRepeatCompletionsBySameAgent: item.allowRepeatCompletionsBySameAgent,
           taxAmount: item.taxAmount,
           rewardEscrowRemaining: item.rewardEscrowRemaining,
-          acceptedAgents: toJsonAddressArray(item.acceptedAgents),
           completedAgents: toJsonAddressArray(item.completedAgents),
           createdAt: toDate(item.createdAt),
           updatedAt: toDate(item.updatedAt)
+        }
+      });
+    }
+
+    for (const item of intentionDiff.upserts) {
+      await tx.taskIntention.upsert({
+        where: { id: item.id },
+        create: {
+          id: item.id,
+          taskId: item.taskId,
+          agentAddress: item.agent,
+          createdAt: toDate(item.createdAt)
+        },
+        update: {
+          taskId: item.taskId,
+          agentAddress: item.agent,
+          createdAt: toDate(item.createdAt)
         }
       });
     }
@@ -1251,6 +1345,9 @@ export class PrismaStateRepository {
     if (submissionDiff.deletes.length > 0) {
       await tx.submission.deleteMany({ where: { id: { in: submissionDiff.deletes } } });
     }
+    if (intentionDiff.deletes.length > 0) {
+      await tx.taskIntention.deleteMany({ where: { id: { in: intentionDiff.deletes } } });
+    }
     if (taskDiff.deletes.length > 0) {
       await tx.task.deleteMany({ where: { id: { in: taskDiff.deletes } } });
     }
@@ -1299,7 +1396,7 @@ export class PrismaStateRepository {
       workerReputationDelta?: number;
       supervisorReputationDelta?: number;
       tasksPublished?: number;
-      tasksAccepted?: number;
+      tasksIntented?: number;
       tasksCompleted?: number;
       tasksTerminated?: number;
       submissionsRejected?: number;
@@ -1328,7 +1425,7 @@ export class PrismaStateRepository {
     const rows = await this.prisma.$queryRaw<DashboardMetricRow[]>(Prisma.sql`
       SELECT
         COUNT(*) FILTER (WHERE type = CAST(${DomainActivityEventType.TASK_PUBLISHED} AS "ActivityEventType")) AS "tasksPublished",
-        COUNT(*) FILTER (WHERE type = CAST(${DomainActivityEventType.TASK_ACCEPTED} AS "ActivityEventType")) AS "tasksAccepted",
+        COUNT(*) FILTER (WHERE type = CAST(${DomainActivityEventType.TASK_INTENDED} AS "ActivityEventType")) AS "tasksIntented",
         COUNT(*) FILTER (WHERE type = CAST(${DomainActivityEventType.TASK_COMPLETED} AS "ActivityEventType")) AS "tasksCompleted",
         COUNT(*) FILTER (WHERE type = CAST(${DomainActivityEventType.DISPUTE_OPENED} AS "ActivityEventType")) AS "disputesOpened"
       FROM "ActivityEvent"
@@ -1338,7 +1435,7 @@ export class PrismaStateRepository {
     const row = rows[0];
     return {
       tasksPublished: toNumber(row?.tasksPublished),
-      tasksAccepted: toNumber(row?.tasksAccepted),
+      tasksIntented: toNumber(row?.tasksIntented),
       tasksCompleted: toNumber(row?.tasksCompleted),
       disputesOpened: toNumber(row?.disputesOpened)
     };
@@ -1411,11 +1508,12 @@ export class PrismaStateRepository {
       return null;
     }
 
-    const [profiles, balances, tasks, submissions, disputes, votes, cycleWorkloads, cycles, activities] =
+    const [profiles, balances, tasks, taskIntentions, submissions, disputes, votes, cycleWorkloads, cycles, activities] =
       await Promise.all([
         tx.agentProfile.findMany(),
         tx.ledgerBalance.findMany(),
         tx.task.findMany(),
+        tx.taskIntention.findMany(),
         tx.submission.findMany(),
         tx.dispute.findMany(),
         tx.supervisionVote.findMany(),
@@ -1435,7 +1533,7 @@ export class PrismaStateRepository {
       },
       stats: {
         tasksPublished: item.tasksPublishedCount,
-        tasksAccepted: item.tasksAcceptedCount,
+        tasksIntented: item.tasksIntentedCount,
         tasksCompleted: item.tasksCompletedCount,
         tasksTerminated: item.tasksTerminatedCount,
         submissionsRejected: item.submissionsRejectedCount,
@@ -1451,6 +1549,11 @@ export class PrismaStateRepository {
       updatedAt: toIso(item.updatedAt)
     })) satisfies EngineStateSnapshot["balances"];
 
+    const intentionCountByTaskId = new Map<string, number>();
+    for (const item of taskIntentions) {
+      intentionCountByTaskId.set(item.taskId, (intentionCountByTaskId.get(item.taskId) ?? 0) + 1);
+    }
+
     const mappedTasks = tasks.map((item) => ({
       id: item.id,
       publisher: asAddress(item.publisherAddress),
@@ -1465,11 +1568,22 @@ export class PrismaStateRepository {
       allowRepeatCompletionsBySameAgent: item.allowRepeatCompletionsBySameAgent,
       taxAmount: item.taxAmount,
       rewardEscrowRemaining: item.rewardEscrowRemaining,
-      acceptedAgents: asAddressArray(item.acceptedAgents),
+      intentCount: intentionCountByTaskId.get(item.id) ?? 0,
+      competitionRatio:
+        item.slotsTotal > 0
+          ? Number((((intentionCountByTaskId.get(item.id) ?? 0) / item.slotsTotal).toFixed(4)))
+          : 0,
       completedAgents: asAddressArray(item.completedAgents),
       createdAt: toIso(item.createdAt),
       updatedAt: toIso(item.updatedAt)
     })) satisfies EngineStateSnapshot["tasks"];
+
+    const mappedIntentions = taskIntentions.map((item) => ({
+      id: item.id,
+      taskId: item.taskId,
+      agent: asAddress(item.agentAddress),
+      createdAt: toIso(item.createdAt)
+    })) satisfies NonNullable<EngineStateSnapshot["intentions"]>;
 
     const mappedSubmissions = submissions.map((item) => ({
       id: item.id,
@@ -1562,6 +1676,7 @@ export class PrismaStateRepository {
       cycleWorkloads: mappedCycleWorkloads,
       cycles: mappedCycles,
       activities: mappedActivities,
+      intentions: mappedIntentions,
       latestSubmissionByTaskAndAgent
     };
   }

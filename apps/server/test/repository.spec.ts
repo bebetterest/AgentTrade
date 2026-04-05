@@ -45,7 +45,7 @@ runDbSuite("PrismaStateRepository", () => {
       rewardPerSlot: 20,
       allowRepeatCompletionsBySameAgent: false
     });
-    engine.acceptTask(task.id, worker);
+    engine.addTaskIntention(task.id, worker);
     clock.advanceMinutes(31);
     const submission = engine.submitTask(task.id, worker, "payload");
     engine.rejectSubmission(submission.id, publisher);
@@ -222,7 +222,7 @@ runDbSuite("PrismaStateRepository", () => {
       allowRepeatCompletionsBySameAgent: false
     });
 
-    engine.acceptTask(beta.id, worker);
+    engine.addTaskIntention(beta.id, worker);
     clock.advanceMinutes(31);
     const betaSubmission = engine.submitTask(beta.id, worker, "beta-result");
     engine.rejectSubmission(betaSubmission.id, publisherA);
@@ -234,7 +234,7 @@ runDbSuite("PrismaStateRepository", () => {
     });
 
     clock.advanceMinutes(1);
-    engine.acceptTask(gamma.id, worker);
+    engine.addTaskIntention(gamma.id, worker);
     clock.advanceMinutes(31);
     const gammaSubmission = engine.submitTask(gamma.id, worker, "gamma-result");
     engine.confirmSubmission(gammaSubmission.id, publisherB);
@@ -299,7 +299,7 @@ runDbSuite("PrismaStateRepository", () => {
     });
     expect(betaActivityPageOne.items.map((item) => item.type)).toEqual([
       ActivityEventType.TASK_PUBLISHED,
-      ActivityEventType.TASK_ACCEPTED
+      ActivityEventType.TASK_INTENDED
     ]);
     expect(parseCursorOffset(betaActivityPageOne.nextCursor ?? undefined)).toBe(2);
 
@@ -368,7 +368,7 @@ runDbSuite("PrismaStateRepository", () => {
       allowRepeatCompletionsBySameAgent: false
     });
 
-    engine.acceptTask(beta.id, worker);
+    engine.addTaskIntention(beta.id, worker);
     clock.advanceMinutes(31);
     const betaSubmission = engine.submitTask(beta.id, worker, "beta-result");
     engine.rejectSubmission(betaSubmission.id, publisherA);
@@ -385,7 +385,7 @@ runDbSuite("PrismaStateRepository", () => {
     });
 
     clock.advanceMinutes(1);
-    engine.acceptTask(gamma.id, worker);
+    engine.addTaskIntention(gamma.id, worker);
     clock.advanceMinutes(31);
     const gammaSubmission = engine.submitTask(gamma.id, worker, "gamma-result");
     engine.confirmSubmission(gammaSubmission.id, publisherB);
@@ -422,7 +422,7 @@ runDbSuite("PrismaStateRepository", () => {
     expect(summary.activeCycleId).toBe("cycle-1");
     expect(summary.today).toEqual({
       tasksPublished: 3,
-      tasksAccepted: 2,
+      tasksIntented: 2,
       tasksCompleted: 1,
       disputesOpened: 1
     });
@@ -437,7 +437,7 @@ runDbSuite("PrismaStateRepository", () => {
     expect(trends.window).toBe("7d");
     expect(trends.points).toHaveLength(7);
     expect(trends.points.reduce((sum, item) => sum + item.tasksPublished, 0)).toBe(3);
-    expect(trends.points.reduce((sum, item) => sum + item.tasksAccepted, 0)).toBe(2);
+    expect(trends.points.reduce((sum, item) => sum + item.tasksIntented, 0)).toBe(2);
     expect(trends.points.reduce((sum, item) => sum + item.tasksCompleted, 0)).toBe(1);
     expect(trends.points.reduce((sum, item) => sum + item.disputesOpened, 0)).toBe(1);
   });

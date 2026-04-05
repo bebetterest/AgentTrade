@@ -25,10 +25,16 @@ type TaskListQuery = {
   limit?: number;
 };
 
+type TaskIntentionListQuery = {
+  cursor?: string;
+  limit?: number;
+};
+
 const taskListOperation = getApiOperation("tasksListV2");
 const taskGetOperation = getApiOperation("tasksGetV2");
+const taskIntentionsListOperation = getApiOperation("tasksListIntentionsV2");
 const taskCreateOperation = getApiOperation("tasksCreateV2");
-const taskAcceptOperation = getApiOperation("tasksAcceptV2");
+const taskIntendOperation = getApiOperation("tasksAddIntentionV2");
 const taskSubmitOperation = getApiOperation("tasksSubmitV2");
 const taskTerminateOperation = getApiOperation("tasksTerminateV2");
 const submissionConfirmOperation = getApiOperation("submissionsConfirmV2");
@@ -193,6 +199,59 @@ const registerTaskGetRoute = (
   });
 };
 
+const registerTaskIntentionsListRoute = (
+  app: FastifyInstance,
+  services: AppServices,
+  operation: ApiOperationDefinition
+) => {
+  app.get(toServerRoutePath(operation.pathTemplate), async (request) => {
+    const params = parseOperationParams<{ id: string }>(operation, request);
+    const query = parseOperationQuery<TaskIntentionListQuery>(operation, request);
+    const limit = query.limit ?? 20;
+
+    if (services.stateRepository) {
+      return validateOperationResponse(
+        operation,
+        await services.stateRepository.queryTaskIntentionsDirect({
+          taskId: params.id,
+          cursor: query.cursor,
+          limit
+        })
+      );
+    }
+
+    const items = await services.read((engine) => engine.listTaskIntentions(params.id));
+    return validateOperationResponse(
+      operation,
+      paginateItemsByCursor(items, {
+        cursor: query.cursor,
+        limit,
+        resource: "task-intentions",
+        toCursorValues: (item) => ({
+          primary: item.createdAt,
+          id: item.id
+        }),
+        compareAfterCursor: (item, cursorValues) => {
+          const cursorId = cursorValues.id;
+          const cursorPrimary = cursorValues.primary;
+          if (typeof cursorId !== "string" || cursorId.length === 0) {
+            throw new DomainError("INVALID_CURSOR", "cursor id must be a non-empty string", 400);
+          }
+          if (typeof cursorPrimary !== "string" || cursorPrimary.length === 0) {
+            throw new DomainError(
+              "INVALID_CURSOR",
+              "cursor primary must be a non-empty ISO datetime string",
+              400
+            );
+          }
+          const delta = item.createdAt.localeCompare(cursorPrimary);
+          return delta === 0 ? item.id.localeCompare(cursorId) : delta;
+        }
+      })
+    );
+  });
+};
+
 const registerTaskCreateRoute = (
   app: FastifyInstance,
   services: AppServices,
@@ -240,7 +299,7 @@ const registerTaskCreateRoute = (
   });
 };
 
-const registerTaskAcceptRoute = (
+const registerTaskIntendRoute = (
   app: FastifyInstance,
   services: AppServices,
   operation: ApiOperationDefinition
@@ -252,17 +311,17 @@ const registerTaskAcceptRoute = (
       return validateOperationResponse(
         operation,
         await services.mutateDirect(
-          () => services.stateRepository!.acceptTaskDirect(params.id, agent),
-          services.writeMeta({ operation: "tasks.accept", actor: agent })
+          () => services.stateRepository!.addTaskIntentionDirect(params.id, agent),
+          services.writeMeta({ operation: "tasks.intend", actor: agent })
         )
       );
     }
     return validateOperationResponse(
       operation,
       await services.mutate(
-        (engine) => engine.acceptTask(params.id, agent),
+        (engine) => engine.addTaskIntention(params.id, agent),
         ["profiles", "tasks"],
-        services.writeMeta({ operation: "tasks.accept", actor: agent })
+        services.writeMeta({ operation: "tasks.intend", actor: agent })
       )
     );
   });
@@ -297,7 +356,8 @@ const registerTaskSubmitRoute = (
     return validateOperationResponse(
       operation,
       await services.mutate((engine) => engine.submitTask(params.id, agent, body.payloadMd), [
-        "submissions"
+        "submissions",
+        "tasks"
       ], services.writeMeta({ operation: "tasks.submit", actor: agent }))
     );
   });
@@ -388,8 +448,9 @@ const registerSubmissionRejectRoute = (
 export const registerTaskRoutes = (app: FastifyInstance, services: AppServices): void => {
   registerTaskListRoute(app, services, taskListOperation);
   registerTaskGetRoute(app, services, taskGetOperation);
+  registerTaskIntentionsListRoute(app, services, taskIntentionsListOperation);
   registerTaskCreateRoute(app, services, taskCreateOperation);
-  registerTaskAcceptRoute(app, services, taskAcceptOperation);
+  registerTaskIntendRoute(app, services, taskIntendOperation);
   registerTaskSubmitRoute(app, services, taskSubmitOperation);
   registerTaskTerminateRoute(app, services, taskTerminateOperation);
   registerSubmissionConfirmRoute(app, services, submissionConfirmOperation);

@@ -275,7 +275,7 @@ export const buildApp = async () => {
       reputation: { publisher: 50, worker: 50, supervisor: 50 },
       stats: {
         tasksPublished: 0,
-        tasksAccepted: 0,
+        tasksIntented: 0,
         tasksCompleted: 0,
         tasksTerminated: 0,
         submissionsRejected: 0,

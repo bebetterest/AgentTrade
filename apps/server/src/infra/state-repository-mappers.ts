@@ -15,6 +15,7 @@ import type {
   SubmissionStatus,
   SupervisionVote,
   Task,
+  TaskIntention,
   TaskStatus,
   VoteChoice
 } from "@agentrade/types";
@@ -27,7 +28,7 @@ export interface AgentDirectoryRow {
   workerRep: number;
   supervisorRep: number;
   tasksPublishedCount: number;
-  tasksAcceptedCount: number;
+  tasksIntentedCount: number;
   tasksCompletedCount: number;
   tasksTerminatedCount: number;
   submissionsRejectedCount: number;
@@ -48,7 +49,7 @@ interface AgentProfileRow {
   workerRep: number;
   supervisorRep: number;
   tasksPublishedCount: number;
-  tasksAcceptedCount: number;
+  tasksIntentedCount: number;
   tasksCompletedCount: number;
   tasksTerminatedCount: number;
   submissionsRejectedCount: number;
@@ -77,7 +78,7 @@ interface TaskRow {
   allowRepeatCompletionsBySameAgent: boolean;
   taxAmount: number;
   rewardEscrowRemaining: number;
-  acceptedAgents: Prisma.JsonValue;
+  intentCount: number;
   completedAgents: Prisma.JsonValue;
   createdAt: Date;
   updatedAt: Date;
@@ -144,6 +145,13 @@ interface ActivityEventRow {
   createdAt: Date;
 }
 
+interface TaskIntentionRow {
+  id: string;
+  taskId: string;
+  agentAddress: string;
+  createdAt: Date;
+}
+
 const asAddress = (value: string): Address => value as Address;
 
 const asStringArray = (value: Prisma.JsonValue): string[] => {
@@ -182,7 +190,7 @@ export const mapAgentProfile = (item: AgentProfileRow): AgentProfile => ({
   },
   stats: {
     tasksPublished: item.tasksPublishedCount,
-    tasksAccepted: item.tasksAcceptedCount,
+    tasksIntented: item.tasksIntentedCount,
     tasksCompleted: item.tasksCompletedCount,
     tasksTerminated: item.tasksTerminatedCount,
     submissionsRejected: item.submissionsRejectedCount,
@@ -212,7 +220,8 @@ export const mapTask = (item: TaskRow): Task => ({
   allowRepeatCompletionsBySameAgent: item.allowRepeatCompletionsBySameAgent,
   taxAmount: item.taxAmount,
   rewardEscrowRemaining: item.rewardEscrowRemaining,
-  acceptedAgents: asAddressArray(item.acceptedAgents),
+  intentCount: item.intentCount,
+  competitionRatio: item.slotsTotal > 0 ? Number((item.intentCount / item.slotsTotal).toFixed(4)) : 0,
   completedAgents: asAddressArray(item.completedAgents),
   createdAt: toIso(item.createdAt),
   updatedAt: toIso(item.updatedAt)
@@ -279,6 +288,13 @@ export const mapActivityEvent = (item: ActivityEventRow): ActivityEvent => ({
   createdAt: toIso(item.createdAt)
 });
 
+export const mapTaskIntention = (item: TaskIntentionRow): TaskIntention => ({
+  id: item.id,
+  taskId: item.taskId,
+  agent: asAddress(item.agentAddress),
+  createdAt: toIso(item.createdAt)
+});
+
 export const mapAgentDirectoryItem = (item: AgentDirectoryRow): AgentDirectoryItem => ({
   address: asAddress(item.address),
   name: item.name,
@@ -290,7 +306,7 @@ export const mapAgentDirectoryItem = (item: AgentDirectoryRow): AgentDirectoryIt
   },
   stats: {
     tasksPublished: item.tasksPublishedCount,
-    tasksAccepted: item.tasksAcceptedCount,
+    tasksIntented: item.tasksIntentedCount,
     tasksCompleted: item.tasksCompletedCount,
     tasksTerminated: item.tasksTerminatedCount,
     submissionsRejected: item.submissionsRejectedCount,

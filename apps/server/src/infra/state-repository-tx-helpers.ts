@@ -33,7 +33,7 @@ export const ensureAgentAndLedgerWithTx = async (
         workerRep: 50,
         supervisorRep: 50,
         tasksPublishedCount: 0,
-        tasksAcceptedCount: 0,
+        tasksIntentedCount: 0,
         tasksCompletedCount: 0,
         tasksTerminatedCount: 0,
         submissionsRejectedCount: 0,
@@ -89,7 +89,7 @@ export const applyProfileDeltaWithTx = async (
     workerReputationDelta?: number;
     supervisorReputationDelta?: number;
     tasksPublished?: number;
-    tasksAccepted?: number;
+    tasksIntented?: number;
     tasksCompleted?: number;
     tasksTerminated?: number;
     submissionsRejected?: number;
@@ -117,8 +117,8 @@ export const applyProfileDeltaWithTx = async (
       tasksPublishedCount: {
         increment: input.tasksPublished ?? 0
       },
-      tasksAcceptedCount: {
-        increment: input.tasksAccepted ?? 0
+      tasksIntentedCount: {
+        increment: input.tasksIntented ?? 0
       },
       tasksCompletedCount: {
         increment: input.tasksCompleted ?? 0

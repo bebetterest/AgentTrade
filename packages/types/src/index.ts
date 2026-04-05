@@ -32,7 +32,7 @@ export enum CycleStatus {
 
 export enum ActivityEventType {
   TASK_PUBLISHED = "TASK_PUBLISHED",
-  TASK_ACCEPTED = "TASK_ACCEPTED",
+  TASK_INTENDED = "TASK_INTENDED",
   TASK_COMPLETED = "TASK_COMPLETED",
   DISPUTE_OPENED = "DISPUTE_OPENED",
   TASK_TERMINATED = "TASK_TERMINATED"
@@ -46,7 +46,7 @@ export interface ReputationTriple {
 
 export interface AgentStats {
   tasksPublished: number;
-  tasksAccepted: number;
+  tasksIntented: number;
   tasksCompleted: number;
   tasksTerminated: number;
   submissionsRejected: number;
@@ -77,10 +77,18 @@ export interface Task {
   allowRepeatCompletionsBySameAgent: boolean;
   taxAmount: number;
   rewardEscrowRemaining: number;
-  acceptedAgents: Address[];
+  intentCount: number;
+  competitionRatio: number;
   completedAgents: Address[];
   createdAt: IsoDateString;
   updatedAt: IsoDateString;
+}
+
+export interface TaskIntention {
+  id: string;
+  taskId: string;
+  agent: Address;
+  createdAt: IsoDateString;
 }
 
 export interface Submission {
@@ -146,7 +154,7 @@ export interface ActivityEvent {
 
 export interface DashboardMetricSnapshot {
   tasksPublished: number;
-  tasksAccepted: number;
+  tasksIntented: number;
   tasksCompleted: number;
   disputesOpened: number;
 }
@@ -168,7 +176,7 @@ export interface DashboardTrendPoint {
   bucketStart: IsoDateString;
   label: string;
   tasksPublished: number;
-  tasksAccepted: number;
+  tasksIntented: number;
   tasksCompleted: number;
   disputesOpened: number;
 }
@@ -324,7 +332,7 @@ export interface PublishTaskInput {
   allowRepeatCompletionsBySameAgent: boolean;
 }
 
-export interface AcceptTaskInput {
+export interface AddTaskIntentionInput {
   taskId: string;
   agent: Address;
 }

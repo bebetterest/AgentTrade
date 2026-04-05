@@ -35,7 +35,7 @@ export type AgentListSort =
   | "reputation"
   | "completed"
   | "published"
-  | "accepted";
+  | "intented";
 
 export interface TaskListQuery {
   q?: string;
@@ -101,7 +101,7 @@ interface AgentDirectoryRow {
   workerRep: number;
   supervisorRep: number;
   tasksPublishedCount: number;
-  tasksAcceptedCount: number;
+  tasksIntentedCount: number;
   tasksCompletedCount: number;
   tasksTerminatedCount: number;
   submissionsRejectedCount: number;
@@ -260,6 +260,11 @@ export const queryTasksDirect = async (
   const tasks = await prisma.task.findMany({
     where: whereWithCursor,
     orderBy,
+    include: {
+      _count: {
+        select: { intentions: true }
+      }
+    },
     ...(query.paged
       ? {
           ...(parsedCursor.mode === "legacy-offset"
@@ -272,7 +277,7 @@ export const queryTasksDirect = async (
       : {})
   });
 
-  const mapped = tasks.map((item) => mapTask(item));
+  const mapped = tasks.map((item) => mapTask({ ...item, intentCount: item._count.intentions }));
   return query.paged
     ? buildPaginatedResponse(mapped, boundedLimit, parsedCursor, {
         resource: "tasks",
@@ -465,7 +470,7 @@ export const queryAgentsDirect = async (
               ? Prisma.raw('ranked."tasksCompletedCount"')
               : query.sort === "published"
                 ? Prisma.raw('ranked."tasksPublishedCount"')
-                : Prisma.raw('ranked."tasksAcceptedCount"');
+                : Prisma.raw('ranked."tasksIntentedCount"');
       whereClauses.push(
         Prisma.sql`(
           ${metricColumnSql} ${compareSql} ${cursorPrimary}
@@ -490,8 +495,8 @@ export const queryAgentsDirect = async (
           ? Prisma.sql`ORDER BY ranked."tasksCompletedCount" ${directionSql}, ranked.address ${directionSql}`
           : query.sort === "published"
             ? Prisma.sql`ORDER BY ranked."tasksPublishedCount" ${directionSql}, ranked.address ${directionSql}`
-            : query.sort === "accepted"
-              ? Prisma.sql`ORDER BY ranked."tasksAcceptedCount" ${directionSql}, ranked.address ${directionSql}`
+            : query.sort === "intented"
+              ? Prisma.sql`ORDER BY ranked."tasksIntentedCount" ${directionSql}, ranked.address ${directionSql}`
               : Prisma.sql`ORDER BY ranked."latestActivityAt" ${directionSql} ${nullsSql}, ranked.address ${directionSql}`;
   const paginationSql = query.paged
     ? parsedCursor.mode === "legacy-offset"
@@ -510,7 +515,7 @@ export const queryAgentsDirect = async (
         ap."workerRep" AS "workerRep",
         ap."supervisorRep" AS "supervisorRep",
         ap."tasksPublishedCount" AS "tasksPublishedCount",
-        ap."tasksAcceptedCount" AS "tasksAcceptedCount",
+        ap."tasksIntentedCount" AS "tasksIntentedCount",
         ap."tasksCompletedCount" AS "tasksCompletedCount",
         ap."tasksTerminatedCount" AS "tasksTerminatedCount",
         ap."submissionsRejectedCount" AS "submissionsRejectedCount",
@@ -523,11 +528,11 @@ export const queryAgentsDirect = async (
           (
             0.45 * ((ap."publisherRep" + ap."workerRep" + ap."supervisorRep") / 3.0)
             + 0.35 * CASE
-              WHEN ap."tasksAcceptedCount" > 0 THEN LEAST(1.0, ap."tasksCompletedCount"::float / ap."tasksAcceptedCount") * 100
+              WHEN ap."tasksIntentedCount" > 0 THEN LEAST(1.0, ap."tasksCompletedCount"::float / ap."tasksIntentedCount") * 100
               ELSE 0
             END
             + 0.2 * CASE
-              WHEN ap."tasksAcceptedCount" > 0 THEN GREATEST(0.0, 1.0 - ap."submissionsRejectedCount"::float / ap."tasksAcceptedCount") * 100
+              WHEN ap."tasksIntentedCount" > 0 THEN GREATEST(0.0, 1.0 - ap."submissionsRejectedCount"::float / ap."tasksIntentedCount") * 100
               ELSE 100
             END
           )::numeric,
@@ -535,7 +540,7 @@ export const queryAgentsDirect = async (
         ) AS score,
         (
           MAX(ae."createdAt") IS NOT NULL
-          OR ap."tasksAcceptedCount" > 0
+          OR ap."tasksIntentedCount" > 0
           OR ap."tasksPublishedCount" > 0
           OR ap."tasksCompletedCount" > 0
           OR ap."submissionsRejectedCount" > 0
@@ -551,7 +556,7 @@ export const queryAgentsDirect = async (
         ap."workerRep",
         ap."supervisorRep",
         ap."tasksPublishedCount",
-        ap."tasksAcceptedCount",
+        ap."tasksIntentedCount",
         ap."tasksCompletedCount",
         ap."tasksTerminatedCount",
         ap."submissionsRejectedCount",
@@ -580,8 +585,8 @@ export const queryAgentsDirect = async (
                   ? item.stats.tasksCompleted
                   : query.sort === "published"
                     ? item.stats.tasksPublished
-                    : query.sort === "accepted"
-                      ? item.stats.tasksAccepted
+                    : query.sort === "intented"
+                      ? item.stats.tasksIntented
                       : item.latestActivityAt,
           address: item.address
         })

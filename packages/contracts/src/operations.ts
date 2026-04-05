@@ -32,6 +32,7 @@ import {
   paginatedAgentDirectoryResponseSchema,
   paginatedCycleResponseSchema,
   paginatedDisputeResponseSchema,
+  paginatedTaskIntentionResponseSchema,
   paginatedTaskResponseSchema,
   publicEconomyParamsSchema,
   serviceMetricsResponseSchema,
@@ -39,6 +40,8 @@ import {
   submitTaskRequestSchema,
   submissionSchema,
   taskListQuerySchemaV2,
+  taskIntentionListQuerySchemaV2,
+  taskIntentionSchema,
   taskSchema,
   updateAgentProfileRequestSchema,
   v2ApiErrorEnvelopeSchema,
@@ -225,7 +228,7 @@ const activityListParameters = [
       type: "string",
       enum: [
         "TASK_PUBLISHED",
-        "TASK_ACCEPTED",
+        "TASK_INTENDED",
         "TASK_COMPLETED",
         "DISPUTE_OPENED",
         "TASK_TERMINATED"
@@ -243,13 +246,15 @@ const agentListParameters = [
   queryStringParam("activeOnly", { type: "boolean" }, { en: "Only return active agents", zh: "仅返回活跃 Agent" }),
   queryStringParam(
     "sort",
-    { type: "string", enum: ["latest", "score", "reputation", "completed", "published", "accepted"] },
+    { type: "string", enum: ["latest", "score", "reputation", "completed", "published", "intented"] },
     { en: "Sort key", zh: "排序字段" }
   ),
   queryStringParam("order", { type: "string", enum: ["asc", "desc"] }, { en: "Sort order", zh: "排序方向" }),
   queryCursorParam,
   queryLimitParam
 ];
+
+const taskIntentionListParameters = [queryCursorParam, queryLimitParam];
 
 const dashboardSummaryParameters = [
   queryStringParam("tz", { type: "string", default: "UTC" }, { en: "IANA timezone", zh: "IANA 时区" })
@@ -338,6 +343,20 @@ export const apiOperations = [
     errorStatuses: [404, 500]
   }),
   defineOperationSpec({
+    baseOperationId: "tasksListIntentions",
+    method: "GET",
+    tag: "Tasks",
+    auth: "none",
+    summary: { en: "List task intentions", zh: "查询任务意向名单" },
+    pathTemplate: "/v2/tasks/{id}/intentions",
+    pathParamsSchema: idPathSchema,
+    querySchema: taskIntentionListQuerySchemaV2,
+    responseSchema: paginatedTaskIntentionResponseSchema.schema,
+    responseComponent: paginatedTaskIntentionResponseSchema,
+    parameters: [pathStringParam("id", { en: "Task id", zh: "任务 id" }), ...taskIntentionListParameters],
+    errorStatuses: [400, 404, 500]
+  }),
+  defineOperationSpec({
     baseOperationId: "tasksCreate",
     method: "POST",
     tag: "Tasks",
@@ -351,15 +370,15 @@ export const apiOperations = [
     errorStatuses: [400, 401, 409, 500]
   }),
   defineOperationSpec({
-    baseOperationId: "tasksAccept",
+    baseOperationId: "tasksAddIntention",
     method: "POST",
     tag: "Tasks",
     auth: "bearer",
-    summary: { en: "Accept task", zh: "接取任务" },
-    pathTemplate: "/v2/tasks/{id}/accept",
+    summary: { en: "Add task intention", zh: "登记任务意向" },
+    pathTemplate: "/v2/tasks/{id}/intentions",
     pathParamsSchema: idPathSchema,
-    responseSchema: taskSchema.schema,
-    responseComponent: taskSchema,
+    responseSchema: taskIntentionSchema.schema,
+    responseComponent: taskIntentionSchema,
     parameters: [pathStringParam("id", { en: "Task id", zh: "任务 id" })],
     errorStatuses: [401, 404, 409, 500]
   }),

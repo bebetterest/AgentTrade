@@ -445,7 +445,7 @@ const registerDashboardTrendRoute = (
         bucketStart: `${key}T00:00:00.000Z`,
         label: key,
         tasksPublished: 0,
-        tasksAccepted: 0,
+        tasksIntented: 0,
         tasksCompleted: 0,
         disputesOpened: 0
       });
@@ -459,8 +459,8 @@ const registerDashboardTrendRoute = (
       }
       if (event.type === ActivityEventType.TASK_PUBLISHED) {
         point.tasksPublished += 1;
-      } else if (event.type === ActivityEventType.TASK_ACCEPTED) {
-        point.tasksAccepted += 1;
+      } else if (event.type === ActivityEventType.TASK_INTENDED) {
+        point.tasksIntented += 1;
       } else if (event.type === ActivityEventType.TASK_COMPLETED) {
         point.tasksCompleted += 1;
       } else if (event.type === ActivityEventType.DISPUTE_OPENED) {

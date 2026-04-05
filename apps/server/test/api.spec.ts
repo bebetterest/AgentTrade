@@ -473,7 +473,7 @@ describe("API integration", () => {
     expect(pageTwoLegacy.nextCursor).toBeNull();
   });
 
-  it("prevents oversell when two agents race for one slot", async () => {
+  it("allows concurrent intentions beyond slot count and reports competition", async () => {
     const publisher = addr("r1");
     const workerA = addr("r2");
     const workerB = addr("r3");
@@ -482,17 +482,26 @@ describe("API integration", () => {
     const [acceptA, acceptB] = await Promise.all([
       app!.inject({
         method: "POST",
-        url: `/v2/tasks/${task.id}/accept`,
+        url: `/v2/tasks/${task.id}/intentions`,
         headers: { authorization: `Bearer ${bearer(workerA)}` }
       }),
       app!.inject({
         method: "POST",
-        url: `/v2/tasks/${task.id}/accept`,
+        url: `/v2/tasks/${task.id}/intentions`,
         headers: { authorization: `Bearer ${bearer(workerB)}` }
       })
     ]);
     const statuses = [acceptA.statusCode, acceptB.statusCode].sort((a, b) => a - b);
-    expect(statuses).toEqual([200, 409]);
+    expect(statuses).toEqual([200, 200]);
+
+    const taskAfter = await app!.inject({
+      method: "GET",
+      url: `/v2/tasks/${task.id}`
+    });
+    expect(taskAfter.statusCode).toBe(200);
+    const taskBody = taskAfter.json() as { intentCount: number; competitionRatio: number };
+    expect(taskBody.intentCount).toBe(2);
+    expect(taskBody.competitionRatio).toBe(2);
   });
 
   it("forbids non-publisher from confirming submission", async () => {
@@ -503,7 +512,7 @@ describe("API integration", () => {
 
     const acceptRes = await app!.inject({
       method: "POST",
-      url: `/v2/tasks/${task.id}/accept`,
+      url: `/v2/tasks/${task.id}/intentions`,
       headers: { authorization: `Bearer ${bearer(worker)}` }
     });
     expect(acceptRes.statusCode).toBe(200);
@@ -532,7 +541,7 @@ describe("API integration", () => {
 
     const acceptRes = await app!.inject({
       method: "POST",
-      url: `/v2/tasks/${task.id}/accept`,
+      url: `/v2/tasks/${task.id}/intentions`,
       headers: { authorization: `Bearer ${bearer(worker)}` }
     });
     expect(acceptRes.statusCode).toBe(200);
@@ -560,7 +569,7 @@ describe("API integration", () => {
 
     const acceptRes = await app!.inject({
       method: "POST",
-      url: `/v2/tasks/${task.id}/accept`,
+      url: `/v2/tasks/${task.id}/intentions`,
       headers: { authorization: `Bearer ${bearer(worker)}` }
     });
     expect(acceptRes.statusCode).toBe(200);
@@ -620,7 +629,7 @@ describe("API integration", () => {
 
     const accept1 = await app!.inject({
       method: "POST",
-      url: `/v2/tasks/${task.id}/accept`,
+      url: `/v2/tasks/${task.id}/intentions`,
       headers: { authorization: `Bearer ${bearer(worker)}` }
     });
     expect(accept1.statusCode).toBe(200);
@@ -639,12 +648,6 @@ describe("API integration", () => {
     });
     expect(confirm1.statusCode).toBe(200);
 
-    const accept2 = await app!.inject({
-      method: "POST",
-      url: `/v2/tasks/${task.id}/accept`,
-      headers: { authorization: `Bearer ${bearer(worker)}` }
-    });
-    expect(accept2.statusCode).toBe(200);
     const submit2 = await app!.inject({
       method: "POST",
       url: `/v2/tasks/${task.id}/submissions`,
@@ -679,7 +682,7 @@ describe("API integration", () => {
     const task = await createSingleSlotTask(publisher);
     await app!.inject({
       method: "POST",
-      url: `/v2/tasks/${task.id}/accept`,
+      url: `/v2/tasks/${task.id}/intentions`,
       headers: { authorization: `Bearer ${bearer(worker)}` }
     });
     const submitRes = await app!.inject({
@@ -712,7 +715,7 @@ describe("API integration", () => {
     const task = await createSingleSlotTask(publisher);
     await app!.inject({
       method: "POST",
-      url: `/v2/tasks/${task.id}/accept`,
+      url: `/v2/tasks/${task.id}/intentions`,
       headers: { authorization: `Bearer ${bearer(worker)}` }
     });
     const submitRes = await app!.inject({
@@ -745,7 +748,7 @@ describe("API integration", () => {
     const task = await createSingleSlotTask(publisher);
     await app!.inject({
       method: "POST",
-      url: `/v2/tasks/${task.id}/accept`,
+      url: `/v2/tasks/${task.id}/intentions`,
       headers: { authorization: `Bearer ${bearer(worker)}` }
     });
     const submitRes = await app!.inject({
@@ -792,7 +795,7 @@ describe("API integration", () => {
 
     const acceptRes = await app!.inject({
       method: "POST",
-      url: `/v2/tasks/${task.id}/accept`,
+      url: `/v2/tasks/${task.id}/intentions`,
       headers: { authorization: `Bearer ${bearer(worker)}` }
     });
     expect(acceptRes.statusCode).toBe(200);
@@ -879,7 +882,7 @@ describe("API integration", () => {
     for (const worker of [workerA, workerB]) {
       const acceptRes = await app!.inject({
         method: "POST",
-        url: `/v2/tasks/${task.id}/accept`,
+        url: `/v2/tasks/${task.id}/intentions`,
         headers: { authorization: `Bearer ${bearer(worker)}` }
       });
       expect(acceptRes.statusCode).toBe(200);
@@ -1016,7 +1019,7 @@ describe("API integration", () => {
 
     const acceptRes = await app!.inject({
       method: "POST",
-      url: `/v2/tasks/${task.id}/accept`,
+      url: `/v2/tasks/${task.id}/intentions`,
       headers: { authorization: `Bearer ${bearer(worker)}` }
     });
     expect(acceptRes.statusCode).toBe(200);
@@ -1120,7 +1123,7 @@ describe("API integration", () => {
     for (const worker of [workerA, workerB]) {
       const acceptRes = await app!.inject({
         method: "POST",
-        url: `/v2/tasks/${createdTask.id}/accept`,
+        url: `/v2/tasks/${createdTask.id}/intentions`,
         headers: { authorization: `Bearer ${bearer(worker)}` }
       });
       expect(acceptRes.statusCode).toBe(200);
@@ -1259,7 +1262,7 @@ describe("API integration", () => {
 
     const acceptRes = await app!.inject({
       method: "POST",
-      url: `/v2/tasks/${task.id}/accept`,
+      url: `/v2/tasks/${task.id}/intentions`,
       headers: { authorization: `Bearer ${bearer(worker)}` }
     });
     expect(acceptRes.statusCode).toBe(200);
@@ -1313,7 +1316,7 @@ describe("API integration", () => {
 
     const acceptRes = await app!.inject({
       method: "POST",
-      url: `/v2/tasks/${task.id}/accept`,
+      url: `/v2/tasks/${task.id}/intentions`,
       headers: { authorization: `Bearer ${bearer(worker)}` }
     });
     expect(acceptRes.statusCode).toBe(200);
@@ -1367,7 +1370,7 @@ describe("API integration", () => {
     const taskA = await createSingleSlotTask(publisher);
     await app!.inject({
       method: "POST",
-      url: `/v2/tasks/${taskA.id}/accept`,
+      url: `/v2/tasks/${taskA.id}/intentions`,
       headers: { authorization: `Bearer ${bearer(worker)}` }
     });
     const submissionA = await app!.inject({
@@ -1386,7 +1389,7 @@ describe("API integration", () => {
     const taskB = await createSingleSlotTask(publisher);
     await app!.inject({
       method: "POST",
-      url: `/v2/tasks/${taskB.id}/accept`,
+      url: `/v2/tasks/${taskB.id}/intentions`,
       headers: { authorization: `Bearer ${bearer(worker)}` }
     });
     const submissionB = await app!.inject({
@@ -1410,11 +1413,11 @@ describe("API integration", () => {
     });
     expect(summaryRes.statusCode).toBe(200);
     const summary = summaryRes.json() as {
-      today: { tasksPublished: number; tasksAccepted: number; tasksCompleted: number; disputesOpened: number };
-      currentCycle: { tasksPublished: number; tasksAccepted: number; tasksCompleted: number; disputesOpened: number };
+      today: { tasksPublished: number; tasksIntented: number; tasksCompleted: number; disputesOpened: number };
+      currentCycle: { tasksPublished: number; tasksIntented: number; tasksCompleted: number; disputesOpened: number };
     };
     expect(summary.today.tasksPublished).toBeGreaterThanOrEqual(2);
-    expect(summary.today.tasksAccepted).toBeGreaterThanOrEqual(2);
+    expect(summary.today.tasksIntented).toBeGreaterThanOrEqual(2);
     expect(summary.today.tasksCompleted).toBeGreaterThanOrEqual(1);
     expect(summary.today.disputesOpened).toBeGreaterThanOrEqual(1);
     expect(summary.currentCycle.tasksPublished).toBeGreaterThanOrEqual(2);
@@ -1425,7 +1428,7 @@ describe("API integration", () => {
     });
     expect(trendsRes.statusCode).toBe(200);
     const trends = trendsRes.json() as {
-      points: Array<{ tasksPublished: number; tasksAccepted: number; tasksCompleted: number; disputesOpened: number }>;
+      points: Array<{ tasksPublished: number; tasksIntented: number; tasksCompleted: number; disputesOpened: number }>;
     };
     expect(trends.points.length).toBe(7);
     const publishedTotal = trends.points.reduce((acc, item) => acc + item.tasksPublished, 0);
@@ -1440,7 +1443,7 @@ describe("API integration", () => {
     const task = await createSingleSlotTask(publisher);
     const acceptRes = await app!.inject({
       method: "POST",
-      url: `/v2/tasks/${task.id}/accept`,
+      url: `/v2/tasks/${task.id}/intentions`,
       headers: { authorization: `Bearer ${bearer(worker)}` }
     });
     expect(acceptRes.statusCode).toBe(200);
@@ -1509,7 +1512,7 @@ describe("API integration", () => {
     const task = await createSingleSlotTask(publisher);
     await app!.inject({
       method: "POST",
-      url: `/v2/tasks/${task.id}/accept`,
+      url: `/v2/tasks/${task.id}/intentions`,
       headers: { authorization: `Bearer ${bearer(worker)}` }
     });
 
@@ -1529,6 +1532,6 @@ describe("API integration", () => {
     expect(activitiesRes.statusCode).toBe(200);
     const activities = activitiesRes.json() as { items: Array<{ type: string }>; nextCursor: string | null };
     expect(activities.items.some((item) => item.type === "TASK_PUBLISHED")).toBe(true);
-    expect(activities.items.some((item) => item.type === "TASK_ACCEPTED")).toBe(true);
+    expect(activities.items.some((item) => item.type === "TASK_INTENDED")).toBe(true);
   });
 });

@@ -17,7 +17,8 @@ import {
   type LedgerBalance,
   type Submission,
   type SupervisionVote,
-  type Task
+  type Task,
+  type TaskIntention
 } from "@agentrade/types";
 import { nanoid } from "nanoid";
 import { clampReputation, allocateIntegerPool, computeSupervisorVoteWeight, computeTaxAmount, computeTerminationPenalty } from "./helpers.js";
@@ -43,6 +44,7 @@ export interface EngineStateSnapshot {
   cycleWorkloads: CycleWorkload[];
   cycles: Cycle[];
   activities: ActivityEvent[];
+  intentions?: TaskIntention[];
   latestSubmissionByTaskAndAgent: Array<[string, string]>;
 }
 
@@ -62,6 +64,7 @@ export class AgentradeEngine {
   private cycleWorkloads = new Map<string, CycleWorkload>();
   private cycles = new Map<string, Cycle>();
   private activities = new Map<string, ActivityEvent>();
+  private taskIntentions = new Map<string, TaskIntention>();
   private latestSubmissionByTaskAndAgent = new Map<string, string>();
   private activeCycleId!: string;
 
@@ -119,6 +122,7 @@ export class AgentradeEngine {
       cycleWorkloads: [...this.cycleWorkloads.values()],
       cycles: [...this.cycles.values()],
       activities: [...this.activities.values()],
+      intentions: [...this.taskIntentions.values()],
       latestSubmissionByTaskAndAgent: [...this.latestSubmissionByTaskAndAgent.entries()]
     };
   }
@@ -129,6 +133,13 @@ export class AgentradeEngine {
 
   listTasks(): Task[] {
     return [...this.tasks.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  listTaskIntentions(taskId: string): TaskIntention[] {
+    this.getTask(taskId);
+    return [...this.taskIntentions.values()]
+      .filter((item) => item.taskId === taskId)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
   }
 
   getTask(taskId: string): Task {
@@ -297,7 +308,8 @@ export class AgentradeEngine {
       allowRepeatCompletionsBySameAgent: input.allowRepeatCompletionsBySameAgent,
       taxAmount,
       rewardEscrowRemaining: totalReward,
-      acceptedAgents: [],
+      intentCount: 0,
+      competitionRatio: 0,
       completedAgents: [],
       createdAt: timestamp,
       updatedAt: timestamp
@@ -315,44 +327,42 @@ export class AgentradeEngine {
     return task;
   }
 
-  acceptTask(taskId: string, agent: Address): Task {
+  addTaskIntention(taskId: string, agent: Address): TaskIntention {
     this.requireAgent(agent);
     const task = this.getTask(taskId);
     if (task.status === TaskStatus.TERMINATED || task.status === TaskStatus.CLOSED) {
-      throw new DomainError("TASK_NOT_ACCEPTABLE", "task is not open for acceptance", 409);
+      throw new DomainError("TASK_NOT_INTENTABLE", "task is not open for intentions", 409);
     }
     if (new Date(task.deadlineUtc).getTime() <= this.clock.now().getTime()) {
-      throw new DomainError("TASK_EXPIRED", "task deadline has passed", 409);
-    }
-    const confirmedSlots = this.getConfirmedSlots(task);
-    if (confirmedSlots >= task.slotsTotal) {
-      task.status = TaskStatus.CLOSED;
-      task.acceptedAgents = [];
-      task.updatedAt = this.nowIso();
-      throw new DomainError("TASK_SLOTS_FULL", "task has no available slots", 409);
-    }
-    if (task.acceptedAgents.length + confirmedSlots >= task.slotsTotal) {
-      throw new DomainError("TASK_SLOTS_FULL", "task has no available slots", 409);
+      throw new DomainError("TASK_NOT_INTENTABLE", "task deadline has passed", 409);
     }
     if (!task.allowRepeatCompletionsBySameAgent && task.completedAgents.includes(agent)) {
       throw new DomainError("REPEAT_NOT_ALLOWED", "agent already completed this task", 409);
     }
-    if (task.acceptedAgents.includes(agent)) {
-      throw new DomainError("ALREADY_ACCEPTED", "agent already accepted this task", 409);
+    const dedupeKey = `${task.id}:${agent}`;
+    if (this.taskIntentions.has(dedupeKey)) {
+      throw new DomainError("TASK_INTENT_ALREADY_EXISTS", "agent already added intention for this task", 409);
     }
-
-    task.acceptedAgents.push(agent);
-    task.status = TaskStatus.IN_PROGRESS;
-    task.updatedAt = this.nowIso();
+    const now = this.nowIso();
+    const intention: TaskIntention = {
+      id: nanoid(),
+      taskId: task.id,
+      agent,
+      createdAt: now
+    };
+    this.taskIntentions.set(dedupeKey, intention);
     const profile = this.requireAgent(agent);
-    profile.stats.tasksAccepted += 1;
+    profile.stats.tasksIntented += 1;
+    task.intentCount = this.countTaskIntentions(task.id);
+    task.competitionRatio = this.computeCompetitionRatio(task.intentCount, task.slotsTotal);
+    task.updatedAt = now;
     this.recordActivity({
-      type: ActivityEventType.TASK_ACCEPTED,
+      type: ActivityEventType.TASK_INTENDED,
       taskId: task.id,
       disputeId: null,
       actor: agent
     });
-    return task;
+    return intention;
   }
 
   submitTask(taskId: string, agent: Address, payloadMd: string): Submission {
@@ -371,15 +381,14 @@ export class AgentradeEngine {
     const confirmedSlots = this.getConfirmedSlots(task);
     if (confirmedSlots >= task.slotsTotal || task.rewardEscrowRemaining < task.rewardPerSlot) {
       task.status = TaskStatus.CLOSED;
-      task.acceptedAgents = [];
       task.updatedAt = this.nowIso();
       throw new DomainError("TASK_NOT_SUBMITTABLE", "task is not open for submissions", 409);
     }
     if (new Date(task.deadlineUtc).getTime() <= this.clock.now().getTime()) {
       throw new DomainError("TASK_EXPIRED", "task deadline has passed", 409);
     }
-    if (!task.acceptedAgents.includes(agent)) {
-      throw new DomainError("TASK_NOT_ACCEPTED_BY_AGENT", "agent has not accepted this task", 403);
+    if (!this.taskIntentions.has(`${taskId}:${agent}`)) {
+      throw new DomainError("TASK_INTENT_REQUIRED", "agent must add task intention before submission", 403);
     }
     const key = `${taskId}:${agent}`;
     const lastSubmissionId = this.latestSubmissionByTaskAndAgent.get(key);
@@ -410,6 +419,10 @@ export class AgentradeEngine {
     };
     this.submissions.set(submission.id, submission);
     this.latestSubmissionByTaskAndAgent.set(key, submission.id);
+    if (task.status === TaskStatus.OPEN) {
+      task.status = TaskStatus.IN_PROGRESS;
+      task.updatedAt = now;
+    }
     return submission;
   }
 
@@ -742,7 +755,6 @@ export class AgentradeEngine {
       const confirmedSlots = this.getConfirmedSlots(task);
       if (confirmedSlots >= task.slotsTotal || task.rewardEscrowRemaining < task.rewardPerSlot) {
         task.status = TaskStatus.CLOSED;
-        task.acceptedAgents = [];
         task.updatedAt = this.nowIso();
         continue;
       }
@@ -767,7 +779,6 @@ export class AgentradeEngine {
     const confirmedSlotsBefore = this.getConfirmedSlots(task);
     if (confirmedSlotsBefore >= task.slotsTotal || task.rewardEscrowRemaining < task.rewardPerSlot) {
       task.status = TaskStatus.CLOSED;
-      task.acceptedAgents = [];
       task.updatedAt = this.nowIso();
       throw new DomainError("SUBMISSION_NOT_CONFIRMABLE", "task has no remaining payable slots", 409);
     }
@@ -779,10 +790,8 @@ export class AgentradeEngine {
     if (!task.completedAgents.includes(submission.agent)) {
       task.completedAgents.push(submission.agent);
     }
-    task.acceptedAgents = task.acceptedAgents.filter((agent) => agent !== submission.agent);
     if (confirmedSlots >= task.slotsTotal) {
       task.status = TaskStatus.CLOSED;
-      task.acceptedAgents = [];
     }
     task.updatedAt = this.nowIso();
 
@@ -912,7 +921,7 @@ export class AgentradeEngine {
         reputation: { publisher: 50, worker: 50, supervisor: 50 },
         stats: {
           tasksPublished: 0,
-          tasksAccepted: 0,
+          tasksIntented: 0,
           tasksCompleted: 0,
           tasksTerminated: 0,
           submissionsRejected: 0,
@@ -963,13 +972,38 @@ export class AgentradeEngine {
     this.cycleWorkloads = new Map(snapshot.cycleWorkloads.map((item) => [item.id, item]));
     this.cycles = new Map(snapshot.cycles.map((item) => [item.id, item]));
     this.activities = new Map(snapshot.activities.map((item) => [item.id, item]));
+    this.taskIntentions = new Map(
+      (snapshot.intentions ?? []).map((item) => [`${item.taskId}:${item.agent}`, item])
+    );
     this.latestSubmissionByTaskAndAgent = new Map(snapshot.latestSubmissionByTaskAndAgent);
     this.activeCycleId = snapshot.activeCycleId;
+
+    for (const task of this.tasks.values()) {
+      task.intentCount = this.countTaskIntentions(task.id);
+      task.competitionRatio = this.computeCompetitionRatio(task.intentCount, task.slotsTotal);
+    }
 
     if (!this.activeCycleId || !this.cycles.has(this.activeCycleId)) {
       const firstCycle = this.createCycle("cycle-1");
       this.cycles.set(firstCycle.id, firstCycle);
       this.activeCycleId = firstCycle.id;
     }
+  }
+
+  private countTaskIntentions(taskId: string): number {
+    let count = 0;
+    for (const item of this.taskIntentions.values()) {
+      if (item.taskId === taskId) {
+        count += 1;
+      }
+    }
+    return count;
+  }
+
+  private computeCompetitionRatio(intentCount: number, slotsTotal: number): number {
+    if (slotsTotal <= 0) {
+      return 0;
+    }
+    return Number((intentCount / slotsTotal).toFixed(4));
   }
 }

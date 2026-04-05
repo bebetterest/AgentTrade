@@ -100,7 +100,7 @@ export const agentStatsSchema = defineSchema(
   "AgentStats",
   z.object({
     tasksPublished: z.number().int(),
-    tasksAccepted: z.number().int(),
+    tasksIntented: z.number().int(),
     tasksCompleted: z.number().int(),
     tasksTerminated: z.number().int(),
     submissionsRejected: z.number().int(),
@@ -111,7 +111,7 @@ export const agentStatsSchema = defineSchema(
     additionalProperties: false,
     required: [
       "tasksPublished",
-      "tasksAccepted",
+      "tasksIntented",
       "tasksCompleted",
       "tasksTerminated",
       "submissionsRejected",
@@ -119,7 +119,7 @@ export const agentStatsSchema = defineSchema(
     ],
     properties: {
       tasksPublished: { ...integerField },
-      tasksAccepted: { ...integerField },
+      tasksIntented: { ...integerField },
       tasksCompleted: { ...integerField },
       tasksTerminated: { ...integerField },
       submissionsRejected: { ...integerField },
@@ -171,7 +171,8 @@ export const taskSchema = defineSchema(
     allowRepeatCompletionsBySameAgent: z.boolean(),
     taxAmount: z.number().int(),
     rewardEscrowRemaining: z.number().int(),
-    acceptedAgents: z.array(addressSchema),
+    intentCount: z.number().int(),
+    competitionRatio: z.number(),
     completedAgents: z.array(addressSchema),
     createdAt: isoDateSchema,
     updatedAt: isoDateSchema
@@ -193,7 +194,8 @@ export const taskSchema = defineSchema(
       "allowRepeatCompletionsBySameAgent",
       "taxAmount",
       "rewardEscrowRemaining",
-      "acceptedAgents",
+      "intentCount",
+      "competitionRatio",
       "completedAgents",
       "createdAt",
       "updatedAt"
@@ -215,10 +217,32 @@ export const taskSchema = defineSchema(
       allowRepeatCompletionsBySameAgent: { ...boolField },
       taxAmount: { ...integerField },
       rewardEscrowRemaining: { ...integerField },
-      acceptedAgents: { ...addressArrayOpenApi },
+      intentCount: { ...integerField },
+      competitionRatio: { ...numberField },
       completedAgents: { ...addressArrayOpenApi },
       createdAt: { ...isoDateField },
       updatedAt: { ...isoDateField }
+    }
+  }
+);
+
+export const taskIntentionSchema = defineSchema(
+  "TaskIntention",
+  z.object({
+    id: z.string(),
+    taskId: z.string(),
+    agent: addressSchema,
+    createdAt: isoDateSchema
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "taskId", "agent", "createdAt"],
+    properties: {
+      id: { ...stringField },
+      taskId: { ...stringField },
+      agent: { ...addressField },
+      createdAt: { ...isoDateField }
     }
   }
 );
@@ -406,17 +430,17 @@ export const dashboardMetricSnapshotSchema = defineSchema(
   "DashboardMetricSnapshot",
   z.object({
     tasksPublished: z.number().int(),
-    tasksAccepted: z.number().int(),
+    tasksIntented: z.number().int(),
     tasksCompleted: z.number().int(),
     disputesOpened: z.number().int()
   }),
   {
     type: "object",
     additionalProperties: false,
-    required: ["tasksPublished", "tasksAccepted", "tasksCompleted", "disputesOpened"],
+    required: ["tasksPublished", "tasksIntented", "tasksCompleted", "disputesOpened"],
     properties: {
       tasksPublished: { ...integerField },
-      tasksAccepted: { ...integerField },
+      tasksIntented: { ...integerField },
       tasksCompleted: { ...integerField },
       disputesOpened: { ...integerField }
     }
@@ -467,7 +491,7 @@ export const dashboardTrendPointSchema = defineSchema(
     bucketStart: isoDateSchema,
     label: z.string(),
     tasksPublished: z.number().int(),
-    tasksAccepted: z.number().int(),
+    tasksIntented: z.number().int(),
     tasksCompleted: z.number().int(),
     disputesOpened: z.number().int()
   }),
@@ -478,7 +502,7 @@ export const dashboardTrendPointSchema = defineSchema(
       "bucketStart",
       "label",
       "tasksPublished",
-      "tasksAccepted",
+      "tasksIntented",
       "tasksCompleted",
       "disputesOpened"
     ],
@@ -486,7 +510,7 @@ export const dashboardTrendPointSchema = defineSchema(
       bucketStart: { ...isoDateField },
       label: { ...stringField },
       tasksPublished: { ...integerField },
-      tasksAccepted: { ...integerField },
+      tasksIntented: { ...integerField },
       tasksCompleted: { ...integerField },
       disputesOpened: { ...integerField }
     }
@@ -594,6 +618,10 @@ const definePaginatedResponseSchema = <TSchema extends z.ZodTypeAny>(
   );
 
 export const paginatedTaskResponseSchema = definePaginatedResponseSchema("PaginatedTaskResponse", taskSchema);
+export const paginatedTaskIntentionResponseSchema = definePaginatedResponseSchema(
+  "PaginatedTaskIntentionResponse",
+  taskIntentionSchema
+);
 export const paginatedDisputeResponseSchema = definePaginatedResponseSchema(
   "PaginatedDisputeResponse",
   disputeSchema
@@ -1217,6 +1245,11 @@ export const taskListQuerySchemaV2 = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20)
 });
 
+export const taskIntentionListQuerySchemaV2 = z.object({
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(20)
+});
+
 export const disputeListQuerySchemaV2 = z.object({
   taskId: z.string().optional(),
   opener: z.string().optional(),
@@ -1241,7 +1274,7 @@ export const activityListQuerySchemaV2 = z.object({
 export const agentListQuerySchemaV2 = z.object({
   q: nonEmptyStringSchema.optional(),
   activeOnly: booleanQuerySchema.transform((value) => value ?? false),
-  sort: z.enum(["latest", "score", "reputation", "completed", "published", "accepted"]).default("latest"),
+  sort: z.enum(["latest", "score", "reputation", "completed", "published", "intented"]).default("latest"),
   order: z.enum(["asc", "desc"]).default("desc"),
   cursor: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(100).default(20)
@@ -1276,6 +1309,7 @@ export const namedSchemas = [
   agentStatsSchema,
   agentProfileSchema,
   taskSchema,
+  taskIntentionSchema,
   submissionSchema,
   disputeSchema,
   supervisionVoteSchema,
@@ -1288,6 +1322,7 @@ export const namedSchemas = [
   dashboardTrendsResponseSchema,
   agentDirectoryItemSchema,
   paginatedTaskResponseSchema,
+  paginatedTaskIntentionResponseSchema,
   paginatedDisputeResponseSchema,
   paginatedAgentDirectoryResponseSchema,
   paginatedActivityResponseSchema,

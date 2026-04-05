@@ -18,7 +18,7 @@ import { HttpError } from "../utils/http-error.js";
 type AgentListQuery = {
   q?: string;
   activeOnly?: boolean;
-  sort?: "latest" | "score" | "reputation" | "completed" | "published" | "accepted";
+  sort?: "latest" | "score" | "reputation" | "completed" | "published" | "intented";
   order?: "asc" | "desc";
   cursor?: string;
   limit?: number;
@@ -44,7 +44,7 @@ const adminBridgeExportOperation = getApiOperation("adminBridgeExportV2");
 
 const sortAgents = (
   items: AgentDirectoryItem[],
-  sortKey: "latest" | "score" | "reputation" | "completed" | "published" | "accepted",
+  sortKey: "latest" | "score" | "reputation" | "completed" | "published" | "intented",
   order: "asc" | "desc"
 ) => {
   items.sort((left, right) => {
@@ -61,8 +61,8 @@ const sortAgents = (
       delta = left.stats.tasksCompleted - right.stats.tasksCompleted;
     } else if (sortKey === "published") {
       delta = left.stats.tasksPublished - right.stats.tasksPublished;
-    } else if (sortKey === "accepted") {
-      delta = left.stats.tasksAccepted - right.stats.tasksAccepted;
+    } else if (sortKey === "intented") {
+      delta = left.stats.tasksIntented - right.stats.tasksIntented;
     } else {
       const leftActivity = left.latestActivityAt ?? "";
       const rightActivity = right.latestActivityAt ?? "";
@@ -77,7 +77,7 @@ const sortAgents = (
 
 const agentSortPrimary = (
   item: AgentDirectoryItem,
-  sortKey: "latest" | "score" | "reputation" | "completed" | "published" | "accepted"
+  sortKey: "latest" | "score" | "reputation" | "completed" | "published" | "intented"
 ): string | number | null =>
   sortKey === "score"
     ? item.score
@@ -87,13 +87,13 @@ const agentSortPrimary = (
         ? item.stats.tasksCompleted
         : sortKey === "published"
           ? item.stats.tasksPublished
-          : sortKey === "accepted"
-            ? item.stats.tasksAccepted
+          : sortKey === "intented"
+            ? item.stats.tasksIntented
             : item.latestActivityAt;
 
 const compareAgentAfterCursor = (
   item: AgentDirectoryItem,
-  sortKey: "latest" | "score" | "reputation" | "completed" | "published" | "accepted",
+  sortKey: "latest" | "score" | "reputation" | "completed" | "published" | "intented",
   order: "asc" | "desc",
   cursorValues: Record<string, unknown>
 ): number => {
@@ -186,7 +186,7 @@ const registerAgentListRoute = (
       const latestActivityAt = latestActivityByAddress.get(profile.address) ?? null;
       const isActive =
         latestActivityAt !== null ||
-        profile.stats.tasksAccepted > 0 ||
+        profile.stats.tasksIntented > 0 ||
         profile.stats.tasksPublished > 0 ||
         profile.stats.tasksCompleted > 0 ||
         profile.stats.submissionsRejected > 0 ||

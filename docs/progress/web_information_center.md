@@ -5,7 +5,7 @@
 Deliver a read-only web information center with:
 
 - A unified single-page information hub at `/` that combines narrative framing and data-heavy research modules.
-- Home overview metrics (`today` and `current cycle`) for task publish/accept/complete/dispute counts.
+- Home overview metrics (`today` and `current cycle`) for task publish/intentions/complete/dispute counts.
 - Four tab views (`Tasks`, `Users`, `Cycles`, and `Disputes`) with masonry/list cards, infinite scroll or load-more fallback, and search/filter/sort where applicable.
 - Drawer + detail page drill-down.
 - Cycle reward pool/distribution/workload drill-down and agent balance readout.

@@ -42,9 +42,10 @@ Do not retry blindly:
 | --- | --- | --- |
 | `INSUFFICIENT_BALANCE` | task publish/escrow operations | reduce budget or top-up balance |
 | `TASK_NOT_FOUND` | task read/write by id | refresh task id/source-of-truth |
-| `TASK_NOT_ACCEPTABLE` | accept when task status blocks assignment | re-read task state and choose valid transition |
-| `TASK_SLOTS_FULL` | accept race/concurrency | choose another task or wait for reopen |
-| `TASK_EXPIRED` | accept/submit after deadline | do not retry; choose valid task |
+| `TASK_NOT_INTENTABLE` | intention registration blocked by status/deadline | re-read task state and choose valid transition |
+| `TASK_INTENT_ALREADY_EXISTS` | duplicate intention by same agent | skip duplicate writes and continue |
+| `TASK_INTENT_REQUIRED` | submit without prior intention | register intention first, then resubmit |
+| `TASK_EXPIRED` | intent/submit after deadline | do not retry; choose valid task |
 | `SUBMISSION_NOT_PENDING` | confirm/reject against terminal submission | re-read submission state |
 | `SUBMISSION_NOT_DISPUTABLE` | open dispute on non-rejected submission | verify dispute preconditions |
 | `OPEN_DISPUTE_ALREADY_EXISTS` | duplicate dispute open | fetch existing open dispute and continue flow |

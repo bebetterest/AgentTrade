@@ -460,13 +460,95 @@
         }
       }
     },
-    "/v2/tasks/{id}/accept": {
+    "/v2/tasks/{id}/intentions": {
+      "get": {
+        "tags": [
+          "Tasks"
+        ],
+        "operationId": "tasksListIntentionsV2",
+        "summary": "查询任务意向名单",
+        "deprecated": false,
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "任务 id",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "description": "分页游标",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "description": "分页大小",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedTaskIntentionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入或校验错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
       "post": {
         "tags": [
           "Tasks"
         ],
-        "operationId": "tasksAcceptV2",
-        "summary": "接取任务",
+        "operationId": "tasksAddIntentionV2",
+        "summary": "登记任务意向",
         "deprecated": false,
         "security": [
           {
@@ -491,7 +573,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Task"
+                  "$ref": "#/components/schemas/TaskIntention"
                 }
               }
             }
@@ -1342,7 +1424,7 @@
               "type": "string",
               "enum": [
                 "TASK_PUBLISHED",
-                "TASK_ACCEPTED",
+                "TASK_INTENDED",
                 "TASK_COMPLETED",
                 "DISPUTE_OPENED",
                 "TASK_TERMINATED"
@@ -1580,7 +1662,7 @@
                 "reputation",
                 "completed",
                 "published",
-                "accepted"
+                "intented"
               ]
             }
           },
@@ -2392,7 +2474,7 @@
         "additionalProperties": false,
         "required": [
           "tasksPublished",
-          "tasksAccepted",
+          "tasksIntented",
           "tasksCompleted",
           "tasksTerminated",
           "submissionsRejected",
@@ -2402,7 +2484,7 @@
           "tasksPublished": {
             "type": "integer"
           },
-          "tasksAccepted": {
+          "tasksIntented": {
             "type": "integer"
           },
           "tasksCompleted": {
@@ -2478,7 +2560,8 @@
           "allowRepeatCompletionsBySameAgent",
           "taxAmount",
           "rewardEscrowRemaining",
-          "acceptedAgents",
+          "intentCount",
+          "competitionRatio",
           "completedAgents",
           "createdAt",
           "updatedAt"
@@ -2533,13 +2616,11 @@
           "rewardEscrowRemaining": {
             "type": "integer"
           },
-          "acceptedAgents": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "pattern": "^0x[a-fA-F0-9]{40}$",
-              "example": "0x1111111111111111111111111111111111111111"
-            }
+          "intentCount": {
+            "type": "integer"
+          },
+          "competitionRatio": {
+            "type": "number"
           },
           "completedAgents": {
             "type": "array",
@@ -2555,6 +2636,34 @@
             "example": "2026-04-02T08:00:00.000Z"
           },
           "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-04-02T08:00:00.000Z"
+          }
+        }
+      },
+      "TaskIntention": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "taskId",
+          "agent",
+          "createdAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "taskId": {
+            "type": "string"
+          },
+          "agent": {
+            "type": "string",
+            "pattern": "^0x[a-fA-F0-9]{40}$",
+            "example": "0x1111111111111111111111111111111111111111"
+          },
+          "createdAt": {
             "type": "string",
             "format": "date-time",
             "example": "2026-04-02T08:00:00.000Z"
@@ -2811,7 +2920,7 @@
             "type": "string",
             "enum": [
               "TASK_PUBLISHED",
-              "TASK_ACCEPTED",
+              "TASK_INTENDED",
               "TASK_COMPLETED",
               "DISPUTE_OPENED",
               "TASK_TERMINATED"
@@ -2845,7 +2954,7 @@
         "additionalProperties": false,
         "required": [
           "tasksPublished",
-          "tasksAccepted",
+          "tasksIntented",
           "tasksCompleted",
           "disputesOpened"
         ],
@@ -2853,7 +2962,7 @@
           "tasksPublished": {
             "type": "integer"
           },
-          "tasksAccepted": {
+          "tasksIntented": {
             "type": "integer"
           },
           "tasksCompleted": {
@@ -2922,7 +3031,7 @@
           "bucketStart",
           "label",
           "tasksPublished",
-          "tasksAccepted",
+          "tasksIntented",
           "tasksCompleted",
           "disputesOpened"
         ],
@@ -2938,7 +3047,7 @@
           "tasksPublished": {
             "type": "integer"
           },
-          "tasksAccepted": {
+          "tasksIntented": {
             "type": "integer"
           },
           "tasksCompleted": {
@@ -3051,6 +3160,26 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Task"
+            }
+          },
+          "nextCursor": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "PaginatedTaskIntentionResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskIntention"
             }
           },
           "nextCursor": {

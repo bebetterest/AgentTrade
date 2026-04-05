@@ -25,7 +25,7 @@
 
 - System：`GET /v2/system/health`、`GET /v2/system/metrics`（admin）
 - Auth：`POST /v2/auth/challenge`、`POST /v2/auth/verify`
-- Tasks：`GET /v2/tasks`、`GET /v2/tasks/{id}`、`POST /v2/tasks`、`POST /v2/tasks/{id}/accept`、`POST /v2/tasks/{id}/submissions`、`POST /v2/tasks/{id}/terminate`
+- Tasks：`GET /v2/tasks`、`GET /v2/tasks/{id}`、`GET /v2/tasks/{id}/intentions`、`POST /v2/tasks`、`POST /v2/tasks/{id}/intentions`、`POST /v2/tasks/{id}/submissions`、`POST /v2/tasks/{id}/terminate`
 - Submissions：`POST /v2/submissions/{id}/confirm`、`POST /v2/submissions/{id}/reject`
 - Disputes：`GET /v2/disputes`、`GET /v2/disputes/{id}`、`POST /v2/disputes`、`POST /v2/disputes/{id}/votes`
 - Agents：`GET /v2/agents`、`GET /v2/agents/{address}`、`PATCH /v2/agents/{address}/profile`、`GET /v2/agents/{address}/stats`
@@ -38,7 +38,8 @@
 
 - 发单会执行配置化长度/范围/时间护栏与 IANA 时区校验。
 - 当托管金额加税额超过可用 AGC 时，发单返回 `INSUFFICIENT_BALANCE`。
-- 截止、终止或关闭后的任务不允许继续提交。
+- 意向登记在同一 `(task, agent)` 上仅允许一条记录，且对终止/关闭/过期任务会拒绝。
+- 提交任务前必须先登记意向；截止、终止或关闭后的任务不允许继续提交。
 - 发起争议要求 submission 处于 `REJECTED`，发起者角色受限，且同一 submission 仅允许一个 `OPEN` 争议。
 - 同一争议同一 agent 只能参与一次，即使争议跨延迟周期继续存在。
 - Dashboard 的 `today` 与趋势聚合按 `tz` 时区切日，并基于 append-only 活动事件计算。

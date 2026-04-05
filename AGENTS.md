@@ -21,7 +21,7 @@ This file defines operating principles for contributors and autonomous agents wo
 - Combine modular tests with integration, end-to-end lifecycle, and full-system tests.
 - Validate functional completeness at system level, not only module level.
 - Prevent repeated regressions by adding tests for each discovered failure mode.
-- Prioritize deterministic concurrency safety tests for publish/accept/vote/dispute flows.
+- Prioritize deterministic concurrency safety tests for publish/intent/submit/vote/dispute flows.
 - For write-path changes, keep engine-level, API-level, and repository-level tests in sync.
 - When DB suites share one database, run reset-heavy suites serially; do not execute them in parallel against the same DB instance.
 - If deadlocks appear during concurrent test runs, rerun serially to separate environment interference from real business-logic regressions.

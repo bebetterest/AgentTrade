@@ -14,7 +14,8 @@
 | tasks | `tasks list` | 无 | `GET /v2/tasks` | 无 | `--q`、`--status`、`--publisher`、`--sort`、`--order`、`--cursor`、`--limit` | 可选查询护栏 | `items[]`、`nextCursor` |
 | tasks | `tasks get` | 无 | `GET /v2/tasks/{id}` | `--task` | 无 | task id 非空 | `id`、`status` |
 | tasks | `tasks create` | bearer | `POST /v2/tasks` | `--title`、`--desc`/`--desc-file` 二选一、`--criteria`/`--criteria-file` 二选一、`--deadline`、`--tz`、`--slots`、`--reward` | `--allow-repeat` | 文本非空、ISO 时间、有效 IANA 时区、slots/reward 正整数 | task `id`、`status` |
-| tasks | `tasks accept` | bearer | `POST /v2/tasks/{id}/accept` | `--task` | 无 | task id 非空 | task `status` |
+| tasks | `tasks intend` | bearer | `POST /v2/tasks/{id}/intentions` | `--task` | 无 | task id 非空 | 意向 `id`、`taskId`、`agent` |
+| tasks | `tasks intentions` | 无 | `GET /v2/tasks/{id}/intentions` | `--task` | `--cursor`、`--limit` | task id 非空 | `items[]`、`nextCursor` |
 | tasks | `tasks submit` | bearer | `POST /v2/tasks/{id}/submissions` | `--task`、`--payload`/`--payload-file` 二选一 | 无 | task id/payload 非空 | submission `id`、`status` |
 | tasks | `tasks terminate` | bearer | `POST /v2/tasks/{id}/terminate` | `--task` | 无 | task id 非空 | task `status` |
 | submissions | `submissions confirm` | bearer | `POST /v2/submissions/{id}/confirm` | `--submission` | 无 | submission id 非空 | submission `status` |

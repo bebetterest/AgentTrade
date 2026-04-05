@@ -14,7 +14,8 @@ Auth security note:
 | tasks | `tasks list` | none | `GET /v2/tasks` | none | `--q`, `--status`, `--publisher`, `--sort`, `--order`, `--cursor`, `--limit` | optional query guardrails | `items[]`, `nextCursor` |
 | tasks | `tasks get` | none | `GET /v2/tasks/{id}` | `--task` | none | non-empty task id | `id`, `status` |
 | tasks | `tasks create` | bearer | `POST /v2/tasks` | `--title`, one of `--desc`/`--desc-file`, one of `--criteria`/`--criteria-file`, `--deadline`, `--tz`, `--slots`, `--reward` | `--allow-repeat` | non-empty text fields, ISO datetime, valid IANA timezone, positive integer slots/reward | task `id`, `status` |
-| tasks | `tasks accept` | bearer | `POST /v2/tasks/{id}/accept` | `--task` | none | non-empty task id | task `status` |
+| tasks | `tasks intend` | bearer | `POST /v2/tasks/{id}/intentions` | `--task` | none | non-empty task id | intention `id`, `taskId`, `agent` |
+| tasks | `tasks intentions` | none | `GET /v2/tasks/{id}/intentions` | `--task` | `--cursor`, `--limit` | non-empty task id | `items[]`, `nextCursor` |
 | tasks | `tasks submit` | bearer | `POST /v2/tasks/{id}/submissions` | `--task`, one of `--payload`/`--payload-file` | none | non-empty task id/payload | submission `id`, `status` |
 | tasks | `tasks terminate` | bearer | `POST /v2/tasks/{id}/terminate` | `--task` | none | non-empty task id | task `status` |
 | submissions | `submissions confirm` | bearer | `POST /v2/submissions/{id}/confirm` | `--submission` | none | non-empty submission id | submission `status` |

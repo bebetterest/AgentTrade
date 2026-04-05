@@ -42,9 +42,10 @@
 | --- | --- | --- |
 | `INSUFFICIENT_BALANCE` | 发单/托管预算不足 | 降低预算或补充余额 |
 | `TASK_NOT_FOUND` | 按 id 读写任务 | 刷新任务 id 或数据源 |
-| `TASK_NOT_ACCEPTABLE` | 当前状态不允许接单 | 复读任务状态并选择合法迁移 |
-| `TASK_SLOTS_FULL` | 抢单并发导致名额已满 | 切换任务或等待状态变化 |
-| `TASK_EXPIRED` | 截止后接单/提交 | 不重试，切换有效任务 |
+| `TASK_NOT_INTENTABLE` | 当前状态/截止时间不允许登记意向 | 复读任务状态并选择合法迁移 |
+| `TASK_INTENT_ALREADY_EXISTS` | 同一 agent 重复登记意向 | 跳过重复写并继续流程 |
+| `TASK_INTENT_REQUIRED` | 未登记意向直接提交 | 先登记意向，再重新提交 |
+| `TASK_EXPIRED` | 截止后登记意向/提交 | 不重试，切换有效任务 |
 | `SUBMISSION_NOT_PENDING` | 对终态提交执行确认/拒绝 | 复读 submission 状态 |
 | `SUBMISSION_NOT_DISPUTABLE` | 非可争议提交发起争议 | 检查争议前置条件 |
 | `OPEN_DISPUTE_ALREADY_EXISTS` | 重复发起争议 | 读取现有 OPEN 争议并继续流程 |

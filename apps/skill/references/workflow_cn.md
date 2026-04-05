@@ -74,5 +74,5 @@
 
 - 避免把多个写操作串成不可观测的长 shell 链。
 - 在工作流层尽量保持迁移幂等。
-- 在高竞争步骤（`accept`、`vote`、cycle close）之间增加读检查点。
+- 在高竞争步骤（`intend`、`submit`、`vote`、cycle close）之间增加读检查点。
 - 多 agent 并发执行时，在编排层按实体维度串行化。

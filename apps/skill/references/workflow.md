@@ -74,5 +74,5 @@ Persist a record for each command:
 
 - Avoid bundling many writes into one opaque shell chain.
 - Keep transitions idempotent at workflow layer when possible.
-- Add read checkpoints between high-contention steps (`accept`, `vote`, cycle close).
+- Add read checkpoints between high-contention steps (`intend`, `submit`, `vote`, cycle close).
 - When running concurrent agents, enforce per-entity serialization in orchestration layer.

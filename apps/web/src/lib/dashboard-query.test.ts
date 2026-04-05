@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DisputeStatus, TaskStatus } from "@agentrade/types";
 import { parseDashboardQuery, sanitizeQueryPatch } from "./dashboard-query";
-import { getDashboardTabNavigationTarget } from "../components/dashboard/shared";
+import { getDashboardSectionNavigationTarget, getDashboardTabNavigationTarget } from "../components/dashboard/shared";
 
 const fromObject = (input: Record<string, string>) => {
   const search = new URLSearchParams();
@@ -15,6 +15,7 @@ describe("parseDashboardQuery", () => {
   it("parses valid values", () => {
     const query = parseDashboardQuery(
       fromObject({
+        section: "activity",
         tab: "users",
         q: "  alpha  ",
         taskStatus: TaskStatus.OPEN,
@@ -35,6 +36,7 @@ describe("parseDashboardQuery", () => {
     );
 
     expect(query).toEqual({
+      section: "streams",
       tab: "users",
       q: "alpha",
       taskStatus: TaskStatus.OPEN,
@@ -57,6 +59,7 @@ describe("parseDashboardQuery", () => {
   it("falls back for invalid values", () => {
     const query = parseDashboardQuery(
       fromObject({
+        section: "bad",
         tab: "invalid",
         q: "   ",
         taskStatus: "bad",
@@ -77,6 +80,7 @@ describe("parseDashboardQuery", () => {
     );
 
     expect(query).toEqual({
+      section: "streams",
       tab: "tasks",
       q: "",
       taskStatus: null,
@@ -94,6 +98,16 @@ describe("parseDashboardQuery", () => {
       cycleDetailId: null,
       disputeDetailId: null
     });
+  });
+
+  it("uses section when stream context is absent", () => {
+    const query = parseDashboardQuery(fromObject({ section: "metrics" }));
+    expect(query.section).toBe("metrics");
+  });
+
+  it("forces streams section when detail query is present", () => {
+    const query = parseDashboardQuery(fromObject({ section: "overview", taskDetail: "task-1" }));
+    expect(query.section).toBe("streams");
   });
 
   it("accepts the cycles tab", () => {
@@ -117,6 +131,7 @@ describe("sanitizeQueryPatch", () => {
   it("normalizes mutable fields", () => {
     expect(
       sanitizeQueryPatch({
+        section: "metrics",
         q: "  hello world  ",
         taskDetail: "   task-1 ",
         agentDetail: "\n\t0xabc   ",
@@ -124,6 +139,7 @@ describe("sanitizeQueryPatch", () => {
         disputeDetail: "\ndispute-1 "
       })
     ).toEqual({
+      section: "metrics",
       q: "hello world",
       taskDetail: "task-1",
       agentDetail: "0xabc",
@@ -135,6 +151,7 @@ describe("sanitizeQueryPatch", () => {
   it("converts blank fields to null", () => {
     expect(
       sanitizeQueryPatch({
+        section: "bad",
         q: "   ",
         taskDetail: "",
         agentDetail: "\t",
@@ -142,6 +159,7 @@ describe("sanitizeQueryPatch", () => {
         disputeDetail: "\n"
       })
     ).toEqual({
+      section: null,
       q: null,
       taskDetail: null,
       agentDetail: null,
@@ -165,5 +183,22 @@ describe("getDashboardTabNavigationTarget", () => {
 
   it("ignores unrelated keys", () => {
     expect(getDashboardTabNavigationTarget("users", "Enter")).toBeNull();
+  });
+});
+
+describe("getDashboardSectionNavigationTarget", () => {
+  it("moves across sections with arrow keys and wraps", () => {
+    expect(getDashboardSectionNavigationTarget("overview", "ArrowRight")).toBe("metrics");
+    expect(getDashboardSectionNavigationTarget("overview", "ArrowLeft")).toBe("streams");
+    expect(getDashboardSectionNavigationTarget("streams", "ArrowRight")).toBe("overview");
+  });
+
+  it("supports Home and End keys", () => {
+    expect(getDashboardSectionNavigationTarget("activity", "Home")).toBe("overview");
+    expect(getDashboardSectionNavigationTarget("overview", "End")).toBe("streams");
+  });
+
+  it("ignores unrelated keys", () => {
+    expect(getDashboardSectionNavigationTarget("metrics", "Enter")).toBeNull();
   });
 });

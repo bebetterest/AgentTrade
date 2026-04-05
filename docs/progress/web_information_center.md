@@ -4,7 +4,7 @@
 
 Deliver a read-only web information center with:
 
-- A narrative public home at `/` plus a data-heavy research center at `/center`.
+- A unified single-page information hub at `/` that combines narrative framing and data-heavy research modules.
 - Home overview metrics (`today` and `current cycle`) for task publish/accept/complete/dispute counts.
 - Four tab views (`Tasks`, `Users`, `Cycles`, and `Disputes`) with masonry/list cards, infinite scroll or load-more fallback, and search/filter/sort where applicable.
 - Drawer + detail page drill-down.
@@ -59,6 +59,12 @@ Deliver a read-only web information center with:
 | M16 | Disputes tab + dispute detail routes | DONE | Added `Disputes` top-level tab, status/sort query state, drawer flow, and `/disputes/[id]` full page route |
 | M17 | Trust surfaces + visual refresh | DONE | Added public economy/health readouts, sticky site header, unified card hierarchy, and research-style visual tokens across home/center |
 
+## Phase 7 Module Tracker
+
+| Module | Scope | Status | Notes |
+| --- | --- | --- | --- |
+| M18 | Single-page hub merge (`/center` removal) | DONE | Merged home + center into `/`, removed `/center` route (404), kept URL-state query semantics, and upgraded lifecycle flow into a visual diagram |
+
 ## Phase 2 API Delta
 
 - Extended `GET /v2/cycles/{id}/rewards` to return `cycle`, `rewardPool`, `distributions[]`, and `workloads[]`.
@@ -73,7 +79,7 @@ Deliver a read-only web information center with:
 - [x] `Cycles` tab supports list pagination, active-cycle deep links, and reward/workload drill-down.
 - [x] `Disputes` tab supports list browse, status filter, sort, drawer detail, and shareable full page detail.
 - [x] Drawer detail and full detail pages are linked and URL-shareable.
-- [x] `/` public home and `/center` research center are separated while preserving legacy dashboard query-link compatibility.
+- [x] `/` is the single dashboard-bearing route and `/center` is removed.
 - [x] Agent detail shows current ledger balance and task detail shows escrow/slot/dispute context.
 - [x] Public economy params and system health are visible in read-only trust modules.
 - [x] Markdown fields are rendered via safe subset strategy.
@@ -93,9 +99,17 @@ Deliver a read-only web information center with:
 
 ## Incremental Update Log
 
+- 2026-04-04: Delivered single-page hub merge:
+  - Promoted `/` to the only Web information hub route and removed `apps/web/src/app/center/page.tsx` (`/center` now 404).
+  - Rebuilt dashboard hero into runtime-first single-page structure with in-page anchors (`#overview`, `#flow`, `#streams`) and compact trust signals on the hero rail.
+  - Added a dedicated lifecycle flow diagram module (`FlowDiagram`) and unit coverage for English/Chinese rendering.
+  - Preserved query-driven tab/filter/detail state semantics on `/` and rewired all in-app deep links from `/center?...` to `/?...#streams`.
+  - Updated direct detail pages (`tasks/agents/cycles/disputes`) so back-navigation and error guidance target the information hub instead of the removed center route.
+  - Updated web E2E specs for the new single-page IA and added explicit `/center` removal expectation.
+
 - 2026-04-03: Delivered second-pass Web V2 polish:
   - Upgraded `apps/web/src/components/site-header.tsx` into a mobile-aware navigation shell with overlay menu behavior.
-  - Restructured `apps/web/src/components/public-home-view.tsx` into richer rule-card and trust-block sections so public economy/guardrail data reads as a research surface instead of a plain metric list.
+  - Restructured the former home economy/trust area into richer rule-card and trust-block sections so public economy/guardrail data reads as a research surface instead of a plain metric list.
   - Added compact tracked-entity summary chips to `apps/web/src/components/dashboard/dashboard-view.tsx` and extended the center trust card with persistence/bridge visibility.
   - Unified detail drawers behind a reusable focus-trapped shell, restored consistent full-page deep links from task/agent drawers, and reflowed tabs/filter controls for mobile-first use.
   - Added arrow-key/Home/End keyboard navigation for center tabs, plus stronger focus-visible feedback for keyboard use.

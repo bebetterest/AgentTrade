@@ -1,5 +1,15 @@
 # Progress Status
 
+## 2026-04-04
+
+- Completed Web single-page information hub merge:
+  - promoted `/` as the only dashboard-bearing route and removed `/center` (now 404),
+  - unified dashboard IA into runtime-first hero + in-page anchors (`#overview`, `#flow`, `#streams`),
+  - added a visual lifecycle flow diagram module and corresponding unit coverage,
+  - preserved query-driven tab/filter/detail URL semantics on `/`,
+  - rewired detail-page back links and read-surface copy from "research center" to "information hub".
+- Updated bilingual docs (`README*`, `docs/tech_plan*`, `docs/progress/web_information_center*`) to reflect `/center` removal and the merged IA.
+
 ## 2026-04-03
 
 - Unified rate-limit failures to the same v2 error envelope as other API errors (`error.code/message/details/requestId/retryable`), removing the last legacy `{ error, message }` branch.

@@ -20,10 +20,10 @@ const copy = (locale: SupportedLocale) =>
     ? {
         loadFailed: "代理人详情加载失败",
         loadUnavailable: "详情服务暂时不可用。",
-        back: "返回数据中心",
+        back: "返回 AgentHire 平台",
         notFound: "代理人不存在",
-        loadHint: "代理人详情服务当前不可用，可以返回数据中心查看其他公开实体。",
-        notFoundHint: "这个地址当前没有公开档案，请返回数据中心重新选择。",
+        loadHint: "代理人详情服务当前不可用，可以返回 AgentHire 平台查看其他公开实体。",
+        notFoundHint: "这个地址当前没有公开档案，请返回 AgentHire 平台重新选择。",
         eyebrow: "代理人档案",
         description: "查看代理人的公开账本、信誉结构和活动时间线，所有写操作仍保留在已认证 CLI/API。",
         address: "地址",
@@ -36,10 +36,10 @@ const copy = (locale: SupportedLocale) =>
     : {
         loadFailed: "Agent Detail Load Failed",
         loadUnavailable: "The detail service is temporarily unavailable.",
-        back: "Back to research center",
+        back: "Back to AgentHire",
         notFound: "Agent Not Found",
-        loadHint: "The agent detail service is unavailable right now. Return to the research center and inspect another public entity.",
-        notFoundHint: "There is no public profile for this address. Return to the research center and choose another entity.",
+        loadHint: "The agent detail service is unavailable right now. Return to AgentHire and inspect another public entity.",
+        notFoundHint: "There is no public profile for this address. Return to AgentHire and choose another entity.",
         eyebrow: "Agent Profile",
         description: "Inspect public ledger balance, reputation structure, and recent activity while keeping all writes on authenticated CLI/API paths.",
         address: "Address",
@@ -83,7 +83,7 @@ export default async function AgentDetailPage({ params }: AgentDetailPageProps) 
         eyebrow={t.eyebrow}
         title={t.loadFailed}
         description={t.loadUnavailable}
-        backHref="/center?tab=users"
+        backHref="/?section=streams&tab=users"
         backLabel={t.back}
         metaLabel={t.address}
         metaValue={shortAddress(address)}
@@ -92,7 +92,7 @@ export default async function AgentDetailPage({ params }: AgentDetailPageProps) 
         <DetailStateCard
           title={t.loadFailed}
           body={t.loadHint}
-          actionHref="/center?tab=users"
+          actionHref="/?section=streams&tab=users"
           actionLabel={t.back}
         />
       </DetailPageShell>
@@ -107,7 +107,7 @@ export default async function AgentDetailPage({ params }: AgentDetailPageProps) 
         eyebrow={t.eyebrow}
         title={t.notFound}
         description={t.description}
-        backHref="/center?tab=users"
+        backHref="/?section=streams&tab=users"
         backLabel={t.back}
         metaLabel={t.address}
         metaValue={shortAddress(address)}
@@ -116,7 +116,7 @@ export default async function AgentDetailPage({ params }: AgentDetailPageProps) 
         <DetailStateCard
           title={t.notFound}
           body={t.notFoundHint}
-          actionHref="/center?tab=users"
+          actionHref="/?section=streams&tab=users"
           actionLabel={t.back}
         />
       </DetailPageShell>
@@ -130,7 +130,7 @@ export default async function AgentDetailPage({ params }: AgentDetailPageProps) 
       eyebrow={t.eyebrow}
       title={profile.name || shortAddress(profile.address)}
       description={t.description}
-      backHref="/center?tab=users"
+      backHref="/?section=streams&tab=users"
       backLabel={t.back}
       metaLabel={t.address}
       metaValue={shortAddress(profile.address)}

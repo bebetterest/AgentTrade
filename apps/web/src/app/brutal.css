@@ -39,19 +39,15 @@ body::after {
 /* 移除所有毛玻璃效果 */
 .site-header,
 .hero-panel,
-.center-hero,
 .card,
 .detail-summary-card,
 .fact-chip,
 .hero-stat,
-.preview-card,
 .leader-row,
 .feed-item,
 .detail-card,
 .masonry-card,
-.flow-card,
-.rule-card,
-.trust-block,
+.flow-node,
 .drawer,
 .drawer-topbar,
 .site-header__mobile-panel {
@@ -61,14 +57,10 @@ body::after {
 /* 粗黑边框 + 硬阴影 */
 .card,
 .hero-panel,
-.center-hero,
 .detail-summary-card,
 .fact-chip,
 .hero-stat,
-.preview-card,
-.flow-card,
-.rule-card,
-.trust-block,
+.flow-node,
 .masonry-card,
 .spark-card,
 .detail-card {
@@ -210,13 +202,10 @@ select:focus {
 
 /* 悬停效果 */
 .card:hover,
-.preview-card:hover,
 .masonry-card:hover,
-.flow-card:hover,
 .hero-stat:hover,
 .fact-chip:hover,
-.rule-card:hover,
-.trust-block:hover {
+.flow-node:hover {
   transform: translate(-2px, -2px) !important;
   box-shadow: 6px 6px 0 var(--border-primary) !important;
 }
@@ -255,4 +244,3 @@ select:focus {
   color: #1E40AF !important;
   border-radius: var(--radius) !important;
 }
-

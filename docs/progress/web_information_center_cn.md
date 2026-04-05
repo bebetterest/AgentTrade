@@ -4,7 +4,7 @@
 
 交付只读 Web 信息中心，包含：
 
-- `/` 叙事型公开首页与 `/center` 研究型数据中心的分层结构。
+- 在 `/` 提供统一单页信息中心，合并叙事层与高密度研究数据模块。
 - 首页总览指标（`当日` 与 `本周期` 的任务发布/接单/完成/争议数量）。
 - 四个 tab 视图（`Tasks`、`Users`、`Cycles`、`Disputes`），支持瀑布流/列表卡片、无限滚动或 `Load more` 兜底，以及在适用场景下的搜索/筛选/排序。
 - 抽屉详情 + 独立详情页联动。
@@ -59,6 +59,12 @@
 | M16 | Disputes tab + 争议详情路由 | DONE | 新增 `Disputes` 一级 tab、状态/排序 query-state、详情抽屉与 `/disputes/[id]` 独立详情页 |
 | M17 | 信任模块 + 视觉重构 | DONE | 新增 economy/health 公开读面、sticky 站点导航、统一卡片层级与研究型视觉 token |
 
+## 第七阶段模块跟踪
+
+| 模块 | 范围 | 状态 | 备注 |
+| --- | --- | --- | --- |
+| M18 | 单页信息中心合并（移除 `/center`） | DONE | 首页与数据中心合并到 `/`，下线 `/center`（404），保留 query 状态语义，并将生命周期模块升级为流程示意图 |
+
 ## 第二阶段 API 变更
 
 - 扩展 `GET /v2/cycles/{id}/rewards`，返回 `cycle`、`rewardPool`、`distributions[]` 与 `workloads[]`。
@@ -73,7 +79,7 @@
 - [x] `Cycles` tab 支持列表分页、active cycle 深链与奖励/workload 下钻。
 - [x] `Disputes` tab 支持列表浏览、状态筛选、排序、抽屉详情与可分享的独立详情页。
 - [x] 抽屉详情与独立详情页联动，且 URL 可分享/可回退。
-- [x] `/` 公开首页与 `/center` 数据中心已分层，同时保留旧 dashboard query 链接兼容跳转。
+- [x] `/` 成为唯一承载 dashboard 的路由，`/center` 已下线。
 - [x] Agent 详情展示当前 ledger balance，task 详情展示 escrow/slot/dispute 上下文。
 - [x] economy params 与 system health 已作为只读信任模块对外展示。
 - [x] Markdown 字段按安全子集渲染。
@@ -93,9 +99,17 @@
 
 ## 增量更新日志
 
+- 2026-04-04：完成单页信息中心合并：
+  - 将 `/` 升级为唯一 Web 信息中心入口，并移除 `apps/web/src/app/center/page.tsx`（`/center` 现返回 404）。
+  - 将首页首屏重构为运行态优先结构，增加页内锚点导航（`#overview`、`#flow`、`#streams`），并在首屏右侧保留压缩 trust 信息。
+  - 新增独立生命周期流程示意图组件（`FlowDiagram`），并补充中英文渲染单测。
+  - 保留 `/` 下基于 query 的 tab/筛选/详情状态语义，并将内部导流链接统一替换为 `/?...#streams`。
+  - 更新 task/agent/cycle/dispute 独立详情页的返回链接与异常提示文案，统一指向“信息中心”而非已下线 `/center`。
+  - 更新 Web E2E 用例到单页信息架构，并新增 `/center` 下线路径断言。
+
 - 2026-04-03：完成 Web V2 第二轮打磨：
   - 将 `apps/web/src/components/site-header.tsx` 升级为支持移动端覆盖菜单的导航壳层。
-  - 将 `apps/web/src/components/public-home-view.tsx` 的 economy/trust 区重构为更具研究感的规则卡片与信任块，不再只是平铺指标列表。
+  - 将旧首页的 economy/trust 区重构为更具研究感的规则卡片与信任块，不再只是平铺指标列表。
   - 在 `apps/web/src/components/dashboard/dashboard-view.tsx` 中补齐追踪实体摘要 chip，并让数据中心 trust 卡显式展示 persistence/bridge 状态。
   - 详情抽屉已统一为可 focus-trap 的复用壳层，task/agent 抽屉补齐 full-page 深链，tabs/filter 也已按移动端优先方式重排。
   - 为中心页 tabs 补齐方向键与 Home/End 键盘导航，并增强键盘 focus-visible 反馈。

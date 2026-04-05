@@ -1,7 +1,6 @@
+import { Suspense } from "react";
 import { cookies, headers } from "next/headers";
-import { redirect } from "next/navigation";
-import { PublicHomeView } from "../components/public-home-view";
-import { SiteHeader } from "../components/site-header";
+import { Dashboard } from "../components/dashboard";
 import {
   fetchActivities,
   fetchActiveCycle,
@@ -10,9 +9,12 @@ import {
   fetchDashboardSummary,
   fetchDashboardTrends,
   fetchDisputes,
+  fetchEconomyParams,
+  fetchHealthStatus,
   fetchTasks
 } from "../lib/api";
-import { hasLegacyDashboardQuery, toSearchParamsString } from "../lib/dashboard-route";
+import type { ActivityEvent, AgentDirectoryItem, Cycle, Dispute, PaginatedResponse, Task } from "@agentrade/types";
+import type { DashboardSection } from "../lib/dashboard-query";
 import {
   LOCALE_COOKIE_NAME,
   TIMEZONE_COOKIE_NAME,
@@ -20,51 +22,110 @@ import {
 } from "../lib/request-context";
 
 interface HomePageProps {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }
 
-export default async function HomePage({ searchParams }: HomePageProps) {
-  const resolvedSearchParams = await searchParams;
-
-  if (hasLegacyDashboardQuery(resolvedSearchParams)) {
-    const query = toSearchParamsString(resolvedSearchParams);
-    redirect(query.length > 0 ? `/center?${query}` : "/center");
+const getFirstSearchParam = (value: string | string[] | undefined): string | null => {
+  if (typeof value === "string") {
+    return value;
   }
+  if (Array.isArray(value)) {
+    return value[0] ?? null;
+  }
+  return null;
+};
 
+const resolveInitialSection = (search: Record<string, string | string[] | undefined>): DashboardSection => {
+  const sectionRaw = getFirstSearchParam(search.section);
+  const hasTabParam = getFirstSearchParam(search.tab) !== null;
+  const hasDetailParam = [
+    getFirstSearchParam(search.taskDetail),
+    getFirstSearchParam(search.agentDetail),
+    getFirstSearchParam(search.cycleDetail),
+    getFirstSearchParam(search.disputeDetail)
+  ].some((value) => Boolean(value && value.trim().length > 0));
+
+  if (hasTabParam || hasDetailParam) {
+    return "streams";
+  }
+  if (sectionRaw === "metrics" || sectionRaw === "activity" || sectionRaw === "streams") {
+    return sectionRaw;
+  }
+  return "overview";
+};
+
+const createEmptyPage = <T,>(): PaginatedResponse<T> => ({ items: [], nextCursor: null });
+
+export default async function HomePage({ searchParams }: HomePageProps) {
   const cookieStore = await cookies();
   const headerStore = await headers();
+  const search = (await searchParams) ?? {};
   const requestPreferences = resolveRequestPreferences({
     acceptLanguage: headerStore.get("accept-language") ?? undefined,
     localeCookie: cookieStore.get(LOCALE_COOKIE_NAME)?.value,
     timeZoneCookie: cookieStore.get(TIMEZONE_COOKIE_NAME)?.value
   });
+  const initialSection = resolveInitialSection(search);
+  const shouldPrefetchStreams = initialSection === "streams";
+  const shouldPrefetchActivity = initialSection === "activity";
+  const shouldPrefetchMetrics = initialSection === "metrics";
 
-  const [summary, trends, tasks, leaders, activeCycle, activities, cycles, disputes] = await Promise.all([
+  const [summary, trends, leaders, activeCycle, tasks, agents, activities, cycles, disputes, economy, health] = await Promise.all([
     fetchDashboardSummary(requestPreferences.timeZone),
     fetchDashboardTrends(requestPreferences.timeZone, "7d"),
-    fetchTasks({ limit: 4, sort: "latest", order: "desc" }),
     fetchAgents({ limit: 5, activeOnly: true, sort: "score", order: "desc" }),
     fetchActiveCycle(),
-    fetchActivities({ limit: 6, order: "desc" }),
-    fetchCycles({ limit: 4 }),
-    fetchDisputes({ limit: 4, sort: "latest", order: "desc" })
+    shouldPrefetchStreams
+      ? fetchTasks({ limit: 20, sort: "latest", order: "desc" })
+      : Promise.resolve(createEmptyPage<Task>()),
+    shouldPrefetchStreams
+      ? fetchAgents({ limit: 20, activeOnly: true, sort: "latest", order: "desc" })
+      : Promise.resolve(createEmptyPage<AgentDirectoryItem>()),
+    shouldPrefetchActivity
+      ? fetchActivities({ limit: 12, order: "desc" })
+      : Promise.resolve(createEmptyPage<ActivityEvent>()),
+    shouldPrefetchStreams
+      ? fetchCycles({ limit: 12 })
+      : Promise.resolve(createEmptyPage<Cycle>()),
+    shouldPrefetchStreams
+      ? fetchDisputes({ limit: 20, sort: "latest", order: "desc" })
+      : Promise.resolve(createEmptyPage<Dispute>()),
+    shouldPrefetchMetrics
+      ? fetchEconomyParams()
+      : Promise.resolve(null),
+    shouldPrefetchMetrics
+      ? fetchHealthStatus()
+      : Promise.resolve(null)
   ]);
 
   return (
-    <>
-      <SiteHeader locale={requestPreferences.locale} active="home" />
-      <PublicHomeView
-        locale={requestPreferences.locale}
-        timeZone={requestPreferences.timeZone}
-        summary={summary}
-        trends={trends}
-        activeCycle={activeCycle}
-        leaders={leaders.items}
-        activities={activities}
-        tasks={tasks}
-        disputes={disputes}
-        cycles={cycles}
+    <Suspense
+      fallback={
+        <main className="page">
+          <section className="card">
+            {requestPreferences.locale === "zh" ? "加载 AgentHire 平台中..." : "Loading AgentHire platform..."}
+          </section>
+        </main>
+      }
+    >
+      <Dashboard
+        initialLocale={requestPreferences.locale}
+        initialTimeZone={requestPreferences.timeZone}
+        initialSummary={summary}
+        initialTrends={trends}
+        initialTasks={tasks}
+        initialAgents={agents}
+        initialLeaders={leaders.items}
+        initialActiveCycle={activeCycle}
+        initialActivities={activities}
+        initialCycles={cycles}
+        initialDisputes={disputes}
+        initialEconomy={economy}
+        initialHealth={health}
+        initialStreamsLoaded={shouldPrefetchStreams}
+        initialActivityLoaded={shouldPrefetchActivity}
+        initialMetricsLoaded={shouldPrefetchMetrics}
       />
-    </>
+    </Suspense>
   );
 }

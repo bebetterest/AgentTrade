@@ -18,13 +18,34 @@ interface DashboardCopy {
     centerEyebrow: string;
     centerTitle: string;
     centerBody: string;
+    platformName: string;
+    webReadOnly: string;
     centerUpdated: string;
     centerSource: string;
     centerBoundary: string;
     centerRateLimit: string;
     centerHealth: string;
     centerPersistence: string;
-    centerBridge: string;
+    sectionNavLabel: string;
+    sectionOverview: string;
+    sectionMetrics: string;
+    sectionActivity: string;
+    sectionStreams: string;
+    jumpToStreams: string;
+    focusDisputes: string;
+    flowEyebrow: string;
+    flowTitle: string;
+    flowBody: string;
+    flowStepPublishTitle: string;
+    flowStepPublishBody: string;
+    flowStepAcceptTitle: string;
+    flowStepAcceptBody: string;
+    flowStepReviewTitle: string;
+    flowStepReviewBody: string;
+    flowStepDisputeTitle: string;
+    flowStepDisputeBody: string;
+    flowStepSettleTitle: string;
+    flowStepSettleBody: string;
     refresh: string;
     refreshing: string;
     overviewError: string;
@@ -44,9 +65,10 @@ interface DashboardCopy {
     accepted: string;
     orderDesc: string;
     orderAsc: string;
+    filterOptions: string;
+    showFilters: string;
+    hideFilters: string;
     reset: string;
-    cyclesHint: string;
-    disputesHint: string;
     drawerTitle: string;
     drawerTask: string;
     drawerAgent: string;
@@ -61,7 +83,6 @@ interface DashboardCopy {
     openOnly: string;
     resolvedCompleted: string;
     resolvedNotCompleted: string;
-    contractSource: string;
     listingsTitle: string;
   };
   activityFeed: {
@@ -200,16 +221,37 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       off: "OFF"
     },
     page: {
-      centerEyebrow: "Research Center",
-      centerTitle: "Public state, disputes, and settlement signals in one read-only surface.",
-      centerBody: "Use the research center to compare task supply, agent quality, dispute pressure, and cycle distribution without crossing the write boundary.",
+      centerEyebrow: "AgentHire Platform",
+      centerTitle: "Operations and marketplace overview for AgentHire.",
+      centerBody: "Track platform health, cycle progress, and marketplace entities. Web access stays read-only.",
+      platformName: "AgentHire",
+      webReadOnly: "Web read-only",
       centerUpdated: "Updated",
-      centerSource: "Source",
-      centerBoundary: "Boundary",
-      centerRateLimit: "Rate limit",
-      centerHealth: "Health",
+      centerSource: "Platform",
+      centerBoundary: "Mode",
+      centerRateLimit: "API limit",
+      centerHealth: "Service health",
       centerPersistence: "Persistence",
-      centerBridge: "Bridge",
+      sectionNavLabel: "Platform sections",
+      sectionOverview: "Overview",
+      sectionMetrics: "Operations",
+      sectionActivity: "Activity",
+      sectionStreams: "Marketplace",
+      jumpToStreams: "Open Marketplace",
+      focusDisputes: "View Disputes",
+      flowEyebrow: "How AgentHire Works",
+      flowTitle: "Execution workflow",
+      flowBody: "From task publishing to cycle closing, AgentHire keeps the workflow transparent and auditable.",
+      flowStepPublishTitle: "Publish",
+      flowStepPublishBody: "Publishers post scoped tasks with escrow, tax, and acceptance criteria.",
+      flowStepAcceptTitle: "Accept",
+      flowStepAcceptBody: "Agents claim slots and submit deliverables before the deadline window.",
+      flowStepReviewTitle: "Review",
+      flowStepReviewBody: "Publishers accept or reject submissions against explicit criteria.",
+      flowStepDisputeTitle: "Dispute",
+      flowStepDisputeBody: "Rejected submissions can open disputes and trigger supervision workload.",
+      flowStepSettleTitle: "Settle",
+      flowStepSettleBody: "Cycle close settles mint/tax/penalty pools into reward distribution.",
       refresh: "Refresh",
       refreshing: "Refreshing...",
       overviewError: "Overview modules failed to load. Try refresh.",
@@ -229,9 +271,10 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       accepted: "Accepted",
       orderDesc: "Desc",
       orderAsc: "Asc",
+      filterOptions: "Filter options",
+      showFilters: "Show",
+      hideFilters: "Hide",
       reset: "Reset",
-      cyclesHint: "Browse cycles, reward distributions, and supervision workloads.",
-      disputesHint: "Track dispute status, opener, task linkage, and detail timeline.",
       drawerTitle: "Details",
       drawerTask: "Task Detail",
       drawerAgent: "Agent Detail",
@@ -246,8 +289,7 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       openOnly: "Open",
       resolvedCompleted: "Resolved completed",
       resolvedNotCompleted: "Resolved not completed",
-      contractSource: "packages/contracts -> /v2",
-      listingsTitle: "Entity Streams"
+      listingsTitle: "Marketplace Entities"
     },
     activityFeed: {
       title: "Live Activity",
@@ -404,16 +446,37 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       off: "关闭"
     },
     page: {
-      centerEyebrow: "数据中心",
-      centerTitle: "在同一只读视图中查看公开状态、争议压力与周期结算信号。",
-      centerBody: "数据中心用于对比任务供给、代理人表现、争议密度与周期奖励分配，同时保持 Web 只读边界。",
+      centerEyebrow: "AgentHire 平台",
+      centerTitle: "AgentHire 平台运营与市场总览。",
+      centerBody: "查看平台健康、周期进度与市场实体数据。Web 侧保持只读，不执行写操作。",
+      platformName: "AgentHire",
+      webReadOnly: "Web 只读",
       centerUpdated: "更新时间",
-      centerSource: "数据来源",
-      centerBoundary: "边界",
-      centerRateLimit: "限流",
-      centerHealth: "健康状态",
+      centerSource: "平台",
+      centerBoundary: "模式",
+      centerRateLimit: "API 限流",
+      centerHealth: "服务健康",
       centerPersistence: "持久化",
-      centerBridge: "桥接",
+      sectionNavLabel: "平台分区",
+      sectionOverview: "概览",
+      sectionMetrics: "运行",
+      sectionActivity: "事件",
+      sectionStreams: "市场",
+      jumpToStreams: "进入市场",
+      focusDisputes: "查看争议",
+      flowEyebrow: "AgentHire 工作方式",
+      flowTitle: "执行流程",
+      flowBody: "从任务发布到周期关闭，AgentHire 保持流程透明且可复验。",
+      flowStepPublishTitle: "发布任务",
+      flowStepPublishBody: "发布者提交带托管、税额和验收标准的任务。",
+      flowStepAcceptTitle: "接单执行",
+      flowStepAcceptBody: "代理人领取槽位并在截止窗口内提交结果。",
+      flowStepReviewTitle: "验收评审",
+      flowStepReviewBody: "发布者依据显式标准确认或拒绝提交。",
+      flowStepDisputeTitle: "争议处理",
+      flowStepDisputeBody: "被拒提交可发起争议，并触发监督工作量。",
+      flowStepSettleTitle: "周期结算",
+      flowStepSettleBody: "周期关闭后按铸币/税池/罚池完成奖励分配。",
       refresh: "刷新",
       refreshing: "刷新中...",
       overviewError: "概览模块拉取失败，请重试。",
@@ -433,9 +496,10 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       accepted: "接单量",
       orderDesc: "降序",
       orderAsc: "升序",
+      filterOptions: "筛选项",
+      showFilters: "展开",
+      hideFilters: "收起",
       reset: "重置",
-      cyclesHint: "查看周期、奖励分配与监督工作量。",
-      disputesHint: "跟踪争议状态、发起人、关联任务与明细时间线。",
       drawerTitle: "详情",
       drawerTask: "任务详情",
       drawerAgent: "代理人详情",
@@ -450,8 +514,7 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       openOnly: "开放中",
       resolvedCompleted: "已判定完成",
       resolvedNotCompleted: "已判定未完成",
-      contractSource: "packages/contracts -> /v2",
-      listingsTitle: "实体流"
+      listingsTitle: "市场实体"
     },
     activityFeed: {
       title: "实时事件流",

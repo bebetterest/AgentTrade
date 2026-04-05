@@ -1,6 +1,7 @@
 import { DisputeStatus, TaskStatus } from "@agentrade/types";
 
 export type DashboardTab = "tasks" | "users" | "cycles" | "disputes";
+export type DashboardSection = "overview" | "metrics" | "activity" | "streams";
 export type SortOrder = "asc" | "desc";
 export type TaskSort = "latest" | "created" | "deadline" | "reward";
 export type AgentSort = "latest" | "score" | "reputation" | "completed" | "published" | "accepted";
@@ -8,6 +9,7 @@ export type DisputeSort = "latest" | "created";
 export type TrendWindow = "7d" | "30d";
 
 const DEFAULT_TAB: DashboardTab = "tasks";
+const DEFAULT_SECTION: DashboardSection = "overview";
 const DEFAULT_SORT_ORDER: SortOrder = "desc";
 const DEFAULT_TASK_SORT: TaskSort = "latest";
 const DEFAULT_AGENT_SORT: AgentSort = "latest";
@@ -21,6 +23,7 @@ const TASK_SORT_VALUES = new Set<string>(["latest", "created", "deadline", "rewa
 const AGENT_SORT_VALUES = new Set<string>(["latest", "score", "reputation", "completed", "published", "accepted"]);
 const DISPUTE_SORT_VALUES = new Set<string>(["latest", "created"]);
 const SORT_ORDER_VALUES = new Set<string>(["asc", "desc"]);
+const SECTION_VALUES = new Set<string>(["overview", "metrics", "activity", "streams"]);
 
 interface SearchParamsReader {
   get(key: string): string | null;
@@ -94,6 +97,13 @@ const toTab = (value: string | null): DashboardTab => {
   return DEFAULT_TAB;
 };
 
+const toSection = (value: string | null): DashboardSection => {
+  if (!value || !SECTION_VALUES.has(value)) {
+    return DEFAULT_SECTION;
+  }
+  return value as DashboardSection;
+};
+
 const normalizeIdentifier = (value: string | null): string | null => {
   if (!value) {
     return null;
@@ -103,6 +113,7 @@ const normalizeIdentifier = (value: string | null): string | null => {
 };
 
 export interface DashboardQueryState {
+  section: DashboardSection;
   tab: DashboardTab;
   q: string;
   taskStatus: TaskStatus | null;
@@ -122,8 +133,16 @@ export interface DashboardQueryState {
 }
 
 export const parseDashboardQuery = (searchParams: SearchParamsReader): DashboardQueryState => {
+  const tabRaw = searchParams.get("tab");
+  const taskDetailId = normalizeIdentifier(searchParams.get("taskDetail"));
+  const agentDetailAddress = normalizeIdentifier(searchParams.get("agentDetail"));
+  const cycleDetailId = normalizeIdentifier(searchParams.get("cycleDetail"));
+  const disputeDetailId = normalizeIdentifier(searchParams.get("disputeDetail"));
+  const hasLegacyStreamsContext = tabRaw !== null || Boolean(taskDetailId || agentDetailAddress || cycleDetailId || disputeDetailId);
+
   return {
-    tab: toTab(searchParams.get("tab")),
+    section: hasLegacyStreamsContext ? "streams" : toSection(searchParams.get("section")),
+    tab: toTab(tabRaw),
     q: normalizeQuery(searchParams.get("q")),
     taskStatus: toTaskStatus(searchParams.get("taskStatus")),
     taskSort: toTaskSort(searchParams.get("taskSort")),
@@ -135,15 +154,18 @@ export const parseDashboardQuery = (searchParams: SearchParamsReader): Dashboard
     disputeOrder: toSortOrder(searchParams.get("disputeOrder")),
     activeOnly: toBooleanParam(searchParams.get("activeOnly"), true),
     trendWindow: toTrendWindow(searchParams.get("trendWindow")),
-    taskDetailId: normalizeIdentifier(searchParams.get("taskDetail")),
-    agentDetailAddress: normalizeIdentifier(searchParams.get("agentDetail")),
-    cycleDetailId: normalizeIdentifier(searchParams.get("cycleDetail")),
-    disputeDetailId: normalizeIdentifier(searchParams.get("disputeDetail"))
+    taskDetailId,
+    agentDetailAddress,
+    cycleDetailId,
+    disputeDetailId
   };
 };
 
 export const sanitizeQueryPatch = (patch: Record<string, string | null>): Record<string, string | null> => {
   const next = { ...patch };
+  if ("section" in next) {
+    next.section = SECTION_VALUES.has(next.section ?? "") ? next.section : null;
+  }
   if ("q" in next) {
     next.q = normalizeQuery(next.q ?? null) || null;
   }

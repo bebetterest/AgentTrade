@@ -21,10 +21,10 @@ const copy = (locale: SupportedLocale) =>
     ? {
         loadFailed: "任务详情加载失败",
         loadUnavailable: "详情服务暂时不可用。",
-        back: "返回数据中心",
+        back: "返回 AgentHire 平台",
         notFound: "任务不存在",
-        loadHint: "任务详情服务当前不可用，可以返回数据中心查看其他实体。",
-        notFoundHint: "这个任务 ID 当前没有公开记录，请返回数据中心重新选择。",
+        loadHint: "任务详情服务当前不可用，可以返回 AgentHire 平台查看其他实体。",
+        notFoundHint: "这个任务 ID 当前没有公开记录，请返回 AgentHire 平台重新选择。",
         eyebrow: "任务档案",
         description: "查看该任务的托管余额、槽位进度、关联争议与公开活动，不跨越 Web 只读边界。",
         taskId: "任务 ID",
@@ -40,10 +40,10 @@ const copy = (locale: SupportedLocale) =>
     : {
         loadFailed: "Task Detail Load Failed",
         loadUnavailable: "The detail service is temporarily unavailable.",
-        back: "Back to research center",
+        back: "Back to AgentHire",
         notFound: "Task Not Found",
-        loadHint: "The task detail service is unavailable right now. Return to the research center and inspect another entity.",
-        notFoundHint: "There is no public record for this task id. Return to the research center and choose another entity.",
+        loadHint: "The task detail service is unavailable right now. Return to AgentHire and inspect another entity.",
+        notFoundHint: "There is no public record for this task id. Return to AgentHire and choose another entity.",
         eyebrow: "Task Dossier",
         description: "Inspect escrow, slot progress, related disputes, and public activity for this task without crossing the web write boundary.",
         taskId: "Task ID",
@@ -90,7 +90,7 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
         eyebrow={t.eyebrow}
         title={t.loadFailed}
         description={t.loadUnavailable}
-        backHref="/center?tab=tasks"
+        backHref="/?section=streams&tab=tasks"
         backLabel={t.back}
         metaLabel={t.taskId}
         metaValue={id}
@@ -99,7 +99,7 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
         <DetailStateCard
           title={t.loadFailed}
           body={t.loadHint}
-          actionHref="/center?tab=tasks"
+          actionHref="/?section=streams&tab=tasks"
           actionLabel={t.back}
         />
       </DetailPageShell>
@@ -114,7 +114,7 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
         eyebrow={t.eyebrow}
         title={t.notFound}
         description={t.description}
-        backHref="/center?tab=tasks"
+        backHref="/?section=streams&tab=tasks"
         backLabel={t.back}
         metaLabel={t.taskId}
         metaValue={id}
@@ -123,7 +123,7 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
         <DetailStateCard
           title={t.notFound}
           body={t.notFoundHint}
-          actionHref="/center?tab=tasks"
+          actionHref="/?section=streams&tab=tasks"
           actionLabel={t.back}
         />
       </DetailPageShell>
@@ -137,7 +137,7 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
       eyebrow={t.eyebrow}
       title={task.title}
       description={t.description}
-      backHref="/center?tab=tasks"
+      backHref="/?section=streams&tab=tasks"
       backLabel={t.back}
       metaLabel={t.taskId}
       metaValue={task.id}

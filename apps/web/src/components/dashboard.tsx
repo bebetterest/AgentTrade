@@ -54,6 +54,9 @@ interface DashboardProps {
   initialDisputes: PaginatedResponse<Dispute>;
   initialEconomy: PublicEconomyParams | null;
   initialHealth: HealthStatus | null;
+  initialStreamsLoaded: boolean;
+  initialActivityLoaded: boolean;
+  initialMetricsLoaded: boolean;
 }
 
 const REFRESH_FEED_LIMIT = 12;
@@ -72,7 +75,10 @@ export const Dashboard = ({
   initialCycles,
   initialDisputes,
   initialEconomy,
-  initialHealth
+  initialHealth,
+  initialStreamsLoaded,
+  initialActivityLoaded,
+  initialMetricsLoaded
 }: DashboardProps) => {
   const [locale, setLocale] = useState<SupportedLocale>(initialLocale);
   const t = messages[locale];
@@ -89,6 +95,9 @@ export const Dashboard = ({
   const [activityFeed, setActivityFeed] = useState<ActivityEvent[]>(initialActivities.items.slice(0, REFRESH_FEED_LIMIT));
   const [economy, setEconomy] = useState<PublicEconomyParams | null>(initialEconomy);
   const [health, setHealth] = useState<HealthStatus | null>(initialHealth);
+  const [streamsLoaded, setStreamsLoaded] = useState(initialStreamsLoaded);
+  const [activityLoaded, setActivityLoaded] = useState(initialActivityLoaded);
+  const [metricsLoaded, setMetricsLoaded] = useState(initialMetricsLoaded);
 
   const [tasksData, setTasksData] = useState<PaginatedResponse<Task>>(initialTasks);
   const [agentsData, setAgentsData] = useState<PaginatedResponse<AgentDirectoryItem>>(initialAgents);
@@ -175,6 +184,7 @@ export const Dashboard = ({
   const disputeQueryKeyRef = useRef("");
 
   const {
+    section,
     tab,
     q,
     taskStatus,
@@ -389,42 +399,70 @@ export const Dashboard = ({
 
   const refreshAll = async () => {
     setRefreshing(true);
-    const [summaryRes, trendsRes, leadersRes, tasksRes, agentsRes, cyclesRes, disputesRes, cycleRes, feedRes, economyRes, healthRes] = await Promise.allSettled([
+    const overviewPromise = Promise.allSettled([
       fetchDashboardSummary(timeZone, { strict: true }),
       fetchDashboardTrends(timeZone, trendWindow, { strict: true }),
       fetchAgents({ activeOnly: true, sort: "score", order: "desc", limit: 5, strict: true }),
-      fetchTasks({
-        q: q || undefined,
-        status: taskStatus ?? undefined,
-        sort: taskSort,
-        order: taskOrder,
-        limit: 20,
-        strict: true
-      }),
-      fetchAgents({
-        q: q || undefined,
-        activeOnly,
-        sort: agentSort,
-        order: agentOrder,
-        limit: 20,
-        strict: true
-      }),
-      fetchCycles({ limit: 12, strict: true }),
-      fetchDisputes({
-        q: q || undefined,
-        status: disputeStatus ?? undefined,
-        sort: disputeSort,
-        order: disputeOrder,
-        limit: 20,
-        strict: true
-      }),
-      fetchActiveCycle({ strict: true }),
-      fetchActivities({ limit: REFRESH_FEED_LIMIT, order: "desc", strict: true }),
-      fetchEconomyParams({ strict: true }),
-      fetchHealthStatus({ strict: true })
+      fetchActiveCycle({ strict: true })
     ]);
 
-    if (summaryRes.status === "fulfilled" && trendsRes.status === "fulfilled" && leadersRes.status === "fulfilled" && cycleRes.status === "fulfilled") {
+    const streamsPromise = streamsLoaded
+      ? Promise.allSettled([
+          fetchTasks({
+            q: q || undefined,
+            status: taskStatus ?? undefined,
+            sort: taskSort,
+            order: taskOrder,
+            limit: 20,
+            strict: true
+          }),
+          fetchAgents({
+            q: q || undefined,
+            activeOnly,
+            sort: agentSort,
+            order: agentOrder,
+            limit: 20,
+            strict: true
+          }),
+          fetchCycles({ limit: 12, strict: true }),
+          fetchDisputes({
+            q: q || undefined,
+            status: disputeStatus ?? undefined,
+            sort: disputeSort,
+            order: disputeOrder,
+            limit: 20,
+            strict: true
+          })
+        ])
+      : Promise.resolve(null);
+
+    const activityPromise = activityLoaded
+      ? Promise.allSettled([
+          fetchActivities({ limit: REFRESH_FEED_LIMIT, order: "desc", strict: true })
+        ])
+      : Promise.resolve(null);
+
+    const metricsPromise = metricsLoaded
+      ? Promise.allSettled([
+          fetchEconomyParams({ strict: true }),
+          fetchHealthStatus({ strict: true })
+        ])
+      : Promise.resolve(null);
+
+    const [overviewResults, streamsResults, activityResults, metricsResults] = await Promise.all([
+      overviewPromise,
+      streamsPromise,
+      activityPromise,
+      metricsPromise
+    ]);
+
+    const [summaryRes, trendsRes, leadersRes, cycleRes] = overviewResults;
+    if (
+      summaryRes.status === "fulfilled" &&
+      trendsRes.status === "fulfilled" &&
+      leadersRes.status === "fulfilled" &&
+      cycleRes.status === "fulfilled"
+    ) {
       setOverviewError(false);
       setSummary(summaryRes.value);
       setTrends(trendsRes.value);
@@ -434,47 +472,56 @@ export const Dashboard = ({
       setOverviewError(true);
     }
 
-    if (tasksRes.status === "fulfilled") {
-      setTaskLoadError(false);
-      setTasksData(tasksRes.value);
-    } else {
-      setTaskLoadError(true);
+    if (streamsResults) {
+      const [tasksRes, agentsRes, cyclesRes, disputesRes] = streamsResults;
+      if (tasksRes.status === "fulfilled") {
+        setTaskLoadError(false);
+        setTasksData(tasksRes.value);
+      } else {
+        setTaskLoadError(true);
+      }
+
+      if (agentsRes.status === "fulfilled") {
+        setAgentLoadError(false);
+        setAgentsData(agentsRes.value);
+      } else {
+        setAgentLoadError(true);
+      }
+
+      if (cyclesRes.status === "fulfilled") {
+        setCycleLoadError(false);
+        setCyclesData(cyclesRes.value);
+      } else {
+        setCycleLoadError(true);
+      }
+
+      if (disputesRes.status === "fulfilled") {
+        setDisputeLoadError(false);
+        setDisputesData(disputesRes.value);
+      } else {
+        setDisputeLoadError(true);
+      }
     }
 
-    if (agentsRes.status === "fulfilled") {
-      setAgentLoadError(false);
-      setAgentsData(agentsRes.value);
-    } else {
-      setAgentLoadError(true);
+    if (activityResults) {
+      const [feedRes] = activityResults;
+      if (feedRes.status === "fulfilled") {
+        setFeedLoadError(false);
+        setActivityFeed(feedRes.value.items);
+      } else {
+        setFeedLoadError(true);
+      }
     }
 
-    if (cyclesRes.status === "fulfilled") {
-      setCycleLoadError(false);
-      setCyclesData(cyclesRes.value);
-    } else {
-      setCycleLoadError(true);
-    }
+    if (metricsResults) {
+      const [economyRes, healthRes] = metricsResults;
+      if (economyRes.status === "fulfilled") {
+        setEconomy(economyRes.value);
+      }
 
-    if (disputesRes.status === "fulfilled") {
-      setDisputeLoadError(false);
-      setDisputesData(disputesRes.value);
-    } else {
-      setDisputeLoadError(true);
-    }
-
-    if (feedRes.status === "fulfilled") {
-      setFeedLoadError(false);
-      setActivityFeed(feedRes.value.items);
-    } else {
-      setFeedLoadError(true);
-    }
-
-    if (economyRes.status === "fulfilled") {
-      setEconomy(economyRes.value);
-    }
-
-    if (healthRes.status === "fulfilled") {
-      setHealth(healthRes.value);
+      if (healthRes.status === "fulfilled") {
+        setHealth(healthRes.value);
+      }
     }
 
     setRefreshing(false);
@@ -491,6 +538,20 @@ export const Dashboard = ({
   useEffect(() => {
     setSearchDraft(q);
   }, [q]);
+
+  useEffect(() => {
+    if (section === "streams") {
+      setStreamsLoaded(true);
+      return;
+    }
+    if (section === "activity") {
+      setActivityLoaded(true);
+      return;
+    }
+    if (section === "metrics") {
+      setMetricsLoaded(true);
+    }
+  }, [section]);
 
   useEffect(() => {
     if (searchDraft === q) {
@@ -538,14 +599,12 @@ export const Dashboard = ({
       return;
     }
     let cancelled = false;
-    setLoadingFeed(true);
     (async () => {
-      const [summaryRes, trendsRes, leadersRes, cycleRes, feedRes] = await Promise.allSettled([
+      const [summaryRes, trendsRes, leadersRes, cycleRes] = await Promise.allSettled([
         fetchDashboardSummary(timeZone, { strict: true }),
         fetchDashboardTrends(timeZone, trendWindow, { strict: true }),
         fetchAgents({ activeOnly: true, sort: "score", order: "desc", limit: 5, strict: true }),
-        fetchActiveCycle({ strict: true }),
-        fetchActivities({ limit: REFRESH_FEED_LIMIT, order: "desc", strict: true })
+        fetchActiveCycle({ strict: true })
       ]);
       if (cancelled) {
         return;
@@ -559,21 +618,73 @@ export const Dashboard = ({
       } else {
         setOverviewError(true);
       }
-      if (feedRes.status === "fulfilled") {
-        setFeedLoadError(false);
-        setActivityFeed(feedRes.value.items);
-      } else {
-        setFeedLoadError(true);
-      }
-      setLoadingFeed(false);
     })();
     return () => {
       cancelled = true;
-      setLoadingFeed(false);
     };
   }, [timeZone, trendWindow]);
 
   useEffect(() => {
+    if (!activityLoaded) {
+      return;
+    }
+    let cancelled = false;
+    setLoadingFeed(true);
+    const controller = new AbortController();
+    fetchActivities({
+      limit: REFRESH_FEED_LIMIT,
+      order: "desc",
+      signal: controller.signal,
+      strict: true
+    }).then((response) => {
+      if (!cancelled) {
+        setFeedLoadError(false);
+        setActivityFeed(response.items);
+        setLoadingFeed(false);
+      }
+    }).catch(() => {
+      if (!cancelled) {
+        setFeedLoadError(true);
+        setLoadingFeed(false);
+      }
+    });
+    return () => {
+      cancelled = true;
+      controller.abort();
+      setLoadingFeed(false);
+    };
+  }, [activityLoaded]);
+
+  useEffect(() => {
+    if (!metricsLoaded) {
+      return;
+    }
+    let cancelled = false;
+    const controller = new AbortController();
+    Promise.allSettled([
+      fetchEconomyParams({ signal: controller.signal, strict: true }),
+      fetchHealthStatus({ signal: controller.signal, strict: true })
+    ]).then(([economyRes, healthRes]) => {
+      if (cancelled) {
+        return;
+      }
+      if (economyRes.status === "fulfilled") {
+        setEconomy(economyRes.value);
+      }
+      if (healthRes.status === "fulfilled") {
+        setHealth(healthRes.value);
+      }
+    });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [metricsLoaded]);
+
+  useEffect(() => {
+    if (!streamsLoaded) {
+      return;
+    }
     let cancelled = false;
     setLoadingTasks(true);
     setTaskLoadError(false);
@@ -601,9 +712,12 @@ export const Dashboard = ({
       cancelled = true;
       controller.abort();
     };
-  }, [taskQueryKey]);
+  }, [taskQueryKey, streamsLoaded]);
 
   useEffect(() => {
+    if (!streamsLoaded) {
+      return;
+    }
     let cancelled = false;
     setLoadingAgents(true);
     setAgentLoadError(false);
@@ -631,9 +745,12 @@ export const Dashboard = ({
       cancelled = true;
       controller.abort();
     };
-  }, [agentQueryKey]);
+  }, [agentQueryKey, streamsLoaded]);
 
   useEffect(() => {
+    if (!streamsLoaded) {
+      return;
+    }
     let cancelled = false;
     setLoadingDisputes(true);
     setDisputeLoadError(false);
@@ -661,9 +778,12 @@ export const Dashboard = ({
       cancelled = true;
       controller.abort();
     };
-  }, [disputeQueryKey]);
+  }, [disputeQueryKey, streamsLoaded]);
 
   useEffect(() => {
+    if (!streamsLoaded) {
+      return;
+    }
     let cancelled = false;
     setLoadingCycles(true);
     setCycleLoadError(false);
@@ -687,7 +807,7 @@ export const Dashboard = ({
       cancelled = true;
       controller.abort();
     };
-  }, []);
+  }, [streamsLoaded]);
 
   useEffect(() => {
     if (tab !== "tasks" || !tasksData.nextCursor || loadingMoreTasks) {
@@ -989,7 +1109,6 @@ export const Dashboard = ({
     <DashboardView
       locale={locale}
       setLocale={setLocale}
-      appTitle={t.appTitle}
       readOnlyNotice={t.readOnlyNotice}
       timeZone={timeZone}
       refreshing={refreshing}
@@ -1026,6 +1145,7 @@ export const Dashboard = ({
       agentSentinelRef={agentSentinelRef}
       cycleSentinelRef={cycleSentinelRef}
       disputeSentinelRef={disputeSentinelRef}
+      section={section}
       tab={tab}
       taskStatus={taskStatus}
       taskSort={taskSort}

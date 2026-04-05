@@ -684,44 +684,102 @@ test.beforeEach(async ({ page }) => {
   await installApiMocks(page);
 });
 
-test("home page leads into the research center", async ({ page }) => {
+const openStreamsSection = async (page: Page) => {
+  await page.getByTestId("section-tab-streams").click();
+  await expect(page.getByTestId("tab-tasks")).toBeVisible();
+};
+
+const expandAdvancedFilters = async (page: Page) => {
+  const toggle = page.getByTestId("toggle-filters");
+  await expect(toggle).toBeVisible();
+  if ((await toggle.getAttribute("aria-expanded")) !== "true") {
+    await toggle.click();
+  }
+};
+
+test("information hub renders and supports stream shortcuts", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByText("Public Information Station")).toBeVisible();
-  await page.getByRole("link", { name: "Enter Research Center" }).click();
-  await expect(page).toHaveURL(/\/center/);
-  await expect(page.getByTestId("dashboard-page")).toBeVisible();
+  await expect(page.getByText("AgentHire Platform")).toBeVisible();
+  await expect(page.getByTestId("section-tab-overview")).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("heading", { name: "Marketplace Entities" })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Open Marketplace" }).click();
+  await expect(page.getByTestId("section-tab-streams")).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("heading", { name: "Marketplace Entities" })).toBeVisible();
+
+  await page.getByTestId("section-tab-overview").click();
+  await page.getByRole("button", { name: "View Disputes" }).click();
+  await expect(page).toHaveURL(/section=streams/);
+  await expect(page).toHaveURL(/tab=disputes/);
+  await expandAdvancedFilters(page);
+  await expect(page.getByTestId("dispute-status-select")).toBeVisible();
 });
 
-test("locale switch persists across home, center, and direct detail routes", async ({ page }) => {
+test("top-level sections switch and keep module boundaries", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByText("Public Information Station")).toBeVisible();
+  await expect(page.getByTestId("section-tab-overview")).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("flow-diagram")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Marketplace Entities" })).toHaveCount(0);
+
+  await page.getByTestId("section-tab-metrics").click();
+  await expect(page.getByTestId("section-tab-metrics")).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByText("API limit")).toBeVisible();
+  await expect(page.getByTestId("flow-diagram")).toHaveCount(0);
+
+  await page.getByTestId("section-tab-activity").click();
+  await expect(page.getByTestId("section-tab-activity")).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("heading", { name: "Live Activity" })).toBeVisible();
+
+  await page.getByTestId("section-tab-streams").click();
+  await expect(page.getByTestId("section-tab-streams")).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("heading", { name: "Marketplace Entities" })).toBeVisible();
+});
+
+test("legacy /center route is removed", async ({ page }) => {
+  await page.goto("/center");
+  await expect(page).toHaveURL(/\/center/);
+  await expect(page.getByText("This page could not be found.")).toBeVisible();
+});
+
+test("legacy stream links still recover streams state", async ({ page }) => {
+  await page.goto("/?tab=tasks#streams");
+  await expect(page.getByTestId("section-tab-streams")).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("tab-tasks")).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("task-card")).toHaveCount(2);
+});
+
+test("locale switch persists across hub and direct detail routes", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByText("AgentHire Platform")).toBeVisible();
 
   await page.getByRole("button", { name: "Switch language to Chinese" }).click();
-  await expect(page.getByText("公开信息站")).toBeVisible();
-  await expect(page.getByRole("link", { name: "进入数据中心" })).toBeVisible();
+  await expect(page.getByText("AgentHire 平台")).toBeVisible();
+  await expect(page.getByRole("button", { name: "进入市场" })).toBeVisible();
   await expect.poll(() => page.evaluate(() => window.localStorage.getItem("agentrade.locale"))).toBe("zh");
   await expect.poll(() => page.evaluate(() => document.cookie)).toContain("agentrade.locale=zh");
 
-  await page.getByRole("link", { name: "进入数据中心" }).click();
-  await expect(page).toHaveURL(/\/center/);
-  await expect(page.getByText("数据中心")).toBeVisible();
+  await page.getByRole("button", { name: "查看争议" }).click();
+  await expect(page).toHaveURL(/section=streams/);
+  await expect(page).toHaveURL(/tab=disputes/);
+  await expect(page.getByText("AgentHire 平台")).toBeVisible();
   await expect(page.getByTestId("tab-tasks")).toContainText("任务");
-  await expect(page.getByTestId("task-card").filter({ hasText: "Beta Dataset Labeling" })).toContainText("进行中");
+  await expect(page.getByTestId("dispute-card")).toHaveCount(1);
 
   await page.goto("/tasks/task-beta");
   await expect(page.getByText("任务档案")).toBeVisible();
-  await expect(page.getByRole("link", { name: "返回数据中心" })).toHaveAttribute("href", "/center?tab=tasks");
+  await expect(page.getByRole("link", { name: "返回 AgentHire 平台" })).toHaveAttribute("href", "/?section=streams&tab=tasks");
   await expect(page.getByText("进行中")).toBeVisible();
 
   await page.getByRole("button", { name: "切换语言到英文" }).click();
   await expect(page.getByText("Task Dossier")).toBeVisible();
-  await expect(page.getByRole("link", { name: "Back to research center" })).toHaveAttribute("href", "/center?tab=tasks");
+  await expect(page.getByRole("link", { name: "Back to AgentHire" })).toHaveAttribute("href", "/?section=streams&tab=tasks");
   await expect.poll(() => page.evaluate(() => window.localStorage.getItem("agentrade.locale"))).toBe("en");
   await expect.poll(() => page.evaluate(() => document.cookie)).toContain("agentrade.locale=en");
 });
 
 test("task list supports search/filter/sort and load more", async ({ page }) => {
-  await page.goto("/center");
+  await page.goto("/");
+  await openStreamsSection(page);
   const taskCards = page.getByTestId("task-card");
   await expect(taskCards).toHaveCount(2);
   await expect(page.getByTestId("task-card").filter({ hasText: "Alpha Content Review" })).toContainText("Open");
@@ -755,6 +813,7 @@ test("task list supports search/filter/sort and load more", async ({ page }) => 
   await expect(page.getByTestId("search-input")).toHaveValue("");
   await expect(page.getByText("Beta Dataset Labeling")).toBeVisible();
 
+  await expandAdvancedFilters(page);
   await page.getByTestId("task-status-select").selectOption("OPEN");
   await expect(page.getByTestId("task-card")).toHaveCount(1);
 
@@ -768,13 +827,15 @@ test("task list supports search/filter/sort and load more", async ({ page }) => 
 });
 
 test("user tab supports sorting and pagination", async ({ page }) => {
-  await page.goto("/center");
+  await page.goto("/");
+  await openStreamsSection(page);
 
   await page.getByTestId("tab-users").click();
   await expect(page.getByTestId("agent-card")).toHaveCount(2);
   await expect(page.getByTestId("agent-card").filter({ hasText: "Agent One" })).toContainText("Active");
   await expect(page.locator("body")).not.toContainText("ACTIVE");
 
+  await expandAdvancedFilters(page);
   await page.getByTestId("agent-sort-select").selectOption("score");
   await page.getByTestId("sort-order-select").selectOption("desc");
   await expect(page.getByTestId("agent-card").first()).toContainText("Agent Two");
@@ -801,7 +862,8 @@ test("user tab supports sorting and pagination", async ({ page }) => {
 });
 
 test("task and agent detail drawers show enriched fields", async ({ page }) => {
-  await page.goto("/center");
+  await page.goto("/");
+  await openStreamsSection(page);
 
   await page.getByTestId("task-card").filter({ hasText: "Beta Dataset Labeling" }).getByTestId("task-detail-trigger").click();
   await expect(page.getByTestId("detail-drawer")).toBeVisible();
@@ -822,7 +884,7 @@ test("direct task and agent detail pages use the unified detail shell", async ({
   await expect(page.getByRole("heading", { name: "Beta Dataset Labeling" })).toBeVisible();
   await expect(page.getByText("Escrow Remaining")).toBeVisible();
   await expect(page.getByText("related disputes")).toBeVisible();
-  await expect(page.getByRole("link", { name: "Back to research center" })).toHaveAttribute("href", "/center?tab=tasks");
+  await expect(page.getByRole("link", { name: "Back to AgentHire" })).toHaveAttribute("href", "/?section=streams&tab=tasks");
 
   await page.goto("/agents/0x3333333333333333333333333333333333333333");
   await expect(page.getByText("Agent Profile")).toBeVisible();
@@ -832,15 +894,17 @@ test("direct task and agent detail pages use the unified detail shell", async ({
 });
 
 test("cycle tab and active cycle card open reward detail drawer", async ({ page }) => {
-  await page.goto("/center");
+  await page.goto("/");
   await expect(page.locator("body")).not.toContainText("CLOSED");
 
+  await page.getByTestId("section-tab-metrics").click();
   await page.getByRole("button", { name: "View details" }).click();
   await expect(page.getByTestId("detail-drawer")).toBeVisible();
   await expect(page.getByText("Reward Pool")).toBeVisible();
   await expect(page.getByText("1090 AGC")).toBeVisible();
 
   await page.locator(".drawer-mask").click();
+  await openStreamsSection(page);
   await page.getByTestId("tab-cycles").click();
   await expect(page.getByTestId("cycle-card")).toHaveCount(2);
   await expect(page.getByTestId("cycle-card").filter({ hasText: "cycle-9" })).toContainText("Open");
@@ -869,11 +933,11 @@ test("direct cycle and dispute detail pages expose summary-first layouts", async
 test("direct detail pages show not-found state cards", async ({ page }) => {
   await page.goto("/tasks/task-missing");
   await expect(page.getByRole("heading", { name: "Task Not Found" })).toBeVisible();
-  await expect(page.getByText("There is no public record for this task id. Return to the research center and choose another entity.")).toBeVisible();
+  await expect(page.getByText("There is no public record for this task id. Return to the platform hub and choose another entity.")).toBeVisible();
 
   await page.goto("/disputes/dispute-missing");
   await expect(page.getByRole("heading", { name: "Dispute Not Found" })).toBeVisible();
-  await expect(page.getByText("There is no public record for this dispute id. Return to the research center and choose another dispute.")).toBeVisible();
+  await expect(page.getByText("There is no public record for this dispute id. Return to the platform hub and choose another dispute.")).toBeVisible();
 });
 
 test("direct detail pages show load-failed state cards on API errors", async ({ page }) => {
@@ -882,17 +946,16 @@ test("direct detail pages show load-failed state cards on API errors", async ({ 
 
   await page.goto("/tasks/task-beta");
   await expect(page.getByRole("heading", { name: "Task Detail Load Failed" })).toBeVisible();
-  await expect(page.getByText("The task detail service is unavailable right now. Return to the research center and inspect another entity.")).toBeVisible();
+  await expect(page.getByText("The task detail service is unavailable right now. Return to the platform hub and inspect another entity.")).toBeVisible();
 
   await page.goto("/agents/0x3333333333333333333333333333333333333333");
   await expect(page.getByRole("heading", { name: "Agent Detail Load Failed" })).toBeVisible();
-  await expect(page.getByText("The agent detail service is unavailable right now. Return to the research center and inspect another public entity.")).toBeVisible();
+  await expect(page.getByText("The agent detail service is unavailable right now. Return to the platform hub and inspect another public entity.")).toBeVisible();
 });
 
 test("invalid query params are sanitized and still return usable results", async ({ page }) => {
   await page.goto("/?tab=bad&q=%20alpha%20&taskStatus=BAD&taskSort=bad&taskOrder=bad&agentSort=bad&agentOrder=bad&activeOnly=bad");
 
-  await expect(page).toHaveURL(/\/center/);
   await expect(page.getByTestId("task-card")).toHaveCount(1);
   await expect(page.getByTestId("tasks-error")).toHaveCount(0);
   await expect(page.getByText("Alpha Content Review")).toBeVisible();
@@ -902,7 +965,8 @@ test("task detail supports retry after transient API failures", async ({ page })
   await page.unroute(API_ROUTE_PATTERN);
   await installApiMocks(page, { failActivitiesByTaskIdOnce: "task-beta" });
 
-  await page.goto("/center");
+  await page.goto("/");
+  await openStreamsSection(page);
   await page.getByTestId("task-card").filter({ hasText: "Beta Dataset Labeling" }).getByTestId("task-detail-trigger").click();
   await expect(page.getByTestId("task-detail-error")).toBeVisible();
 
@@ -911,10 +975,12 @@ test("task detail supports retry after transient API failures", async ({ page })
 });
 
 test("disputes tab supports filters and detail drawer", async ({ page }) => {
-  await page.goto("/center");
+  await page.goto("/");
+  await openStreamsSection(page);
 
   await page.getByTestId("tab-disputes").click();
   await expect(page.getByTestId("dispute-card")).toHaveCount(1);
+  await expandAdvancedFilters(page);
   await page.getByTestId("dispute-status-select").selectOption("OPEN");
   await expect(page.getByTestId("dispute-card")).toContainText("dispute-1");
   await page.getByTestId("dispute-detail-trigger").click();

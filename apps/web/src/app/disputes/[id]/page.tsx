@@ -21,10 +21,10 @@ const copy = (locale: SupportedLocale) =>
     ? {
         loadFailed: "争议详情加载失败",
         loadUnavailable: "详情服务暂时不可用。",
-        back: "返回数据中心",
+        back: "返回 AgentHire 平台",
         notFound: "争议不存在",
-        loadHint: "争议详情服务当前不可用，可以返回数据中心查看其他争议。",
-        notFoundHint: "这个争议 ID 当前没有公开记录，请返回数据中心重新选择。",
+        loadHint: "争议详情服务当前不可用，可以返回 AgentHire 平台查看其他争议。",
+        notFoundHint: "这个争议 ID 当前没有公开记录，请返回 AgentHire 平台重新选择。",
         eyebrow: "争议档案",
         description: "查看争议状态、关联任务、提交编号与公开时间线，理解争议如何影响监督工作量。",
         disputeId: "争议 ID",
@@ -36,10 +36,10 @@ const copy = (locale: SupportedLocale) =>
     : {
         loadFailed: "Dispute Detail Load Failed",
         loadUnavailable: "The detail service is temporarily unavailable.",
-        back: "Back to research center",
+        back: "Back to AgentHire",
         notFound: "Dispute Not Found",
-        loadHint: "The dispute detail service is unavailable right now. Return to the research center and inspect another dispute.",
-        notFoundHint: "There is no public record for this dispute id. Return to the research center and choose another dispute.",
+        loadHint: "The dispute detail service is unavailable right now. Return to AgentHire and inspect another dispute.",
+        notFoundHint: "There is no public record for this dispute id. Return to AgentHire and choose another dispute.",
         eyebrow: "Dispute File",
         description: "Inspect dispute state, linked task, submission reference, and public timeline to understand supervision pressure.",
         disputeId: "Dispute ID",
@@ -85,7 +85,7 @@ export default async function DisputeDetailPage({ params }: DisputeDetailPagePro
         eyebrow={t.eyebrow}
         title={t.loadFailed}
         description={t.loadUnavailable}
-        backHref="/center?tab=disputes"
+        backHref="/?section=streams&tab=disputes"
         backLabel={t.back}
         metaLabel={t.disputeId}
         metaValue={id}
@@ -94,7 +94,7 @@ export default async function DisputeDetailPage({ params }: DisputeDetailPagePro
         <DetailStateCard
           title={t.loadFailed}
           body={t.loadHint}
-          actionHref="/center?tab=disputes"
+          actionHref="/?section=streams&tab=disputes"
           actionLabel={t.back}
         />
       </DetailPageShell>
@@ -109,7 +109,7 @@ export default async function DisputeDetailPage({ params }: DisputeDetailPagePro
         eyebrow={t.eyebrow}
         title={t.notFound}
         description={t.description}
-        backHref="/center?tab=disputes"
+        backHref="/?section=streams&tab=disputes"
         backLabel={t.back}
         metaLabel={t.disputeId}
         metaValue={id}
@@ -118,7 +118,7 @@ export default async function DisputeDetailPage({ params }: DisputeDetailPagePro
         <DetailStateCard
           title={t.notFound}
           body={t.notFoundHint}
-          actionHref="/center?tab=disputes"
+          actionHref="/?section=streams&tab=disputes"
           actionLabel={t.back}
         />
       </DetailPageShell>
@@ -132,7 +132,7 @@ export default async function DisputeDetailPage({ params }: DisputeDetailPagePro
       eyebrow={t.eyebrow}
       title={dispute.id}
       description={t.description}
-      backHref="/center?tab=disputes"
+      backHref="/?section=streams&tab=disputes"
       backLabel={t.back}
       metaLabel={t.disputeId}
       metaValue={dispute.id}

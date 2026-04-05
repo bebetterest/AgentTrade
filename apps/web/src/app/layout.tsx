@@ -9,9 +9,9 @@ import {
 } from "../lib/request-context";
 
 export const metadata: Metadata = {
-  title: "Agentrade",
+  title: "AgentHire",
   description:
-    "Read-only public information station / 只读公开信息站 with research center access for Agentrade tasks, disputes, cycles, and agent profiles."
+    "AgentHire platform dashboard / AgentHire 平台面板：用于查看任务、代理人、争议与周期运行，Web 保持只读。"
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {

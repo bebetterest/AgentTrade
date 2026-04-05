@@ -21,12 +21,12 @@ const copy = (locale: SupportedLocale) =>
     ? {
         loadFailed: "周期详情加载失败",
         loadUnavailable: "详情服务暂时不可用。",
-        back: "返回数据中心",
+        back: "返回 AgentHire 平台",
         notFound: "周期不存在",
-        loadHint: "周期详情服务当前不可用，可以返回数据中心查看其他周期。",
-        notFoundHint: "这个周期 ID 当前没有公开记录，请返回数据中心重新选择。",
+        loadHint: "周期详情服务当前不可用，可以返回 AgentHire 平台查看其他周期。",
+        notFoundHint: "这个周期 ID 当前没有公开记录，请返回 AgentHire 平台重新选择。",
         eyebrow: "周期结算档案",
-        description: "查看周期奖励池、关联争议与监督工作量，理解公开结算信号的构成。",
+        description: "查看周期奖励池、关联争议与监督工作量，理解 AgentHire 平台的周期结算结构。",
         cycleId: "周期 ID",
         mint: "铸造量",
         rewardPool: "奖励池",
@@ -37,12 +37,12 @@ const copy = (locale: SupportedLocale) =>
     : {
         loadFailed: "Cycle Detail Load Failed",
         loadUnavailable: "The detail service is temporarily unavailable.",
-        back: "Back to research center",
+        back: "Back to AgentHire",
         notFound: "Cycle Not Found",
-        loadHint: "The cycle detail service is unavailable right now. Return to the research center and inspect another cycle.",
-        notFoundHint: "There is no public record for this cycle id. Return to the research center and choose another cycle.",
+        loadHint: "The cycle detail service is unavailable right now. Return to AgentHire and inspect another cycle.",
+        notFoundHint: "There is no public record for this cycle id. Return to AgentHire and choose another cycle.",
         eyebrow: "Cycle Settlement File",
-        description: "Inspect reward pool composition, linked disputes, and supervision workloads behind public settlement signals.",
+        description: "Inspect reward pool composition, linked disputes, and supervision workloads within AgentHire cycle settlement.",
         cycleId: "Cycle ID",
         mint: "Mint",
         rewardPool: "Reward Pool",
@@ -86,7 +86,7 @@ export default async function CycleDetailPage({ params }: CycleDetailPageProps) 
         eyebrow={t.eyebrow}
         title={t.loadFailed}
         description={t.loadUnavailable}
-        backHref="/center?tab=cycles"
+        backHref="/?section=streams&tab=cycles"
         backLabel={t.back}
         metaLabel={t.cycleId}
         metaValue={id}
@@ -95,7 +95,7 @@ export default async function CycleDetailPage({ params }: CycleDetailPageProps) 
         <DetailStateCard
           title={t.loadFailed}
           body={t.loadHint}
-          actionHref="/center?tab=cycles"
+          actionHref="/?section=streams&tab=cycles"
           actionLabel={t.back}
         />
       </DetailPageShell>
@@ -110,7 +110,7 @@ export default async function CycleDetailPage({ params }: CycleDetailPageProps) 
         eyebrow={t.eyebrow}
         title={t.notFound}
         description={t.description}
-        backHref="/center?tab=cycles"
+        backHref="/?section=streams&tab=cycles"
         backLabel={t.back}
         metaLabel={t.cycleId}
         metaValue={id}
@@ -119,7 +119,7 @@ export default async function CycleDetailPage({ params }: CycleDetailPageProps) 
         <DetailStateCard
           title={t.notFound}
           body={t.notFoundHint}
-          actionHref="/center?tab=cycles"
+          actionHref="/?section=streams&tab=cycles"
           actionLabel={t.back}
         />
       </DetailPageShell>
@@ -133,7 +133,7 @@ export default async function CycleDetailPage({ params }: CycleDetailPageProps) 
       eyebrow={t.eyebrow}
       title={rewards.cycle.id}
       description={t.description}
-      backHref="/center?tab=cycles"
+      backHref="/?section=streams&tab=cycles"
       backLabel={t.back}
       metaLabel={t.cycleId}
       metaValue={rewards.cycle.id}

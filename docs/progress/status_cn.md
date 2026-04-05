@@ -1,5 +1,15 @@
 # 进度状态
 
+## 2026-04-04
+
+- 已完成 Web 单页信息中心合并：
+  - `/` 成为唯一承载 dashboard 的路由，`/center` 已移除（现返回 404）；
+  - dashboard 信息架构统一为运行态优先首屏 + 页内锚点导航（`#overview`、`#flow`、`#streams`）；
+  - 新增生命周期流程示意图模块并补齐单测覆盖；
+  - 保留 `/` 下基于 query 的 tab/筛选/详情 URL 状态语义；
+  - 详情页返回链接与读面文案统一从“数据中心/研究中心”切换为“信息中心”。
+- 已同步更新中英文文档（`README*`、`docs/tech_plan*`、`docs/progress/web_information_center*`），反映 `/center` 下线与合并后的 IA。
+
 ## 2026-04-03
 
 - 已将限流失败响应统一到 v2 错误包络（`error.code/message/details/requestId/retryable`），移除最后一处遗留 `{ error, message }` 返回分支。

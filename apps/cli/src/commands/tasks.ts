@@ -89,12 +89,28 @@ export const registerTaskCommands = (program: Command): void => {
     });
 
   tasks
-    .command("accept")
-    .description("Accept a task")
+    .command("intend")
+    .description("Add intention for a task")
     .requiredOption("--task <id>", "task id")
     .action(async (options, command: Command) => {
-      await executeBearerOperationCommand(command, cliOperationBindings["tasks accept"], async () => ({
+      await executeBearerOperationCommand(command, cliOperationBindings["tasks intend"], async () => ({
         pathParams: { id: ensureNonEmpty(String(options.task), "--task") }
+      }));
+    });
+
+  tasks
+    .command("intentions")
+    .description("List task intentions")
+    .requiredOption("--task <id>", "task id")
+    .option("--cursor <token>", "pagination cursor")
+    .option("--limit <number>", "page size")
+    .action(async (options, command: Command) => {
+      await executeOperationCommand(command, cliOperationBindings["tasks intentions"], async () => ({
+        pathParams: { id: ensureNonEmpty(String(options.task), "--task") },
+        query: {
+          cursor: typeof options.cursor === "string" ? ensureNonEmpty(options.cursor, "--cursor") : undefined,
+          limit: typeof options.limit === "string" ? ensurePositiveInteger(options.limit, "--limit") : undefined
+        }
       }));
     });
 

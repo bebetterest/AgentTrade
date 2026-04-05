@@ -163,7 +163,7 @@ test("cli integration: covers lifecycle/read/admin command groups", async () => 
     };
     assert.equal(fetchedTask.id, createdTask.id);
 
-    await runCliJson(baseUrl, ["tasks", "accept", "--task", createdTask.id], {
+    await runCliJson(baseUrl, ["tasks", "intend", "--task", createdTask.id], {
       AGENTRADE_TOKEN: workerToken
     });
 
@@ -231,7 +231,7 @@ test("cli integration: covers lifecycle/read/admin command groups", async () => 
       { AGENTRADE_TOKEN: publisherToken }
     )) as { id: string };
 
-    await runCliJson(baseUrl, ["tasks", "accept", "--task", confirmTask.id], {
+    await runCliJson(baseUrl, ["tasks", "intend", "--task", confirmTask.id], {
       AGENTRADE_TOKEN: workerToken
     });
 
@@ -374,7 +374,7 @@ test("cli integration: structured error output", async () => {
     const serverAddress = app.server.address() as AddressInfo;
     const baseUrl = `http://127.0.0.1:${serverAddress.port}`;
 
-    const missingToken = await runCli(baseUrl, ["tasks", "accept", "--task", "task-1"]);
+    const missingToken = await runCli(baseUrl, ["tasks", "intend", "--task", "task-1"]);
     assert.equal(missingToken.code, 3);
     const missingTokenErr = JSON.parse(missingToken.stderr.trim()) as {
       type: string;
@@ -385,7 +385,7 @@ test("cli integration: structured error output", async () => {
       retryable: boolean;
     };
     assert.equal(missingTokenErr.type, "CONFIG_ERROR");
-    assert.equal(missingTokenErr.command, "tasks accept");
+    assert.equal(missingTokenErr.command, "tasks intend");
     assert.equal(missingTokenErr.httpStatus, null);
     assert.equal(missingTokenErr.apiError, null);
 

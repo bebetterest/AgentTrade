@@ -56,7 +56,7 @@ test("error contract: sdk missing credential maps to config", () => {
     new ApiClientError("missing bearer token", {
       apiError: "MISSING_BEARER_TOKEN"
     }),
-    "tasks accept"
+    "tasks intend"
   );
   assert.equal(configResult.exitCode, 3);
   assert.equal(configResult.output.type, "CONFIG_ERROR");

@@ -96,10 +96,17 @@ test("cli command contract: method/path/auth/body coverage for all command group
     allowRepeatCompletionsBySameAgent: true,
     taxAmount: 1,
     rewardEscrowRemaining: 14,
-    acceptedAgents: [],
+    intentCount: 0,
+    competitionRatio: 0,
     completedAgents: [],
     createdAt: now,
     updatedAt: now
+  };
+  const taskIntentionPayload = {
+    id: "intention-1",
+    taskId: "task-1",
+    agent: addressB,
+    createdAt: now
   };
   const submissionPayload = {
     id: "submission-1",
@@ -151,7 +158,7 @@ test("cli command contract: method/path/auth/body coverage for all command group
     },
     stats: {
       tasksPublished: 1,
-      tasksAccepted: 1,
+      tasksIntented: 1,
       tasksCompleted: 1,
       tasksTerminated: 0,
       submissionsRejected: 0,
@@ -170,8 +177,8 @@ test("cli command contract: method/path/auth/body coverage for all command group
     timezone: "Asia/Shanghai",
     generatedAt: now,
     activeCycleId: "cycle-1",
-    today: { tasksPublished: 1, tasksAccepted: 0, tasksCompleted: 0, disputesOpened: 0 },
-    currentCycle: { tasksPublished: 1, tasksAccepted: 0, tasksCompleted: 0, disputesOpened: 0 },
+    today: { tasksPublished: 1, tasksIntented: 0, tasksCompleted: 0, disputesOpened: 0 },
+    currentCycle: { tasksPublished: 1, tasksIntented: 0, tasksCompleted: 0, disputesOpened: 0 },
     totals: { tasks: 1, disputes: 1, agents: 1 }
   };
   const cyclePayload = {
@@ -274,8 +281,14 @@ test("cli command contract: method/path/auth/body coverage for all command group
       case "POST /v2/tasks":
         response.end(JSON.stringify({ ...taskPayload, id: "task-created" }));
         return;
-      case "POST /v2/tasks/task-1/accept":
-        response.end(JSON.stringify({ ...taskPayload, status: "IN_PROGRESS" }));
+      case "GET /v2/tasks/task-1/intentions":
+        response.end(JSON.stringify({ items: [taskIntentionPayload], nextCursor: null }));
+        return;
+      case "GET /v2/tasks/task-1/intentions?cursor=3&limit=8":
+        response.end(JSON.stringify({ items: [taskIntentionPayload], nextCursor: null }));
+        return;
+      case "POST /v2/tasks/task-1/intentions":
+        response.end(JSON.stringify(taskIntentionPayload));
         return;
       case "POST /v2/tasks/task-1/submissions":
         response.end(JSON.stringify(submissionPayload));
@@ -579,10 +592,20 @@ test("cli command contract: method/path/auth/body coverage for all command group
       }
     );
 
-    await runAndAssert(["tasks", "accept", "--task", "task-1"], {
+    await runAndAssert(["tasks", "intend", "--task", "task-1"], {
       method: "POST",
-      url: "/v2/tasks/task-1/accept",
+      url: "/v2/tasks/task-1/intentions",
       auth: "bearer"
+    });
+    await runAndAssert(["tasks", "intentions", "--task", "task-1"], {
+      method: "GET",
+      url: "/v2/tasks/task-1/intentions",
+      auth: "none"
+    });
+    await runAndAssert(["tasks", "intentions", "--task", "task-1", "--cursor", "3", "--limit", "8"], {
+      method: "GET",
+      url: "/v2/tasks/task-1/intentions?cursor=3&limit=8",
+      auth: "none"
     });
     await runAndAssert(["tasks", "submit", "--task", "task-1", "--payload-file", payloadFile], {
       method: "POST",

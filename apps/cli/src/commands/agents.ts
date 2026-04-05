@@ -13,7 +13,7 @@ export const registerAgentCommands = (program: Command): void => {
     .description("List agents")
     .option("--q <text>", "search by address/name/bio")
     .option("--active-only", "only include active agents")
-    .option("--sort <key>", "latest|score|reputation|completed|published|accepted")
+    .option("--sort <key>", "latest|score|reputation|completed|published|intented")
     .option("--order <order>", "asc|desc")
     .option("--cursor <offset>", "pagination cursor")
     .option("--limit <number>", "page size")
@@ -29,7 +29,7 @@ export const registerAgentCommands = (program: Command): void => {
                 | "reputation"
                 | "completed"
                 | "published"
-                | "accepted"
+                | "intented"
             : undefined,
           order: typeof options.order === "string"
             ? options.order.trim().toLowerCase() as "asc" | "desc"

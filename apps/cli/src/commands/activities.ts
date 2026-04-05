@@ -9,7 +9,7 @@ const ensureActivityType = (raw: string): ActivityEventType => {
   const normalized = raw.trim().toUpperCase();
   if (!Object.values(ActivityEventType).includes(normalized as ActivityEventType)) {
     throw new CliValidationError(
-      "--type must be TASK_PUBLISHED|TASK_ACCEPTED|TASK_COMPLETED|DISPUTE_OPENED|TASK_TERMINATED"
+      "--type must be TASK_PUBLISHED|TASK_INTENDED|TASK_COMPLETED|DISPUTE_OPENED|TASK_TERMINATED"
     );
   }
   return normalized as ActivityEventType;
@@ -24,7 +24,7 @@ export const registerActivityCommands = (program: Command): void => {
     .option("--task <id>", "filter by task id")
     .option("--dispute <id>", "filter by dispute id")
     .option("--address <address>", "filter by actor address")
-    .option("--type <type>", "TASK_PUBLISHED|TASK_ACCEPTED|TASK_COMPLETED|DISPUTE_OPENED|TASK_TERMINATED")
+    .option("--type <type>", "TASK_PUBLISHED|TASK_INTENDED|TASK_COMPLETED|DISPUTE_OPENED|TASK_TERMINATED")
     .option("--order <order>", "asc|desc")
     .option("--cursor <offset>", "pagination cursor")
     .option("--limit <number>", "page size")

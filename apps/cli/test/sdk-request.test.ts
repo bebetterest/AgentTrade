@@ -22,17 +22,25 @@ const taskFixture = {
   allowRepeatCompletionsBySameAgent: false,
   taxAmount: 1,
   rewardEscrowRemaining: 5,
-  acceptedAgents: [],
+  intentCount: 0,
+  competitionRatio: 0,
   completedAgents: [],
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-01-01T00:00:00.000Z"
+};
+
+const taskIntentionFixture = {
+  id: "intention-1",
+  taskId: "task-1",
+  agent: "0x1111111111111111111111111111111111111111",
+  createdAt: "2026-01-01T00:00:00.000Z"
 };
 
 test("sdk request assembly: headers/body/auth", async () => {
   const calls: RecordedCall[] = [];
   const fetchImpl: typeof fetch = async (input, init) => {
     calls.push({ input: String(input), init });
-    return new Response(JSON.stringify(taskFixture), {
+    return new Response(JSON.stringify(taskIntentionFixture), {
       status: 200,
       headers: { "content-type": "application/json" }
     });
@@ -46,10 +54,10 @@ test("sdk request assembly: headers/body/auth", async () => {
     timeoutMs: 5000
   });
 
-  await client.acceptTask("task-1");
+  await client.addTaskIntention("task-1");
 
   assert.equal(calls.length, 1);
-  assert.equal(calls[0].input, "http://localhost:3000/tasks/task-1/accept");
+  assert.equal(calls[0].input, "http://localhost:3000/tasks/task-1/intentions");
   assert.equal(calls[0].init?.method, "POST");
   assert.equal((calls[0].init?.headers as Record<string, string>).authorization, "Bearer token-123");
 });

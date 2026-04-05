@@ -26,9 +26,10 @@ export const cliOperationBindings = {
   "submissions confirm": "submissionsConfirmV2",
   "submissions reject": "submissionsRejectV2",
   "system health": "systemHealthV2",
-  "tasks accept": "tasksAcceptV2",
   "tasks create": "tasksCreateV2",
   "tasks get": "tasksGetV2",
+  "tasks intend": "tasksAddIntentionV2",
+  "tasks intentions": "tasksListIntentionsV2",
   "tasks list": "tasksListV2",
   "tasks submit": "tasksSubmitV2",
   "tasks terminate": "tasksTerminateV2"

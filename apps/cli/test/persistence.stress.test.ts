@@ -176,7 +176,7 @@ const createRejectedSubmission = async (
   title: string
 ): Promise<{ taskId: string; submissionId: string }> => {
   const task = await createTask(baseUrl, publisherToken, title, 1, 6);
-  await runCliJson(baseUrl, ["tasks", "accept", "--task", task.id], {
+  await runCliJson(baseUrl, ["tasks", "intend", "--task", task.id], {
     AGENTRADE_TOKEN: workerToken
   });
   const submission = (await runCliJson(
@@ -201,7 +201,7 @@ const runSequentially = async (fn: () => Promise<void>): Promise<void> => {
 };
 
 runDbSuite(
-  "cli persistence: concurrent accept protects against oversell",
+  "cli persistence: concurrent intentions remain deterministic",
   { timeout: 180_000 },
   async () =>
     runSequentially(async () => {
@@ -212,41 +212,30 @@ runDbSuite(
           app = started.app;
           const baseUrl = started.baseUrl;
 
-          const publisher = addr("cli-persist-publisher-accept");
+          const publisher = addr("cli-persist-publisher-intend");
           const publisherToken = signToken(publisher, secret);
-          const createdTask = await createTask(baseUrl, publisherToken, "cli-persist-accept-race", 6, 5);
+          const createdTask = await createTask(baseUrl, publisherToken, "cli-persist-intend-race", 6, 5);
 
           const workerAddresses = Array.from({ length: 24 }, (_, index) => indexedAddr(80_000, index));
-          const acceptResults = await Promise.all(
+          const intendResults = await Promise.all(
             workerAddresses.map((worker) =>
-              runCli(baseUrl, ["tasks", "accept", "--task", createdTask.id], {
+              runCli(baseUrl, ["tasks", "intend", "--task", createdTask.id], {
                 AGENTRADE_TOKEN: signToken(worker, secret)
               })
             )
           );
 
-          const acceptSuccess = acceptResults.filter((item) => item.code === 0);
-          const acceptFailures = acceptResults.filter((item) => item.code !== 0);
-          assert.equal(acceptSuccess.length, 6);
-          assert.equal(acceptFailures.length, 18);
+          const intendSuccess = intendResults.filter((item) => item.code === 0);
+          const intendFailures = intendResults.filter((item) => item.code !== 0);
+          assert.equal(intendSuccess.length, workerAddresses.length);
+          assert.equal(intendFailures.length, 0);
 
-          for (const failure of acceptFailures) {
-            assert.equal(failure.code, 4, `unexpected exit code for accept race: ${failure.stderr}`);
-            const errorPayload = parseCliError(failure);
-            assert.equal(errorPayload.type, "API_ERROR");
-            assert.ok(
-              errorPayload.apiError === "TASK_SLOTS_FULL" || errorPayload.apiError === "TASK_NOT_ACCEPTABLE",
-              `unexpected apiError in accept race: ${failure.stderr}`
-            );
-            assert.equal(errorPayload.command, "tasks accept");
-          }
-
-          const acceptedTask = (await runCliJson(baseUrl, ["tasks", "get", "--task", createdTask.id])) as {
-            acceptedAgents: string[];
-            slotsTotal: number;
+          const intendedTask = (await runCliJson(baseUrl, ["tasks", "get", "--task", createdTask.id])) as {
+            intentCount: number;
+            competitionRatio: number;
           };
-          assert.equal(acceptedTask.acceptedAgents.length, acceptedTask.slotsTotal);
-          assert.equal(new Set(acceptedTask.acceptedAgents).size, acceptedTask.acceptedAgents.length);
+          assert.equal(intendedTask.intentCount, workerAddresses.length);
+          assert.equal(intendedTask.competitionRatio, 4);
         } finally {
           await closeApp(app);
         }

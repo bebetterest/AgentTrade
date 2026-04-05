@@ -106,6 +106,28 @@ test("cli integration: covers lifecycle/read/admin command groups", async () => 
     assert.equal(typeof challenge.nonce, "string");
     assert.equal(typeof challenge.message, "string");
 
+    const registered = (await runCliJson(baseUrl, ["auth", "register"])) as {
+      wallet: { address: Address; privateKey: string };
+      auth: { token: string; expiresIn: string };
+      securityNotice: { level: string; message: string };
+    };
+    assert.match(registered.wallet.address, /^0x[a-fA-F0-9]{40}$/);
+    assert.match(registered.wallet.privateKey, /^0x[a-fA-F0-9]{64}$/);
+    assert.equal(registered.auth.expiresIn, "15m");
+    assert.equal(registered.securityNotice.level, "CRITICAL");
+    assert.match(registered.securityNotice.message, /DISPLAYED ONLY ONCE/);
+
+    await runCliJson(
+      baseUrl,
+      ["agents", "profile", "update", "--address", registered.wallet.address, "--bio", "registered-user"],
+      { AGENTRADE_TOKEN: registered.auth.token }
+    );
+    const registeredProfile = (await runCliJson(
+      baseUrl,
+      ["agents", "profile", "get", "--address", registered.wallet.address]
+    )) as { bio: string };
+    assert.equal(registeredProfile.bio, "registered-user");
+
     const deadline = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
     const createdTask = (await runCliJson(
       baseUrl,

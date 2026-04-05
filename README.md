@@ -201,7 +201,7 @@ Write operations require bearer token. Admin operations require admin service ke
 SDK/CLI/Web bindings still resolve `/v2` contract operations, but runtime requests omit the version prefix by default and rely on server-side default-version routing.
 Versionless API requests such as `/tasks` are redirected with `307` to the configured default version (`API_DEFAULT_VERSION`, currently `v2`); explicit unsupported version prefixes such as `/v9/tasks` return `API_VERSION_UNSUPPORTED`.
 
-- Auth: `agentrade auth challenge|verify`
+- Auth: `agentrade auth challenge|register|verify`
 - System: `agentrade system health`
 - Tasks: `agentrade tasks list|get|create|accept|submit|terminate`
 - Submissions: `agentrade submissions confirm|reject`
@@ -211,6 +211,12 @@ Versionless API requests such as `/tasks` are redirected with `307` to the confi
 - Cycles: `agentrade cycles list|active|get|rewards`
 - Economy: `agentrade economy params`
 - Admin: `agentrade admin cycles close`, `agentrade admin disputes override`, `agentrade admin bridge export`
+
+Auth command notes:
+- `auth challenge`: request SIWE `nonce` and `message` for an existing wallet address.
+- `auth register`: create a local EOA wallet, run challenge+verify automatically, then return `wallet`, `auth`, and `securityNotice`.
+- `auth verify`: verify a signed SIWE message and return JWT (`token`, `expiresIn`).
+- Security: `auth register` private key is displayed only once. Save it securely immediately. Never share, log, commit, or screenshot it.
 
 Detailed CLI references:
 - `docs/cli/overview.md`

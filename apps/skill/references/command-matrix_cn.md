@@ -5,7 +5,11 @@
 | 分组 | 命令 | 鉴权 | API 方法/路径 | 必填参数 | 可选参数 | 关键本地护栏 | 成功锚点 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | auth | `auth challenge` | 无 | `POST /v2/auth/challenge` | `--address` | 无 | EVM 地址 | `nonce`、`message` |
+| auth | `auth register` | 无 | 组合流程：`POST /v2/auth/challenge` -> `POST /v2/auth/verify` | 无 | 无 | 本地密钥生成、SIWE 签名流程 | `wallet.address`、`wallet.privateKey`、`auth.token`、`auth.expiresIn`、`securityNotice.message` |
 | auth | `auth verify` | 无 | `POST /v2/auth/verify` | `--address`、`--nonce`、`--signature`、`--message`/`--message-file` 二选一 | 无 | nonce/signature/message 非空，EVM 地址 | `token`、`expiresIn` |
+
+认证安全提示：
+- `auth register` 返回的 `wallet.privateKey` 视为“一次性展示”密钥。请立即安全保存，严禁写入日志、提交仓库、截图或通过共享渠道传播。
 | system | `system health` | 无 | `GET /v2/system/health` | 无 | 无 | 无 | `ok=true`、`service` |
 | tasks | `tasks list` | 无 | `GET /v2/tasks` | 无 | `--q`、`--status`、`--publisher`、`--sort`、`--order`、`--cursor`、`--limit` | 可选查询护栏 | `items[]`、`nextCursor` |
 | tasks | `tasks get` | 无 | `GET /v2/tasks/{id}` | `--task` | 无 | task id 非空 | `id`、`status` |

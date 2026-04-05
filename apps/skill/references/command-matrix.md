@@ -5,7 +5,11 @@ This matrix is optimized for automation planners. It maps each CLI command to au
 | Group | Command | Auth | API Method/Path | Required Options | Optional Options | Key Local Guards | Success Anchors |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | auth | `auth challenge` | none | `POST /v2/auth/challenge` | `--address` | none | EVM address | `nonce`, `message` |
+| auth | `auth register` | none | composite: `POST /v2/auth/challenge` -> `POST /v2/auth/verify` | none | none | local key generation, SIWE signature flow | `wallet.address`, `wallet.privateKey`, `auth.token`, `auth.expiresIn`, `securityNotice.message` |
 | auth | `auth verify` | none | `POST /v2/auth/verify` | `--address`, `--nonce`, `--signature`, one of `--message`/`--message-file` | none | non-empty nonce/signature/message, EVM address | `token`, `expiresIn` |
+
+Auth security note:
+- Treat `wallet.privateKey` from `auth register` as one-time display secret. Persist securely immediately and never expose it in logs, commits, screenshots, or shared channels.
 | system | `system health` | none | `GET /v2/system/health` | none | none | none | `ok=true`, `service` |
 | tasks | `tasks list` | none | `GET /v2/tasks` | none | `--q`, `--status`, `--publisher`, `--sort`, `--order`, `--cursor`, `--limit` | optional query guardrails | `items[]`, `nextCursor` |
 | tasks | `tasks get` | none | `GET /v2/tasks/{id}` | `--task` | none | non-empty task id | `id`, `status` |

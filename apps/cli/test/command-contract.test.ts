@@ -474,6 +474,46 @@ test("cli command contract: method/path/auth/body coverage for all command group
       }
     );
 
+    const beforeRegisterCalls = calls.length;
+    const registerResult = await runCli(["--base-url", baseUrl, "auth", "register"], baseEnv);
+    assert.equal(registerResult.code, 0, `command failed: auth register\n${registerResult.stderr}`);
+    assert.equal(calls.length, beforeRegisterCalls + 2, "auth register must trigger challenge + verify");
+
+    const registerOutput = JSON.parse(registerResult.stdout.trim()) as {
+      wallet: { address: string; privateKey: string };
+      auth: { token: string; expiresIn: string };
+      securityNotice: { level: string; message: string };
+    };
+    assert.match(registerOutput.wallet.address, /^0x[a-fA-F0-9]{40}$/);
+    assert.match(registerOutput.wallet.privateKey, /^0x[a-fA-F0-9]{64}$/);
+    assert.equal(registerOutput.auth.token, "jwt-token");
+    assert.equal(registerOutput.auth.expiresIn, "15m");
+    assert.equal(registerOutput.securityNotice.level, "CRITICAL");
+    assert.match(registerOutput.securityNotice.message, /DISPLAYED ONLY ONCE/);
+    assert.match(registerOutput.securityNotice.message, /NEVER SHARE/);
+
+    const registerChallengeCall = calls[beforeRegisterCalls]!;
+    assert.equal(registerChallengeCall.method, "POST");
+    assert.equal(registerChallengeCall.url, stripApiVersionPrefix("/v2/auth/challenge"));
+    assertAuth(registerChallengeCall.headers, "none");
+    assert.deepEqual(registerChallengeCall.body, { address: registerOutput.wallet.address });
+
+    const registerVerifyCall = calls[beforeRegisterCalls + 1]!;
+    assert.equal(registerVerifyCall.method, "POST");
+    assert.equal(registerVerifyCall.url, stripApiVersionPrefix("/v2/auth/verify"));
+    assertAuth(registerVerifyCall.headers, "none");
+    assert.equal(typeof registerVerifyCall.body, "object");
+    const verifyBody = registerVerifyCall.body as {
+      address: string;
+      nonce: string;
+      signature: string;
+      message: string;
+    };
+    assert.equal(verifyBody.address, registerOutput.wallet.address);
+    assert.equal(verifyBody.nonce, "nonce-1");
+    assert.equal(verifyBody.message, "mock-message");
+    assert.match(verifyBody.signature, /^0x[a-fA-F0-9]{130}$/);
+
     await runAndAssert(["tasks", "list"], { method: "GET", url: "/v2/tasks", auth: "none" });
     await runAndAssert(
       [

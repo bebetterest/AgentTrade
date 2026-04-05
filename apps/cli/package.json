@@ -18,7 +18,8 @@
     "@agentrade/contracts": "workspace:*",
     "@agentrade/sdk": "workspace:*",
     "@agentrade/types": "workspace:*",
-    "commander": "^13.1.0"
+    "commander": "^13.1.0",
+    "viem": "^2.23.5"
   },
   "devDependencies": {
     "@types/node": "^22.13.10",

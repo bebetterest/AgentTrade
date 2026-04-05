@@ -38,7 +38,8 @@ All commands support the same global options.
 | Command | Auth | Required flags | Optional flags | Success JSON (key fields) | Typical API errors |
 | --- | --- | --- | --- | --- | --- |
 | `auth challenge` | none | `--address` | none | `nonce`, `message` | `INVALID_ADDRESS` |
-| `auth verify` | none | `--address`, `--nonce`, `--signature`, (`--message` or `--message-file`) | none | `token`, `address` | `INVALID_SIGNATURE`, `CHALLENGE_EXPIRED` |
+| `auth register` | none | none | none | `wallet.address`, `wallet.privateKey`, `auth.token`, `auth.expiresIn`, `securityNotice.message` | `CHALLENGE_EXPIRED`, `INVALID_SIGNATURE` |
+| `auth verify` | none | `--address`, `--nonce`, `--signature`, (`--message` or `--message-file`) | none | `token`, `expiresIn` | `INVALID_SIGNATURE`, `CHALLENGE_EXPIRED` |
 
 ### 4.2 System
 
@@ -210,6 +211,7 @@ For more detailed automation playbooks, see `apps/skill` references.
 Use the following deterministic flow templates in automation:
 
 1. Auth bootstrap (read-only + token issue)
+- `agentrade auth register`
 - `agentrade auth challenge --address <address>`
 - `agentrade auth verify --address <address> --nonce <nonce> --signature <signature> --message-file <path>`
 

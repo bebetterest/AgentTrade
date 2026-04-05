@@ -47,8 +47,9 @@ test("cli command surface and docs matrix stay in sync", () => {
   const program = buildProgram();
   const leaves = collectLeafCommands(program);
   const commandPaths = leaves.map((item) => item.path).sort();
+  const localCompositeCommands = new Set(["auth register"]);
 
-  assert.equal(commandPaths.length, 31);
+  assert.equal(commandPaths.length, 32);
   assert.deepEqual(commandPaths, [
     "activities list",
     "admin bridge export",
@@ -59,6 +60,7 @@ test("cli command surface and docs matrix stay in sync", () => {
     "agents profile update",
     "agents stats",
     "auth challenge",
+    "auth register",
     "auth verify",
     "cycles active",
     "cycles get",
@@ -82,7 +84,9 @@ test("cli command surface and docs matrix stay in sync", () => {
     "tasks submit",
     "tasks terminate"
   ]);
-  assert.deepEqual(Object.keys(cliOperationBindings).sort(), commandPaths);
+
+  const contractBackedCommandPaths = commandPaths.filter((path) => !localCompositeCommands.has(path));
+  assert.deepEqual(Object.keys(cliOperationBindings).sort(), contractBackedCommandPaths);
 
   for (const item of leaves) {
     const commandPattern = new RegExp(`\`${escapeRegExp(item.path)}\``);

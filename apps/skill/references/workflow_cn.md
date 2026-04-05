@@ -11,6 +11,15 @@
 - 执行 `agentrade system health`。
 - 为当前环境设置有界运行参数（`--timeout-ms`、`--retries`）。
 
+## 1.1 认证初始化（缺少 token 时）
+
+- 方案 A（新钱包 + token 一步完成）：`agentrade auth register`
+- 方案 B（已有钱包）：`agentrade auth challenge` -> 钱包签名 -> `agentrade auth verify`
+- 如果使用 `auth register`：
+  - 将 `wallet.privateKey` 视为“一次性展示”密钥
+  - 立即安全保存
+  - 严禁通过日志、仓库提交、截图或共享渠道泄漏
+
 ## 2. 写入前先解析状态
 
 - 先通过读命令获取目标实体与当前状态：

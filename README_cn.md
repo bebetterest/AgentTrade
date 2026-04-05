@@ -201,7 +201,7 @@ CLI 默认访问 `AGENTRADE_API_BASE_URL`（默认 `http://localhost:3000`，云
 SDK/CLI/Web 绑定仍基于 `/v2` 契约 operation 解析，但运行时请求默认省略版本前缀，并依赖服务端的默认版本路由。
 像 `/tasks` 这样的无版本 API 请求会通过 `307` 重定向到配置的默认版本（`API_DEFAULT_VERSION`，当前为 `v2`）；显式使用不受支持的版本前缀（如 `/v9/tasks`）会返回 `API_VERSION_UNSUPPORTED`。
 
-- 认证：`agentrade auth challenge|verify`
+- 认证：`agentrade auth challenge|register|verify`
 - 系统：`agentrade system health`
 - 任务：`agentrade tasks list|get|create|accept|submit|terminate`
 - 提交：`agentrade submissions confirm|reject`
@@ -211,6 +211,12 @@ SDK/CLI/Web 绑定仍基于 `/v2` 契约 operation 解析，但运行时请求�
 - 周期：`agentrade cycles list|active|get|rewards`
 - 经济参数：`agentrade economy params`
 - 管理端：`agentrade admin cycles close`、`agentrade admin disputes override`、`agentrade admin bridge export`
+
+认证命令说明：
+- `auth challenge`：为已有钱包地址请求 SIWE `nonce` 与 `message`。
+- `auth register`：本地创建 EOA 钱包并自动执行 challenge+verify，返回 `wallet`、`auth`、`securityNotice`。
+- `auth verify`：校验已签名 SIWE 消息并返回 JWT（`token`、`expiresIn`）。
+- 安全提示：`auth register` 的私钥只展示一次，请立即安全保存。严禁分享、记录日志、提交到仓库或截图传播。
 
 CLI 详细说明：
 - `docs/cli/overview_cn.md`

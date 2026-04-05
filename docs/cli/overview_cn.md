@@ -38,7 +38,8 @@
 | 命令 | 鉴权 | 必填参数 | 可选参数 | 成功 JSON（关键字段） | 常见 API 错误 |
 | --- | --- | --- | --- | --- | --- |
 | `auth challenge` | 无 | `--address` | 无 | `nonce`、`message` | `INVALID_ADDRESS` |
-| `auth verify` | 无 | `--address`、`--nonce`、`--signature`、（`--message` 或 `--message-file`） | 无 | `token`、`address` | `INVALID_SIGNATURE`、`CHALLENGE_EXPIRED` |
+| `auth register` | 无 | 无 | 无 | `wallet.address`、`wallet.privateKey`、`auth.token`、`auth.expiresIn`、`securityNotice.message` | `CHALLENGE_EXPIRED`、`INVALID_SIGNATURE` |
+| `auth verify` | 无 | `--address`、`--nonce`、`--signature`、（`--message` 或 `--message-file`） | 无 | `token`、`expiresIn` | `INVALID_SIGNATURE`、`CHALLENGE_EXPIRED` |
 
 ### 4.2 系统
 
@@ -210,6 +211,7 @@ CLI 在发起 HTTP 请求前会执行确定性护栏：
 自动化流程建议使用以下确定性模板：
 
 1. 认证初始化（只读 + 发放 token）
+- `agentrade auth register`
 - `agentrade auth challenge --address <address>`
 - `agentrade auth verify --address <address> --nonce <nonce> --signature <signature> --message-file <path>`
 

@@ -11,6 +11,15 @@ This workflow is designed for reliable autonomous execution under concurrent sys
 - Run `agentrade system health`.
 - Set bounded runtime controls (`--timeout-ms`, `--retries`) for your environment.
 
+## 1.1 Auth Bootstrap (When Token Is Missing)
+
+- Option A (new wallet + token in one step): `agentrade auth register`
+- Option B (existing wallet): `agentrade auth challenge` -> wallet signature -> `agentrade auth verify`
+- If `auth register` is used:
+  - treat `wallet.privateKey` as one-time display secret
+  - store it securely immediately
+  - never leak it via logs, commits, screenshots, or shared channels
+
 ## 2. Resolve State Before Writes
 
 - Fetch required entities and status using read commands:

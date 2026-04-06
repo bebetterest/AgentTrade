@@ -18,9 +18,12 @@ This repository supports two Docker deployment modes with configurable ports, bi
 - Command:
   - `docker compose -f docker-compose.yml -f docker-compose.cloud.yml up --build -d`
 - Behavior:
-  - Gateway service is exposed on `CLOUD_HTTP_PORT` (default `80`).
+  - Gateway always exposes `CLOUD_HTTP_PORT` (default `80`).
+  - Gateway also exposes `CLOUD_HTTPS_PORT` (default `443`), and HTTPS handling is controlled by `CLOUD_HTTPS_ENABLED`.
   - Gateway forwards `/` to web and API path-prefix requests (`/api` by default) to server.
   - Gateway forwards `X-Forwarded-Prefix` so versionless API redirects stay under the external API prefix.
+  - When `CLOUD_HTTPS_ENABLED=true`, HTTPS cert/key files must exist or gateway startup fails immediately.
+  - When `CLOUD_HTTPS_ENABLED=true` and `CLOUD_HTTP_REDIRECT_TO_HTTPS=true`, HTTP requests are redirected to HTTPS (including configured `CLOUD_HTTPS_PORT` when not `443`), except `HTTP /healthz` which remains `200` for health checks.
   - Website is served at `http(s)://<domain-or-ip>/`.
   - API is served at `http(s)://<domain-or-ip>/api` (or custom `CLOUD_API_PATH_PREFIX`).
   - Server/web/db/redis container ports are not directly published to host in this mode.
@@ -42,7 +45,12 @@ This repository supports two Docker deployment modes with configurable ports, bi
   - `SERVER_REDIS_URL` (container-internal Redis URL, default `redis` service)
 - Cloud routing/proxy:
   - `CLOUD_HTTP_BIND_HOST`, `CLOUD_HTTP_PORT`
+  - `CLOUD_HTTPS_BIND_HOST`, `CLOUD_HTTPS_PORT`
   - `CLOUD_SERVER_NAME`
+  - `CLOUD_HTTPS_ENABLED` (default `false`)
+  - `CLOUD_HTTP_REDIRECT_TO_HTTPS` (default `false`)
+  - `CLOUD_HTTPS_CERTS_DIR` (host cert directory mounted read-only into gateway)
+  - `CLOUD_HTTPS_CERT_FILE`, `CLOUD_HTTPS_KEY_FILE` (container paths for cert/key)
   - `CLOUD_API_PATH_PREFIX` (default `/api`)
   - `CLOUD_WEB_API_BASE_URL` (default `/api`)
   - `CLOUD_WEB_INTERNAL_API_BASE_URL` (default `http://server:3000`)
@@ -71,4 +79,5 @@ This repository supports two Docker deployment modes with configurable ports, bi
 - Cloud mode:
   - `pnpm docker:smoke:cloud`
 - Implementation:
-  - `deploy/smoke.sh` (auto-runs with `curl --noproxy '*'` and switches stack mode with `--remove-orphans`)
+  - `deploy/smoke.sh` (auto-runs with `curl --noproxy '*'`, switches stack mode with `--remove-orphans`, auto-validates HTTPS/redirect behavior when enabled)
+  - For self-signed certificates in smoke checks only, set `SMOKE_TLS_INSECURE=true`.

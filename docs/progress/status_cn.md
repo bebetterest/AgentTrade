@@ -73,7 +73,7 @@
 - 新增 Docker 双部署模式：
   - 本地模式使用 `docker-compose.yml`（主机端口直连）；
   - 云端模式使用 `docker-compose.cloud.yml`（单网关入口，`web=/`、`api=/api`）。
-- 新增外置 Nginx 网关模板（`deploy/nginx/cloud.conf.template`），支持 API 路径前缀与上下游目标地址可配置。
+- 新增外置 Nginx 网关模板组（`deploy/nginx/cloud.*.conf.template`），支持 API 路径前缀、上下游目标地址与 HTTPS/跳转模式配置。
 - 强化 compose 运行时默认项：统一 `restart: unless-stopped`、服务健康检查，以及可配置监听/端口变量（`LOCAL_*`、`WEB_*`、`CLOUD_*`）。
 - Web API 访问基址改为“对外浏览器基址 + 容器内 SSR 基址”分离（`NEXT_PUBLIC_API_BASE_URL` + `INTERNAL_API_BASE_URL`），保证本地/云端行为一致。
 - 新增部署脚本（`docker:stack:local:*`、`docker:stack:cloud:*`），并同步中英文部署文档（`README*`、`docs/deployment/modes*.md`、`docs/README*`）。

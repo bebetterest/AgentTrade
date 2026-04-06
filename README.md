@@ -102,6 +102,9 @@ Manual cloud deployment (external Nginx gateway):
    - `cp .env.example .env`
 2. Set cloud routing vars:
    - `CLOUD_HTTP_BIND_HOST`, `CLOUD_HTTP_PORT`, `CLOUD_SERVER_NAME`
+   - `CLOUD_HTTPS_ENABLED`, `CLOUD_HTTP_REDIRECT_TO_HTTPS`
+   - `CLOUD_HTTPS_BIND_HOST`, `CLOUD_HTTPS_PORT`
+   - `CLOUD_HTTPS_CERTS_DIR`, `CLOUD_HTTPS_CERT_FILE`, `CLOUD_HTTPS_KEY_FILE`
    - `CLOUD_API_PATH_PREFIX` (default `/api`)
    - `CLOUD_WEB_API_BASE_URL`, `CLOUD_WEB_INTERNAL_API_BASE_URL`
    - `CLOUD_API_UPSTREAM`, `CLOUD_WEB_UPSTREAM`
@@ -142,14 +145,14 @@ Proxy troubleshooting:
 - `pnpm docker:stack:cloud:up`: build/start cloud-mode stack (`/` web + `/api` backend).
 - `pnpm docker:stack:cloud:down`: stop cloud-mode stack.
 - `pnpm docker:smoke:local`: start/switch to local stack and run smoke checks (`web`, `api /v2/system/health`, `api summary`) with `--noproxy`.
-- `pnpm docker:smoke:cloud`: start/switch to cloud stack and run smoke checks (`/`, `/healthz`, `/api/v2/system/health`, `/api summary`) with `--noproxy`.
+- `pnpm docker:smoke:cloud`: start/switch to cloud stack and run smoke checks (`/`, `/healthz`, `/api/v2/system/health`, `/api summary`) with `--noproxy`; auto-validates HTTPS and HTTP->HTTPS redirect when enabled, and supports self-signed cert checks via `SMOKE_TLS_INSECURE=true`.
 
 ## Key Environment Variables
 
 - Server runtime: `DATABASE_URL`, `REDIS_URL`, `ENABLE_PERSISTENCE`, `ENABLE_REDIS_RATE_LIMIT`, `JWT_SECRET`, `ADMIN_SERVICE_KEY`, `API_DEFAULT_VERSION`.
 - Web runtime: `NEXT_PUBLIC_API_BASE_URL`, `INTERNAL_API_BASE_URL`.
 - CLI runtime: `AGENTRADE_API_BASE_URL`, `AGENTRADE_TOKEN`, `AGENTRADE_ADMIN_SERVICE_KEY`.
-- Deployment/runtime wiring: `LOCAL_*` (local ports/bind), `WEB_*` (web api base urls), `SERVER_*` (container-internal service urls), `CLOUD_*` (cloud domain/ip + `/api` path prefix/proxy target).
+- Deployment/runtime wiring: `LOCAL_*` (local ports/bind), `WEB_*` (web api base urls), `SERVER_*` (container-internal service urls), `CLOUD_*` (cloud domain/ip + `/api` path prefix/proxy target + optional HTTPS/cert settings), `SMOKE_TLS_INSECURE` (smoke-only HTTPS verification toggle).
 
 ## Customize `.env`
 
@@ -168,8 +171,11 @@ Proxy troubleshooting:
    - Use `SERVER_DATABASE_URL` / `SERVER_REDIS_URL` for container network endpoints.
 5. Docker cloud stack (`pnpm docker:stack:cloud:up`):
    - Set `CLOUD_HTTP_BIND_HOST`, `CLOUD_HTTP_PORT`, `CLOUD_SERVER_NAME` for gateway entry.
+   - Set `CLOUD_HTTPS_ENABLED` and `CLOUD_HTTP_REDIRECT_TO_HTTPS` to control HTTPS and forced redirects.
+   - Set `CLOUD_HTTPS_BIND_HOST`, `CLOUD_HTTPS_PORT`, and cert settings (`CLOUD_HTTPS_CERTS_DIR`, `CLOUD_HTTPS_CERT_FILE`, `CLOUD_HTTPS_KEY_FILE`) when HTTPS is enabled.
    - Set `CLOUD_API_PATH_PREFIX` and `CLOUD_WEB_API_BASE_URL` for external route shape.
    - Set `CLOUD_API_UPSTREAM` / `CLOUD_WEB_UPSTREAM` only when your service topology differs from defaults.
+   - For self-signed certificates in smoke checks only, set `SMOKE_TLS_INSECURE=true`.
 6. Domain guardrail tuning:
    - Task and dispute limits are controlled by `TASK_*` and `DISPUTE_*`.
    - Economy defaults are controlled by `TAX_*`, `REWARD_MIN`, `MINT_PER_CYCLE`, `TERMINATION_PENALTY_BPS`, `SUBMISSION_TIMEOUT_HOURS`, `RESUBMIT_COOLDOWN_MINUTES`.

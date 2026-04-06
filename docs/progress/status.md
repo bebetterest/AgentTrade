@@ -73,7 +73,7 @@
 - Added dual Docker deployment modes:
   - local mode via `docker-compose.yml` (direct host ports),
   - cloud mode via `docker-compose.cloud.yml` (single gateway entry, `web=/`, `api=/api`).
-- Added external Nginx gateway template (`deploy/nginx/cloud.conf.template`) with configurable API path-prefix and upstream targets.
+- Added external Nginx gateway templates (`deploy/nginx/cloud.*.conf.template`) with configurable API path-prefix, upstream targets, and HTTPS/redirect modes.
 - Hardened compose runtime defaults with `restart: unless-stopped`, service health checks, and configurable bind/port envs (`LOCAL_*`, `WEB_*`, `CLOUD_*`).
 - Updated web API client base-url resolution to separate public browser base URL and internal SSR base URL (`NEXT_PUBLIC_API_BASE_URL` + `INTERNAL_API_BASE_URL`) for deterministic local/cloud behavior.
 - Added deployment mode scripts (`docker:stack:local:*`, `docker:stack:cloud:*`) and synchronized bilingual deployment docs (`README*`, `docs/deployment/modes*.md`, `docs/README*`).

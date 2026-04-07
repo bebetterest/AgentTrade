@@ -1,7 +1,3 @@
-import Link from "next/link";
-import type {
-  AgentDirectoryItem
-} from "@agentrade/types";
 import type { SupportedLocale } from "@agentrade/i18n";
 import { getDashboardCopy } from "./i18n";
 import { Sparkline } from "../ui/sparkline";
@@ -13,9 +9,7 @@ interface OverviewPanelsProps {
   trendIntentions: number[];
   trendCompleted: number[];
   trendDisputes: number[];
-  leaders: AgentDirectoryItem[];
   onTrendWindowChange: (window: "7d" | "30d") => void;
-  onOpenAgentDetail: (address: string) => void;
 }
 
 export const OverviewPanels = ({
@@ -25,9 +19,7 @@ export const OverviewPanels = ({
   trendIntentions,
   trendCompleted,
   trendDisputes,
-  leaders,
-  onTrendWindowChange,
-  onOpenAgentDetail
+  onTrendWindowChange
 }: OverviewPanelsProps) => {
   const copy = getDashboardCopy(locale);
 
@@ -54,25 +46,10 @@ export const OverviewPanels = ({
           </div>
         </div>
         <div className="spark-grid">
-          <Sparkline title={copy.overview.published} values={trendPublished} />
-          <Sparkline title={copy.overview.intended} values={trendIntentions} />
-          <Sparkline title={copy.overview.completed} values={trendCompleted} />
-          <Sparkline title={copy.overview.disputes} values={trendDisputes} />
-        </div>
-      </article>
-
-      <article className="card">
-        <div className="section-head">
-          <h2>{copy.overview.leaderboard}</h2>
-          <Link href="/?section=streams&tab=users">{copy.overview.seeAll}</Link>
-        </div>
-        <div className="leader-list">
-          {leaders.map((item, index) => (
-            <button type="button" key={item.address} className="leader-row" onClick={() => onOpenAgentDetail(item.address)}>
-              <span>{index + 1}. {item.name || item.address}</span>
-              <strong>{item.score}</strong>
-            </button>
-          ))}
+          <Sparkline title={copy.overview.published} values={trendPublished} locale={locale} />
+          <Sparkline title={copy.overview.intended} values={trendIntentions} locale={locale} />
+          <Sparkline title={copy.overview.completed} values={trendCompleted} locale={locale} />
+          <Sparkline title={copy.overview.disputes} values={trendDisputes} locale={locale} />
         </div>
       </article>
     </section>

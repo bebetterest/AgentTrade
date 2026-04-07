@@ -84,6 +84,13 @@ interface TaskRow {
   updatedAt: Date;
 }
 
+interface TaskCompetitionInput {
+  slotsTotal: number;
+  rewardPerSlot: number;
+  rewardEscrowRemaining: number;
+  intentCount: number;
+}
+
 interface SubmissionRow {
   id: string;
   taskId: string;
@@ -206,6 +213,27 @@ export const mapLedgerBalance = (item: LedgerBalanceRow): LedgerBalance => ({
   updatedAt: toIso(item.updatedAt)
 });
 
+export const computeTaskCompetitionRatio = (input: TaskCompetitionInput): number => {
+  const { slotsTotal, rewardPerSlot, rewardEscrowRemaining, intentCount } = input;
+  if (slotsTotal <= 0 || rewardPerSlot <= 0) {
+    return 0;
+  }
+
+  const totalEscrow = slotsTotal * rewardPerSlot;
+  if (!Number.isFinite(totalEscrow) || totalEscrow <= 0) {
+    return 0;
+  }
+
+  const clampedEscrowRemaining = Math.min(Math.max(rewardEscrowRemaining, 0), totalEscrow);
+  const spent = totalEscrow - clampedEscrowRemaining;
+  const confirmedSlots = Math.min(slotsTotal, Math.max(0, Math.floor(spent / rewardPerSlot)));
+  const remainingSlots = Math.max(0, slotsTotal - confirmedSlots);
+  if (remainingSlots === 0) {
+    return 0;
+  }
+  return Number((intentCount / remainingSlots).toFixed(4));
+};
+
 export const mapTask = (item: TaskRow): Task => ({
   id: item.id,
   publisher: asAddress(item.publisherAddress),
@@ -221,7 +249,12 @@ export const mapTask = (item: TaskRow): Task => ({
   taxAmount: item.taxAmount,
   rewardEscrowRemaining: item.rewardEscrowRemaining,
   intentCount: item.intentCount,
-  competitionRatio: item.slotsTotal > 0 ? Number((item.intentCount / item.slotsTotal).toFixed(4)) : 0,
+  competitionRatio: computeTaskCompetitionRatio({
+    slotsTotal: item.slotsTotal,
+    rewardPerSlot: item.rewardPerSlot,
+    rewardEscrowRemaining: item.rewardEscrowRemaining,
+    intentCount: item.intentCount
+  }),
   completedAgents: asAddressArray(item.completedAgents),
   createdAt: toIso(item.createdAt),
   updatedAt: toIso(item.updatedAt)

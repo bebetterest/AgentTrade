@@ -1,9 +1,15 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import type { ActivityEvent, AgentProfile, LedgerBalance } from "@agentrade/types";
 import type { SupportedLocale } from "@agentrade/i18n";
+import { fetchActivities } from "../../lib/api";
 import { formatDateTime, shortAddress } from "../../lib/dashboard-format";
+import { getLoadErrorKind, withRateLimitMessage, type LoadErrorKind } from "../../lib/load-error";
 import { renderSafeMarkdown } from "../../lib/markdown";
-import { getDashboardCopy, getDashboardEventLabel } from "./i18n";
+import { getDashboardCopy } from "./i18n";
+import { ActivityTimeline } from "../ui/activity-timeline";
 
 interface AgentDetailContentProps {
   locale: SupportedLocale;
@@ -11,33 +17,24 @@ interface AgentDetailContentProps {
   profile: AgentProfile;
   ledger: LedgerBalance | null;
   activities: ActivityEvent[];
+  initialActivitiesCursor?: string | null;
   getTaskHref?: (taskId: string) => string;
   getDisputeHref?: (disputeId: string) => string;
 }
 
-const renderTask = (taskId: string, getTaskHref: ((taskId: string) => string) | undefined) => {
-  if (!getTaskHref) {
-    return <span>{taskId}</span>;
-  }
+const DETAIL_LIST_PAGE_SIZE = 20;
 
-  return (
-    <Link className="inline-link" href={getTaskHref(taskId)}>
-      {taskId}
-    </Link>
-  );
-};
+const renderTask = (taskId: string, getTaskHref: ((taskId: string) => string) | undefined) => (
+  <Link className="inline-link" href={(getTaskHref?.(taskId) ?? `/tasks/${taskId}`)}>
+    {taskId}
+  </Link>
+);
 
-const renderDispute = (disputeId: string, getDisputeHref: ((disputeId: string) => string) | undefined) => {
-  if (!getDisputeHref) {
-    return <span>{disputeId}</span>;
-  }
-
-  return (
-    <Link className="inline-link" href={getDisputeHref(disputeId)}>
-      {disputeId}
-    </Link>
-  );
-};
+const renderDispute = (disputeId: string, getDisputeHref: ((disputeId: string) => string) | undefined) => (
+  <Link className="inline-link" href={(getDisputeHref?.(disputeId) ?? `/disputes/${disputeId}`)}>
+    {disputeId}
+  </Link>
+);
 
 export const AgentDetailContent = ({
   locale,
@@ -45,10 +42,56 @@ export const AgentDetailContent = ({
   profile,
   ledger,
   activities,
+  initialActivitiesCursor = null,
   getTaskHref,
   getDisputeHref
 }: AgentDetailContentProps) => {
   const copy = getDashboardCopy(locale);
+  const loadMoreLabel = locale === "zh" ? "继续加载" : "Load more";
+  const loadMoreFallback = locale === "zh" ? "加载更多失败，请重试。" : "Failed to load more. Please retry.";
+
+  const [activityItems, setActivityItems] = useState<ActivityEvent[]>(activities);
+  const [activityCursor, setActivityCursor] = useState<string | null>(initialActivitiesCursor);
+  const [loadingActivities, setLoadingActivities] = useState(false);
+  const [activityErrorKind, setActivityErrorKind] = useState<LoadErrorKind | null>(null);
+
+  useEffect(() => {
+    setActivityItems(activities);
+    setActivityCursor(initialActivitiesCursor);
+    setLoadingActivities(false);
+    setActivityErrorKind(null);
+  }, [profile.address, activities, initialActivitiesCursor]);
+
+  const loadMoreActivities = useCallback(async () => {
+    if (!activityCursor || loadingActivities) {
+      return;
+    }
+    setLoadingActivities(true);
+    try {
+      const response = await fetchActivities({
+        address: profile.address,
+        cursor: activityCursor,
+        limit: DETAIL_LIST_PAGE_SIZE,
+        order: "desc",
+        strict: true
+      });
+      setActivityItems((prev) => prev.concat(response.items));
+      setActivityCursor(response.nextCursor);
+      setActivityErrorKind(null);
+    } catch (error) {
+      setActivityErrorKind(getLoadErrorKind(error));
+    } finally {
+      setLoadingActivities(false);
+    }
+  }, [activityCursor, loadingActivities, profile.address]);
+
+  const latestActivity = activityItems[0] ?? null;
+  const activityLoadErrorMessage = withRateLimitMessage(locale, loadMoreFallback, activityErrorKind);
+  const publishingTitle = locale === "zh" ? "发布侧" : "Publishing";
+  const executionTitle = locale === "zh" ? "执行侧" : "Execution";
+  const supervisionTitle = locale === "zh" ? "监督侧" : "Supervision";
+  const latestLabel = locale === "zh" ? "最近活动" : "Latest activity";
+  const loadedCountLabel = locale === "zh" ? "已加载事件" : "Loaded events";
 
   return (
     <div className="detail-block">
@@ -66,6 +109,14 @@ export const AgentDetailContent = ({
             <span>{locale === "zh" ? "账本更新时间" : "Ledger updated"}</span>
             <strong>{ledger ? formatDateTime(ledger.updatedAt, locale, timeZone) : "-"}</strong>
           </div>
+          <div className="metric-line">
+            <span>{latestLabel}</span>
+            <strong>{latestActivity ? formatDateTime(latestActivity.createdAt, locale, timeZone) : "-"}</strong>
+          </div>
+          <div className="metric-line">
+            <span>{loadedCountLabel}</span>
+            <strong>{activityItems.length}</strong>
+          </div>
           <div className="metric-line"><span>{copy.agentDetail.publisherRep}</span><strong>{profile.reputation.publisher}</strong></div>
           <div className="metric-line"><span>{copy.agentDetail.workerRep}</span><strong>{profile.reputation.worker}</strong></div>
           <div className="metric-line"><span>{copy.agentDetail.supervisorRep}</span><strong>{profile.reputation.supervisor}</strong></div>
@@ -73,43 +124,65 @@ export const AgentDetailContent = ({
 
         <div className="detail-card">
           <h4>{copy.agentDetail.stats}</h4>
-          <ul className="detail-list compact-list">
-            <li>{copy.agentDetail.published}: {profile.stats.tasksPublished}</li>
-            <li>{copy.agentDetail.intended}: {profile.stats.tasksIntented}</li>
-            <li>{copy.agentDetail.completed}: {profile.stats.tasksCompleted}</li>
-            <li>{copy.agentDetail.terminated}: {profile.stats.tasksTerminated}</li>
-            <li>{copy.agentDetail.rejected}: {profile.stats.submissionsRejected}</li>
-            <li>{copy.agentDetail.votes}: {profile.stats.supervisionVotes}</li>
-          </ul>
+          <div className="detail-stat-groups">
+            <section className="detail-stat-group">
+              <h5>{publishingTitle}</h5>
+              <ul>
+                <li>{copy.agentDetail.published}: {profile.stats.tasksPublished}</li>
+                <li>{copy.agentDetail.terminated}: {profile.stats.tasksTerminated}</li>
+              </ul>
+            </section>
+            <section className="detail-stat-group">
+              <h5>{executionTitle}</h5>
+              <ul>
+                <li>{copy.agentDetail.intended}: {profile.stats.tasksIntented}</li>
+                <li>{copy.agentDetail.completed}: {profile.stats.tasksCompleted}</li>
+                <li>{copy.agentDetail.rejected}: {profile.stats.submissionsRejected}</li>
+              </ul>
+            </section>
+            <section className="detail-stat-group">
+              <h5>{supervisionTitle}</h5>
+              <ul>
+                <li>{copy.agentDetail.votes}: {profile.stats.supervisionVotes}</li>
+              </ul>
+            </section>
+          </div>
         </div>
       </div>
 
-      <h4>{locale === "zh" ? "简介" : "Bio"}</h4>
-      <div className="markdown">{renderSafeMarkdown(profile.bio || "-")}</div>
+      <section className="detail-card">
+        <h4 className="detail-subsection-title">{locale === "zh" ? "简介" : "Bio"}</h4>
+        <div className="markdown">{renderSafeMarkdown(profile.bio || "-")}</div>
+      </section>
 
-      <h4>{copy.agentDetail.activityTimeline}</h4>
-      {activities.length > 0 ? (
-        <ul className="detail-list">
-          {activities.map((item) => (
-            <li key={item.id} className="detail-list-row detail-event-row">
-              <div className="detail-event-row__main">
-                <span className={`event-chip event-${item.type.toLowerCase()}`}>
-                  {getDashboardEventLabel(locale, item.type)}
-                </span>
-                <strong>{formatDateTime(item.createdAt, locale, timeZone)}</strong>
-              </div>
-              <div className="detail-subline">
-                <span>{locale === "zh" ? "执行方" : "Actor"}: {shortAddress(item.actor)}</span>
-                <span>{locale === "zh" ? "周期" : "Cycle"}: {item.cycleId}</span>
-                {item.taskId ? <span>{locale === "zh" ? "任务" : "Task"}: {renderTask(item.taskId, getTaskHref)}</span> : null}
-                {item.disputeId ? <span>{locale === "zh" ? "争议" : "Dispute"}: {renderDispute(item.disputeId, getDisputeHref)}</span> : null}
-              </div>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="empty-line">{copy.common.noActivityYet}</p>
-      )}
+      <section className="detail-card">
+        <h4 className="detail-subsection-title">{copy.agentDetail.activityTimeline}</h4>
+        {activityItems.length > 0 ? (
+          <>
+            <ActivityTimeline
+              activities={activityItems}
+              locale={locale}
+              timeZone={timeZone}
+              renderLinks={(item) => (
+                <>
+                  <span>{locale === "zh" ? "执行方" : "Actor"}: {shortAddress(item.actor)}</span>
+                  <span>{locale === "zh" ? "周期" : "Cycle"}: {item.cycleId}</span>
+                  {item.taskId ? <span>{locale === "zh" ? "任务" : "Task"}: {renderTask(item.taskId, getTaskHref)}</span> : null}
+                  {item.disputeId ? <span>{locale === "zh" ? "争议" : "Dispute"}: {renderDispute(item.disputeId, getDisputeHref)}</span> : null}
+                </>
+              )}
+            />
+            {activityCursor ? (
+              <button type="button" className="action-btn more-btn" onClick={loadMoreActivities} disabled={loadingActivities}>
+                {loadingActivities ? copy.common.loadingMore : loadMoreLabel}
+              </button>
+            ) : null}
+            {activityErrorKind ? <p className="empty-line">{activityLoadErrorMessage}</p> : null}
+          </>
+        ) : (
+          <p className="empty-line">{copy.common.noActivityYet}</p>
+        )}
+      </section>
     </div>
   );
 };

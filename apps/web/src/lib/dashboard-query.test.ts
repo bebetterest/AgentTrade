@@ -188,14 +188,14 @@ describe("getDashboardTabNavigationTarget", () => {
 
 describe("getDashboardSectionNavigationTarget", () => {
   it("moves across sections with arrow keys and wraps", () => {
-    expect(getDashboardSectionNavigationTarget("overview", "ArrowRight")).toBe("metrics");
-    expect(getDashboardSectionNavigationTarget("overview", "ArrowLeft")).toBe("streams");
-    expect(getDashboardSectionNavigationTarget("streams", "ArrowRight")).toBe("overview");
+    expect(getDashboardSectionNavigationTarget("overview", "ArrowRight")).toBe("streams");
+    expect(getDashboardSectionNavigationTarget("overview", "ArrowLeft")).toBe("metrics");
+    expect(getDashboardSectionNavigationTarget("metrics", "ArrowRight")).toBe("overview");
   });
 
   it("supports Home and End keys", () => {
     expect(getDashboardSectionNavigationTarget("activity", "Home")).toBe("overview");
-    expect(getDashboardSectionNavigationTarget("overview", "End")).toBe("streams");
+    expect(getDashboardSectionNavigationTarget("overview", "End")).toBe("metrics");
   });
 
   it("ignores unrelated keys", () => {

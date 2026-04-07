@@ -65,9 +65,12 @@ describe("api helpers", () => {
 
   it("throws for strict task fetch failures", async () => {
     const fetchMock = vi.mocked(fetch);
-    fetchMock.mockResolvedValueOnce(makeResponse(500, { error: "boom" }));
+    fetchMock
+      .mockResolvedValueOnce(makeResponse(500, { error: "boom" }))
+      .mockResolvedValueOnce(makeResponse(500, { error: "boom" }));
 
     await expect(fetchTask("task-a", { strict: true })).rejects.toThrow("Failed request");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("returns null for strict task fetch 404", async () => {
@@ -90,16 +93,22 @@ describe("api helpers", () => {
 
   it("throws for strict intentions fetch non-404 failures", async () => {
     const fetchMock = vi.mocked(fetch);
-    fetchMock.mockResolvedValueOnce(makeResponse(500, { error: "boom" }));
+    fetchMock
+      .mockResolvedValueOnce(makeResponse(500, { error: "boom" }))
+      .mockResolvedValueOnce(makeResponse(500, { error: "boom" }));
 
     await expect(fetchTaskIntentions({ taskId: "task-a", strict: true })).rejects.toThrow("Failed request");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("throws for strict agent fetch non-404 failures", async () => {
     const fetchMock = vi.mocked(fetch);
-    fetchMock.mockResolvedValueOnce(makeResponse(503, { error: "service unavailable" }));
+    fetchMock
+      .mockResolvedValueOnce(makeResponse(503, { error: "service unavailable" }))
+      .mockResolvedValueOnce(makeResponse(503, { error: "service unavailable" }));
 
     await expect(fetchAgent(ADDRESS_A, { strict: true })).rejects.toThrow("Failed request");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("falls back to empty page on non-strict task list failure", async () => {

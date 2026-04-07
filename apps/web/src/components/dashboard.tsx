@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { messages, type SupportedLocale } from "@agentrade/i18n";
+import type { SupportedLocale } from "@agentrade/i18n";
 import type {
   ActivityEvent,
   AgentDirectoryItem,
@@ -9,7 +9,6 @@ import type {
   Cycle,
   CycleRewardsResponse,
   DashboardSummaryResponse,
-  DashboardTrendsResponse,
   Dispute,
   HealthStatus,
   LedgerBalance,
@@ -28,7 +27,6 @@ import {
   fetchCycleRewards,
   fetchCycles,
   fetchDashboardSummary,
-  fetchDashboardTrends,
   fetchDispute,
   fetchDisputes,
   fetchEconomyParams,
@@ -40,16 +38,21 @@ import {
 } from "../lib/api";
 import { DEFAULT_TIMEZONE, formatDuration } from "../lib/dashboard-format";
 import { parseDashboardQuery, sanitizeQueryPatch } from "../lib/dashboard-query";
+import {
+  filterAgentsBySearchFallback,
+  filterDisputesBySearchFallback,
+  filterTasksBySearchFallback
+} from "../lib/dashboard-search";
+import { getLoadErrorKind, pickLoadErrorKind, type LoadErrorKind } from "../lib/load-error";
 import { TIMEZONE_COOKIE_NAME, buildPreferenceCookie } from "../lib/request-context";
 
 interface DashboardProps {
   initialLocale: SupportedLocale;
   initialTimeZone: string;
+  initialSkillsInstallCommand: string;
   initialSummary: DashboardSummaryResponse | null;
-  initialTrends: DashboardTrendsResponse | null;
   initialTasks: PaginatedResponse<Task>;
   initialAgents: PaginatedResponse<AgentDirectoryItem>;
-  initialLeaders: AgentDirectoryItem[];
   initialActiveCycle: Cycle | null;
   initialActivities: PaginatedResponse<ActivityEvent>;
   initialCycles: PaginatedResponse<Cycle>;
@@ -63,15 +66,21 @@ interface DashboardProps {
 
 const REFRESH_FEED_LIMIT = 12;
 const SEARCH_DEBOUNCE_MS = 320;
+const TASK_STATUS_COUNT_PREFETCH_LIMIT = 100;
+
+const buildTaskStatusCounts = (items: Task[]): Record<string, number> =>
+  items.reduce<Record<string, number>>((acc, item) => {
+    acc[item.status] = (acc[item.status] ?? 0) + 1;
+    return acc;
+  }, {});
 
 export const Dashboard = ({
   initialLocale,
   initialTimeZone,
+  initialSkillsInstallCommand,
   initialSummary,
-  initialTrends,
   initialTasks,
   initialAgents,
-  initialLeaders,
   initialActiveCycle,
   initialActivities,
   initialCycles,
@@ -83,7 +92,6 @@ export const Dashboard = ({
   initialMetricsLoaded
 }: DashboardProps) => {
   const [locale, setLocale] = useState<SupportedLocale>(initialLocale);
-  const t = messages[locale];
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -91,8 +99,6 @@ export const Dashboard = ({
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   const [summary, setSummary] = useState<DashboardSummaryResponse | null>(initialSummary);
-  const [trends, setTrends] = useState<DashboardTrendsResponse | null>(initialTrends);
-  const [leaders, setLeaders] = useState<AgentDirectoryItem[]>(initialLeaders);
   const [activeCycle, setActiveCycle] = useState<Cycle | null>(initialActiveCycle);
   const [activityFeed, setActivityFeed] = useState<ActivityEvent[]>(initialActivities.items.slice(0, REFRESH_FEED_LIMIT));
   const [economy, setEconomy] = useState<PublicEconomyParams | null>(initialEconomy);
@@ -121,6 +127,21 @@ export const Dashboard = ({
   const [cycleLoadError, setCycleLoadError] = useState(false);
   const [disputeLoadError, setDisputeLoadError] = useState(false);
   const [feedLoadError, setFeedLoadError] = useState(false);
+  const [overviewErrorKind, setOverviewErrorKind] = useState<LoadErrorKind | null>(null);
+  const [taskLoadErrorKind, setTaskLoadErrorKind] = useState<LoadErrorKind | null>(null);
+  const [agentLoadErrorKind, setAgentLoadErrorKind] = useState<LoadErrorKind | null>(null);
+  const [cycleLoadErrorKind, setCycleLoadErrorKind] = useState<LoadErrorKind | null>(null);
+  const [disputeLoadErrorKind, setDisputeLoadErrorKind] = useState<LoadErrorKind | null>(null);
+  const [feedLoadErrorKind, setFeedLoadErrorKind] = useState<LoadErrorKind | null>(null);
+  const [taskStatusCountSnapshot, setTaskStatusCountSnapshot] = useState<{
+    scopeKey: string;
+    allCount: number;
+    counts: Record<string, number>;
+  } | null>(() => ({
+    scopeKey: "",
+    allCount: initialTasks.items.length,
+    counts: buildTaskStatusCounts(initialTasks.items)
+  }));
   const [taskDetailReloadTick, setTaskDetailReloadTick] = useState(0);
   const [agentDetailReloadTick, setAgentDetailReloadTick] = useState(0);
   const [cycleDetailReloadTick, setCycleDetailReloadTick] = useState(0);
@@ -129,6 +150,7 @@ export const Dashboard = ({
   const [taskDetail, setTaskDetail] = useState<{
     loading: boolean;
     error: boolean;
+    errorKind: LoadErrorKind | null;
     task: Task | null;
     intentions: TaskIntention[];
     disputes: Dispute[];
@@ -136,6 +158,7 @@ export const Dashboard = ({
   }>({
     loading: false,
     error: false,
+    errorKind: null,
     task: null,
     intentions: [],
     disputes: [],
@@ -144,12 +167,14 @@ export const Dashboard = ({
   const [agentDetail, setAgentDetail] = useState<{
     loading: boolean;
     error: boolean;
+    errorKind: LoadErrorKind | null;
     profile: AgentProfile | null;
     ledger: LedgerBalance | null;
     activities: ActivityEvent[];
   }>({
     loading: false,
     error: false,
+    errorKind: null,
     profile: null,
     ledger: null,
     activities: []
@@ -157,23 +182,27 @@ export const Dashboard = ({
   const [cycleDetail, setCycleDetail] = useState<{
     loading: boolean;
     error: boolean;
+    errorKind: LoadErrorKind | null;
     rewards: CycleRewardsResponse | null;
     disputes: Dispute[];
   }>({
     loading: false,
     error: false,
+    errorKind: null,
     rewards: null,
     disputes: []
   });
   const [disputeDetail, setDisputeDetail] = useState<{
     loading: boolean;
     error: boolean;
+    errorKind: LoadErrorKind | null;
     dispute: Dispute | null;
     task: Task | null;
     activities: ActivityEvent[];
   }>({
     loading: false,
     error: false,
+    errorKind: null,
     dispute: null,
     task: null,
     activities: []
@@ -200,7 +229,6 @@ export const Dashboard = ({
     disputeSort,
     disputeOrder,
     activeOnly,
-    trendWindow,
     taskDetailId,
     agentDetailAddress,
     cycleDetailId,
@@ -211,6 +239,7 @@ export const Dashboard = ({
   const taskQueryKey = `${q}|${taskStatus ?? ""}|${taskSort}|${taskOrder}`;
   const agentQueryKey = `${q}|${activeOnly}|${agentSort}|${agentOrder}`;
   const disputeQueryKey = `${q}|${disputeStatus ?? ""}|${disputeSort}|${disputeOrder}`;
+  const taskCountScopeKey = q.trim().toLowerCase();
   taskQueryKeyRef.current = taskQueryKey;
   agentQueryKeyRef.current = agentQueryKey;
   disputeQueryKeyRef.current = disputeQueryKey;
@@ -229,25 +258,48 @@ export const Dashboard = ({
     router.replace(query.length > 0 ? `${pathname}?${query}` : pathname, { scroll: false });
   }, [pathname, router, searchParams]);
 
+  const applyOverviewSettled = useCallback((
+    summaryRes: PromiseSettledResult<DashboardSummaryResponse | null>,
+    cycleRes: PromiseSettledResult<Cycle | null>
+  ) => {
+    const anyFulfilled =
+      summaryRes.status === "fulfilled" ||
+      cycleRes.status === "fulfilled";
+
+    if (summaryRes.status === "fulfilled") {
+      setSummary(summaryRes.value);
+    }
+    if (cycleRes.status === "fulfilled") {
+      setActiveCycle(cycleRes.value);
+    }
+
+    if (anyFulfilled) {
+      setOverviewError(false);
+      setOverviewErrorKind(null);
+      return;
+    }
+
+    const reasons = [summaryRes, cycleRes]
+      .flatMap((result) => (result.status === "rejected" ? [result.reason] : []));
+    setOverviewError(true);
+    setOverviewErrorKind(pickLoadErrorKind(reasons));
+  }, []);
+
   const openTaskDetail = useCallback((taskId: string) => {
-    updateQuery({ taskDetail: taskId, agentDetail: null, cycleDetail: null, disputeDetail: null });
-  }, [updateQuery]);
+    router.push(`/tasks/${taskId}`);
+  }, [router]);
 
   const openAgentDetail = useCallback((address: string) => {
-    updateQuery({ agentDetail: address, taskDetail: null, cycleDetail: null, disputeDetail: null });
-  }, [updateQuery]);
+    router.push(`/agents/${address}`);
+  }, [router]);
 
   const openCycleDetail = useCallback((cycleId: string) => {
-    updateQuery({ cycleDetail: cycleId, taskDetail: null, agentDetail: null, disputeDetail: null });
-  }, [updateQuery]);
+    router.push(`/cycles/${cycleId}`);
+  }, [router]);
 
   const openDisputeDetail = useCallback((disputeId: string) => {
-    updateQuery({ disputeDetail: disputeId, taskDetail: null, agentDetail: null, cycleDetail: null });
-  }, [updateQuery]);
-
-  const closeDetail = useCallback(() => {
-    updateQuery({ taskDetail: null, agentDetail: null, cycleDetail: null, disputeDetail: null });
-  }, [updateQuery]);
+    router.push(`/disputes/${disputeId}`);
+  }, [router]);
 
   const retryTaskDetail = () => {
     if (taskDetailId) {
@@ -300,8 +352,9 @@ export const Dashboard = ({
         ],
         nextCursor: response.nextCursor
       }));
-    } catch {
+    } catch (error) {
       setTaskLoadError(true);
+      setTaskLoadErrorKind(getLoadErrorKind(error));
     } finally {
       setLoadingMoreTasks(false);
     }
@@ -334,8 +387,9 @@ export const Dashboard = ({
         ],
         nextCursor: response.nextCursor
       }));
-    } catch {
+    } catch (error) {
       setAgentLoadError(true);
+      setAgentLoadErrorKind(getLoadErrorKind(error));
     } finally {
       setLoadingMoreAgents(false);
     }
@@ -360,8 +414,9 @@ export const Dashboard = ({
         ],
         nextCursor: response.nextCursor
       }));
-    } catch {
+    } catch (error) {
       setCycleLoadError(true);
+      setCycleLoadErrorKind(getLoadErrorKind(error));
     } finally {
       setLoadingMoreCycles(false);
     }
@@ -394,8 +449,9 @@ export const Dashboard = ({
         ],
         nextCursor: response.nextCursor
       }));
-    } catch {
+    } catch (error) {
       setDisputeLoadError(true);
+      setDisputeLoadErrorKind(getLoadErrorKind(error));
     } finally {
       setLoadingMoreDisputes(false);
     }
@@ -403,132 +459,129 @@ export const Dashboard = ({
 
   const refreshAll = async () => {
     setRefreshing(true);
-    const overviewPromise = Promise.allSettled([
-      fetchDashboardSummary(timeZone, { strict: true }),
-      fetchDashboardTrends(timeZone, trendWindow, { strict: true }),
-      fetchAgents({ activeOnly: true, sort: "score", order: "desc", limit: 5, strict: true }),
-      fetchActiveCycle({ strict: true })
-    ]);
+    try {
+      const overviewPromise = Promise.allSettled([
+        fetchDashboardSummary(timeZone, { strict: true }),
+        fetchActiveCycle()
+      ]);
 
-    const streamsPromise = streamsLoaded
-      ? Promise.allSettled([
-          fetchTasks({
-            q: q || undefined,
-            status: taskStatus ?? undefined,
-            sort: taskSort,
-            order: taskOrder,
-            limit: 20,
-            strict: true
-          }),
-          fetchAgents({
-            q: q || undefined,
-            activeOnly,
-            sort: agentSort,
-            order: agentOrder,
-            limit: 20,
-            strict: true
-          }),
-          fetchCycles({ limit: 12, strict: true }),
-          fetchDisputes({
-            q: q || undefined,
-            status: disputeStatus ?? undefined,
-            sort: disputeSort,
-            order: disputeOrder,
-            limit: 20,
-            strict: true
-          })
-        ])
-      : Promise.resolve(null);
+      const streamsPromise = streamsLoaded
+        ? Promise.allSettled([
+            fetchTasks({
+              q: q || undefined,
+              status: taskStatus ?? undefined,
+              sort: taskSort,
+              order: taskOrder,
+              limit: 20,
+              strict: true
+            }),
+            fetchAgents({
+              q: q || undefined,
+              activeOnly,
+              sort: agentSort,
+              order: agentOrder,
+              limit: 20,
+              strict: true
+            }),
+            fetchCycles({ limit: 12, strict: true }),
+            fetchDisputes({
+              q: q || undefined,
+              status: disputeStatus ?? undefined,
+              sort: disputeSort,
+              order: disputeOrder,
+              limit: 20,
+              strict: true
+            })
+          ])
+        : Promise.resolve(null);
 
-    const activityPromise = activityLoaded
-      ? Promise.allSettled([
-          fetchActivities({ limit: REFRESH_FEED_LIMIT, order: "desc", strict: true })
-        ])
-      : Promise.resolve(null);
+      const activityPromise = activityLoaded
+        ? Promise.allSettled([
+            fetchActivities({ limit: REFRESH_FEED_LIMIT, order: "desc" })
+          ])
+        : Promise.resolve(null);
 
-    const metricsPromise = metricsLoaded
-      ? Promise.allSettled([
-          fetchEconomyParams({ strict: true }),
-          fetchHealthStatus({ strict: true })
-        ])
-      : Promise.resolve(null);
+      const metricsPromise = metricsLoaded
+        ? Promise.allSettled([
+            fetchEconomyParams({ strict: true }),
+            fetchHealthStatus({ strict: true })
+          ])
+        : Promise.resolve(null);
 
-    const [overviewResults, streamsResults, activityResults, metricsResults] = await Promise.all([
-      overviewPromise,
-      streamsPromise,
-      activityPromise,
-      metricsPromise
-    ]);
+      const [overviewResults, streamsResults, activityResults, metricsResults] = await Promise.all([
+        overviewPromise,
+        streamsPromise,
+        activityPromise,
+        metricsPromise
+      ]);
 
-    const [summaryRes, trendsRes, leadersRes, cycleRes] = overviewResults;
-    if (
-      summaryRes.status === "fulfilled" &&
-      trendsRes.status === "fulfilled" &&
-      leadersRes.status === "fulfilled" &&
-      cycleRes.status === "fulfilled"
-    ) {
-      setOverviewError(false);
-      setSummary(summaryRes.value);
-      setTrends(trendsRes.value);
-      setLeaders(leadersRes.value.items);
-      setActiveCycle(cycleRes.value);
-    } else {
-      setOverviewError(true);
+      const [summaryRes, cycleRes] = overviewResults;
+      applyOverviewSettled(summaryRes, cycleRes);
+
+      if (streamsResults) {
+        const [tasksRes, agentsRes, cyclesRes, disputesRes] = streamsResults;
+        if (tasksRes.status === "fulfilled") {
+          setTaskLoadError(false);
+          setTaskLoadErrorKind(null);
+          setTasksData(tasksRes.value);
+        } else {
+          setTaskLoadError(true);
+          setTaskLoadErrorKind(getLoadErrorKind(tasksRes.reason));
+        }
+
+        if (agentsRes.status === "fulfilled") {
+          setAgentLoadError(false);
+          setAgentLoadErrorKind(null);
+          setAgentsData(agentsRes.value);
+        } else {
+          setAgentLoadError(true);
+          setAgentLoadErrorKind(getLoadErrorKind(agentsRes.reason));
+        }
+
+        if (cyclesRes.status === "fulfilled") {
+          setCycleLoadError(false);
+          setCycleLoadErrorKind(null);
+          setCyclesData(cyclesRes.value);
+        } else {
+          setCycleLoadError(true);
+          setCycleLoadErrorKind(getLoadErrorKind(cyclesRes.reason));
+        }
+
+        if (disputesRes.status === "fulfilled") {
+          setDisputeLoadError(false);
+          setDisputeLoadErrorKind(null);
+          setDisputesData(disputesRes.value);
+        } else {
+          setDisputeLoadError(true);
+          setDisputeLoadErrorKind(getLoadErrorKind(disputesRes.reason));
+        }
+      }
+
+      if (activityResults) {
+        const [feedRes] = activityResults;
+        if (feedRes.status === "fulfilled") {
+          setFeedLoadError(false);
+          setFeedLoadErrorKind(null);
+          setActivityFeed(feedRes.value.items);
+        } else {
+          setFeedLoadError(true);
+          setFeedLoadErrorKind(getLoadErrorKind(feedRes.reason));
+        }
+      }
+
+      if (metricsResults) {
+        const [economyRes, healthRes] = metricsResults;
+        if (economyRes.status === "fulfilled") {
+          setEconomy(economyRes.value);
+        }
+
+        if (healthRes.status === "fulfilled") {
+          setHealth(healthRes.value);
+        }
+      }
+    } finally {
+      setRefreshing(false);
     }
-
-    if (streamsResults) {
-      const [tasksRes, agentsRes, cyclesRes, disputesRes] = streamsResults;
-      if (tasksRes.status === "fulfilled") {
-        setTaskLoadError(false);
-        setTasksData(tasksRes.value);
-      } else {
-        setTaskLoadError(true);
-      }
-
-      if (agentsRes.status === "fulfilled") {
-        setAgentLoadError(false);
-        setAgentsData(agentsRes.value);
-      } else {
-        setAgentLoadError(true);
-      }
-
-      if (cyclesRes.status === "fulfilled") {
-        setCycleLoadError(false);
-        setCyclesData(cyclesRes.value);
-      } else {
-        setCycleLoadError(true);
-      }
-
-      if (disputesRes.status === "fulfilled") {
-        setDisputeLoadError(false);
-        setDisputesData(disputesRes.value);
-      } else {
-        setDisputeLoadError(true);
-      }
-    }
-
-    if (activityResults) {
-      const [feedRes] = activityResults;
-      if (feedRes.status === "fulfilled") {
-        setFeedLoadError(false);
-        setActivityFeed(feedRes.value.items);
-      } else {
-        setFeedLoadError(true);
-      }
-    }
-
-    if (metricsResults) {
-      const [economyRes, healthRes] = metricsResults;
-      if (economyRes.status === "fulfilled") {
-        setEconomy(economyRes.value);
-      }
-
-      if (healthRes.status === "fulfilled") {
-        setHealth(healthRes.value);
-      }
-    }
-
-    setRefreshing(false);
   };
 
   useEffect(() => {
@@ -579,24 +632,22 @@ export const Dashboard = ({
   }, []);
 
   useEffect(() => {
-    const opened = Boolean(taskDetailId || agentDetailAddress || cycleDetailId || disputeDetailId);
-    if (!opened) {
-      document.body.style.overflow = "";
+    if (taskDetailId) {
+      router.replace(`/tasks/${taskDetailId}`);
       return;
     }
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        closeDetail();
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-      document.body.style.overflow = previousOverflow;
-    };
-  }, [taskDetailId, agentDetailAddress, cycleDetailId, disputeDetailId, closeDetail]);
+    if (agentDetailAddress) {
+      router.replace(`/agents/${agentDetailAddress}`);
+      return;
+    }
+    if (cycleDetailId) {
+      router.replace(`/cycles/${cycleDetailId}`);
+      return;
+    }
+    if (disputeDetailId) {
+      router.replace(`/disputes/${disputeDetailId}`);
+    }
+  }, [taskDetailId, agentDetailAddress, cycleDetailId, disputeDetailId, router]);
 
   useEffect(() => {
     if (!timeZone) {
@@ -604,29 +655,19 @@ export const Dashboard = ({
     }
     let cancelled = false;
     (async () => {
-      const [summaryRes, trendsRes, leadersRes, cycleRes] = await Promise.allSettled([
+      const [summaryRes, cycleRes] = await Promise.allSettled([
         fetchDashboardSummary(timeZone, { strict: true }),
-        fetchDashboardTrends(timeZone, trendWindow, { strict: true }),
-        fetchAgents({ activeOnly: true, sort: "score", order: "desc", limit: 5, strict: true }),
-        fetchActiveCycle({ strict: true })
+        fetchActiveCycle()
       ]);
       if (cancelled) {
         return;
       }
-      if (summaryRes.status === "fulfilled" && trendsRes.status === "fulfilled" && leadersRes.status === "fulfilled" && cycleRes.status === "fulfilled") {
-        setOverviewError(false);
-        setSummary(summaryRes.value);
-        setTrends(trendsRes.value);
-        setLeaders(leadersRes.value.items);
-        setActiveCycle(cycleRes.value);
-      } else {
-        setOverviewError(true);
-      }
+      applyOverviewSettled(summaryRes, cycleRes);
     })();
     return () => {
       cancelled = true;
     };
-  }, [timeZone, trendWindow]);
+  }, [timeZone, applyOverviewSettled]);
 
   useEffect(() => {
     if (!activityLoaded) {
@@ -634,21 +675,24 @@ export const Dashboard = ({
     }
     let cancelled = false;
     setLoadingFeed(true);
+    setFeedLoadError(false);
+    setFeedLoadErrorKind(null);
     const controller = new AbortController();
     fetchActivities({
       limit: REFRESH_FEED_LIMIT,
       order: "desc",
-      signal: controller.signal,
-      strict: true
+      signal: controller.signal
     }).then((response) => {
       if (!cancelled) {
         setFeedLoadError(false);
+        setFeedLoadErrorKind(null);
         setActivityFeed(response.items);
         setLoadingFeed(false);
       }
-    }).catch(() => {
+    }).catch((error) => {
       if (!cancelled) {
         setFeedLoadError(true);
+        setFeedLoadErrorKind(getLoadErrorKind(error));
         setLoadingFeed(false);
       }
     });
@@ -692,6 +736,7 @@ export const Dashboard = ({
     let cancelled = false;
     setLoadingTasks(true);
     setTaskLoadError(false);
+    setTaskLoadErrorKind(null);
     const controller = new AbortController();
     fetchTasks({
       q: q || undefined,
@@ -706,9 +751,10 @@ export const Dashboard = ({
         setTasksData(response);
         setLoadingTasks(false);
       }
-    }).catch(() => {
+    }).catch((error) => {
       if (!cancelled) {
         setTaskLoadError(true);
+        setTaskLoadErrorKind(getLoadErrorKind(error));
         setLoadingTasks(false);
       }
     });
@@ -725,6 +771,7 @@ export const Dashboard = ({
     let cancelled = false;
     setLoadingAgents(true);
     setAgentLoadError(false);
+    setAgentLoadErrorKind(null);
     const controller = new AbortController();
     fetchAgents({
       q: q || undefined,
@@ -739,9 +786,10 @@ export const Dashboard = ({
         setAgentsData(response);
         setLoadingAgents(false);
       }
-    }).catch(() => {
+    }).catch((error) => {
       if (!cancelled) {
         setAgentLoadError(true);
+        setAgentLoadErrorKind(getLoadErrorKind(error));
         setLoadingAgents(false);
       }
     });
@@ -758,6 +806,7 @@ export const Dashboard = ({
     let cancelled = false;
     setLoadingDisputes(true);
     setDisputeLoadError(false);
+    setDisputeLoadErrorKind(null);
     const controller = new AbortController();
     fetchDisputes({
       q: q || undefined,
@@ -772,9 +821,10 @@ export const Dashboard = ({
         setDisputesData(response);
         setLoadingDisputes(false);
       }
-    }).catch(() => {
+    }).catch((error) => {
       if (!cancelled) {
         setDisputeLoadError(true);
+        setDisputeLoadErrorKind(getLoadErrorKind(error));
         setLoadingDisputes(false);
       }
     });
@@ -791,6 +841,7 @@ export const Dashboard = ({
     let cancelled = false;
     setLoadingCycles(true);
     setCycleLoadError(false);
+    setCycleLoadErrorKind(null);
     const controller = new AbortController();
     fetchCycles({
       limit: 12,
@@ -801,9 +852,10 @@ export const Dashboard = ({
         setCyclesData(response);
         setLoadingCycles(false);
       }
-    }).catch(() => {
+    }).catch((error) => {
       if (!cancelled) {
         setCycleLoadError(true);
+        setCycleLoadErrorKind(getLoadErrorKind(error));
         setLoadingCycles(false);
       }
     });
@@ -899,12 +951,12 @@ export const Dashboard = ({
 
   useEffect(() => {
     if (!taskDetailId) {
-      setTaskDetail({ loading: false, error: false, task: null, intentions: [], disputes: [], activities: [] });
+      setTaskDetail({ loading: false, error: false, errorKind: null, task: null, intentions: [], disputes: [], activities: [] });
       return;
     }
     let cancelled = false;
     const controller = new AbortController();
-    setTaskDetail((prev) => ({ ...prev, loading: true, error: false }));
+    setTaskDetail((prev) => ({ ...prev, loading: true, error: false, errorKind: null }));
     Promise.all([
       fetchTask(taskDetailId, { signal: controller.signal, strict: true }),
       fetchTaskIntentions({ taskId: taskDetailId, limit: 100, signal: controller.signal, strict: true }),
@@ -917,14 +969,15 @@ export const Dashboard = ({
       setTaskDetail({
         loading: false,
         error: false,
+        errorKind: null,
         task,
         intentions: intentions.items,
         disputes: disputes.items,
         activities: activities.items
       });
-    }).catch(() => {
+    }).catch((error) => {
       if (!cancelled) {
-        setTaskDetail((prev) => ({ ...prev, loading: false, error: true }));
+        setTaskDetail((prev) => ({ ...prev, loading: false, error: true, errorKind: getLoadErrorKind(error) }));
       }
     });
     return () => {
@@ -935,12 +988,12 @@ export const Dashboard = ({
 
   useEffect(() => {
     if (!agentDetailAddress) {
-      setAgentDetail({ loading: false, error: false, profile: null, ledger: null, activities: [] });
+      setAgentDetail({ loading: false, error: false, errorKind: null, profile: null, ledger: null, activities: [] });
       return;
     }
     let cancelled = false;
     const controller = new AbortController();
-    setAgentDetail((prev) => ({ ...prev, loading: true, error: false }));
+    setAgentDetail((prev) => ({ ...prev, loading: true, error: false, errorKind: null }));
     Promise.all([
       fetchAgent(agentDetailAddress, { signal: controller.signal, strict: true }),
       fetchLedger(agentDetailAddress, { signal: controller.signal, strict: true }),
@@ -952,13 +1005,14 @@ export const Dashboard = ({
       setAgentDetail({
         loading: false,
         error: false,
+        errorKind: null,
         profile,
         ledger,
         activities: activities.items
       });
-    }).catch(() => {
+    }).catch((error) => {
       if (!cancelled) {
-        setAgentDetail((prev) => ({ ...prev, loading: false, error: true }));
+        setAgentDetail((prev) => ({ ...prev, loading: false, error: true, errorKind: getLoadErrorKind(error) }));
       }
     });
     return () => {
@@ -969,12 +1023,12 @@ export const Dashboard = ({
 
   useEffect(() => {
     if (!cycleDetailId) {
-      setCycleDetail({ loading: false, error: false, rewards: null, disputes: [] });
+      setCycleDetail({ loading: false, error: false, errorKind: null, rewards: null, disputes: [] });
       return;
     }
     let cancelled = false;
     const controller = new AbortController();
-    setCycleDetail((prev) => ({ ...prev, loading: true, error: false }));
+    setCycleDetail((prev) => ({ ...prev, loading: true, error: false, errorKind: null }));
     (async () => {
       try {
         const rewards = await fetchCycleRewards(cycleDetailId, { signal: controller.signal, strict: true });
@@ -982,7 +1036,7 @@ export const Dashboard = ({
           return;
         }
         if (!rewards) {
-          setCycleDetail({ loading: false, error: false, rewards: null, disputes: [] });
+          setCycleDetail({ loading: false, error: false, errorKind: null, rewards: null, disputes: [] });
           return;
         }
         const disputeIds = [...new Set(rewards.workloads.map((item) => item.disputeId).filter(Boolean))];
@@ -995,12 +1049,13 @@ export const Dashboard = ({
         setCycleDetail({
           loading: false,
           error: false,
+          errorKind: null,
           rewards,
           disputes: disputeItems.filter((item): item is Dispute => Boolean(item))
         });
-      } catch {
+      } catch (error) {
         if (!cancelled) {
-          setCycleDetail((prev) => ({ ...prev, loading: false, error: true }));
+          setCycleDetail((prev) => ({ ...prev, loading: false, error: true, errorKind: getLoadErrorKind(error) }));
         }
       }
     })();
@@ -1012,12 +1067,12 @@ export const Dashboard = ({
 
   useEffect(() => {
     if (!disputeDetailId) {
-      setDisputeDetail({ loading: false, error: false, dispute: null, task: null, activities: [] });
+      setDisputeDetail({ loading: false, error: false, errorKind: null, dispute: null, task: null, activities: [] });
       return;
     }
     let cancelled = false;
     const controller = new AbortController();
-    setDisputeDetail((prev) => ({ ...prev, loading: true, error: false }));
+    setDisputeDetail((prev) => ({ ...prev, loading: true, error: false, errorKind: null }));
     (async () => {
       try {
         const dispute = await fetchDispute(disputeDetailId, { signal: controller.signal, strict: true });
@@ -1025,7 +1080,7 @@ export const Dashboard = ({
           return;
         }
         if (!dispute) {
-          setDisputeDetail({ loading: false, error: false, dispute: null, task: null, activities: [] });
+          setDisputeDetail({ loading: false, error: false, errorKind: null, dispute: null, task: null, activities: [] });
           return;
         }
         const [task, activities] = await Promise.all([
@@ -1038,13 +1093,14 @@ export const Dashboard = ({
         setDisputeDetail({
           loading: false,
           error: false,
+          errorKind: null,
           dispute,
           task,
           activities: activities.items
         });
-      } catch {
+      } catch (error) {
         if (!cancelled) {
-          setDisputeDetail((prev) => ({ ...prev, loading: false, error: true }));
+          setDisputeDetail((prev) => ({ ...prev, loading: false, error: true, errorKind: getLoadErrorKind(error) }));
         }
       }
     })();
@@ -1054,24 +1110,120 @@ export const Dashboard = ({
     };
   }, [disputeDetailId, disputeDetailReloadTick]);
 
-  const trendPublished = useMemo(() => trends?.points.map((item) => item.tasksPublished) ?? [], [trends]);
-  const trendIntentions = useMemo(() => trends?.points.map((item) => item.tasksIntented) ?? [], [trends]);
-  const trendCompleted = useMemo(() => trends?.points.map((item) => item.tasksCompleted) ?? [], [trends]);
-  const trendDisputes = useMemo(() => trends?.points.map((item) => item.disputesOpened) ?? [], [trends]);
+  const visibleTasks = useMemo(
+    () => filterTasksBySearchFallback(tasksData.items, q),
+    [tasksData.items, q]
+  );
+  const visibleAgents = useMemo(
+    () => filterAgentsBySearchFallback(agentsData.items, q),
+    [agentsData.items, q]
+  );
+  const visibleDisputes = useMemo(
+    () => filterDisputesBySearchFallback(disputesData.items, q),
+    [disputesData.items, q]
+  );
+  const visibleTasksData = useMemo(
+    () => ({ ...tasksData, items: visibleTasks }),
+    [tasksData, visibleTasks]
+  );
+  const visibleAgentsData = useMemo(
+    () => ({ ...agentsData, items: visibleAgents }),
+    [agentsData, visibleAgents]
+  );
+  const visibleDisputesData = useMemo(
+    () => ({ ...disputesData, items: visibleDisputes }),
+    [disputesData, visibleDisputes]
+  );
+
+  useEffect(() => {
+    if (!streamsLoaded || taskStatus === null) {
+      return;
+    }
+    if (taskStatusCountSnapshot?.scopeKey === taskCountScopeKey) {
+      return;
+    }
+    const counts = buildTaskStatusCounts(visibleTasks);
+    const allCount = visibleTasks.length;
+    const selectedCount = counts[taskStatus] ?? 0;
+    if (allCount <= selectedCount) {
+      return;
+    }
+    setTaskStatusCountSnapshot({
+      scopeKey: taskCountScopeKey,
+      allCount,
+      counts
+    });
+  }, [streamsLoaded, taskStatus, taskStatusCountSnapshot?.scopeKey, taskCountScopeKey, visibleTasks]);
+
+  useEffect(() => {
+    if (!streamsLoaded || taskStatus !== null) {
+      return;
+    }
+    setTaskStatusCountSnapshot({
+      scopeKey: taskCountScopeKey,
+      allCount: visibleTasks.length,
+      counts: buildTaskStatusCounts(visibleTasks)
+    });
+  }, [streamsLoaded, taskStatus, taskCountScopeKey, visibleTasks]);
+
+  useEffect(() => {
+    if (!streamsLoaded || taskStatus === null) {
+      return;
+    }
+    if (taskStatusCountSnapshot?.scopeKey === taskCountScopeKey) {
+      return;
+    }
+
+    let cancelled = false;
+    const controller = new AbortController();
+    fetchTasks({
+      q: q || undefined,
+      limit: TASK_STATUS_COUNT_PREFETCH_LIMIT,
+      signal: controller.signal,
+      strict: true
+    }).then((response) => {
+      if (cancelled) {
+        return;
+      }
+      const scopedTasks = filterTasksBySearchFallback(response.items, q);
+      setTaskStatusCountSnapshot({
+        scopeKey: taskCountScopeKey,
+        allCount: scopedTasks.length,
+        counts: buildTaskStatusCounts(scopedTasks)
+      });
+    }).catch(() => {
+      if (!cancelled) {
+        setTaskStatusCountSnapshot((prev) => (prev?.scopeKey === taskCountScopeKey ? prev : null));
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [streamsLoaded, taskStatus, taskCountScopeKey, taskStatusCountSnapshot?.scopeKey, q]);
+
   const cycleUptime = useMemo(() => {
     if (!activeCycle) {
       return "-";
     }
     return formatDuration(nowMs - new Date(activeCycle.startedAt).getTime(), locale);
   }, [activeCycle, nowMs, locale]);
-  const taskStatusCounts = useMemo(() => tasksData.items.reduce<Record<string, number>>((acc, item) => {
+  const currentTaskStatusCounts = useMemo(
+    () => buildTaskStatusCounts(visibleTasks),
+    [visibleTasks]
+  );
+  const canUseTaskStatusSnapshot = taskStatusCountSnapshot?.scopeKey === taskCountScopeKey;
+  const taskStatusCounts = canUseTaskStatusSnapshot
+    ? taskStatusCountSnapshot.counts
+    : currentTaskStatusCounts;
+  const taskAllCount = canUseTaskStatusSnapshot
+    ? taskStatusCountSnapshot.allCount
+    : visibleTasks.length;
+  const disputeStatusCounts = useMemo(() => visibleDisputes.reduce<Record<string, number>>((acc, item) => {
     acc[item.status] = (acc[item.status] ?? 0) + 1;
     return acc;
-  }, {}), [tasksData.items]);
-  const disputeStatusCounts = useMemo(() => disputesData.items.reduce<Record<string, number>>((acc, item) => {
-    acc[item.status] = (acc[item.status] ?? 0) + 1;
-    return acc;
-  }, {}), [disputesData.items]);
+  }, {}), [visibleDisputes]);
   const hasTaskFilters = q.trim().length > 0 || Boolean(taskStatus);
   const hasAgentFilters = q.trim().length > 0 || !activeOnly;
   const hasDisputeFilters = q.trim().length > 0 || Boolean(disputeStatus);
@@ -1115,18 +1267,18 @@ export const Dashboard = ({
     <DashboardView
       locale={locale}
       setLocale={setLocale}
-      readOnlyNotice={t.readOnlyNotice}
+      skillsInstallCommand={initialSkillsInstallCommand}
       timeZone={timeZone}
       refreshing={refreshing}
       overviewError={overviewError}
+      overviewErrorKind={overviewErrorKind}
       summary={summary}
-      leaders={leaders}
       activeCycle={activeCycle}
       activityFeed={activityFeed}
-      tasksData={tasksData}
-      agentsData={agentsData}
+      tasksData={visibleTasksData}
+      agentsData={visibleAgentsData}
       cyclesData={cyclesData}
-      disputesData={disputesData}
+      disputesData={visibleDisputesData}
       economy={economy}
       health={health}
       loadingTasks={loadingTasks}
@@ -1139,14 +1291,15 @@ export const Dashboard = ({
       loadingMoreDisputes={loadingMoreDisputes}
       loadingFeed={loadingFeed}
       taskLoadError={taskLoadError}
+      taskLoadErrorKind={taskLoadErrorKind}
       agentLoadError={agentLoadError}
+      agentLoadErrorKind={agentLoadErrorKind}
       cycleLoadError={cycleLoadError}
+      cycleLoadErrorKind={cycleLoadErrorKind}
       disputeLoadError={disputeLoadError}
+      disputeLoadErrorKind={disputeLoadErrorKind}
       feedLoadError={feedLoadError}
-      taskDetail={taskDetail}
-      agentDetail={agentDetail}
-      cycleDetail={cycleDetail}
-      disputeDetail={disputeDetail}
+      feedLoadErrorKind={feedLoadErrorKind}
       taskSentinelRef={taskSentinelRef}
       agentSentinelRef={agentSentinelRef}
       cycleSentinelRef={cycleSentinelRef}
@@ -1162,17 +1315,9 @@ export const Dashboard = ({
       disputeSort={disputeSort}
       disputeOrder={disputeOrder}
       activeOnly={activeOnly}
-      trendWindow={trendWindow}
-      taskDetailId={taskDetailId}
-      agentDetailAddress={agentDetailAddress}
-      cycleDetailId={cycleDetailId}
-      disputeDetailId={disputeDetailId}
+      taskAllCount={taskAllCount}
       searchDraft={searchDraft}
       setSearchDraft={setSearchDraft}
-      trendPublished={trendPublished}
-      trendIntentions={trendIntentions}
-      trendCompleted={trendCompleted}
-      trendDisputes={trendDisputes}
       cycleUptime={cycleUptime}
       taskStatusCounts={taskStatusCounts}
       disputeStatusCounts={disputeStatusCounts}
@@ -1188,11 +1333,6 @@ export const Dashboard = ({
       openAgentDetail={openAgentDetail}
       openCycleDetail={openCycleDetail}
       openDisputeDetail={openDisputeDetail}
-      closeDetail={closeDetail}
-      retryTaskDetail={retryTaskDetail}
-      retryAgentDetail={retryAgentDetail}
-      retryCycleDetail={retryCycleDetail}
-      retryDisputeDetail={retryDisputeDetail}
       loadMoreTasks={() => void loadMoreTasks()}
       loadMoreAgents={() => void loadMoreAgents()}
       loadMoreCycles={() => void loadMoreCycles()}

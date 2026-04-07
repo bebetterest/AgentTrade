@@ -47,6 +47,7 @@ export interface CliRuntimeConfig {
 export interface WebRuntimeConfig {
   publicApiBaseUrl: string;
   internalApiBaseUrl?: string;
+  skillsInstallCommand: string;
 }
 
 export type PublicEconomyParams = Pick<
@@ -301,5 +302,9 @@ export const loadCliRuntimeConfig = (): CliRuntimeConfig => ({
 
 export const loadWebRuntimeConfig = (): WebRuntimeConfig => ({
   publicApiBaseUrl: envString("NEXT_PUBLIC_API_BASE_URL", "http://localhost:3000"),
-  internalApiBaseUrl: process.env.INTERNAL_API_BASE_URL
+  internalApiBaseUrl: process.env.INTERNAL_API_BASE_URL,
+  skillsInstallCommand: envString(
+    "NEXT_PUBLIC_AGENT_SKILLS_INSTALL_COMMAND",
+    "codex skill install ./apps/skill"
+  )
 });

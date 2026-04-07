@@ -14,6 +14,7 @@ import {
   type CycleRewardsResponse,
   type CycleWorkload,
   type Dispute,
+  type DisputeResolutionSummary,
   type LedgerBalance,
   type Submission,
   type SupervisionVote,
@@ -164,6 +165,34 @@ export class AgentradeEngine {
       throw new DomainError("DISPUTE_NOT_FOUND", `Dispute ${disputeId} does not exist`, 404);
     }
     return dispute;
+  }
+
+  getDisputeResolution(disputeId: string): DisputeResolutionSummary | null {
+    const dispute = this.getDispute(disputeId);
+    if (dispute.status === DisputeStatus.OPEN) {
+      return null;
+    }
+
+    const votes = [...this.votes.values()].filter((item) => item.disputeId === disputeId);
+    const completedVotes = votes.filter((item) => item.vote === VoteChoice.COMPLETED).length;
+    const notCompletedVotes = votes.length - completedVotes;
+    const outcome =
+      dispute.status === DisputeStatus.RESOLVED_COMPLETED
+        ? VoteChoice.COMPLETED
+        : VoteChoice.NOT_COMPLETED;
+    const task = this.getTask(dispute.taskId);
+    const submission = this.requireSubmission(dispute.submissionId);
+    const winnerRole = outcome === VoteChoice.COMPLETED ? "SUBMISSION_AGENT" : "PUBLISHER";
+    const winnerAddress = outcome === VoteChoice.COMPLETED ? submission.agent : task.publisher;
+
+    return {
+      totalVotes: votes.length,
+      completedVotes,
+      notCompletedVotes,
+      outcome,
+      winnerRole,
+      winnerAddress
+    };
   }
 
   getAgent(address: Address): AgentProfile {
@@ -354,7 +383,7 @@ export class AgentradeEngine {
     const profile = this.requireAgent(agent);
     profile.stats.tasksIntented += 1;
     task.intentCount = this.countTaskIntentions(task.id);
-    task.competitionRatio = this.computeCompetitionRatio(task.intentCount, task.slotsTotal);
+    task.competitionRatio = this.computeCompetitionRatio(task.intentCount, this.getRemainingSlots(task));
     task.updatedAt = now;
     this.recordActivity({
       type: ActivityEventType.TASK_INTENDED,
@@ -472,6 +501,7 @@ export class AgentradeEngine {
     cycle.penaltyPool += penalty;
 
     task.rewardEscrowRemaining = 0;
+    task.competitionRatio = this.computeCompetitionRatio(task.intentCount, this.getRemainingSlots(task));
     task.status = TaskStatus.TERMINATED;
     task.updatedAt = this.nowIso();
     const publisherProfile = this.requireAgent(task.publisher);
@@ -786,6 +816,7 @@ export class AgentradeEngine {
     submission.status = SubmissionStatus.CONFIRMED;
     submission.updatedAt = this.nowIso();
     task.rewardEscrowRemaining -= task.rewardPerSlot;
+    task.competitionRatio = this.computeCompetitionRatio(task.intentCount, this.getRemainingSlots(task));
     const confirmedSlots = this.getConfirmedSlots(task);
     if (!task.completedAgents.includes(submission.agent)) {
       task.completedAgents.push(submission.agent);
@@ -980,7 +1011,7 @@ export class AgentradeEngine {
 
     for (const task of this.tasks.values()) {
       task.intentCount = this.countTaskIntentions(task.id);
-      task.competitionRatio = this.computeCompetitionRatio(task.intentCount, task.slotsTotal);
+      task.competitionRatio = this.computeCompetitionRatio(task.intentCount, this.getRemainingSlots(task));
     }
 
     if (!this.activeCycleId || !this.cycles.has(this.activeCycleId)) {
@@ -1000,10 +1031,15 @@ export class AgentradeEngine {
     return count;
   }
 
-  private computeCompetitionRatio(intentCount: number, slotsTotal: number): number {
-    if (slotsTotal <= 0) {
+  private getRemainingSlots(task: Task): number {
+    const confirmedSlots = this.getConfirmedSlots(task);
+    return Math.max(0, task.slotsTotal - confirmedSlots);
+  }
+
+  private computeCompetitionRatio(intentCount: number, remainingSlots: number): number {
+    if (remainingSlots <= 0) {
       return 0;
     }
-    return Number((intentCount / slotsTotal).toFixed(4));
+    return Number((intentCount / remainingSlots).toFixed(4));
   }
 }

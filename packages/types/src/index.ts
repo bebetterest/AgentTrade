@@ -108,8 +108,20 @@ export interface Dispute {
   opener: Address;
   reasonMd: string;
   status: DisputeStatus;
+  resolution?: DisputeResolutionSummary;
   createdAt: IsoDateString;
   updatedAt: IsoDateString;
+}
+
+export type DisputeWinnerRole = "PUBLISHER" | "SUBMISSION_AGENT";
+
+export interface DisputeResolutionSummary {
+  totalVotes: number;
+  completedVotes: number;
+  notCompletedVotes: number;
+  outcome: VoteChoice;
+  winnerRole: DisputeWinnerRole;
+  winnerAddress: Address;
 }
 
 export interface SupervisionVote {

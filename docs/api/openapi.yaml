@@ -2756,6 +2756,51 @@
               "RESOLVED_NOT_COMPLETED"
             ]
           },
+          "resolution": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "totalVotes",
+              "completedVotes",
+              "notCompletedVotes",
+              "outcome",
+              "winnerRole",
+              "winnerAddress"
+            ],
+            "properties": {
+              "totalVotes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "completedVotes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "notCompletedVotes": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "outcome": {
+                "type": "string",
+                "enum": [
+                  "COMPLETED",
+                  "NOT_COMPLETED"
+                ]
+              },
+              "winnerRole": {
+                "type": "string",
+                "enum": [
+                  "PUBLISHER",
+                  "SUBMISSION_AGENT"
+                ]
+              },
+              "winnerAddress": {
+                "type": "string",
+                "pattern": "^0x[a-fA-F0-9]{40}$",
+                "example": "0x1111111111111111111111111111111111111111"
+              }
+            }
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time",

@@ -20,10 +20,12 @@ export const LocaleSwitcher = ({ initialLocale, onChange }: LocaleSwitcherProps)
     setLocale(initialLocale);
     localStorage.setItem(STORAGE_KEY, initialLocale);
     document.cookie = buildPreferenceCookie(LOCALE_COOKIE_NAME, initialLocale);
-    onChange?.(initialLocale);
-  }, [initialLocale, onChange]);
+  }, [initialLocale]);
 
   const setAndPersist = (next: SupportedLocale) => {
+    if (next === locale) {
+      return;
+    }
     setLocale(next);
     localStorage.setItem(STORAGE_KEY, next);
     document.cookie = buildPreferenceCookie(LOCALE_COOKIE_NAME, next);

@@ -6,6 +6,8 @@ import { DetailStateCard } from "../../../components/detail-state-card";
 import { fetchCycleRewards, fetchDispute } from "../../../lib/api";
 import { CycleDetailContent } from "../../../components/dashboard/cycle-detail-content";
 import { formatDateTime } from "../../../lib/dashboard-format";
+import { getLoadErrorKind, withRateLimitMessage } from "../../../lib/load-error";
+import { logWebLoadError } from "../../../lib/logging";
 import {
   LOCALE_COOKIE_NAME,
   TIMEZONE_COOKIE_NAME,
@@ -26,7 +28,6 @@ const copy = (locale: SupportedLocale) =>
         loadHint: "周期详情服务当前不可用，可以返回 AgentHire 平台查看其他周期。",
         notFoundHint: "这个周期 ID 当前没有公开记录，请返回 AgentHire 平台重新选择。",
         eyebrow: "周期结算档案",
-        description: "查看周期奖励池、关联争议与监督工作量，理解 AgentHire 平台的周期结算结构。",
         cycleId: "周期 ID",
         mint: "铸造量",
         rewardPool: "奖励池",
@@ -42,7 +43,6 @@ const copy = (locale: SupportedLocale) =>
         loadHint: "The cycle detail service is unavailable right now. Return to AgentHire and inspect another cycle.",
         notFoundHint: "There is no public record for this cycle id. Return to AgentHire and choose another cycle.",
         eyebrow: "Cycle Settlement File",
-        description: "Inspect reward pool composition, linked disputes, and supervision workloads within AgentHire cycle settlement.",
         cycleId: "Cycle ID",
         mint: "Mint",
         rewardPool: "Reward Pool",
@@ -63,29 +63,41 @@ export default async function CycleDetailPage({ params }: CycleDetailPageProps) 
   const t = copy(requestPreferences.locale);
 
   let loadError = false;
+  let loadErrorKind: ReturnType<typeof getLoadErrorKind> | null = null;
   let rewards: Awaited<ReturnType<typeof fetchCycleRewards>> = null;
   let disputes: Array<NonNullable<Awaited<ReturnType<typeof fetchDispute>>>> = [];
   try {
     rewards = await fetchCycleRewards(id, { strict: true });
     if (rewards) {
       const disputeIds = [...new Set(rewards.workloads.map((item) => item.disputeId).filter(Boolean))];
-      const disputeItems = await Promise.all(
+      const disputeResults = await Promise.allSettled(
         disputeIds.map((disputeId) => fetchDispute(disputeId, { strict: true }))
       );
-      disputes = disputeItems.filter((item): item is NonNullable<typeof item> => Boolean(item));
+      disputes = disputeResults.flatMap((result, index) => {
+        if (result.status === "fulfilled") {
+          return result.value ? [result.value] : [];
+        }
+        logWebLoadError("cycle-detail:dispute", result.reason, {
+          cycleId: id,
+          disputeId: disputeIds[index] ?? null
+        });
+        return [];
+      });
     }
-  } catch {
+  } catch (error) {
+    logWebLoadError("cycle-detail:rewards", error, { cycleId: id });
     loadError = true;
+    loadErrorKind = getLoadErrorKind(error);
   }
 
   if (loadError) {
+    const loadHint = withRateLimitMessage(requestPreferences.locale, t.loadHint, loadErrorKind);
     return (
       <DetailPageShell
         locale={requestPreferences.locale}
         active="cycles"
         eyebrow={t.eyebrow}
         title={t.loadFailed}
-        description={t.loadUnavailable}
         backHref="/?section=streams&tab=cycles"
         backLabel={t.back}
         metaLabel={t.cycleId}
@@ -94,7 +106,7 @@ export default async function CycleDetailPage({ params }: CycleDetailPageProps) 
       >
         <DetailStateCard
           title={t.loadFailed}
-          body={t.loadHint}
+          body={loadHint}
           actionHref="/?section=streams&tab=cycles"
           actionLabel={t.back}
         />
@@ -109,7 +121,6 @@ export default async function CycleDetailPage({ params }: CycleDetailPageProps) 
         active="cycles"
         eyebrow={t.eyebrow}
         title={t.notFound}
-        description={t.description}
         backHref="/?section=streams&tab=cycles"
         backLabel={t.back}
         metaLabel={t.cycleId}
@@ -132,7 +143,6 @@ export default async function CycleDetailPage({ params }: CycleDetailPageProps) 
       active="cycles"
       eyebrow={t.eyebrow}
       title={rewards.cycle.id}
-      description={t.description}
       backHref="/?section=streams&tab=cycles"
       backLabel={t.back}
       metaLabel={t.cycleId}
@@ -140,7 +150,11 @@ export default async function CycleDetailPage({ params }: CycleDetailPageProps) 
       statusLabel={getCycleStatusLabel(requestPreferences.locale, rewards.cycle.status)}
       statusTone={rewards.cycle.status}
       summary={[
-        { label: t.mint, value: `${rewards.cycle.mintedAmount} AGC`, note: `${t.startedAt}: ${formatDateTime(rewards.cycle.startedAt, requestPreferences.locale, requestPreferences.timeZone)}` },
+        {
+          label: t.mint,
+          value: `${rewards.cycle.mintedAmount} AGC`,
+          note: `${t.startedAt}: ${formatDateTime(rewards.cycle.startedAt, requestPreferences.locale, requestPreferences.timeZone)}`
+        },
         {
           label: t.rewardPool,
           value: `${rewards.rewardPool} AGC`,
@@ -149,8 +163,19 @@ export default async function CycleDetailPage({ params }: CycleDetailPageProps) 
               ? `税池 ${rewards.cycle.taxPool} AGC / 罚没池 ${rewards.cycle.penaltyPool} AGC`
               : `Tax ${rewards.cycle.taxPool} AGC / Penalty ${rewards.cycle.penaltyPool} AGC`
         },
-        { label: t.disputes, value: String(disputes.length), note: `${requestPreferences.locale === "zh" ? "已关联到当前周期" : "linked to this cycle"}` },
-        { label: t.workloads, value: String(rewards.workloads.length), note: rewards.cycle.closedAt ? `${requestPreferences.locale === "zh" ? "关闭于" : "Closed"} ${formatDateTime(rewards.cycle.closedAt, requestPreferences.locale, requestPreferences.timeZone)}` : (requestPreferences.locale === "zh" ? "周期仍在进行中" : "Cycle is still open") }
+        {
+          label: t.disputes,
+          value: String(disputes.length),
+          note: `${requestPreferences.locale === "zh" ? "已关联到当前周期" : "linked to this cycle"}`
+        },
+        {
+          label: t.workloads,
+          value: String(rewards.workloads.length),
+          note:
+            rewards.cycle.closedAt
+              ? `${requestPreferences.locale === "zh" ? "关闭于" : "Closed"} ${formatDateTime(rewards.cycle.closedAt, requestPreferences.locale, requestPreferences.timeZone)}`
+              : (requestPreferences.locale === "zh" ? "周期仍在进行中" : "Cycle is still open")
+        }
       ]}
     >
       <section className="card">
@@ -159,7 +184,6 @@ export default async function CycleDetailPage({ params }: CycleDetailPageProps) 
           timeZone={requestPreferences.timeZone}
           rewards={rewards}
           disputes={disputes}
-          getAgentHref={(address) => `/agents/${address}`}
           showHeading={false}
         />
       </section>

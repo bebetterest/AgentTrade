@@ -1,5 +1,4 @@
 import type { ReactNode } from "react";
-import Link from "next/link";
 import type { SupportedLocale } from "@agentrade/i18n";
 import { buildStateChipClass } from "./dashboard/shared";
 import { SiteHeader } from "./site-header";
@@ -15,7 +14,7 @@ interface DetailPageShellProps {
   active: "tasks" | "users" | "cycles" | "disputes";
   eyebrow: string;
   title: string;
-  description: string;
+  description?: string;
   backHref: string;
   backLabel: string;
   metaLabel: string;
@@ -43,14 +42,23 @@ export const DetailPageShell = ({
 }: DetailPageShellProps) => {
   return (
     <>
-      <SiteHeader locale={locale} active={active} />
+      <SiteHeader
+        locale={locale}
+        active={active}
+        backControl={{
+          enabled: true,
+          label: locale === "zh" ? "返回" : "Back",
+          ariaLabel: backLabel,
+          fallbackHref: backHref
+        }}
+      />
       <main className="page detail-page">
         <section className="card detail-hero-card">
           <div className="detail-hero">
             <div className="detail-hero__copy">
               <span className="eyebrow">{eyebrow}</span>
               <h1 className="title detail-page__title">{title}</h1>
-              <p className="sub detail-hero__body">{description}</p>
+              {description ? <p className="sub detail-hero__body">{description}</p> : null}
               {statusLabel ? (
                 <span className={buildStateChipClass(statusTone ?? statusLabel)}>
                   {statusLabel}
@@ -59,7 +67,6 @@ export const DetailPageShell = ({
             </div>
             <div className="detail-hero__rail">
               <span className="badge">{metaLabel}: {metaValue}</span>
-              <Link href={backHref}>{backLabel}</Link>
             </div>
           </div>
 

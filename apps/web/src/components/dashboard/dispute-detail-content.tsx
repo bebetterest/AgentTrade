@@ -1,10 +1,16 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import type { ActivityEvent, Dispute, Task } from "@agentrade/types";
 import type { SupportedLocale } from "@agentrade/i18n";
+import { fetchActivities } from "../../lib/api";
 import { formatDateTime, shortAddress } from "../../lib/dashboard-format";
+import { getLoadErrorKind, withRateLimitMessage, type LoadErrorKind } from "../../lib/load-error";
 import { renderSafeMarkdown } from "../../lib/markdown";
-import { getDashboardEventLabel, getDisputeStatusLabel } from "./i18n";
+import { getDisputeStatusLabel } from "./i18n";
 import { buildStateChipClass } from "./shared";
+import { ActivityTimeline } from "../ui/activity-timeline";
 
 interface DisputeDetailContentProps {
   locale: SupportedLocale;
@@ -12,11 +18,14 @@ interface DisputeDetailContentProps {
   dispute: Dispute;
   task: Task | null;
   activities: ActivityEvent[];
+  initialActivitiesCursor?: string | null;
   onOpenAgentDetail?: (address: string) => void;
   getAgentHref?: (address: string) => string;
   getTaskHref?: (taskId: string) => string;
   showOverviewTitle?: boolean;
 }
+
+const DETAIL_LIST_PAGE_SIZE = 20;
 
 const copy = {
   en: {
@@ -33,11 +42,15 @@ const copy = {
     deadline: "Deadline",
     slotProgress: "Slot Progress",
     reason: "Reason",
+    resolution: "Resolution Summary",
+    winner: "Winning Side",
+    publisherWins: "Publisher Wins",
+    submissionWins: "Submission Agent Wins",
+    totalVotes: "Total Votes",
+    completedVotes: "Completed",
+    notCompletedVotes: "Not Completed",
     timeline: "Activity Timeline",
-    noActivity: "No dispute activity yet",
-    actor: "Actor",
-    cycle: "Cycle",
-    disputeRef: "Dispute"
+    noActivity: "No dispute activity yet"
   },
   zh: {
     overview: "争议概览",
@@ -53,11 +66,15 @@ const copy = {
     deadline: "截止时间",
     slotProgress: "槽位进度",
     reason: "争议原因",
+    resolution: "结案摘要",
+    winner: "胜诉方",
+    publisherWins: "发布方胜诉",
+    submissionWins: "提交方胜诉",
+    totalVotes: "总票数",
+    completedVotes: "支持完成",
+    notCompletedVotes: "支持未完成",
     timeline: "事件时间线",
-    noActivity: "暂无争议事件",
-    actor: "执行方",
-    cycle: "周期",
-    disputeRef: "争议"
+    noActivity: "暂无争议事件"
   }
 } as const;
 
@@ -74,28 +91,18 @@ const renderAgent = (
     );
   }
 
-  if (getAgentHref) {
-    return (
-      <Link className="inline-link" href={getAgentHref(address)}>
-        {shortAddress(address)}
-      </Link>
-    );
-  }
-
-  return <span>{shortAddress(address)}</span>;
-};
-
-const renderTask = (task: Task | null, taskId: string, getTaskHref: ((taskId: string) => string) | undefined) => {
-  if (!getTaskHref) {
-    return <span>{task?.title || taskId}</span>;
-  }
-
   return (
-    <Link className="inline-link" href={getTaskHref(taskId)}>
-      {task?.title || taskId}
+    <Link className="inline-link" href={(getAgentHref?.(address) ?? `/agents/${address}`)}>
+      {shortAddress(address)}
     </Link>
   );
 };
+
+const renderTask = (task: Task | null, taskId: string, getTaskHref: ((taskId: string) => string) | undefined) => (
+  <Link className="inline-link" href={(getTaskHref?.(taskId) ?? `/tasks/${taskId}`)}>
+    {task?.title || taskId}
+  </Link>
+);
 
 export const DisputeDetailContent = ({
   locale,
@@ -103,19 +110,71 @@ export const DisputeDetailContent = ({
   dispute,
   task,
   activities,
+  initialActivitiesCursor = null,
   onOpenAgentDetail,
   getAgentHref,
   getTaskHref,
   showOverviewTitle = true
 }: DisputeDetailContentProps) => {
   const t = copy[locale];
+  const loadMoreLabel = locale === "zh" ? "继续加载" : "Load more";
+  const loadMoreFallback = locale === "zh" ? "加载更多失败，请重试。" : "Failed to load more. Please retry.";
   const disputeStatusLabel = getDisputeStatusLabel(locale, dispute.status);
+  const resolution = dispute.resolution;
+  const winnerLabel = resolution?.winnerRole === "SUBMISSION_AGENT" ? t.submissionWins : t.publisherWins;
+  const overviewAnchor = "dispute-overview";
+  const contextAnchor = "dispute-context";
+  const reasonAnchor = "dispute-reason";
+  const timelineAnchor = "dispute-timeline";
+
+  const [activityItems, setActivityItems] = useState<ActivityEvent[]>(activities);
+  const [activityCursor, setActivityCursor] = useState<string | null>(initialActivitiesCursor);
+  const [loadingActivities, setLoadingActivities] = useState(false);
+  const [activityErrorKind, setActivityErrorKind] = useState<LoadErrorKind | null>(null);
+
+  useEffect(() => {
+    setActivityItems(activities);
+    setActivityCursor(initialActivitiesCursor);
+    setLoadingActivities(false);
+    setActivityErrorKind(null);
+  }, [dispute.id, activities, initialActivitiesCursor]);
+
+  const loadMoreActivities = useCallback(async () => {
+    if (!activityCursor || loadingActivities) {
+      return;
+    }
+    setLoadingActivities(true);
+    try {
+      const response = await fetchActivities({
+        disputeId: dispute.id,
+        cursor: activityCursor,
+        limit: DETAIL_LIST_PAGE_SIZE,
+        order: "desc",
+        strict: true
+      });
+      setActivityItems((prev) => prev.concat(response.items));
+      setActivityCursor(response.nextCursor);
+      setActivityErrorKind(null);
+    } catch (error) {
+      setActivityErrorKind(getLoadErrorKind(error));
+    } finally {
+      setLoadingActivities(false);
+    }
+  }, [activityCursor, dispute.id, loadingActivities]);
+
+  const activityLoadErrorMessage = withRateLimitMessage(locale, loadMoreFallback, activityErrorKind);
 
   return (
     <div className="detail-block">
       {showOverviewTitle ? <h3>{t.overview}</h3> : null}
+      <nav className="detail-anchor-nav" aria-label={locale === "zh" ? "争议详情导航" : "Dispute detail navigation"}>
+        <a href={`#${overviewAnchor}`}>{t.overview}</a>
+        <a href={`#${contextAnchor}`}>{t.taskContext}</a>
+        <a href={`#${reasonAnchor}`}>{t.reason}</a>
+        <a href={`#${timelineAnchor}`}>{t.timeline}</a>
+      </nav>
       <div className="detail-grid">
-        <div className="detail-card">
+        <div className="detail-card" id={overviewAnchor}>
           <div className="metric-line"><span>{t.disputeId}</span><strong>{dispute.id}</strong></div>
           <div className="metric-line"><span>{t.task}</span><strong>{renderTask(task, dispute.taskId, getTaskHref)}</strong></div>
           <div className="metric-line"><span>{t.submission}</span><strong>{dispute.submissionId}</strong></div>
@@ -129,7 +188,7 @@ export const DisputeDetailContent = ({
           <div className="metric-line"><span>{t.createdAt}</span><strong>{formatDateTime(dispute.createdAt, locale, timeZone)}</strong></div>
           <div className="metric-line"><span>{t.updatedAt}</span><strong>{formatDateTime(dispute.updatedAt, locale, timeZone)}</strong></div>
         </div>
-        <div className="detail-card">
+        <div className="detail-card" id={contextAnchor}>
           <h4>{t.taskContext}</h4>
           {task ? (
             <>
@@ -143,44 +202,71 @@ export const DisputeDetailContent = ({
         </div>
       </div>
 
-      <h4>{t.reason}</h4>
-      <div className="markdown">{renderSafeMarkdown(dispute.reasonMd)}</div>
+      {resolution ? (
+        <section className="detail-card dispute-resolution-card">
+          <div className="dispute-resolution-card__head">
+            <h4 className="detail-subsection-title">{t.resolution}</h4>
+            <span className={buildStateChipClass(dispute.status)}>{disputeStatusLabel}</span>
+          </div>
+          <p className="dispute-resolution-card__winner">
+            {t.winner}: <strong>{winnerLabel}</strong>
+          </p>
+          <p className="dispute-resolution-card__address">
+            {renderAgent(resolution.winnerAddress, onOpenAgentDetail, getAgentHref)}
+          </p>
+          <div className="dispute-resolution-card__votes">
+            <span>{t.totalVotes}: {resolution.totalVotes}</span>
+            <span>{t.completedVotes}: {resolution.completedVotes}</span>
+            <span>{t.notCompletedVotes}: {resolution.notCompletedVotes}</span>
+          </div>
+        </section>
+      ) : null}
 
-      <h4>{t.timeline}</h4>
-      {activities.length > 0 ? (
-        <ul className="detail-list">
-          {activities.map((item) => (
-            <li key={item.id} className="detail-list-row detail-event-row">
-              <div className="detail-event-row__main">
-                <span className={`event-chip event-${item.type.toLowerCase()}`}>
-                  {getDashboardEventLabel(locale, item.type)}
-                </span>
-                <strong>{formatDateTime(item.createdAt, locale, timeZone)}</strong>
-              </div>
-              <div className="detail-subline">
-                <span>
-                  {t.actor}: {renderAgent(item.actor, onOpenAgentDetail, getAgentHref)}
-                </span>
-                {item.taskId ? (
+      <section className="detail-card" id={reasonAnchor}>
+        <h4 className="detail-subsection-title">{t.reason}</h4>
+        <div className="markdown">{renderSafeMarkdown(dispute.reasonMd)}</div>
+      </section>
+
+      <section className="detail-card" id={timelineAnchor}>
+        <h4 className="detail-subsection-title">{t.timeline}</h4>
+        {activityItems.length > 0 ? (
+          <>
+            <ActivityTimeline
+              activities={activityItems}
+              locale={locale}
+              timeZone={timeZone}
+              renderLinks={(item) => (
+                <>
                   <span>
-                    {t.task}: {renderTask(task, item.taskId, getTaskHref)}
+                    {locale === "zh" ? "执行方" : "Actor"}: {renderAgent(item.actor, onOpenAgentDetail, getAgentHref)}
                   </span>
-                ) : null}
-                {item.disputeId ? (
+                  {item.taskId ? (
+                    <span>
+                      {locale === "zh" ? "任务" : "Task"}: {renderTask(task, item.taskId, getTaskHref)}
+                    </span>
+                  ) : null}
+                  {item.disputeId ? (
+                    <span>
+                      {locale === "zh" ? "争议" : "Dispute"}: {item.disputeId}
+                    </span>
+                  ) : null}
                   <span>
-                    {t.disputeRef}: {item.disputeId}
+                    {locale === "zh" ? "周期" : "Cycle"}: {item.cycleId}
                   </span>
-                ) : null}
-                <span>
-                  {t.cycle}: {item.cycleId}
-                </span>
-              </div>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="empty-line">{t.noActivity}</p>
-      )}
+                </>
+              )}
+            />
+            {activityCursor ? (
+              <button type="button" className="action-btn more-btn" onClick={loadMoreActivities} disabled={loadingActivities}>
+                {loadingActivities ? (locale === "zh" ? "加载更多..." : "Loading more...") : loadMoreLabel}
+              </button>
+            ) : null}
+            {activityErrorKind ? <p className="empty-line">{activityLoadErrorMessage}</p> : null}
+          </>
+        ) : (
+          <p className="empty-line">{t.noActivity}</p>
+        )}
+      </section>
     </div>
   );
 };

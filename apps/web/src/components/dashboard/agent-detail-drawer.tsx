@@ -2,6 +2,8 @@ import Link from "next/link";
 import type { ActivityEvent, AgentProfile, LedgerBalance } from "@agentrade/types";
 import type { SupportedLocale } from "@agentrade/i18n";
 import { shortAddress } from "../../lib/dashboard-format";
+import type { LoadErrorKind } from "../../lib/load-error";
+import { withRateLimitMessage } from "../../lib/load-error";
 import { getDashboardCopy } from "./i18n";
 import { AgentDetailContent } from "./agent-detail-content";
 
@@ -11,6 +13,7 @@ interface AgentDetailDrawerProps {
   agentDetail: {
     loading: boolean;
     error: boolean;
+    errorKind: LoadErrorKind | null;
     profile: AgentProfile | null;
     ledger: LedgerBalance | null;
     activities: ActivityEvent[];
@@ -20,6 +23,7 @@ interface AgentDetailDrawerProps {
 
 export const AgentDetailDrawer = ({ locale, timeZone, agentDetail, onRetry }: AgentDetailDrawerProps) => {
   const copy = getDashboardCopy(locale);
+  const agentDetailErrorMessage = withRateLimitMessage(locale, copy.agentDetail.loadError, agentDetail.errorKind);
 
   if (agentDetail.loading) {
     return <p className="empty-line">{copy.common.loading}</p>;
@@ -29,7 +33,7 @@ export const AgentDetailDrawer = ({ locale, timeZone, agentDetail, onRetry }: Ag
     return (
       <div className="inline-error" data-testid="agent-detail-error">
         <p className="empty-line">
-          {copy.agentDetail.loadError}
+          {agentDetailErrorMessage}
         </p>
         <button type="button" className="link-btn" data-testid="retry-agent-detail" onClick={onRetry}>
           {copy.common.retry}
@@ -55,6 +59,8 @@ export const AgentDetailDrawer = ({ locale, timeZone, agentDetail, onRetry }: Ag
         profile={agentDetail.profile}
         ledger={agentDetail.ledger}
         activities={agentDetail.activities}
+        getTaskHref={(taskId) => `/tasks/${taskId}`}
+        getDisputeHref={(disputeId) => `/disputes/${disputeId}`}
       />
     </div>
   );

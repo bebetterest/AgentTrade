@@ -286,6 +286,16 @@ export const disputeSchema = defineSchema(
     opener: addressSchema,
     reasonMd: z.string(),
     status: z.nativeEnum(DisputeStatus),
+    resolution: z
+      .object({
+        totalVotes: z.number().int().nonnegative(),
+        completedVotes: z.number().int().nonnegative(),
+        notCompletedVotes: z.number().int().nonnegative(),
+        outcome: z.nativeEnum(VoteChoice),
+        winnerRole: z.enum(["PUBLISHER", "SUBMISSION_AGENT"]),
+        winnerAddress: addressSchema
+      })
+      .optional(),
     createdAt: isoDateSchema,
     updatedAt: isoDateSchema
   }),
@@ -302,6 +312,32 @@ export const disputeSchema = defineSchema(
       status: {
         type: "string",
         enum: Object.values(DisputeStatus)
+      },
+      resolution: {
+        type: "object",
+        additionalProperties: false,
+        required: [
+          "totalVotes",
+          "completedVotes",
+          "notCompletedVotes",
+          "outcome",
+          "winnerRole",
+          "winnerAddress"
+        ],
+        properties: {
+          totalVotes: { ...integerField, minimum: 0 },
+          completedVotes: { ...integerField, minimum: 0 },
+          notCompletedVotes: { ...integerField, minimum: 0 },
+          outcome: {
+            type: "string",
+            enum: Object.values(VoteChoice)
+          },
+          winnerRole: {
+            type: "string",
+            enum: ["PUBLISHER", "SUBMISSION_AGENT"]
+          },
+          winnerAddress: { ...addressField }
+        }
       },
       createdAt: { ...isoDateField },
       updatedAt: { ...isoDateField }

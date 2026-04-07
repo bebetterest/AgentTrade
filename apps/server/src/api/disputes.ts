@@ -203,9 +203,26 @@ const registerDisputeGetRoute = (
       if (!dispute) {
         throw new DomainError("DISPUTE_NOT_FOUND", `Dispute ${params.id} does not exist`, 404);
       }
-      return validateOperationResponse(operation, dispute);
+      if (dispute.status === DisputeStatus.OPEN) {
+        return validateOperationResponse(operation, dispute);
+      }
+      const resolution = await services.stateRepository.getDisputeResolutionDirect(params.id);
+      return validateOperationResponse(
+        operation,
+        resolution ? { ...dispute, resolution } : dispute
+      );
     }
-    return validateOperationResponse(operation, await services.read((engine) => engine.getDispute(params.id)));
+    return validateOperationResponse(
+      operation,
+      await services.read((engine) => {
+        const dispute = engine.getDispute(params.id);
+        if (dispute.status === DisputeStatus.OPEN) {
+          return dispute;
+        }
+        const resolution = engine.getDisputeResolution(params.id);
+        return resolution ? { ...dispute, resolution } : dispute;
+      })
+    );
   });
 };
 

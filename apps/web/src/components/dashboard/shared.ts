@@ -9,7 +9,7 @@ export const TASK_STATUS_FILTERS: TaskStatus[] = [
 ];
 
 export const DASHBOARD_TABS: DashboardTab[] = ["tasks", "users", "cycles", "disputes"];
-export const DASHBOARD_SECTIONS: DashboardSection[] = ["overview", "metrics", "activity", "streams"];
+export const DASHBOARD_SECTIONS: DashboardSection[] = ["overview", "streams", "activity", "metrics"];
 
 export const getDashboardTabNavigationTarget = (
   currentTab: DashboardTab,

@@ -34,6 +34,8 @@
     "docker:test:cli:persistence": "pnpm docker:up && DATABASE_URL=postgresql://postgres:postgres@localhost:5432/agentrade TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/agentrade ENABLE_PERSISTENCE=true ENABLE_REDIS_RATE_LIMIT=false pnpm --filter @agentrade/cli test:persistence",
     "docker:test:full": "pnpm docker:test:db && pnpm docker:test:stress && pnpm docker:test:cli:persistence",
     "lint": "pnpm -r lint",
+    "demo:web:large-cases": "pnpm --filter @agentrade/cli exec tsx ../../scripts/populate-web-large-task-cases.ts",
+    "demo:web:comprehensive-cases": "pnpm --filter @agentrade/cli exec tsx ../../scripts/populate-web-comprehensive-cases.ts",
     "check:fast": "pnpm toolchain:check && pnpm -r lint && pnpm --filter @agentrade/server test && pnpm --filter @agentrade/web test:unit && pnpm --filter @agentrade/cli test",
     "check:db": "pnpm toolchain:check && pnpm --filter @agentrade/server test:db && pnpm --filter @agentrade/server test:stress && pnpm --filter @agentrade/cli test:persistence",
     "docs:api:generate": "pnpm --filter @agentrade/cli exec tsx ../../scripts/generate-openapi.mjs"

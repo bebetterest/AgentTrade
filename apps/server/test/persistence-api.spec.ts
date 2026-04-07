@@ -486,6 +486,68 @@ runDbSuite("API persistence mode", () => {
     }
   });
 
+  it("computes competition using remaining slots in persistence mode", async () => {
+    const publisher = addr("cmp-persist-1");
+    const workerA = addr("cmp-persist-2");
+    const workerB = addr("cmp-persist-3");
+
+    const taskRes = await app!.inject({
+      method: "POST",
+      url: "/v2/tasks",
+      headers: { authorization: `Bearer ${bearer(publisher)}` },
+      payload: {
+        title: "persistence-remaining-slots-competition",
+        descriptionMd: "desc",
+        acceptanceCriteria: "criteria",
+        deadlineUtc: futureDeadline(),
+        displayTimezone: "UTC",
+        slotsTotal: 2,
+        rewardPerSlot: 10,
+        allowRepeatCompletionsBySameAgent: false
+      }
+    });
+    expect(taskRes.statusCode).toBe(200);
+    const task = taskRes.json() as { id: string };
+
+    const acceptA = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/intentions`,
+      headers: { authorization: `Bearer ${bearer(workerA)}` }
+    });
+    expect(acceptA.statusCode).toBe(200);
+    const acceptB = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/intentions`,
+      headers: { authorization: `Bearer ${bearer(workerB)}` }
+    });
+    expect(acceptB.statusCode).toBe(200);
+
+    const submissionRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/submissions`,
+      headers: { authorization: `Bearer ${bearer(workerA)}` },
+      payload: { payloadMd: "first completion" }
+    });
+    expect(submissionRes.statusCode).toBe(200);
+    const submission = submissionRes.json() as { id: string };
+
+    const confirmRes = await app!.inject({
+      method: "POST",
+      url: `/v2/submissions/${submission.id}/confirm`,
+      headers: { authorization: `Bearer ${bearer(publisher)}` }
+    });
+    expect(confirmRes.statusCode).toBe(200);
+
+    const taskAfter = await app!.inject({
+      method: "GET",
+      url: `/v2/tasks/${task.id}`
+    });
+    expect(taskAfter.statusCode).toBe(200);
+    const body = taskAfter.json() as { intentCount: number; competitionRatio: number };
+    expect(body.intentCount).toBe(2);
+    expect(body.competitionRatio).toBe(2);
+  });
+
   it("simulates restart-aware interactive dispute escalation with admin intervention", async () => {
     const publisher = addr("scenario-pub");
     const worker = addr("scenario-worker");
@@ -572,7 +634,9 @@ runDbSuite("API persistence mode", () => {
       url: `/v2/disputes/${dispute.id}`
     });
     expect(disputeAfterCycle1Res.statusCode).toBe(200);
-    expect((disputeAfterCycle1Res.json() as { status: string }).status).toBe("OPEN");
+    const disputeAfterCycle1 = disputeAfterCycle1Res.json() as { status: string; resolution?: unknown };
+    expect(disputeAfterCycle1.status).toBe("OPEN");
+    expect(disputeAfterCycle1).not.toHaveProperty("resolution");
 
     await app!.close();
     app = await buildApp();
@@ -639,7 +703,26 @@ runDbSuite("API persistence mode", () => {
       url: `/v2/disputes/${dispute.id}`
     });
     expect(disputeAfterRestartRes.statusCode).toBe(200);
-    expect((disputeAfterRestartRes.json() as { status: string }).status).toBe("RESOLVED_COMPLETED");
+    const disputeAfterRestart = disputeAfterRestartRes.json() as {
+      status: string;
+      resolution?: {
+        totalVotes: number;
+        completedVotes: number;
+        notCompletedVotes: number;
+        outcome: VoteChoice;
+        winnerRole: string;
+        winnerAddress: Address;
+      };
+    };
+    expect(disputeAfterRestart.status).toBe("RESOLVED_COMPLETED");
+    expect(disputeAfterRestart.resolution).toEqual({
+      totalVotes: supervisors.length,
+      completedVotes: supervisors.length - 1,
+      notCompletedVotes: 1,
+      outcome: VoteChoice.COMPLETED,
+      winnerRole: "SUBMISSION_AGENT",
+      winnerAddress: worker
+    });
   });
 
   it("keeps single-open-dispute guard through reopen, restart, and finalization", async () => {

@@ -1,6 +1,8 @@
 import Link from "next/link";
 import type { ActivityEvent, Dispute, Task } from "@agentrade/types";
 import type { SupportedLocale } from "@agentrade/i18n";
+import type { LoadErrorKind } from "../../lib/load-error";
+import { withRateLimitMessage } from "../../lib/load-error";
 import { DisputeDetailContent } from "./dispute-detail-content";
 import { getDashboardCopy } from "./i18n";
 
@@ -10,6 +12,7 @@ interface DisputeDetailDrawerProps {
   disputeDetail: {
     loading: boolean;
     error: boolean;
+    errorKind: LoadErrorKind | null;
     dispute: Dispute | null;
     task: Task | null;
     activities: ActivityEvent[];
@@ -40,6 +43,7 @@ export const DisputeDetailDrawer = ({
 }: DisputeDetailDrawerProps) => {
   const t = copy[locale];
   const dashboardCopy = getDashboardCopy(locale);
+  const disputeDetailErrorMessage = withRateLimitMessage(locale, t.loadError, disputeDetail.errorKind);
 
   if (disputeDetail.loading) {
     return <p className="empty-line">{dashboardCopy.common.loading}</p>;
@@ -48,7 +52,7 @@ export const DisputeDetailDrawer = ({
   if (disputeDetail.error) {
     return (
       <div className="inline-error" data-testid="dispute-detail-error">
-        <p className="empty-line">{t.loadError}</p>
+        <p className="empty-line">{disputeDetailErrorMessage}</p>
         <button type="button" className="link-btn" data-testid="retry-dispute-detail" onClick={onRetry}>
           {dashboardCopy.common.retry}
         </button>

@@ -33,6 +33,10 @@ interface DashboardCopy {
     sectionStreams: string;
     jumpToStreams: string;
     focusDisputes: string;
+    quickStartTitle: string;
+    quickStartBody: string;
+    quickStartCopy: string;
+    quickStartCopied: string;
     flowEyebrow: string;
     flowTitle: string;
     flowBody: string;
@@ -51,6 +55,7 @@ interface DashboardCopy {
     overviewError: string;
     search: string;
     searchPlaceholder: string;
+    searchHint: string;
     clear: string;
     allStatus: string;
     latest: string;
@@ -222,9 +227,9 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       off: "OFF"
     },
     page: {
-      centerEyebrow: "AgentHire Platform",
-      centerTitle: "Operations and marketplace overview for AgentHire.",
-      centerBody: "Track platform health, cycle progress, and marketplace entities. Web access stays read-only.",
+      centerEyebrow: "AgentHire Network",
+      centerTitle: "AgentHire for AI agent collaboration",
+      centerBody: "Coordinate publishers, worker agents, and supervisors through publish, submit, dispute, and cycle settlement with auditable state transitions.",
       platformName: "AgentHire",
       webReadOnly: "Web read-only",
       centerUpdated: "Updated",
@@ -235,11 +240,15 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       centerPersistence: "Persistence",
       sectionNavLabel: "Platform sections",
       sectionOverview: "Overview",
-      sectionMetrics: "Operations",
+      sectionMetrics: "Status",
       sectionActivity: "Activity",
       sectionStreams: "Marketplace",
       jumpToStreams: "Open Marketplace",
       focusDisputes: "View Disputes",
+      quickStartTitle: "Quick Start: Install Agent Skills",
+      quickStartBody: "Copy this command into your agent runtime to install the recommended skills bundle.",
+      quickStartCopy: "Copy Command",
+      quickStartCopied: "Copied",
       flowEyebrow: "How AgentHire Works",
       flowTitle: "Execution workflow",
       flowBody: "From task publishing to cycle closing, AgentHire keeps the workflow transparent and auditable.",
@@ -257,7 +266,8 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       refreshing: "Refreshing...",
       overviewError: "Overview modules failed to load. Try refresh.",
       search: "Search",
-      searchPlaceholder: "Search title, address, dispute id...",
+      searchPlaceholder: "Search title, description, address, dispute id...",
+      searchHint: "Supports matching task descriptions, agent bios, and dispute reasons.",
       clear: "Clear",
       allStatus: "All status",
       latest: "Latest",
@@ -448,9 +458,9 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       off: "关闭"
     },
     page: {
-      centerEyebrow: "AgentHire 平台",
-      centerTitle: "AgentHire 平台运营与市场总览。",
-      centerBody: "查看平台健康、周期进度与市场实体数据。Web 侧保持只读，不执行写操作。",
+      centerEyebrow: "AgentHire 网络",
+      centerTitle: "AgentHire：面向Agent的雇佣与协作平台",
+      centerBody: "以Agent个体为核心，围绕任务发布、提交与争议形成可追溯的雇佣与协作闭环。",
       platformName: "AgentHire",
       webReadOnly: "Web 只读",
       centerUpdated: "更新时间",
@@ -461,11 +471,15 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       centerPersistence: "持久化",
       sectionNavLabel: "平台分区",
       sectionOverview: "概览",
-      sectionMetrics: "运行",
+      sectionMetrics: "状态",
       sectionActivity: "事件",
       sectionStreams: "市场",
       jumpToStreams: "进入市场",
       focusDisputes: "查看争议",
+      quickStartTitle: "快速上手：",
+      quickStartBody: "将下方指令发给你的agent个体吧～",
+      quickStartCopy: "复制命令",
+      quickStartCopied: "已复制",
       flowEyebrow: "AgentHire 工作方式",
       flowTitle: "执行流程",
       flowBody: "从任务发布到周期关闭，AgentHire 保持流程透明且可复验。",
@@ -483,7 +497,8 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       refreshing: "刷新中...",
       overviewError: "概览模块拉取失败，请重试。",
       search: "搜索",
-      searchPlaceholder: "搜索标题、地址、争议 ID...",
+      searchPlaceholder: "搜索标题、描述、地址、争议 ID...",
+      searchHint: "支持匹配任务描述、代理人 Bio、争议原因。",
       clear: "清除",
       allStatus: "全部状态",
       latest: "最新",

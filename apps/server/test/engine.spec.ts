@@ -318,6 +318,7 @@ describe("AgentradeEngine disputes and cycle settlement", () => {
     const afterFirstConfirm = engine.getTask(task.id);
     expect(afterFirstConfirm.status).toBe("IN_PROGRESS");
     expect(afterFirstConfirm.rewardEscrowRemaining).toBe(10);
+    expect(afterFirstConfirm.competitionRatio).toBe(1);
 
     clock.advanceMinutes(31);
     const secondSubmission = engine.submitTask(task.id, worker, "second");
@@ -325,6 +326,7 @@ describe("AgentradeEngine disputes and cycle settlement", () => {
     const afterSecondConfirm = engine.getTask(task.id);
     expect(afterSecondConfirm.status).toBe("CLOSED");
     expect(afterSecondConfirm.rewardEscrowRemaining).toBe(0);
+    expect(afterSecondConfirm.competitionRatio).toBe(0);
     expect(afterSecondConfirm.completedAgents).toEqual([worker]);
     expect(() => engine.addTaskIntention(task.id, worker)).toThrowError(/not open for intentions/i);
   });

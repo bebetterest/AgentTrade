@@ -3,46 +3,38 @@ import type { SupportedLocale } from "@agentrade/i18n";
 import type {
   ActivityEvent,
   AgentDirectoryItem,
-  AgentProfile,
   Cycle,
-  CycleRewardsResponse,
   DashboardSummaryResponse,
   Dispute,
   HealthStatus,
-  LedgerBalance,
   PaginatedResponse,
   PublicEconomyParams,
-  Task,
-  TaskIntention
+  Task
 } from "@agentrade/types";
-import { AgentDetailDrawer } from "./agent-detail-drawer";
 import { AgentListPanel } from "./agent-list-panel";
 import { ActivityFeed } from "./activity-feed";
-import { CycleDetailDrawer } from "./cycle-detail-drawer";
 import { CycleListPanel } from "./cycle-list-panel";
-import { DetailDrawerShell } from "./detail-drawer-shell";
-import { DisputeDetailDrawer } from "./dispute-detail-drawer";
 import { DisputeListPanel } from "./dispute-list-panel";
 import { FlowDiagram } from "./flow-diagram";
+import { MethodologyPanels } from "./methodology-panels";
 import { MetricsPanels } from "./metrics-panels";
-import { OverviewPanels } from "./overview-panels";
-import { TaskDetailDrawer } from "./task-detail-drawer";
 import { TaskListPanel } from "./task-list-panel";
 import { getCycleStatusLabel, getDashboardCopy, getTaskStatusLabel } from "./i18n";
 import { getDashboardTabNavigationTarget, TASK_STATUS_FILTERS } from "./shared";
 import { formatDateTime } from "../../lib/dashboard-format";
 import type { DashboardSection, DashboardTab } from "../../lib/dashboard-query";
+import { withRateLimitMessage, type LoadErrorKind } from "../../lib/load-error";
 import { SiteHeader } from "../site-header";
 
 interface DashboardViewProps {
   locale: SupportedLocale;
   setLocale: Dispatch<SetStateAction<SupportedLocale>>;
-  readOnlyNotice: string;
+  skillsInstallCommand: string;
   timeZone: string;
   refreshing: boolean;
   overviewError: boolean;
+  overviewErrorKind: LoadErrorKind | null;
   summary: DashboardSummaryResponse | null;
-  leaders: AgentDirectoryItem[];
   activeCycle: Cycle | null;
   activityFeed: ActivityEvent[];
   tasksData: PaginatedResponse<Task>;
@@ -61,38 +53,15 @@ interface DashboardViewProps {
   loadingMoreDisputes: boolean;
   loadingFeed: boolean;
   taskLoadError: boolean;
+  taskLoadErrorKind: LoadErrorKind | null;
   agentLoadError: boolean;
+  agentLoadErrorKind: LoadErrorKind | null;
   cycleLoadError: boolean;
+  cycleLoadErrorKind: LoadErrorKind | null;
   disputeLoadError: boolean;
+  disputeLoadErrorKind: LoadErrorKind | null;
   feedLoadError: boolean;
-  taskDetail: {
-    loading: boolean;
-    error: boolean;
-    task: Task | null;
-    intentions: TaskIntention[];
-    disputes: Dispute[];
-    activities: ActivityEvent[];
-  };
-  agentDetail: {
-    loading: boolean;
-    error: boolean;
-    profile: AgentProfile | null;
-    ledger: LedgerBalance | null;
-    activities: ActivityEvent[];
-  };
-  cycleDetail: {
-    loading: boolean;
-    error: boolean;
-    rewards: CycleRewardsResponse | null;
-    disputes: Dispute[];
-  };
-  disputeDetail: {
-    loading: boolean;
-    error: boolean;
-    dispute: Dispute | null;
-    task: Task | null;
-    activities: ActivityEvent[];
-  };
+  feedLoadErrorKind: LoadErrorKind | null;
   taskSentinelRef: RefObject<HTMLDivElement | null>;
   agentSentinelRef: RefObject<HTMLDivElement | null>;
   cycleSentinelRef: RefObject<HTMLDivElement | null>;
@@ -108,17 +77,9 @@ interface DashboardViewProps {
   disputeSort: "latest" | "created";
   disputeOrder: "asc" | "desc";
   activeOnly: boolean;
-  trendWindow: "7d" | "30d";
-  taskDetailId: string | null;
-  agentDetailAddress: string | null;
-  cycleDetailId: string | null;
-  disputeDetailId: string | null;
+  taskAllCount: number;
   searchDraft: string;
   setSearchDraft: Dispatch<SetStateAction<string>>;
-  trendPublished: number[];
-  trendIntentions: number[];
-  trendCompleted: number[];
-  trendDisputes: number[];
   cycleUptime: string;
   taskStatusCounts: Record<string, number>;
   disputeStatusCounts: Record<string, number>;
@@ -134,11 +95,6 @@ interface DashboardViewProps {
   openAgentDetail: (address: string) => void;
   openCycleDetail: (cycleId: string) => void;
   openDisputeDetail: (disputeId: string) => void;
-  closeDetail: () => void;
-  retryTaskDetail: () => void;
-  retryAgentDetail: () => void;
-  retryCycleDetail: () => void;
-  retryDisputeDetail: () => void;
   loadMoreTasks: () => void;
   loadMoreAgents: () => void;
   loadMoreCycles: () => void;
@@ -149,12 +105,12 @@ interface DashboardViewProps {
 export const DashboardView = ({
   locale,
   setLocale,
-  readOnlyNotice,
+  skillsInstallCommand,
   timeZone,
   refreshing,
   overviewError,
+  overviewErrorKind,
   summary,
-  leaders,
   activeCycle,
   activityFeed,
   tasksData,
@@ -173,14 +129,15 @@ export const DashboardView = ({
   loadingMoreDisputes,
   loadingFeed,
   taskLoadError,
+  taskLoadErrorKind,
   agentLoadError,
+  agentLoadErrorKind,
   cycleLoadError,
+  cycleLoadErrorKind,
   disputeLoadError,
+  disputeLoadErrorKind,
   feedLoadError,
-  taskDetail,
-  agentDetail,
-  cycleDetail,
-  disputeDetail,
+  feedLoadErrorKind,
   taskSentinelRef,
   agentSentinelRef,
   cycleSentinelRef,
@@ -196,17 +153,9 @@ export const DashboardView = ({
   disputeSort,
   disputeOrder,
   activeOnly,
-  trendWindow,
-  taskDetailId,
-  agentDetailAddress,
-  cycleDetailId,
-  disputeDetailId,
+  taskAllCount,
   searchDraft,
   setSearchDraft,
-  trendPublished,
-  trendIntentions,
-  trendCompleted,
-  trendDisputes,
   cycleUptime,
   taskStatusCounts,
   disputeStatusCounts,
@@ -222,11 +171,6 @@ export const DashboardView = ({
   openAgentDetail,
   openCycleDetail,
   openDisputeDetail,
-  closeDetail,
-  retryTaskDetail,
-  retryAgentDetail,
-  retryCycleDetail,
-  retryDisputeDetail,
   loadMoreTasks,
   loadMoreAgents,
   loadMoreCycles,
@@ -234,23 +178,19 @@ export const DashboardView = ({
   openByActivity
 }: DashboardViewProps) => {
   const copy = getDashboardCopy(locale);
+  const overviewErrorMessage = withRateLimitMessage(locale, copy.page.overviewError, overviewErrorKind);
   const panelId = `stream-panel-${tab}`;
   const sectionPanelId = `section-panel-${section}`;
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
-  const drawerTitle = taskDetailId
-    ? copy.page.drawerTask
-    : cycleDetailId
-      ? copy.page.drawerCycle
-      : disputeDetailId
-        ? copy.page.drawerDispute
-        : copy.page.drawerAgent;
+  const [copiedQuickStart, setCopiedQuickStart] = useState(false);
+  const quickStartCommand = skillsInstallCommand.trim();
   const openSection = (nextSection: DashboardSection) => updateQuery({
     section: nextSection,
     tab: nextSection === "streams" ? tab : null,
-    taskDetail: nextSection === "streams" ? taskDetailId : null,
-    agentDetail: nextSection === "streams" ? agentDetailAddress : null,
-    cycleDetail: nextSection === "streams" ? cycleDetailId : null,
-    disputeDetail: nextSection === "streams" ? disputeDetailId : null
+    taskDetail: null,
+    agentDetail: null,
+    cycleDetail: null,
+    disputeDetail: null
   });
   const openStreamTab = (nextTab: DashboardTab) => updateQuery({
     section: "streams",
@@ -269,9 +209,6 @@ export const DashboardView = ({
     event.preventDefault();
     openStreamTab(targetTab);
     document.getElementById(`stream-tab-${targetTab}`)?.focus();
-  };
-  const focusDisputes = () => {
-    openStreamTab("disputes");
   };
   const flowSteps = [
     {
@@ -295,6 +232,8 @@ export const DashboardView = ({
       body: copy.page.flowStepSettleBody
     }
   ];
+  const hasAdvancedFilters = tab !== "cycles";
+  const sortOrderValue = tab === "tasks" ? taskOrder : tab === "users" ? agentOrder : disputeOrder;
 
   useEffect(() => {
     if (tab === "cycles") {
@@ -302,12 +241,51 @@ export const DashboardView = ({
     }
   }, [tab]);
 
+  useEffect(() => {
+    if (!copiedQuickStart) {
+      return;
+    }
+    const timeoutId = window.setTimeout(() => setCopiedQuickStart(false), 1600);
+    return () => window.clearTimeout(timeoutId);
+  }, [copiedQuickStart]);
+
+  const copyQuickStartCommand = async () => {
+    if (quickStartCommand.length === 0) {
+      return;
+    }
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(quickStartCommand);
+      } else {
+        const helper = document.createElement("textarea");
+        helper.value = quickStartCommand;
+        helper.setAttribute("readonly", "true");
+        helper.style.position = "fixed";
+        helper.style.opacity = "0";
+        helper.style.left = "-9999px";
+        document.body.appendChild(helper);
+        helper.select();
+        document.execCommand("copy");
+        document.body.removeChild(helper);
+      }
+      setCopiedQuickStart(true);
+    } catch {
+      setCopiedQuickStart(false);
+    }
+  };
+
   return (
     <>
       <SiteHeader
         locale={locale}
         active="home"
         onLocaleChange={setLocale}
+        refreshControl={{
+          onRefresh: refreshAll,
+          busy: refreshing,
+          label: copy.page.refresh,
+          busyLabel: copy.page.refreshing
+        }}
         dashboardSections={{
           current: section,
           navLabel: copy.page.sectionNavLabel,
@@ -319,41 +297,54 @@ export const DashboardView = ({
         }}
       />
       <main className="page page--home" data-testid="dashboard-page">
-        <section className="toolbar toolbar--center">
-          <button type="button" className="action-btn" data-testid="refresh-button" onClick={refreshAll} disabled={refreshing}>
-            {refreshing ? copy.page.refreshing : copy.page.refresh}
-          </button>
-        </section>
-
         <div className="section-panel" id={sectionPanelId} role="tabpanel" aria-labelledby={`section-tab-${section}`}>
           {section === "overview" ? (
             <>
               <section className="hero-panel">
                 <div className="hero-panel__copy">
-                  <span className="eyebrow">{copy.page.centerEyebrow}</span>
                   <h1 className="hero-title">{copy.page.centerTitle}</h1>
                   <p className="hero-body">{copy.page.centerBody}</p>
-                  <p className="sub hero-note">{readOnlyNotice}</p>
-                  <div className="hero-actions">
-                    <button type="button" className="action-btn action-btn--primary" onClick={() => openSection("streams")}>
-                      {copy.page.jumpToStreams}
-                    </button>
-                    <button type="button" className="action-btn" onClick={focusDisputes}>
-                      {copy.page.focusDisputes}
-                    </button>
-                  </div>
+                  <article className="quickstart-card" data-testid="quickstart-card">
+                    <div className="quickstart-card__head">
+                      <strong>{copy.page.quickStartTitle}</strong>
+                      <button
+                        type="button"
+                        className="quickstart-card__copy-btn"
+                        onClick={copyQuickStartCommand}
+                        disabled={quickStartCommand.length === 0}
+                      >
+                        <svg viewBox="0 0 24 24" className="quickstart-card__copy-icon" aria-hidden="true" focusable="false">
+                          <path d="M16 1H4a2 2 0 00-2 2v12h2V3h12V1zm3 4H8a2 2 0 00-2 2v14a2 2 0 002 2h11a2 2 0 002-2V7a2 2 0 00-2-2zm0 16H8V7h11v14z" />
+                        </svg>
+                        <span>{copiedQuickStart ? copy.page.quickStartCopied : copy.page.quickStartCopy}</span>
+                      </button>
+                    </div>
+                    <p className="sub quickstart-card__body">{copy.page.quickStartBody}</p>
+                    <pre className="quickstart-card__command-wrap">
+                      <code className="quickstart-card__command">{quickStartCommand}</code>
+                    </pre>
+                  </article>
                   <div className="hero-fact-grid">
                     <article className="fact-chip">
                       <span className="fact-chip__label">{copy.overview.tasks}</span>
                       <strong className="fact-chip__value">{summary?.totals.tasks ?? tasksData.items.length}</strong>
+                      <span className="fact-chip__note">
+                        {copy.overview.today}: {summary?.today.tasksPublished ?? 0} {copy.overview.published}
+                      </span>
                     </article>
                     <article className="fact-chip">
                       <span className="fact-chip__label">{copy.overview.agents}</span>
                       <strong className="fact-chip__value">{summary?.totals.agents ?? agentsData.items.length}</strong>
+                      <span className="fact-chip__note">
+                        {copy.overview.today}: {summary?.today.tasksIntented ?? 0} {copy.overview.intended}
+                      </span>
                     </article>
                     <article className="fact-chip">
                       <span className="fact-chip__label">{copy.overview.disputes}</span>
                       <strong className="fact-chip__value">{summary?.totals.disputes ?? disputesData.items.length}</strong>
+                      <span className="fact-chip__note">
+                        {copy.overview.today}: {summary?.today.disputesOpened ?? 0}
+                      </span>
                     </article>
                   </div>
                 </div>
@@ -364,16 +355,47 @@ export const DashboardView = ({
                       {summary ? formatDateTime(summary.generatedAt, locale, timeZone) : "-"}
                     </strong>
                     <span className="hero-stat__meta">{timeZone}</span>
+                  </article>
+                  <article className="hero-stat">
                     <span className="hero-stat__label">{copy.overview.cycleStatus}</span>
                     <strong className="hero-stat__value">{activeCycle ? getCycleStatusLabel(locale, activeCycle.status) : "-"}</strong>
-                    <span className="hero-stat__meta">{activeCycle?.id ?? "-"}</span>
+                    <div className="hero-stat__row">
+                      <span className="hero-stat__meta">{activeCycle?.id ?? "-"}</span>
+                      <span className="hero-stat__meta">{cycleUptime}</span>
+                    </div>
                   </article>
+                  <article className="hero-stat">
+                    <span className="hero-stat__label">{copy.overview.currentCycle}</span>
+                    <strong className="hero-stat__value">
+                      {summary?.currentCycle.tasksCompleted ?? 0} {copy.overview.completed}
+                    </strong>
+                    <div className="hero-stat__row">
+                      <span className="hero-stat__meta">
+                        {summary?.currentCycle.tasksPublished ?? 0} {copy.overview.published}
+                      </span>
+                      <span className="hero-stat__meta">
+                        {summary?.currentCycle.disputesOpened ?? 0} {copy.overview.disputes}
+                      </span>
+                    </div>
+                  </article>
+                  <div className="hero-panel__stats-actions">
+                    <button
+                      type="button"
+                      className="action-btn action-btn--primary hero-market-btn"
+                      onClick={() => openSection("streams")}
+                    >
+                      <svg viewBox="0 0 24 24" className="hero-market-btn__icon" aria-hidden="true" focusable="false">
+                        <path d="M5 12h11l-4.5-4.5L13 6l7 6-7 6-1.5-1.5L16 13H5z" />
+                      </svg>
+                      <span className="hero-market-btn__label">{copy.page.jumpToStreams}</span>
+                    </button>
+                  </div>
                 </div>
               </section>
 
               {overviewError ? (
                 <section className="card alert-card" data-testid="overview-error">
-                  <p>{copy.page.overviewError}</p>
+                  <p>{overviewErrorMessage}</p>
                   <button type="button" className="action-btn" onClick={refreshAll}>
                     {copy.common.retry}
                   </button>
@@ -388,17 +410,7 @@ export const DashboardView = ({
                 steps={flowSteps}
               />
 
-              <OverviewPanels
-                locale={locale}
-                trendWindow={trendWindow}
-                trendPublished={trendPublished}
-                trendIntentions={trendIntentions}
-                trendCompleted={trendCompleted}
-                trendDisputes={trendDisputes}
-                leaders={leaders}
-                onTrendWindowChange={(window) => updateQuery({ trendWindow: window })}
-                onOpenAgentDetail={openAgentDetail}
-              />
+              <MethodologyPanels locale={locale} economy={economy} />
             </>
           ) : null}
 
@@ -406,7 +418,7 @@ export const DashboardView = ({
             <>
               {overviewError ? (
                 <section className="card alert-card" data-testid="overview-error">
-                  <p>{copy.page.overviewError}</p>
+                  <p>{overviewErrorMessage}</p>
                   <button type="button" className="action-btn" onClick={refreshAll}>
                     {copy.common.retry}
                   </button>
@@ -430,11 +442,10 @@ export const DashboardView = ({
               <ActivityFeed
                 locale={locale}
                 timeZone={timeZone}
-                refreshing={refreshing}
                 feedLoadError={feedLoadError}
+                feedLoadErrorKind={feedLoadErrorKind}
                 loadingFeed={loadingFeed}
                 activityFeed={activityFeed}
-                onRefresh={refreshAll}
                 onOpenByActivity={openByActivity}
               />
             </section>
@@ -529,17 +540,83 @@ export const DashboardView = ({
                         {copy.page.clear}
                       </button>
                     ) : null}
-                    <button
-                      type="button"
-                      className="link-btn"
-                      data-testid="toggle-filters"
-                      aria-expanded={showAdvancedFilters}
-                      onClick={() => setShowAdvancedFilters((prev) => !prev)}
-                    >
-                      {copy.page.filterOptions}: {showAdvancedFilters ? copy.page.hideFilters : copy.page.showFilters}
-                    </button>
+                    {hasAdvancedFilters ? (
+                      <button
+                        type="button"
+                        className="link-btn"
+                        data-testid="toggle-filters"
+                        aria-expanded={showAdvancedFilters}
+                        onClick={() => setShowAdvancedFilters((prev) => !prev)}
+                      >
+                        {copy.page.filterOptions}: {showAdvancedFilters ? copy.page.hideFilters : copy.page.showFilters}
+                      </button>
+                    ) : null}
                   </div>
-                  {showAdvancedFilters ? (
+                  <p className="sub filter-search-hint">{copy.page.searchHint}</p>
+                  <div className="filter-row filter-row--primary">
+                    {tab === "tasks" ? (
+                      <select
+                        data-testid="task-sort-select"
+                        value={taskSort}
+                        onChange={(event) => updateQuery({ taskSort: event.target.value })}
+                      >
+                        <option value="latest">{copy.page.latest}</option>
+                        <option value="created">{copy.page.created}</option>
+                        <option value="deadline">{copy.page.deadline}</option>
+                        <option value="reward">{copy.page.reward}</option>
+                      </select>
+                    ) : tab === "users" ? (
+                      <>
+                        <label className={`switch-line switch-line--toggle ${activeOnly ? "active" : ""}`}>
+                          <input
+                            className="switch-line__input"
+                            data-testid="active-only-checkbox"
+                            type="checkbox"
+                            checked={activeOnly}
+                            onChange={(event) => updateQuery({ activeOnly: event.target.checked ? "true" : "false" })}
+                          />
+                          <span className="switch-line__slider" aria-hidden="true" />
+                          <span className="switch-line__text">{copy.page.activeOnly}</span>
+                        </label>
+                        <select
+                          data-testid="agent-sort-select"
+                          value={agentSort}
+                          onChange={(event) => updateQuery({ agentSort: event.target.value })}
+                        >
+                          <option value="latest">{copy.page.latest}</option>
+                          <option value="score">{copy.page.score}</option>
+                          <option value="reputation">{copy.page.reputation}</option>
+                          <option value="completed">{copy.page.completed}</option>
+                          <option value="published">{copy.page.published}</option>
+                          <option value="intented">{copy.page.intended}</option>
+                        </select>
+                      </>
+                    ) : (
+                      <select
+                        data-testid="dispute-sort-select"
+                        value={disputeSort}
+                        onChange={(event) => updateQuery({ disputeSort: event.target.value })}
+                      >
+                        <option value="latest">{copy.page.latest}</option>
+                        <option value="created">{copy.page.created}</option>
+                      </select>
+                    )}
+                    <select
+                      data-testid="sort-order-select"
+                      value={sortOrderValue}
+                      onChange={(event) => updateQuery(
+                        tab === "tasks"
+                          ? { taskOrder: event.target.value }
+                          : tab === "users"
+                            ? { agentOrder: event.target.value }
+                            : { disputeOrder: event.target.value }
+                      )}
+                    >
+                      <option value="desc">{copy.page.orderDesc}</option>
+                      <option value="asc">{copy.page.orderAsc}</option>
+                    </select>
+                  </div>
+                  {hasAdvancedFilters && showAdvancedFilters ? (
                     <>
                       <div className="filter-row filter-row--controls">
                         {tab === "tasks" ? (
@@ -554,41 +631,11 @@ export const DashboardView = ({
                                 <option key={status} value={status}>{getTaskStatusLabel(locale, status)}</option>
                               ))}
                             </select>
-                            <select
-                              data-testid="task-sort-select"
-                              value={taskSort}
-                              onChange={(event) => updateQuery({ taskSort: event.target.value })}
-                            >
-                              <option value="latest">{copy.page.latest}</option>
-                              <option value="created">{copy.page.created}</option>
-                              <option value="deadline">{copy.page.deadline}</option>
-                              <option value="reward">{copy.page.reward}</option>
-                            </select>
                           </>
                         ) : tab === "users" ? (
-                          <>
-                            <label className="switch-line">
-                              <input
-                                data-testid="active-only-checkbox"
-                                type="checkbox"
-                                checked={activeOnly}
-                                onChange={(event) => updateQuery({ activeOnly: event.target.checked ? "true" : "false" })}
-                              />
-                              {copy.page.activeOnly}
-                            </label>
-                            <select
-                              data-testid="agent-sort-select"
-                              value={agentSort}
-                              onChange={(event) => updateQuery({ agentSort: event.target.value })}
-                            >
-                              <option value="latest">{copy.page.latest}</option>
-                              <option value="score">{copy.page.score}</option>
-                              <option value="reputation">{copy.page.reputation}</option>
-                              <option value="completed">{copy.page.completed}</option>
-                              <option value="published">{copy.page.published}</option>
-                              <option value="intented">{copy.page.intended}</option>
-                            </select>
-                          </>
+                          <p className="muted">
+                            {locale === "zh" ? "常用排序和活跃筛选已前置到上方。" : "Common sort and active filters are available in the row above."}
+                          </p>
                         ) : (
                           <>
                             <select
@@ -601,38 +648,16 @@ export const DashboardView = ({
                               <option value="RESOLVED_COMPLETED">{copy.page.resolvedCompleted}</option>
                               <option value="RESOLVED_NOT_COMPLETED">{copy.page.resolvedNotCompleted}</option>
                             </select>
-                            <select
-                              data-testid="dispute-sort-select"
-                              value={disputeSort}
-                              onChange={(event) => updateQuery({ disputeSort: event.target.value })}
-                            >
-                              <option value="latest">{copy.page.latest}</option>
-                              <option value="created">{copy.page.created}</option>
-                            </select>
                           </>
                         )}
-                        <select
-                          data-testid="sort-order-select"
-                          value={tab === "tasks" ? taskOrder : tab === "users" ? agentOrder : disputeOrder}
-                          onChange={(event) => updateQuery(
-                            tab === "tasks"
-                              ? { taskOrder: event.target.value }
-                              : tab === "users"
-                                ? { agentOrder: event.target.value }
-                                : { disputeOrder: event.target.value }
-                          )}
-                        >
-                          <option value="desc">{copy.page.orderDesc}</option>
-                          <option value="asc">{copy.page.orderAsc}</option>
-                        </select>
-                      </div>
-                      <div className="filter-row filter-row--actions">
-                        <button type="button" className="action-btn" data-testid="reset-filters" onClick={resetFilters}>
-                          {copy.page.reset}
-                        </button>
                       </div>
                     </>
                   ) : null}
+                  <div className="filter-row filter-row--actions">
+                    <button type="button" className="action-btn" data-testid="reset-filters" onClick={resetFilters}>
+                      {copy.page.reset}
+                    </button>
+                  </div>
                 </div>
               ) : null}
 
@@ -642,12 +667,14 @@ export const DashboardView = ({
                     locale={locale}
                     timeZone={timeZone}
                     tasks={tasksData.items}
+                    taskAllCount={taskAllCount}
                     taskStatus={taskStatus}
                     taskStatusCounts={taskStatusCounts}
                     hasTaskFilters={hasTaskFilters}
                     loadingTasks={loadingTasks}
                     loadingMoreTasks={loadingMoreTasks}
                     taskLoadError={taskLoadError}
+                    taskLoadErrorKind={taskLoadErrorKind}
                     nextCursor={tasksData.nextCursor}
                     taskSentinelRef={taskSentinelRef}
                     onOpenTaskDetail={openTaskDetail}
@@ -664,6 +691,7 @@ export const DashboardView = ({
                     loadingAgents={loadingAgents}
                     loadingMoreAgents={loadingMoreAgents}
                     agentLoadError={agentLoadError}
+                    agentLoadErrorKind={agentLoadErrorKind}
                     nextCursor={agentsData.nextCursor}
                     agentSentinelRef={agentSentinelRef}
                     onOpenAgentDetail={openAgentDetail}
@@ -678,6 +706,7 @@ export const DashboardView = ({
                     loadingCycles={loadingCycles}
                     loadingMoreCycles={loadingMoreCycles}
                     cycleLoadError={cycleLoadError}
+                    cycleLoadErrorKind={cycleLoadErrorKind}
                     nextCursor={cyclesData.nextCursor}
                     cycleSentinelRef={cycleSentinelRef}
                     onOpenCycleDetail={openCycleDetail}
@@ -695,6 +724,7 @@ export const DashboardView = ({
                     loadingDisputes={loadingDisputes}
                     loadingMoreDisputes={loadingMoreDisputes}
                     disputeLoadError={disputeLoadError}
+                    disputeLoadErrorKind={disputeLoadErrorKind}
                     nextCursor={disputesData.nextCursor}
                     disputeSentinelRef={disputeSentinelRef}
                     onOpenDisputeDetail={openDisputeDetail}
@@ -707,49 +737,6 @@ export const DashboardView = ({
             </section>
           ) : null}
         </div>
-
-        {taskDetailId || agentDetailAddress || cycleDetailId || disputeDetailId ? (
-          <DetailDrawerShell
-            eyebrow={copy.page.drawerTitle}
-            title={drawerTitle}
-            hint={copy.page.drawerHint}
-            closeLabel={copy.page.close}
-            onClose={closeDetail}
-          >
-              {taskDetailId ? (
-                <TaskDetailDrawer
-                  locale={locale}
-                  timeZone={timeZone}
-                  taskDetail={taskDetail}
-                  onRetry={retryTaskDetail}
-                  onOpenAgentDetail={openAgentDetail}
-                />
-              ) : cycleDetailId ? (
-                <CycleDetailDrawer
-                  locale={locale}
-                  timeZone={timeZone}
-                  cycleDetail={cycleDetail}
-                  onRetry={retryCycleDetail}
-                  onOpenAgentDetail={openAgentDetail}
-                />
-              ) : disputeDetailId ? (
-                <DisputeDetailDrawer
-                  locale={locale}
-                  timeZone={timeZone}
-                  disputeDetail={disputeDetail}
-                  onRetry={retryDisputeDetail}
-                  onOpenAgentDetail={openAgentDetail}
-                />
-              ) : (
-                <AgentDetailDrawer
-                  locale={locale}
-                  timeZone={timeZone}
-                  agentDetail={agentDetail}
-                  onRetry={retryAgentDetail}
-                />
-              )}
-          </DetailDrawerShell>
-        ) : null}
       </main>
     </>
   );

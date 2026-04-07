@@ -1,6 +1,12 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import type { ActivityEvent, Dispute, Task, TaskIntention } from "@agentrade/types";
 import type { SupportedLocale } from "@agentrade/i18n";
+import { fetchActivities, fetchDisputes, fetchTaskIntentions } from "../../lib/api";
 import { formatDateTime, shortAddress } from "../../lib/dashboard-format";
+import { getLoadErrorKind, withRateLimitMessage, type LoadErrorKind } from "../../lib/load-error";
 import { renderSafeMarkdown } from "../../lib/markdown";
 import { getDashboardCopy, getDisputeStatusLabel } from "./i18n";
 import { EntityLink } from "../ui/entity-link";
@@ -15,9 +21,16 @@ interface TaskDetailContentProps {
   intentions: TaskIntention[];
   disputes: Dispute[];
   activities: ActivityEvent[];
+  initialIntentionsCursor?: string | null;
+  initialDisputesCursor?: string | null;
+  initialActivitiesCursor?: string | null;
   onOpenAgentDetail?: (address: string) => void;
   getAgentHref?: (address: string) => string;
+  getDisputeHref?: (disputeId: string) => string;
 }
+
+const DETAIL_LIST_PAGE_SIZE = 20;
+const COMPLETED_BATCH_SIZE = 10;
 
 export const TaskDetailContent = ({
   locale,
@@ -26,18 +39,160 @@ export const TaskDetailContent = ({
   intentions,
   disputes,
   activities,
+  initialIntentionsCursor = null,
+  initialDisputesCursor = null,
+  initialActivitiesCursor = null,
   onOpenAgentDetail,
-  getAgentHref
+  getAgentHref,
+  getDisputeHref
 }: TaskDetailContentProps) => {
   const copy = getDashboardCopy(locale);
+  const loadMoreLabel = locale === "zh" ? "继续加载" : "Load more";
+  const loadMoreFallback = locale === "zh" ? "加载更多失败，请重试。" : "Failed to load more. Please retry.";
+  const participantsAnchor = "task-participants";
+  const acceptanceAnchor = "task-acceptance";
+  const descriptionAnchor = "task-description";
+  const disputesAnchor = "task-disputes";
+  const timelineAnchor = "task-timeline";
+  const openDisputeLabel = locale === "zh" ? "打开争议页" : "Open dispute";
+  const resolveAgentHref = (address: string) => getAgentHref?.(address) ?? `/agents/${address}`;
+  const resolveDisputeHref = (disputeId: string) => getDisputeHref?.(disputeId) ?? `/disputes/${disputeId}`;
+
+  const [intentionItems, setIntentionItems] = useState<TaskIntention[]>(intentions);
+  const [intentionCursor, setIntentionCursor] = useState<string | null>(initialIntentionsCursor);
+  const [loadingIntentions, setLoadingIntentions] = useState(false);
+  const [intentionErrorKind, setIntentionErrorKind] = useState<LoadErrorKind | null>(null);
+
+  const [disputeItems, setDisputeItems] = useState<Dispute[]>(disputes);
+  const [disputeCursor, setDisputeCursor] = useState<string | null>(initialDisputesCursor);
+  const [loadingDisputes, setLoadingDisputes] = useState(false);
+  const [disputeErrorKind, setDisputeErrorKind] = useState<LoadErrorKind | null>(null);
+
+  const [activityItems, setActivityItems] = useState<ActivityEvent[]>(activities);
+  const [activityCursor, setActivityCursor] = useState<string | null>(initialActivitiesCursor);
+  const [loadingActivities, setLoadingActivities] = useState(false);
+  const [activityErrorKind, setActivityErrorKind] = useState<LoadErrorKind | null>(null);
+
+  const [visibleCompleted, setVisibleCompleted] = useState(COMPLETED_BATCH_SIZE);
+
+  useEffect(() => {
+    setIntentionItems(intentions);
+    setIntentionCursor(initialIntentionsCursor);
+    setLoadingIntentions(false);
+    setIntentionErrorKind(null);
+
+    setDisputeItems(disputes);
+    setDisputeCursor(initialDisputesCursor);
+    setLoadingDisputes(false);
+    setDisputeErrorKind(null);
+
+    setActivityItems(activities);
+    setActivityCursor(initialActivitiesCursor);
+    setLoadingActivities(false);
+    setActivityErrorKind(null);
+
+    setVisibleCompleted(COMPLETED_BATCH_SIZE);
+  }, [
+    task.id,
+    intentions,
+    disputes,
+    activities,
+    initialIntentionsCursor,
+    initialDisputesCursor,
+    initialActivitiesCursor
+  ]);
+
+  const loadMoreIntentions = useCallback(async () => {
+    if (!intentionCursor || loadingIntentions) {
+      return;
+    }
+    setLoadingIntentions(true);
+    try {
+      const response = await fetchTaskIntentions({
+        taskId: task.id,
+        cursor: intentionCursor,
+        limit: DETAIL_LIST_PAGE_SIZE,
+        strict: true
+      });
+      setIntentionItems((prev) => prev.concat(response.items));
+      setIntentionCursor(response.nextCursor);
+      setIntentionErrorKind(null);
+    } catch (error) {
+      setIntentionErrorKind(getLoadErrorKind(error));
+    } finally {
+      setLoadingIntentions(false);
+    }
+  }, [intentionCursor, loadingIntentions, task.id]);
+
+  const loadMoreDisputes = useCallback(async () => {
+    if (!disputeCursor || loadingDisputes) {
+      return;
+    }
+    setLoadingDisputes(true);
+    try {
+      const response = await fetchDisputes({
+        taskId: task.id,
+        cursor: disputeCursor,
+        limit: DETAIL_LIST_PAGE_SIZE,
+        sort: "latest",
+        order: "desc",
+        strict: true
+      });
+      setDisputeItems((prev) => prev.concat(response.items));
+      setDisputeCursor(response.nextCursor);
+      setDisputeErrorKind(null);
+    } catch (error) {
+      setDisputeErrorKind(getLoadErrorKind(error));
+    } finally {
+      setLoadingDisputes(false);
+    }
+  }, [disputeCursor, loadingDisputes, task.id]);
+
+  const loadMoreActivities = useCallback(async () => {
+    if (!activityCursor || loadingActivities) {
+      return;
+    }
+    setLoadingActivities(true);
+    try {
+      const response = await fetchActivities({
+        taskId: task.id,
+        cursor: activityCursor,
+        limit: DETAIL_LIST_PAGE_SIZE,
+        order: "desc",
+        strict: true
+      });
+      setActivityItems((prev) => prev.concat(response.items));
+      setActivityCursor(response.nextCursor);
+      setActivityErrorKind(null);
+    } catch (error) {
+      setActivityErrorKind(getLoadErrorKind(error));
+    } finally {
+      setLoadingActivities(false);
+    }
+  }, [activityCursor, loadingActivities, task.id]);
+
+  const visibleCompletedItems = task.completedAgents.slice(0, visibleCompleted);
+  const hasMoreCompleted = visibleCompletedItems.length < task.completedAgents.length;
+
+  const intentionLoadErrorMessage = withRateLimitMessage(locale, loadMoreFallback, intentionErrorKind);
+  const disputeLoadErrorMessage = withRateLimitMessage(locale, loadMoreFallback, disputeErrorKind);
+  const activityLoadErrorMessage = withRateLimitMessage(locale, loadMoreFallback, activityErrorKind);
 
   return (
     <div className="detail-block">
+      <nav className="detail-anchor-nav" aria-label={locale === "zh" ? "任务详情导航" : "Task detail navigation"}>
+        <a href={`#${participantsAnchor}`}>{copy.taskDetail.participants}</a>
+        <a href={`#${acceptanceAnchor}`}>{copy.taskDetail.acceptanceCriteria}</a>
+        <a href={`#${descriptionAnchor}`}>{locale === "zh" ? "任务说明" : "Task Description"}</a>
+        <a href={`#${disputesAnchor}`}>{copy.taskDetail.relatedDisputes}</a>
+        <a href={`#${timelineAnchor}`}>{copy.taskDetail.activityTimeline}</a>
+      </nav>
+
       <div className="detail-grid">
         <div className="detail-card">
           <MetricLine
             label={copy.taskDetail.publisher}
-            value={<EntityLink address={task.publisher} label={shortAddress(task.publisher)} onClick={onOpenAgentDetail ? () => onOpenAgentDetail(task.publisher) : undefined} href={getAgentHref?.(task.publisher)} />}
+            value={<EntityLink address={task.publisher} label={shortAddress(task.publisher)} onClick={onOpenAgentDetail ? () => onOpenAgentDetail(task.publisher) : undefined} href={resolveAgentHref(task.publisher)} />}
           />
           <MetricLine label={copy.taskDetail.reward} value={`${task.rewardPerSlot} AGC`} />
           <MetricLine label={copy.taskDetail.tax} value={`${task.taxAmount} AGC`} />
@@ -48,79 +203,138 @@ export const TaskDetailContent = ({
           <MetricLine label={copy.taskDetail.deadline} value={formatDateTime(task.deadlineUtc, locale, timeZone)} />
         </div>
 
-        <div className="detail-card">
+        <div className="detail-card" id={participantsAnchor}>
           <h4>{copy.taskDetail.participants}</h4>
-          <p className="muted">{copy.taskDetail.intended}</p>
-          {intentions.length > 0 ? (
-            <div className="chip-list">
-              {intentions.map((item) => (
-                <span key={item.id}>
-                  <EntityLink address={item.agent} label={shortAddress(item.agent)} onClick={onOpenAgentDetail ? () => onOpenAgentDetail(item.agent) : undefined} href={getAgentHref?.(item.agent)} />
-                </span>
-              ))}
+          <section className="detail-chip-section">
+            <div className="detail-chip-section__head">
+              <h5>{copy.taskDetail.intended}</h5>
+              <span className="detail-chip-section__count">{task.intentCount}</span>
             </div>
-          ) : (
-            <p className="empty-line">{copy.taskDetail.none}</p>
-          )}
+            {intentionItems.length > 0 ? (
+              <>
+                <div className="detail-chip-list">
+                  {intentionItems.map((item) => (
+                    <span key={item.id}>
+                      <EntityLink address={item.agent} label={shortAddress(item.agent)} onClick={onOpenAgentDetail ? () => onOpenAgentDetail(item.agent) : undefined} href={resolveAgentHref(item.agent)} />
+                    </span>
+                  ))}
+                </div>
+                {intentionCursor ? (
+                  <button type="button" className="action-btn more-btn" onClick={loadMoreIntentions} disabled={loadingIntentions}>
+                    {loadingIntentions ? copy.common.loadingMore : loadMoreLabel}
+                  </button>
+                ) : null}
+                {intentionErrorKind ? <p className="empty-line">{intentionLoadErrorMessage}</p> : null}
+              </>
+            ) : (
+              <p className="empty-line">{copy.taskDetail.none}</p>
+            )}
+          </section>
 
-          <p className="muted">{copy.taskDetail.completed}</p>
-          {task.completedAgents.length > 0 ? (
-            <div className="chip-list">
-              {task.completedAgents.map((address) => (
-                <span key={address}>
-                  <EntityLink address={address} label={shortAddress(address)} onClick={onOpenAgentDetail ? () => onOpenAgentDetail(address) : undefined} href={getAgentHref?.(address)} />
-                </span>
-              ))}
+          <section className="detail-chip-section">
+            <div className="detail-chip-section__head">
+              <h5>{copy.taskDetail.completed}</h5>
+              <span className="detail-chip-section__count">{task.completedAgents.length}</span>
             </div>
-          ) : (
-            <p className="empty-line">{copy.taskDetail.none}</p>
-          )}
+            {task.completedAgents.length > 0 ? (
+              <>
+                <div className="detail-chip-list">
+                  {visibleCompletedItems.map((address) => (
+                    <span key={address}>
+                      <EntityLink address={address} label={shortAddress(address)} onClick={onOpenAgentDetail ? () => onOpenAgentDetail(address) : undefined} href={resolveAgentHref(address)} />
+                    </span>
+                  ))}
+                </div>
+                {hasMoreCompleted ? (
+                  <button
+                    type="button"
+                    className="action-btn more-btn"
+                    onClick={() => setVisibleCompleted((count) => Math.min(count + COMPLETED_BATCH_SIZE, task.completedAgents.length))}
+                  >
+                    {loadMoreLabel}
+                  </button>
+                ) : null}
+              </>
+            ) : (
+              <p className="empty-line">{copy.taskDetail.none}</p>
+            )}
+          </section>
         </div>
       </div>
 
-      <h4>{copy.taskDetail.acceptanceCriteria}</h4>
-      <div className="markdown">{renderSafeMarkdown(task.acceptanceCriteria)}</div>
+      <section className="detail-card" id={acceptanceAnchor}>
+        <h4 className="detail-subsection-title">{copy.taskDetail.acceptanceCriteria}</h4>
+        <div className="markdown">{renderSafeMarkdown(task.acceptanceCriteria)}</div>
+      </section>
 
-      <h4>{locale === "zh" ? "任务说明" : "Task Description"}</h4>
-      <div className="markdown">{renderSafeMarkdown(task.descriptionMd)}</div>
+      <section className="detail-card" id={descriptionAnchor}>
+        <h4 className="detail-subsection-title">{locale === "zh" ? "任务说明" : "Task Description"}</h4>
+        <div className="markdown">{renderSafeMarkdown(task.descriptionMd)}</div>
+      </section>
 
-      <h4>{copy.taskDetail.relatedDisputes}</h4>
-      {disputes.length > 0 ? (
-        <ul className="detail-list">
-          {disputes.map((item) => (
-            <li key={item.id} className="detail-card">
-              <div className="section-head compact-head">
-                <strong>{item.id}</strong>
-                <StateChip status={item.status} label={getDisputeStatusLabel(locale, item.status)} />
-              </div>
-              <p className="muted">
-                {copy.taskDetail.opener}: <EntityLink address={item.opener} label={shortAddress(item.opener)} onClick={onOpenAgentDetail ? () => onOpenAgentDetail(item.opener) : undefined} href={getAgentHref?.(item.opener)} />
-              </p>
-              <p>{item.reasonMd}</p>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="empty-line">{copy.taskDetail.noRelatedDisputes}</p>
-      )}
+      <section className="detail-card" id={disputesAnchor}>
+        <h4 className="detail-subsection-title">{copy.taskDetail.relatedDisputes}</h4>
+        {disputeItems.length > 0 ? (
+          <>
+            <ul className="detail-list">
+              {disputeItems.map((item) => (
+                <li key={item.id} className="detail-card">
+                  <div className="section-head compact-head">
+                    <strong>{item.id}</strong>
+                    <StateChip status={item.status} label={getDisputeStatusLabel(locale, item.status)} />
+                  </div>
+                  <p className="muted">
+                    {copy.taskDetail.opener}: <EntityLink address={item.opener} label={shortAddress(item.opener)} onClick={onOpenAgentDetail ? () => onOpenAgentDetail(item.opener) : undefined} href={resolveAgentHref(item.opener)} />
+                  </p>
+                  <p className="muted">
+                    {locale === "zh" ? "更新时间" : "Updated"}: {formatDateTime(item.updatedAt, locale, timeZone)}
+                  </p>
+                  <div className="markdown markdown--compact">{renderSafeMarkdown(item.reasonMd)}</div>
+                  <Link className="inline-link" href={resolveDisputeHref(item.id)}>
+                    {openDisputeLabel}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+            {disputeCursor ? (
+              <button type="button" className="action-btn more-btn" onClick={loadMoreDisputes} disabled={loadingDisputes}>
+                {loadingDisputes ? copy.common.loadingMore : loadMoreLabel}
+              </button>
+            ) : null}
+            {disputeErrorKind ? <p className="empty-line">{disputeLoadErrorMessage}</p> : null}
+          </>
+        ) : (
+          <p className="empty-line">{copy.taskDetail.noRelatedDisputes}</p>
+        )}
+      </section>
 
-      <h4>{copy.taskDetail.activityTimeline}</h4>
-      {activities.length > 0 ? (
-        <ActivityTimeline
-          activities={activities}
-          locale={locale}
-          timeZone={timeZone}
-          renderLinks={(item) => (
-            <>
-              <span>{locale === "zh" ? "执行方" : "Actor"}: <EntityLink address={item.actor} label={shortAddress(item.actor)} onClick={onOpenAgentDetail ? () => onOpenAgentDetail(item.actor) : undefined} href={getAgentHref?.(item.actor)} /></span>
-              <span>{locale === "zh" ? "周期" : "Cycle"}: {item.cycleId}</span>
-              {item.disputeId ? <span>{locale === "zh" ? "争议" : "Dispute"}: {item.disputeId}</span> : null}
-            </>
-          )}
-        />
-      ) : (
-        <p className="empty-line">{copy.common.noActivityYet}</p>
-      )}
+      <section className="detail-card" id={timelineAnchor}>
+        <h4 className="detail-subsection-title">{copy.taskDetail.activityTimeline}</h4>
+        {activityItems.length > 0 ? (
+          <>
+            <ActivityTimeline
+              activities={activityItems}
+              locale={locale}
+              timeZone={timeZone}
+              renderLinks={(item) => (
+                <>
+                  <span>{locale === "zh" ? "执行方" : "Actor"}: <EntityLink address={item.actor} label={shortAddress(item.actor)} onClick={onOpenAgentDetail ? () => onOpenAgentDetail(item.actor) : undefined} href={resolveAgentHref(item.actor)} /></span>
+                  <span>{locale === "zh" ? "周期" : "Cycle"}: {item.cycleId}</span>
+                  {item.disputeId ? <span>{locale === "zh" ? "争议" : "Dispute"}: {item.disputeId}</span> : null}
+                </>
+              )}
+            />
+            {activityCursor ? (
+              <button type="button" className="action-btn more-btn" onClick={loadMoreActivities} disabled={loadingActivities}>
+                {loadingActivities ? copy.common.loadingMore : loadMoreLabel}
+              </button>
+            ) : null}
+            {activityErrorKind ? <p className="empty-line">{activityLoadErrorMessage}</p> : null}
+          </>
+        ) : (
+          <p className="empty-line">{copy.common.noActivityYet}</p>
+        )}
+      </section>
     </div>
   );
 };

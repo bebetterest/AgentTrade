@@ -504,6 +504,66 @@ describe("API integration", () => {
     expect(taskBody.competitionRatio).toBe(2);
   });
 
+  it("computes competition using remaining slots after confirmations", async () => {
+    const publisher = addr("cmp-rem-1");
+    const workerA = addr("cmp-rem-2");
+    const workerB = addr("cmp-rem-3");
+
+    const taskRes = await app!.inject({
+      method: "POST",
+      url: "/v2/tasks",
+      headers: { authorization: `Bearer ${bearer(publisher)}` },
+      payload: {
+        title: "remaining-slots-competition",
+        descriptionMd: "desc",
+        acceptanceCriteria: "criteria",
+        deadlineUtc: futureDeadline(),
+        displayTimezone: "UTC",
+        slotsTotal: 2,
+        rewardPerSlot: 10,
+        allowRepeatCompletionsBySameAgent: false
+      }
+    });
+    expect(taskRes.statusCode).toBe(200);
+    const task = taskRes.json() as { id: string };
+
+    await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/intentions`,
+      headers: { authorization: `Bearer ${bearer(workerA)}` }
+    });
+    await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/intentions`,
+      headers: { authorization: `Bearer ${bearer(workerB)}` }
+    });
+
+    const submissionRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/submissions`,
+      headers: { authorization: `Bearer ${bearer(workerA)}` },
+      payload: { payloadMd: "first completion" }
+    });
+    expect(submissionRes.statusCode).toBe(200);
+    const submission = submissionRes.json() as { id: string };
+
+    const confirmRes = await app!.inject({
+      method: "POST",
+      url: `/v2/submissions/${submission.id}/confirm`,
+      headers: { authorization: `Bearer ${bearer(publisher)}` }
+    });
+    expect(confirmRes.statusCode).toBe(200);
+
+    const taskAfter = await app!.inject({
+      method: "GET",
+      url: `/v2/tasks/${task.id}`
+    });
+    expect(taskAfter.statusCode).toBe(200);
+    const taskBody = taskAfter.json() as { intentCount: number; competitionRatio: number };
+    expect(taskBody.intentCount).toBe(2);
+    expect(taskBody.competitionRatio).toBe(2);
+  });
+
   it("forbids non-publisher from confirming submission", async () => {
     const publisher = addr("f1");
     const worker = addr("f2");
@@ -952,6 +1012,15 @@ describe("API integration", () => {
     const closeCycle1 = closeCycle1Res.json() as { finalizedDisputes: string[] };
     expect(closeCycle1.finalizedDisputes).toHaveLength(0);
 
+    const disputeOpenRes = await app!.inject({
+      method: "GET",
+      url: `/v2/disputes/${dispute.id}`
+    });
+    expect(disputeOpenRes.statusCode).toBe(200);
+    const disputeOpen = disputeOpenRes.json() as { status: string; resolution?: unknown };
+    expect(disputeOpen.status).toBe("OPEN");
+    expect(disputeOpen).not.toHaveProperty("resolution");
+
     for (const supervisor of supervisors.slice(2)) {
       const voteRes = await app!.inject({
         method: "POST",
@@ -985,8 +1054,26 @@ describe("API integration", () => {
       url: `/v2/disputes/${dispute.id}`
     });
     expect(submissionBAfterRes.statusCode).toBe(200);
-    const disputeAfter = submissionBAfterRes.json() as { status: string };
+    const disputeAfter = submissionBAfterRes.json() as {
+      status: string;
+      resolution?: {
+        totalVotes: number;
+        completedVotes: number;
+        notCompletedVotes: number;
+        outcome: VoteChoice;
+        winnerRole: string;
+        winnerAddress: Address;
+      };
+    };
     expect(disputeAfter.status).toBe("RESOLVED_COMPLETED");
+    expect(disputeAfter.resolution).toEqual({
+      totalVotes: supervisors.length,
+      completedVotes: supervisors.length - 2,
+      notCompletedVotes: 2,
+      outcome: VoteChoice.COMPLETED,
+      winnerRole: "SUBMISSION_AGENT",
+      winnerAddress: workerB
+    });
 
     const workerBAfterLedgerRes = await app!.inject({
       method: "GET",

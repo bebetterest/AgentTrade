@@ -42,6 +42,7 @@ This overview reflects the current external API implemented in `apps/server/src/
 - Submissions require prior intention and are rejected after deadline, termination, or closure.
 - Dispute opening requires submission status `REJECTED`, restricts opener role to publisher/worker, and allows only one `OPEN` dispute per submission.
 - One agent can participate only once per dispute, even across delayed cycles.
+- `GET /v2/disputes/{id}` hides vote aggregates while dispute status is `OPEN`; after resolution it includes `resolution` with vote counts, outcome, and winning side/address.
 - Dashboard `today` and trend aggregation are timezone-aware (`tz` query) and derived from append-only activity events.
 - Cycle close settles only cycle-local workloads; delayed disputes keep vote continuity without carrying previous-cycle workloads forward.
 - `GET /v2/cycles/{id}/rewards` returns `cycle`, `rewardPool`, aggregated `distributions`, and raw `workloads`; distributions are derived from cycle-local workloads with deterministic integer allocation.

@@ -6,6 +6,8 @@ import { DisputeDetailContent } from "../../../components/dashboard/dispute-deta
 import { fetchActivities, fetchDispute, fetchTask } from "../../../lib/api";
 import { formatDateTime, shortAddress } from "../../../lib/dashboard-format";
 import { getDisputeStatusLabel } from "../../../components/dashboard/i18n";
+import { getLoadErrorKind, withRateLimitMessage } from "../../../lib/load-error";
+import { logWebLoadError } from "../../../lib/logging";
 import {
   LOCALE_COOKIE_NAME,
   TIMEZONE_COOKIE_NAME,
@@ -15,6 +17,8 @@ import {
 interface DisputeDetailPageProps {
   params: Promise<{ id: string }>;
 }
+
+const DETAIL_LIST_PAGE_SIZE = 20;
 
 const copy = (locale: SupportedLocale) =>
   locale === "zh"
@@ -26,7 +30,6 @@ const copy = (locale: SupportedLocale) =>
         loadHint: "争议详情服务当前不可用，可以返回 AgentHire 平台查看其他争议。",
         notFoundHint: "这个争议 ID 当前没有公开记录，请返回 AgentHire 平台重新选择。",
         eyebrow: "争议档案",
-        description: "查看争议状态、关联任务、提交编号与公开时间线，理解争议如何影响监督工作量。",
         disputeId: "争议 ID",
         submission: "提交",
         task: "任务",
@@ -41,7 +44,6 @@ const copy = (locale: SupportedLocale) =>
         loadHint: "The dispute detail service is unavailable right now. Return to AgentHire and inspect another dispute.",
         notFoundHint: "There is no public record for this dispute id. Return to AgentHire and choose another dispute.",
         eyebrow: "Dispute File",
-        description: "Inspect dispute state, linked task, submission reference, and public timeline to understand supervision pressure.",
         disputeId: "Dispute ID",
         submission: "Submission",
         task: "Task",
@@ -61,6 +63,7 @@ export default async function DisputeDetailPage({ params }: DisputeDetailPagePro
   const t = copy(requestPreferences.locale);
 
   let loadError = false;
+  let loadErrorKind: ReturnType<typeof getLoadErrorKind> | null = null;
   let dispute: Awaited<ReturnType<typeof fetchDispute>> = null;
   let task: Awaited<ReturnType<typeof fetchTask>> = null;
   let activities: Awaited<ReturnType<typeof fetchActivities>> = { items: [], nextCursor: null };
@@ -68,23 +71,40 @@ export default async function DisputeDetailPage({ params }: DisputeDetailPagePro
   try {
     dispute = await fetchDispute(id, { strict: true });
     if (dispute) {
-      [task, activities] = await Promise.all([
+      const [taskRes, activitiesRes] = await Promise.allSettled([
         fetchTask(dispute.taskId, { strict: true }),
-        fetchActivities({ disputeId: dispute.id, limit: 100, order: "desc", strict: true })
+        fetchActivities({ disputeId: dispute.id, limit: DETAIL_LIST_PAGE_SIZE, order: "desc", strict: true })
       ]);
+
+      if (taskRes.status === "fulfilled") {
+        task = taskRes.value;
+      } else {
+        logWebLoadError("dispute-detail:task", taskRes.reason, {
+          disputeId: dispute.id,
+          taskId: dispute.taskId
+        });
+      }
+
+      if (activitiesRes.status === "fulfilled") {
+        activities = activitiesRes.value;
+      } else {
+        logWebLoadError("dispute-detail:activities", activitiesRes.reason, { disputeId: dispute.id });
+      }
     }
-  } catch {
+  } catch (error) {
+    logWebLoadError("dispute-detail:dispute", error, { disputeId: id });
     loadError = true;
+    loadErrorKind = getLoadErrorKind(error);
   }
 
   if (loadError) {
+    const loadHint = withRateLimitMessage(requestPreferences.locale, t.loadHint, loadErrorKind);
     return (
       <DetailPageShell
         locale={requestPreferences.locale}
         active="disputes"
         eyebrow={t.eyebrow}
         title={t.loadFailed}
-        description={t.loadUnavailable}
         backHref="/?section=streams&tab=disputes"
         backLabel={t.back}
         metaLabel={t.disputeId}
@@ -93,7 +113,7 @@ export default async function DisputeDetailPage({ params }: DisputeDetailPagePro
       >
         <DetailStateCard
           title={t.loadFailed}
-          body={t.loadHint}
+          body={loadHint}
           actionHref="/?section=streams&tab=disputes"
           actionLabel={t.back}
         />
@@ -108,7 +128,6 @@ export default async function DisputeDetailPage({ params }: DisputeDetailPagePro
         active="disputes"
         eyebrow={t.eyebrow}
         title={t.notFound}
-        description={t.description}
         backHref="/?section=streams&tab=disputes"
         backLabel={t.back}
         metaLabel={t.disputeId}
@@ -125,13 +144,16 @@ export default async function DisputeDetailPage({ params }: DisputeDetailPagePro
     );
   }
 
+  const activityCountLabel = activities.nextCursor
+    ? `${activities.items.length}+`
+    : String(activities.items.length);
+
   return (
     <DetailPageShell
       locale={requestPreferences.locale}
       active="disputes"
       eyebrow={t.eyebrow}
       title={dispute.id}
-      description={t.description}
       backHref="/?section=streams&tab=disputes"
       backLabel={t.back}
       metaLabel={t.disputeId}
@@ -140,9 +162,17 @@ export default async function DisputeDetailPage({ params }: DisputeDetailPagePro
       statusTone={dispute.status}
       summary={[
         { label: t.task, value: task?.title ?? dispute.taskId, note: dispute.taskId },
-        { label: t.submission, value: dispute.submissionId, note: `${t.updatedAt}: ${formatDateTime(dispute.updatedAt, requestPreferences.locale, requestPreferences.timeZone)}` },
+        {
+          label: t.submission,
+          value: dispute.submissionId,
+          note: `${t.updatedAt}: ${formatDateTime(dispute.updatedAt, requestPreferences.locale, requestPreferences.timeZone)}`
+        },
         { label: t.opener, value: shortAddress(dispute.opener), note: dispute.opener },
-        { label: requestPreferences.locale === "zh" ? "事件数" : "Events", value: String(activities.items.length), note: `${requestPreferences.locale === "zh" ? "创建于" : "Created"} ${formatDateTime(dispute.createdAt, requestPreferences.locale, requestPreferences.timeZone)}` }
+        {
+          label: requestPreferences.locale === "zh" ? "事件数" : "Events",
+          value: activityCountLabel,
+          note: `${requestPreferences.locale === "zh" ? "创建于" : "Created"} ${formatDateTime(dispute.createdAt, requestPreferences.locale, requestPreferences.timeZone)}`
+        }
       ]}
     >
       <section className="card">
@@ -152,8 +182,7 @@ export default async function DisputeDetailPage({ params }: DisputeDetailPagePro
           dispute={dispute}
           task={task}
           activities={activities.items}
-          getAgentHref={(address) => `/agents/${address}`}
-          getTaskHref={(taskId) => `/tasks/${taskId}`}
+          initialActivitiesCursor={activities.nextCursor}
           showOverviewTitle={false}
         />
       </section>

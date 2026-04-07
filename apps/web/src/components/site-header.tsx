@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useId, useMemo, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { SupportedLocale } from "@agentrade/i18n";
 import type { DashboardSection } from "../lib/dashboard-query";
 import { getDashboardSectionNavigationTarget } from "./dashboard/shared";
@@ -14,6 +14,21 @@ interface SiteHeaderProps {
   locale: SupportedLocale;
   active: HeaderSection;
   onLocaleChange?: (locale: SupportedLocale) => void;
+  backControl?: {
+    enabled?: boolean;
+    label?: string;
+    ariaLabel?: string;
+    fallbackHref?: string;
+    testId?: string;
+  };
+  refreshControl?: {
+    enabled?: boolean;
+    busy?: boolean;
+    label?: string;
+    busyLabel?: string;
+    testId?: string;
+    onRefresh?: () => void;
+  };
   dashboardSections?: {
     current: DashboardSection;
     navLabel: string;
@@ -32,7 +47,10 @@ const copy = {
     menu: "Menu",
     close: "Close",
     navLabel: "Primary",
-    menuNote: "AgentHire web is read-only. Publishing and state-changing actions stay on authenticated CLI/API."
+    menuNote: "AgentHire web is read-only. Publishing and state-changing actions stay on authenticated CLI/API.",
+    back: "Back",
+    refresh: "Refresh",
+    refreshing: "Refreshing..."
   },
   zh: {
     eyebrow: "AgentHire 平台",
@@ -40,20 +58,42 @@ const copy = {
     menu: "菜单",
     close: "关闭",
     navLabel: "主导航",
-    menuNote: "AgentHire Web 仅提供只读界面，发布和状态写入操作仍保留在已认证 CLI/API。"
+    menuNote: "AgentHire Web 仅提供只读界面，发布和状态写入操作仍保留在已认证 CLI/API。",
+    back: "返回",
+    refresh: "刷新",
+    refreshing: "刷新中..."
   }
 } as const satisfies Record<SupportedLocale, Record<string, string>>;
 
 const isActive = (active: HeaderSection, current: HeaderSection): string =>
   active === current ? "active" : "";
 
-export const SiteHeader = ({ locale, active, onLocaleChange, dashboardSections }: SiteHeaderProps) => {
+export const SiteHeader = ({
+  locale,
+  active,
+  onLocaleChange,
+  backControl,
+  refreshControl,
+  dashboardSections
+}: SiteHeaderProps) => {
+  const headerRef = useRef<HTMLElement | null>(null);
   const t = copy[locale];
+  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const menuId = useId();
   const [menuOpen, setMenuOpen] = useState(false);
   const hasDashboardSectionNav = active === "home" && Boolean(dashboardSections);
+  const backEnabled = backControl?.enabled ?? false;
+  const backLabel = backControl?.label ?? t.back;
+  const backAriaLabel = backControl?.ariaLabel ?? backLabel;
+  const backFallbackHref = backControl?.fallbackHref ?? "/";
+  const backTestId = backControl?.testId ?? "header-back-button";
+  const refreshEnabled = refreshControl?.enabled ?? true;
+  const refreshBusy = refreshControl?.busy ?? false;
+  const refreshLabel = refreshControl?.label ?? t.refresh;
+  const refreshingLabel = refreshControl?.busyLabel ?? t.refreshing;
+  const refreshTestId = refreshControl?.testId ?? "header-refresh-button";
 
   const navItems = useMemo(
     () => [{ href: "/", label: t.home, key: "home" as const }],
@@ -65,9 +105,9 @@ export const SiteHeader = ({ locale, active, onLocaleChange, dashboardSections }
     }
     return [
       { key: "overview" as const, label: dashboardSections.overviewLabel },
-      { key: "metrics" as const, label: dashboardSections.metricsLabel },
+      { key: "streams" as const, label: dashboardSections.streamsLabel },
       { key: "activity" as const, label: dashboardSections.activityLabel },
-      { key: "streams" as const, label: dashboardSections.streamsLabel }
+      { key: "metrics" as const, label: dashboardSections.metricsLabel }
     ];
   }, [dashboardSections]);
 
@@ -96,9 +136,46 @@ export const SiteHeader = ({ locale, active, onLocaleChange, dashboardSections }
     };
   }, [menuOpen]);
 
+  useEffect(() => {
+    const header = headerRef.current;
+    if (!header) {
+      return;
+    }
+
+    const root = document.documentElement;
+    const syncHeaderHeight = () => {
+      const nextHeight = Math.ceil(header.getBoundingClientRect().height);
+      if (nextHeight > 0) {
+        root.style.setProperty("--site-header-height", `${nextHeight}px`);
+      }
+    };
+
+    syncHeaderHeight();
+
+    let resizeObserver: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined") {
+      resizeObserver = new ResizeObserver(() => syncHeaderHeight());
+      resizeObserver.observe(header);
+    }
+
+    window.addEventListener("resize", syncHeaderHeight);
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", syncHeaderHeight);
+    };
+  }, [locale, hasDashboardSectionNav, menuOpen]);
+
   const closeMenu = () => setMenuOpen(false);
   const handleLocaleChange = (nextLocale: SupportedLocale) => {
-    onLocaleChange?.(nextLocale);
+    if (nextLocale === locale) {
+      closeMenu();
+      return;
+    }
+    if (onLocaleChange) {
+      onLocaleChange(nextLocale);
+    } else {
+      router.refresh();
+    }
     closeMenu();
   };
   const handleSectionKeyDown = (currentSection: DashboardSection) => (event: ReactKeyboardEvent<HTMLButtonElement>) => {
@@ -118,15 +195,31 @@ export const SiteHeader = ({ locale, active, onLocaleChange, dashboardSections }
     dashboardSections?.onSectionChange(section);
     closeMenu();
   };
+  const onRefresh = () => {
+    if (refreshBusy) {
+      return;
+    }
+    if (refreshControl?.onRefresh) {
+      refreshControl.onRefresh();
+      return;
+    }
+    router.refresh();
+  };
+  const onBack = () => {
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      router.back();
+      return;
+    }
+    router.push(backFallbackHref);
+  };
 
   return (
-    <header className="site-header">
+    <header ref={headerRef} className="site-header">
       <div className="site-header__inner">
         <Link href="/" className="site-brand" aria-label="AgentHire home">
           <span className="site-brand__mark">AH</span>
           <span>
             <strong>AgentHire</strong>
-            <span className="site-brand__sub">{t.eyebrow}</span>
           </span>
         </Link>
 
@@ -161,6 +254,34 @@ export const SiteHeader = ({ locale, active, onLocaleChange, dashboardSections }
         )}
 
         <div className="site-header__actions">
+          {backEnabled ? (
+            <button
+              type="button"
+              className="action-btn site-back-btn"
+              data-testid={backTestId}
+              aria-label={backAriaLabel}
+              onClick={onBack}
+            >
+              <svg viewBox="0 0 24 24" className="site-back-btn__icon" aria-hidden="true" focusable="false">
+                <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20z" />
+              </svg>
+              <span>{backLabel}</span>
+            </button>
+          ) : null}
+          {refreshEnabled ? (
+            <button
+              type="button"
+              className="action-btn site-refresh-btn"
+              data-testid={refreshTestId}
+              onClick={onRefresh}
+              disabled={refreshBusy}
+            >
+              <svg viewBox="0 0 24 24" className="site-refresh-btn__icon" aria-hidden="true" focusable="false">
+                <path d="M17.65 6.35A7.95 7.95 0 0012 4V1L7 6l5 5V7a5 5 0 11-5 5H5a7 7 0 107.75-6.95l.25.3a7.95 7.95 0 014.65 1z" />
+              </svg>
+              <span>{refreshBusy ? refreshingLabel : refreshLabel}</span>
+            </button>
+          ) : null}
           <LocaleSwitcher initialLocale={locale} onChange={handleLocaleChange} />
           <button
             type="button"

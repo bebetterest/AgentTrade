@@ -16,6 +16,7 @@ import {
   type DashboardTrendPoint,
   type DashboardTrendsResponse,
   type Dispute,
+  type DisputeResolutionSummary,
   DisputeStatus as DomainDisputeStatus,
   type LedgerBalance,
   type PaginatedResponse,
@@ -26,6 +27,7 @@ import {
   type TaskIntention,
   TaskStatus as DomainTaskStatus,
   VoteChoice as DomainVoteChoice,
+  VoteChoice,
   type Address
 } from "@agentrade/types";
 import {
@@ -33,6 +35,7 @@ import {
 } from "../domain/helpers.js";
 import { DomainError } from "../domain/errors.js";
 import {
+  computeTaskCompetitionRatio,
   mapAgentProfile,
   mapCycle,
   mapCycleWorkload,
@@ -422,6 +425,68 @@ export class PrismaStateRepository {
 
   async getDisputeDirect(disputeId: string): Promise<Dispute | null> {
     return readGetDisputeDirect(this.prisma, disputeId);
+  }
+
+  async getDisputeResolutionDirect(disputeId: string): Promise<DisputeResolutionSummary | null> {
+    const dispute = await this.prisma.dispute.findUnique({
+      where: { id: disputeId },
+      select: {
+        id: true,
+        status: true,
+        taskId: true,
+        submissionId: true
+      }
+    });
+    if (!dispute) {
+      throw new DomainError("DISPUTE_NOT_FOUND", `Dispute ${disputeId} does not exist`, 404);
+    }
+    if (dispute.status === DomainDisputeStatus.OPEN) {
+      return null;
+    }
+
+    const [completedVotes, notCompletedVotes, task, submission] = await Promise.all([
+      this.prisma.supervisionVote.count({
+        where: { disputeId, vote: DomainVoteChoice.COMPLETED }
+      }),
+      this.prisma.supervisionVote.count({
+        where: { disputeId, vote: DomainVoteChoice.NOT_COMPLETED }
+      }),
+      this.prisma.task.findUnique({
+        where: { id: dispute.taskId },
+        select: { publisherAddress: true }
+      }),
+      this.prisma.submission.findUnique({
+        where: { id: dispute.submissionId },
+        select: { agentAddress: true }
+      })
+    ]);
+
+    if (!task || !submission) {
+      throw new DomainError(
+        "DISPUTE_INVARIANT_BROKEN",
+        "dispute task/submission reference is missing",
+        500
+      );
+    }
+
+    const outcome =
+      dispute.status === DomainDisputeStatus.RESOLVED_COMPLETED
+        ? VoteChoice.COMPLETED
+        : VoteChoice.NOT_COMPLETED;
+    const winnerRole = outcome === VoteChoice.COMPLETED ? "SUBMISSION_AGENT" : "PUBLISHER";
+    const winnerAddress =
+      outcome === VoteChoice.COMPLETED
+        ? asAddress(submission.agentAddress)
+        : asAddress(task.publisherAddress);
+
+    return {
+      totalVotes: completedVotes + notCompletedVotes,
+      completedVotes,
+      notCompletedVotes,
+      outcome,
+      winnerRole,
+      winnerAddress
+    };
   }
 
   async getAgentDirect(address: Address): Promise<AgentProfile | null> {
@@ -1569,10 +1634,12 @@ export class PrismaStateRepository {
       taxAmount: item.taxAmount,
       rewardEscrowRemaining: item.rewardEscrowRemaining,
       intentCount: intentionCountByTaskId.get(item.id) ?? 0,
-      competitionRatio:
-        item.slotsTotal > 0
-          ? Number((((intentionCountByTaskId.get(item.id) ?? 0) / item.slotsTotal).toFixed(4)))
-          : 0,
+      competitionRatio: computeTaskCompetitionRatio({
+        slotsTotal: item.slotsTotal,
+        rewardPerSlot: item.rewardPerSlot,
+        rewardEscrowRemaining: item.rewardEscrowRemaining,
+        intentCount: intentionCountByTaskId.get(item.id) ?? 0
+      }),
       completedAgents: asAddressArray(item.completedAgents),
       createdAt: toIso(item.createdAt),
       updatedAt: toIso(item.updatedAt)

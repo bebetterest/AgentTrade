@@ -20,14 +20,14 @@ describe("request context", () => {
     });
   });
 
-  it("falls back to Accept-Language and UTC when cookies are missing or invalid", () => {
+  it("defaults locale to English and timezone to UTC when cookies are missing or invalid", () => {
     expect(
       resolveRequestPreferences({
         acceptLanguage: "zh-CN,zh;q=0.9,en;q=0.8",
         timeZoneCookie: "Mars/OlympusMons"
       })
     ).toEqual({
-      locale: "zh",
+      locale: "en",
       timeZone: "UTC"
     });
   });

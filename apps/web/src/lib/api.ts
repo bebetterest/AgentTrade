@@ -1,4 +1,4 @@
-import { buildVersionlessOperationPath, getApiOperation } from "@agentrade/contracts";
+import { buildOperationPath, getApiOperation } from "@agentrade/contracts";
 import { loadWebRuntimeConfig } from "@agentrade/config";
 import type {
   ActivityEvent,
@@ -27,6 +27,9 @@ const runtimeBaseUrl = trimTrailingSlash(
     ? (webRuntime.internalApiBaseUrl ?? webRuntime.publicApiBaseUrl)
     : webRuntime.publicApiBaseUrl
 );
+const RETRYABLE_STATUS_SET = new Set([429, 500, 502, 503, 504]);
+const MAX_RETRIES = 1;
+const RETRY_BASE_DELAY_MS = 120;
 
 interface RequestOptions {
   revalidate?: number;
@@ -37,7 +40,7 @@ interface ApiFetchOptions extends RequestOptions {
   strict?: boolean;
 }
 
-class ApiRequestError extends Error {
+export class ApiRequestError extends Error {
   readonly status: number;
   readonly path: string;
 
@@ -49,7 +52,7 @@ class ApiRequestError extends Error {
   }
 }
 
-const isApiRequestError = (error: unknown): error is ApiRequestError =>
+export const isApiRequestError = (error: unknown): error is ApiRequestError =>
   error instanceof ApiRequestError;
 
 const readOperationJson = async <T>(
@@ -61,22 +64,44 @@ const readOperationJson = async <T>(
   options?: RequestOptions
 ): Promise<T> => {
   const operation = getApiOperation(operationId);
-  const path = buildVersionlessOperationPath(operation, {
+  const path = buildOperationPath(operation, {
     pathParams: input.pathParams,
     query: input.query
   });
-  const response = await fetch(`${runtimeBaseUrl}${path}`, {
+  const requestInit: RequestInit & { next?: { revalidate: number } } = {
     signal: options?.signal,
     cache: "no-store",
-    ...(options?.revalidate
-      ? ({ next: { revalidate: options.revalidate } } as RequestInit & { next: { revalidate: number } })
-      : {})
-  });
-  if (!response.ok) {
+    ...(options?.revalidate ? { next: { revalidate: options.revalidate } } : {})
+  };
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
+    let response: Response;
+    try {
+      response = await fetch(`${runtimeBaseUrl}${path}`, requestInit);
+    } catch (error) {
+      const isAbortError = error instanceof Error && error.name === "AbortError";
+      if (isAbortError || attempt >= MAX_RETRIES) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, RETRY_BASE_DELAY_MS * (attempt + 1)));
+      continue;
+    }
+
+    if (response.ok) {
+      const payload = (await response.json()) as unknown;
+      return operation.responseSchema.parse(payload) as T;
+    }
+
+    const retryable = RETRYABLE_STATUS_SET.has(response.status);
+    if (retryable && attempt < MAX_RETRIES) {
+      await new Promise((resolve) => setTimeout(resolve, RETRY_BASE_DELAY_MS * (attempt + 1)));
+      continue;
+    }
+
     throw new ApiRequestError(path, response.status, response.statusText);
   }
-  const payload = (await response.json()) as unknown;
-  return operation.responseSchema.parse(payload) as T;
+
+  throw new ApiRequestError(path, 500, "unexpected request retry state");
 };
 
 export const fetchDashboardSummary = async (

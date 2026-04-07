@@ -1,7 +1,8 @@
-import Link from "next/link";
 import type { Task } from "@agentrade/types";
 import type { SupportedLocale } from "@agentrade/i18n";
 import { formatDateTime, shortAddress } from "../../lib/dashboard-format";
+import type { LoadErrorKind } from "../../lib/load-error";
+import { withRateLimitMessage } from "../../lib/load-error";
 import { getDashboardCopy, getTaskStatusLabel } from "./i18n";
 import { buildStateChipClass, TASK_STATUS_FILTERS } from "./shared";
 
@@ -9,12 +10,14 @@ interface TaskListPanelProps {
   locale: SupportedLocale;
   timeZone: string;
   tasks: Task[];
+  taskAllCount: number;
   taskStatus: Task["status"] | null;
   taskStatusCounts: Record<string, number>;
   hasTaskFilters: boolean;
   loadingTasks: boolean;
   loadingMoreTasks: boolean;
   taskLoadError: boolean;
+  taskLoadErrorKind: LoadErrorKind | null;
   nextCursor: string | null;
   taskSentinelRef: React.RefObject<HTMLDivElement | null>;
   onOpenTaskDetail: (taskId: string) => void;
@@ -27,12 +30,14 @@ export const TaskListPanel = ({
   locale,
   timeZone,
   tasks,
+  taskAllCount,
   taskStatus,
   taskStatusCounts,
   hasTaskFilters,
   loadingTasks,
   loadingMoreTasks,
   taskLoadError,
+  taskLoadErrorKind,
   nextCursor,
   taskSentinelRef,
   onOpenTaskDetail,
@@ -41,6 +46,7 @@ export const TaskListPanel = ({
   onLoadMore
 }: TaskListPanelProps) => {
   const copy = getDashboardCopy(locale);
+  const taskLoadErrorMessage = withRateLimitMessage(locale, copy.taskList.loadError, taskLoadErrorKind);
 
   return (
     <>
@@ -51,7 +57,7 @@ export const TaskListPanel = ({
           type="button"
           onClick={() => onSetTaskStatus(null)}
         >
-          {copy.taskList.all} ({tasks.length})
+          {copy.taskList.all} ({taskAllCount})
         </button>
         {TASK_STATUS_FILTERS.map((status) => (
           <button
@@ -69,7 +75,7 @@ export const TaskListPanel = ({
       {taskLoadError ? (
         <div className="inline-error" data-testid="tasks-error">
           <p className="empty-line">
-            {copy.taskList.loadError}
+            {taskLoadErrorMessage}
           </p>
           <button type="button" className="link-btn" onClick={onRefresh}>
             {copy.common.retry}
@@ -82,23 +88,21 @@ export const TaskListPanel = ({
           <article key={task.id} className="masonry-card" data-testid="task-card">
             <div className="card-kicker">
               <span className={buildStateChipClass(task.status)}>{getTaskStatusLabel(locale, task.status)}</span>
-              <span className="muted">{task.id}</span>
+              <span className="muted card-id">{task.id}</span>
             </div>
             <h3>{task.title}</h3>
-            <p className="muted">{shortAddress(task.publisher)}</p>
             <p className="card-primary-number">{task.rewardPerSlot} AGC</p>
             <div className="card-meta">
-              <p>{copy.taskList.reward}</p>
-              <p>{copy.taskList.slots}: {task.completedAgents.length}/{task.slotsTotal}</p>
-              <p>{copy.taskDetail.intended}: {task.intentCount}</p>
-              <p>{copy.taskDetail.competition}: {(task.competitionRatio * 100).toFixed(0)}%</p>
-              <p>{copy.taskList.deadline}: {formatDateTime(task.deadlineUtc, locale, timeZone)}</p>
+              <p><strong>{locale === "zh" ? "发布者" : "Publisher"}:</strong> {shortAddress(task.publisher)}</p>
+              <p><strong>{copy.taskList.slots}:</strong> {task.completedAgents.length}/{task.slotsTotal}</p>
+              <p><strong>{copy.taskDetail.intended}:</strong> {task.intentCount}</p>
+              <p><strong>{copy.taskDetail.competition}:</strong> {(task.competitionRatio * 100).toFixed(0)}%</p>
+              <p><strong>{copy.taskList.deadline}:</strong> {formatDateTime(task.deadlineUtc, locale, timeZone)}</p>
             </div>
             <div className="card-actions">
               <button type="button" className="link-btn" data-testid="task-detail-trigger" onClick={() => onOpenTaskDetail(task.id)}>
                 {copy.common.details}
               </button>
-              <Link href={`/tasks/${task.id}`}>{copy.common.fullPage}</Link>
             </div>
           </article>
         ))}

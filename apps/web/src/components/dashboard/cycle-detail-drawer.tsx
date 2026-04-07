@@ -1,6 +1,8 @@
 import Link from "next/link";
 import type { CycleRewardsResponse, Dispute } from "@agentrade/types";
 import type { SupportedLocale } from "@agentrade/i18n";
+import type { LoadErrorKind } from "../../lib/load-error";
+import { withRateLimitMessage } from "../../lib/load-error";
 import { CycleDetailContent } from "./cycle-detail-content";
 import { getDashboardCopy } from "./i18n";
 
@@ -10,6 +12,7 @@ interface CycleDetailDrawerProps {
   cycleDetail: {
     loading: boolean;
     error: boolean;
+    errorKind: LoadErrorKind | null;
     rewards: CycleRewardsResponse | null;
     disputes: Dispute[];
   };
@@ -25,6 +28,7 @@ export const CycleDetailDrawer = ({
   onOpenAgentDetail
 }: CycleDetailDrawerProps) => {
   const copy = getDashboardCopy(locale);
+  const cycleDetailErrorMessage = withRateLimitMessage(locale, copy.cycleDetail.loadError, cycleDetail.errorKind);
 
   if (cycleDetail.loading) {
     return <p className="empty-line">{copy.common.loading}</p>;
@@ -34,7 +38,7 @@ export const CycleDetailDrawer = ({
     return (
       <div className="inline-error" data-testid="cycle-detail-error">
         <p className="empty-line">
-          {copy.cycleDetail.loadError}
+          {cycleDetailErrorMessage}
         </p>
         <button type="button" className="link-btn" data-testid="retry-cycle-detail" onClick={onRetry}>
           {copy.common.retry}

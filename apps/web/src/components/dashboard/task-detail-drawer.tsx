@@ -1,6 +1,8 @@
 import Link from "next/link";
 import type { ActivityEvent, Dispute, Task, TaskIntention } from "@agentrade/types";
 import type { SupportedLocale } from "@agentrade/i18n";
+import type { LoadErrorKind } from "../../lib/load-error";
+import { withRateLimitMessage } from "../../lib/load-error";
 import { getDashboardCopy, getTaskStatusLabel } from "./i18n";
 import { buildStateChipClass } from "./shared";
 import { TaskDetailContent } from "./task-detail-content";
@@ -11,6 +13,7 @@ interface TaskDetailDrawerProps {
   taskDetail: {
     loading: boolean;
     error: boolean;
+    errorKind: LoadErrorKind | null;
     task: Task | null;
     intentions: TaskIntention[];
     disputes: Dispute[];
@@ -28,6 +31,7 @@ export const TaskDetailDrawer = ({
   onOpenAgentDetail
 }: TaskDetailDrawerProps) => {
   const copy = getDashboardCopy(locale);
+  const taskDetailErrorMessage = withRateLimitMessage(locale, copy.taskDetail.loadError, taskDetail.errorKind);
 
   if (taskDetail.loading) {
     return <p className="empty-line">{copy.common.loading}</p>;
@@ -37,7 +41,7 @@ export const TaskDetailDrawer = ({
     return (
       <div className="inline-error" data-testid="task-detail-error">
         <p className="empty-line">
-          {copy.taskDetail.loadError}
+          {taskDetailErrorMessage}
         </p>
         <button type="button" className="link-btn" data-testid="retry-task-detail" onClick={onRetry}>
           {copy.common.retry}
@@ -68,6 +72,7 @@ export const TaskDetailDrawer = ({
         disputes={taskDetail.disputes}
         activities={taskDetail.activities}
         onOpenAgentDetail={onOpenAgentDetail}
+        getDisputeHref={(disputeId) => `/disputes/${disputeId}`}
       />
     </div>
   );

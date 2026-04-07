@@ -1,7 +1,9 @@
-import Link from "next/link";
 import { DisputeStatus, type Dispute } from "@agentrade/types";
 import type { SupportedLocale } from "@agentrade/i18n";
 import { formatDateTime, shortAddress } from "../../lib/dashboard-format";
+import type { LoadErrorKind } from "../../lib/load-error";
+import { withRateLimitMessage } from "../../lib/load-error";
+import { renderSafeMarkdown } from "../../lib/markdown";
 import { getDashboardCopy, getDisputeStatusLabel } from "./i18n";
 import { buildStateChipClass } from "./shared";
 
@@ -15,6 +17,7 @@ interface DisputeListPanelProps {
   loadingDisputes: boolean;
   loadingMoreDisputes: boolean;
   disputeLoadError: boolean;
+  disputeLoadErrorKind: LoadErrorKind | null;
   nextCursor: string | null;
   disputeSentinelRef: React.RefObject<HTMLDivElement | null>;
   onOpenDisputeDetail: (disputeId: string) => void;
@@ -56,6 +59,7 @@ export const DisputeListPanel = ({
   loadingDisputes,
   loadingMoreDisputes,
   disputeLoadError,
+  disputeLoadErrorKind,
   nextCursor,
   disputeSentinelRef,
   onOpenDisputeDetail,
@@ -65,6 +69,7 @@ export const DisputeListPanel = ({
 }: DisputeListPanelProps) => {
   const t = copy[locale];
   const dashboardCopy = getDashboardCopy(locale);
+  const disputeLoadErrorMessage = withRateLimitMessage(locale, t.loadError, disputeLoadErrorKind);
   const statuses = [
     DisputeStatus.OPEN,
     DisputeStatus.RESOLVED_COMPLETED,
@@ -97,7 +102,7 @@ export const DisputeListPanel = ({
 
       {disputeLoadError ? (
         <div className="inline-error" data-testid="disputes-error">
-          <p className="empty-line">{t.loadError}</p>
+          <p className="empty-line">{disputeLoadErrorMessage}</p>
           <button type="button" className="link-btn" onClick={onRefresh}>
             {dashboardCopy.common.retry}
           </button>
@@ -109,17 +114,19 @@ export const DisputeListPanel = ({
           <article key={dispute.id} className="masonry-card" data-testid="dispute-card">
             <div className="card-kicker">
               <span className={buildStateChipClass(dispute.status)}>{getDisputeStatusLabel(locale, dispute.status)}</span>
-              <span className="muted">{dispute.id}</span>
+              <span className="muted card-id">{dispute.id}</span>
             </div>
-            <h3>{dispute.reasonMd.slice(0, 96)}</h3>
-            <p>{t.task}: {dispute.taskId}</p>
-            <p>{t.opener}: {shortAddress(dispute.opener)}</p>
-            <p>{t.created}: {formatDateTime(dispute.createdAt, locale, timeZone)}</p>
+            <div className="markdown markdown--compact">{renderSafeMarkdown(dispute.reasonMd)}</div>
+            <div className="card-meta">
+              <p><strong>{t.task}:</strong> {dispute.taskId}</p>
+              <p><strong>{t.opener}:</strong> {shortAddress(dispute.opener)}</p>
+              <p><strong>{t.created}:</strong> {formatDateTime(dispute.createdAt, locale, timeZone)}</p>
+              <p><strong>{locale === "zh" ? "更新时间" : "Updated"}:</strong> {formatDateTime(dispute.updatedAt, locale, timeZone)}</p>
+            </div>
             <div className="card-actions">
               <button type="button" className="link-btn" data-testid="dispute-detail-trigger" onClick={() => onOpenDisputeDetail(dispute.id)}>
                 {dashboardCopy.common.details}
               </button>
-              <Link href={`/disputes/${dispute.id}`}>{dashboardCopy.common.fullPage}</Link>
             </div>
           </article>
         ))}

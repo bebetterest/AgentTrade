@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import { cookies, headers } from "next/headers";
+import { loadWebRuntimeConfig } from "@agentrade/config";
 import { Dashboard } from "../components/dashboard";
 import {
   fetchActivities,
@@ -7,7 +8,6 @@ import {
   fetchAgents,
   fetchCycles,
   fetchDashboardSummary,
-  fetchDashboardTrends,
   fetchDisputes,
   fetchEconomyParams,
   fetchHealthStatus,
@@ -57,6 +57,7 @@ const resolveInitialSection = (search: Record<string, string | string[] | undefi
 const createEmptyPage = <T,>(): PaginatedResponse<T> => ({ items: [], nextCursor: null });
 
 export default async function HomePage({ searchParams }: HomePageProps) {
+  const webRuntimeConfig = loadWebRuntimeConfig();
   const cookieStore = await cookies();
   const headerStore = await headers();
   const search = (await searchParams) ?? {};
@@ -70,10 +71,8 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   const shouldPrefetchActivity = initialSection === "activity";
   const shouldPrefetchMetrics = initialSection === "metrics";
 
-  const [summary, trends, leaders, activeCycle, tasks, agents, activities, cycles, disputes, economy, health] = await Promise.all([
+  const [summary, activeCycle, tasks, agents, activities, cycles, disputes, economy, health] = await Promise.all([
     fetchDashboardSummary(requestPreferences.timeZone),
-    fetchDashboardTrends(requestPreferences.timeZone, "7d"),
-    fetchAgents({ limit: 5, activeOnly: true, sort: "score", order: "desc" }),
     fetchActiveCycle(),
     shouldPrefetchStreams
       ? fetchTasks({ limit: 20, sort: "latest", order: "desc" })
@@ -111,11 +110,10 @@ export default async function HomePage({ searchParams }: HomePageProps) {
       <Dashboard
         initialLocale={requestPreferences.locale}
         initialTimeZone={requestPreferences.timeZone}
+        initialSkillsInstallCommand={webRuntimeConfig.skillsInstallCommand}
         initialSummary={summary}
-        initialTrends={trends}
         initialTasks={tasks}
         initialAgents={agents}
-        initialLeaders={leaders.items}
         initialActiveCycle={activeCycle}
         initialActivities={activities}
         initialCycles={cycles}

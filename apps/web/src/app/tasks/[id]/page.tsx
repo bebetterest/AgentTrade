@@ -6,6 +6,8 @@ import { DetailStateCard } from "../../../components/detail-state-card";
 import { TaskDetailContent } from "../../../components/dashboard/task-detail-content";
 import { fetchActivities, fetchDisputes, fetchTask, fetchTaskIntentions } from "../../../lib/api";
 import { formatDateTime } from "../../../lib/dashboard-format";
+import { getLoadErrorKind, withRateLimitMessage } from "../../../lib/load-error";
+import { logWebLoadError } from "../../../lib/logging";
 import {
   LOCALE_COOKIE_NAME,
   TIMEZONE_COOKIE_NAME,
@@ -15,6 +17,8 @@ import {
 interface TaskDetailPageProps {
   params: Promise<{ id: string }>;
 }
+
+const DETAIL_LIST_PAGE_SIZE = 20;
 
 const copy = (locale: SupportedLocale) =>
   locale === "zh"
@@ -26,7 +30,6 @@ const copy = (locale: SupportedLocale) =>
         loadHint: "任务详情服务当前不可用，可以返回 AgentHire 平台查看其他实体。",
         notFoundHint: "这个任务 ID 当前没有公开记录，请返回 AgentHire 平台重新选择。",
         eyebrow: "任务档案",
-        description: "查看该任务的托管余额、槽位进度、关联争议与公开活动，不跨越 Web 只读边界。",
         taskId: "任务 ID",
         publisher: "发布者",
         status: "状态",
@@ -45,7 +48,6 @@ const copy = (locale: SupportedLocale) =>
         loadHint: "The task detail service is unavailable right now. Return to AgentHire and inspect another entity.",
         notFoundHint: "There is no public record for this task id. Return to AgentHire and choose another entity.",
         eyebrow: "Task Dossier",
-        description: "Inspect escrow, slot progress, related disputes, and public activity for this task without crossing the web write boundary.",
         taskId: "Task ID",
         publisher: "Publisher",
         status: "Status",
@@ -69,29 +71,52 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
   const t = copy(requestPreferences.locale);
 
   let loadError = false;
+  let loadErrorKind: ReturnType<typeof getLoadErrorKind> | null = null;
   let task: Awaited<ReturnType<typeof fetchTask>> = null;
   let intentions: Awaited<ReturnType<typeof fetchTaskIntentions>> = { items: [], nextCursor: null };
   let disputes: Awaited<ReturnType<typeof fetchDisputes>> = { items: [], nextCursor: null };
   let activities: Awaited<ReturnType<typeof fetchActivities>> = { items: [], nextCursor: null };
   try {
-    [task, intentions, disputes, activities] = await Promise.all([
-      fetchTask(id, { strict: true }),
-      fetchTaskIntentions({ taskId: id, limit: 100, strict: true }),
-      fetchDisputes({ taskId: id, limit: 100, sort: "latest", order: "desc", strict: true }),
-      fetchActivities({ taskId: id, limit: 100, order: "desc", strict: true })
-    ]);
-  } catch {
+    task = await fetchTask(id, { strict: true });
+    if (task) {
+      const [intentionsRes, disputesRes, activitiesRes] = await Promise.allSettled([
+        fetchTaskIntentions({ taskId: id, limit: DETAIL_LIST_PAGE_SIZE, strict: true }),
+        fetchDisputes({ taskId: id, limit: DETAIL_LIST_PAGE_SIZE, sort: "latest", order: "desc", strict: true }),
+        fetchActivities({ taskId: id, limit: DETAIL_LIST_PAGE_SIZE, order: "desc", strict: true })
+      ]);
+
+      if (intentionsRes.status === "fulfilled") {
+        intentions = intentionsRes.value;
+      } else {
+        logWebLoadError("task-detail:intentions", intentionsRes.reason, { taskId: id });
+      }
+
+      if (disputesRes.status === "fulfilled") {
+        disputes = disputesRes.value;
+      } else {
+        logWebLoadError("task-detail:disputes", disputesRes.reason, { taskId: id });
+      }
+
+      if (activitiesRes.status === "fulfilled") {
+        activities = activitiesRes.value;
+      } else {
+        logWebLoadError("task-detail:activities", activitiesRes.reason, { taskId: id });
+      }
+    }
+  } catch (error) {
+    logWebLoadError("task-detail:task", error, { taskId: id });
     loadError = true;
+    loadErrorKind = getLoadErrorKind(error);
   }
 
   if (loadError) {
+    const loadHint = withRateLimitMessage(requestPreferences.locale, t.loadHint, loadErrorKind);
     return (
       <DetailPageShell
         locale={requestPreferences.locale}
         active="tasks"
         eyebrow={t.eyebrow}
         title={t.loadFailed}
-        description={t.loadUnavailable}
         backHref="/?section=streams&tab=tasks"
         backLabel={t.back}
         metaLabel={t.taskId}
@@ -100,7 +125,7 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
       >
         <DetailStateCard
           title={t.loadFailed}
-          body={t.loadHint}
+          body={loadHint}
           actionHref="/?section=streams&tab=tasks"
           actionLabel={t.back}
         />
@@ -115,7 +140,6 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
         active="tasks"
         eyebrow={t.eyebrow}
         title={t.notFound}
-        description={t.description}
         backHref="/?section=streams&tab=tasks"
         backLabel={t.back}
         metaLabel={t.taskId}
@@ -132,13 +156,16 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
     );
   }
 
+  const relatedDisputesCountLabel = disputes.nextCursor
+    ? `${disputes.items.length}+`
+    : String(disputes.items.length);
+
   return (
     <DetailPageShell
       locale={requestPreferences.locale}
       active="tasks"
       eyebrow={t.eyebrow}
       title={task.title}
-      description={t.description}
       backHref="/?section=streams&tab=tasks"
       backLabel={t.back}
       metaLabel={t.taskId}
@@ -147,9 +174,24 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
       statusTone={task.status}
       summary={[
         { label: t.reward, value: `${task.rewardPerSlot} AGC`, note: `${t.tax}: ${task.taxAmount} AGC` },
-        { label: t.escrow, value: `${task.rewardEscrowRemaining} AGC`, note: `${t.publisher}: ${task.publisher}` },
-        { label: t.slots, value: `${task.completedAgents.length}/${task.slotsTotal}`, note: `${disputes.items.length} ${requestPreferences.locale === "zh" ? "个关联争议" : "related disputes"}` },
-        { label: t.deadline, value: formatDateTime(task.deadlineUtc, requestPreferences.locale, requestPreferences.timeZone), note: `${t.updatedAt}: ${formatDateTime(task.updatedAt, requestPreferences.locale, requestPreferences.timeZone)}` }
+        {
+          label: t.escrow,
+          value: `${task.rewardEscrowRemaining} AGC`,
+          note: `${requestPreferences.locale === "zh" ? "托管总额" : "Escrow total"}: ${task.rewardPerSlot * task.slotsTotal} AGC`
+        },
+        {
+          label: t.slots,
+          value: `${task.completedAgents.length}/${task.slotsTotal}`,
+          note:
+            requestPreferences.locale === "zh"
+              ? `${task.intentCount} 次意向 / ${relatedDisputesCountLabel} 个关联争议`
+              : `${task.intentCount} intentions / ${relatedDisputesCountLabel} related disputes`
+        },
+        {
+          label: t.deadline,
+          value: formatDateTime(task.deadlineUtc, requestPreferences.locale, requestPreferences.timeZone),
+          note: `${t.updatedAt}: ${formatDateTime(task.updatedAt, requestPreferences.locale, requestPreferences.timeZone)}`
+        }
       ]}
     >
       <section className="card">
@@ -160,7 +202,9 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
           intentions={intentions.items}
           disputes={disputes.items}
           activities={activities.items}
-          getAgentHref={(address) => `/agents/${address}`}
+          initialIntentionsCursor={intentions.nextCursor}
+          initialDisputesCursor={disputes.nextCursor}
+          initialActivitiesCursor={activities.nextCursor}
         />
       </section>
     </DetailPageShell>

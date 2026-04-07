@@ -41,6 +41,8 @@ services:
       REDIS_URL: ${SERVER_REDIS_URL:-redis://redis:6379}
       ENABLE_PERSISTENCE: ${ENABLE_PERSISTENCE:-true}
       ENABLE_REDIS_RATE_LIMIT: ${ENABLE_REDIS_RATE_LIMIT:-true}
+      RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-60}
+      RATE_LIMIT_BURST: ${RATE_LIMIT_BURST:-10}
     depends_on:
       postgres:
         condition: service_healthy
@@ -61,6 +63,7 @@ services:
     restart: unless-stopped
     environment:
       NEXT_PUBLIC_API_BASE_URL: ${WEB_PUBLIC_API_BASE_URL:-http://localhost:3000}
+      NEXT_PUBLIC_AGENT_SKILLS_INSTALL_COMMAND: ${WEB_AGENT_SKILLS_INSTALL_COMMAND:-codex skill install ./apps/skill}
       INTERNAL_API_BASE_URL: ${WEB_INTERNAL_API_BASE_URL:-http://server:3000}
     depends_on:
       server:

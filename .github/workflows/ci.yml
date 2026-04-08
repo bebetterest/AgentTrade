@@ -75,7 +75,7 @@ jobs:
           --health-retries 20
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/agentrade
-      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/agentrade
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/agentrade?schema=test
       ENABLE_PERSISTENCE: "true"
       ENABLE_REDIS_RATE_LIMIT: "false"
     steps:
@@ -100,7 +100,7 @@ jobs:
         run: pnpm --filter @agentrade/server prisma:generate
 
       - name: Push Prisma schema to test DB
-        run: pnpm exec prisma db push --schema prisma/schema.prisma
+        run: DATABASE_URL="${TEST_DATABASE_URL}" pnpm exec prisma db push --schema prisma/schema.prisma
 
       - name: Run repository and persistence tests (repeat 2x for flake detection)
         run: |
@@ -141,7 +141,7 @@ jobs:
           --health-retries 20
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/agentrade
-      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/agentrade
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/agentrade?schema=test
       ENABLE_PERSISTENCE: "true"
       ENABLE_REDIS_RATE_LIMIT: "false"
     steps:
@@ -166,7 +166,7 @@ jobs:
         run: pnpm --filter @agentrade/server prisma:generate
 
       - name: Push Prisma schema to test DB
-        run: pnpm exec prisma db push --schema prisma/schema.prisma
+        run: DATABASE_URL="${TEST_DATABASE_URL}" pnpm exec prisma db push --schema prisma/schema.prisma
 
       - name: Run stress tests (repeat 3x for flake detection)
         run: |
@@ -204,7 +204,7 @@ jobs:
           --health-retries 20
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/agentrade
-      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/agentrade
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/agentrade?schema=test
       ENABLE_PERSISTENCE: "true"
       ENABLE_REDIS_RATE_LIMIT: "false"
     steps:
@@ -229,7 +229,7 @@ jobs:
         run: pnpm --filter @agentrade/server prisma:generate
 
       - name: Push Prisma schema to test DB
-        run: pnpm exec prisma db push --schema prisma/schema.prisma
+        run: DATABASE_URL="${TEST_DATABASE_URL}" pnpm exec prisma db push --schema prisma/schema.prisma
 
       - name: Run full CLI suite against DB (repeat 2x for state-leak detection)
         run: |

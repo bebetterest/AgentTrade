@@ -23,7 +23,6 @@ enum SubmissionStatus {
 enum DisputeStatus {
   OPEN
   RESOLVED_COMPLETED
-  RESOLVED_NOT_COMPLETED
 }
 
 enum VoteChoice {

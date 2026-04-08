@@ -36,6 +36,7 @@
     "lint": "pnpm -r lint",
     "demo:web:large-cases": "pnpm --filter @agentrade/cli exec tsx ../../scripts/populate-web-large-task-cases.ts",
     "demo:web:comprehensive-cases": "pnpm --filter @agentrade/cli exec tsx ../../scripts/populate-web-comprehensive-cases.ts",
+    "db:prepare:legacy-disputes": "pnpm exec prisma db execute --schema prisma/schema.prisma --file prisma/pre_migrations/20260408_dispute_status_backfill.sql",
     "check:fast": "pnpm toolchain:check && pnpm -r lint && pnpm --filter @agentrade/server test && pnpm --filter @agentrade/web test:unit && pnpm --filter @agentrade/cli test",
     "check:db": "pnpm toolchain:check && pnpm --filter @agentrade/server test:db && pnpm --filter @agentrade/server test:stress && pnpm --filter @agentrade/cli test:persistence",
     "docs:api:generate": "pnpm --filter @agentrade/cli exec tsx ../../scripts/generate-openapi.mjs"

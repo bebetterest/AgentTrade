@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import jwt from "jsonwebtoken";
 import type { FastifyInstance } from "fastify";
+import { PrismaClient } from "@prisma/client";
 import type { Address } from "@agentrade/types";
 import { VoteChoice } from "@agentrade/types";
 import { defaultConfig } from "@agentrade/config";
@@ -546,6 +547,186 @@ runDbSuite("API persistence mode", () => {
     const body = taskAfter.json() as { intentCount: number; competitionRatio: number };
     expect(body.intentCount).toBe(2);
     expect(body.competitionRatio).toBe(2);
+  });
+
+  it("closes task before returning 409 when submit finds no payable slots in persistence mode", async () => {
+    const publisher = addr("persist-slot-submit-pub");
+    const workerA = addr("slot-submit-a-worker");
+    const workerB = addr("slot-submit-b-worker");
+
+    const taskRes = await app!.inject({
+      method: "POST",
+      url: "/v2/tasks",
+      headers: { authorization: `Bearer ${bearer(publisher)}` },
+      payload: {
+        title: "persist-submit-no-slots",
+        descriptionMd: "desc",
+        acceptanceCriteria: "criteria",
+        deadlineUtc: futureDeadline(),
+        displayTimezone: "UTC",
+        slotsTotal: 1,
+        rewardPerSlot: 10,
+        allowRepeatCompletionsBySameAgent: false
+      }
+    });
+    expect(taskRes.statusCode).toBe(200);
+    const task = taskRes.json() as { id: string };
+
+    const [intentARes, intentBRes] = await Promise.all([
+      app!.inject({
+        method: "POST",
+        url: `/v2/tasks/${task.id}/intentions`,
+        headers: { authorization: `Bearer ${bearer(workerA)}` }
+      }),
+      app!.inject({
+        method: "POST",
+        url: `/v2/tasks/${task.id}/intentions`,
+        headers: { authorization: `Bearer ${bearer(workerB)}` }
+      })
+    ]);
+    expect(intentARes.statusCode).toBe(200);
+    expect(intentBRes.statusCode).toBe(200);
+
+    const submitARes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/submissions`,
+      headers: { authorization: `Bearer ${bearer(workerA)}` },
+      payload: { payloadMd: "first" }
+    });
+    expect(submitARes.statusCode).toBe(200);
+    const submissionA = submitARes.json() as { id: string };
+
+    const confirmARes = await app!.inject({
+      method: "POST",
+      url: `/v2/submissions/${submissionA.id}/confirm`,
+      headers: { authorization: `Bearer ${bearer(publisher)}` }
+    });
+    expect(confirmARes.statusCode).toBe(200);
+
+    const prisma = new PrismaClient({
+      datasources: {
+        db: {
+          url: TEST_DB_URL!
+        }
+      }
+    });
+    await prisma.task.update({
+      where: { id: task.id },
+      data: {
+        status: "IN_PROGRESS"
+      }
+    });
+    await prisma.$disconnect();
+
+    const submitBRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/submissions`,
+      headers: { authorization: `Bearer ${bearer(workerB)}` },
+      payload: { payloadMd: "second" }
+    });
+    expect(submitBRes.statusCode).toBe(409);
+    expect(errorCode(submitBRes.json())).toBe("TASK_NOT_SUBMITTABLE");
+
+    const taskAfterRes = await app!.inject({
+      method: "GET",
+      url: `/v2/tasks/${task.id}`
+    });
+    expect(taskAfterRes.statusCode).toBe(200);
+    expect((taskAfterRes.json() as { status: string }).status).toBe("CLOSED");
+  });
+
+  it("closes task before returning 409 when confirm finds no payable slots in persistence mode", async () => {
+    const publisher = addr("persist-slot-confirm-pub");
+    const workerA = addr("slot-confirm-a-worker");
+    const workerB = addr("slot-confirm-b-worker");
+
+    const taskRes = await app!.inject({
+      method: "POST",
+      url: "/v2/tasks",
+      headers: { authorization: `Bearer ${bearer(publisher)}` },
+      payload: {
+        title: "persist-confirm-no-slots",
+        descriptionMd: "desc",
+        acceptanceCriteria: "criteria",
+        deadlineUtc: futureDeadline(),
+        displayTimezone: "UTC",
+        slotsTotal: 1,
+        rewardPerSlot: 10,
+        allowRepeatCompletionsBySameAgent: false
+      }
+    });
+    expect(taskRes.statusCode).toBe(200);
+    const task = taskRes.json() as { id: string };
+
+    const [intentARes, intentBRes] = await Promise.all([
+      app!.inject({
+        method: "POST",
+        url: `/v2/tasks/${task.id}/intentions`,
+        headers: { authorization: `Bearer ${bearer(workerA)}` }
+      }),
+      app!.inject({
+        method: "POST",
+        url: `/v2/tasks/${task.id}/intentions`,
+        headers: { authorization: `Bearer ${bearer(workerB)}` }
+      })
+    ]);
+    expect(intentARes.statusCode).toBe(200);
+    expect(intentBRes.statusCode).toBe(200);
+
+    const submitARes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/submissions`,
+      headers: { authorization: `Bearer ${bearer(workerA)}` },
+      payload: { payloadMd: "first" }
+    });
+    expect(submitARes.statusCode).toBe(200);
+    const submissionA = submitARes.json() as { id: string };
+
+    const submitBRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/submissions`,
+      headers: { authorization: `Bearer ${bearer(workerB)}` },
+      payload: { payloadMd: "second" }
+    });
+    expect(submitBRes.statusCode).toBe(200);
+    const submissionB = submitBRes.json() as { id: string };
+
+    const confirmARes = await app!.inject({
+      method: "POST",
+      url: `/v2/submissions/${submissionA.id}/confirm`,
+      headers: { authorization: `Bearer ${bearer(publisher)}` }
+    });
+    expect(confirmARes.statusCode).toBe(200);
+
+    const prisma = new PrismaClient({
+      datasources: {
+        db: {
+          url: TEST_DB_URL!
+        }
+      }
+    });
+    await prisma.task.update({
+      where: { id: task.id },
+      data: {
+        status: "IN_PROGRESS"
+      }
+    });
+    await prisma.$disconnect();
+
+    const confirmBRes = await app!.inject({
+      method: "POST",
+      url: `/v2/submissions/${submissionB.id}/confirm`,
+      headers: { authorization: `Bearer ${bearer(publisher)}` }
+    });
+    expect(confirmBRes.statusCode).toBe(409);
+    expect(errorCode(confirmBRes.json())).toBe("SUBMISSION_NOT_CONFIRMABLE");
+
+    const taskAfterRes = await app!.inject({
+      method: "GET",
+      url: `/v2/tasks/${task.id}`
+    });
+    expect(taskAfterRes.statusCode).toBe(200);
+    expect((taskAfterRes.json() as { status: string }).status).toBe("CLOSED");
   });
 
   it("simulates restart-aware interactive dispute escalation with admin intervention", async () => {
@@ -1136,6 +1317,15 @@ runDbSuite("API persistence mode", () => {
     expect(trends.points.reduce((sum, item) => sum + item.tasksIntented, 0)).toBe(2);
     expect(trends.points.reduce((sum, item) => sum + item.tasksCompleted, 0)).toBe(1);
     expect(trends.points.reduce((sum, item) => sum + item.disputesOpened, 0)).toBe(1);
+  });
+
+  it("rejects removed dispute status enum values in persistence-mode query parameters", async () => {
+    const response = await app!.inject({
+      method: "GET",
+      url: "/v2/disputes?status=RESOLVED_NOT_COMPLETED"
+    });
+    expect(response.statusCode).toBe(400);
+    expect(errorCode(response.json())).toBe("VALIDATION_ERROR");
   });
 
   it("keeps keyset cursor pagination stable after inserts while accepting legacy offset cursors", async () => {

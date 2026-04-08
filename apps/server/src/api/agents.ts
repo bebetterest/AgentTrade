@@ -252,9 +252,11 @@ const registerAgentGetRoute = (
       const profile = await services.stateRepository.getAgentDirect(address);
       return validateOperationResponse(operation, profile ?? services.defaultAgentProfile(address));
     }
+    const address = params.address as Address;
+    const profile = await services.read((engine) => engine.findAgent(address));
     return validateOperationResponse(
       operation,
-      await services.read((engine) => engine.getAgent(params.address as Address))
+      profile ?? services.defaultAgentProfile(address)
     );
   });
 };
@@ -303,9 +305,11 @@ const registerAgentStatsRoute = (
       const profile = await services.stateRepository.getAgentDirect(address);
       return validateOperationResponse(operation, (profile ?? services.defaultAgentProfile(address)).stats);
     }
+    const address = params.address as Address;
+    const profile = await services.read((engine) => engine.findAgent(address));
     return validateOperationResponse(
       operation,
-      await services.read((engine) => engine.getAgent(params.address as Address).stats)
+      (profile ?? services.defaultAgentProfile(address)).stats
     );
   });
 };
@@ -325,9 +329,11 @@ const registerLedgerRoute = (
       const ledger = await services.stateRepository.getLedgerDirect(address);
       return validateOperationResponse(operation, ledger ?? services.defaultLedger(address));
     }
+    const address = params.address as Address;
+    const ledger = await services.read((engine) => engine.findLedger(address));
     return validateOperationResponse(
       operation,
-      await services.read((engine) => engine.getLedger(params.address as Address))
+      ledger ?? services.defaultLedger(address)
     );
   });
 };

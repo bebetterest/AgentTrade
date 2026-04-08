@@ -16,8 +16,7 @@ export enum SubmissionStatus {
 
 export enum DisputeStatus {
   OPEN = "OPEN",
-  RESOLVED_COMPLETED = "RESOLVED_COMPLETED",
-  RESOLVED_NOT_COMPLETED = "RESOLVED_NOT_COMPLETED"
+  RESOLVED_COMPLETED = "RESOLVED_COMPLETED"
 }
 
 export enum VoteChoice {

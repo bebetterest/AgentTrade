@@ -152,3 +152,43 @@ test("cli tasks create blocks invalid timezone before network request", async ()
   assert.equal(errorJson.command, "tasks create");
   assert.match(errorJson.message, /--tz must be a valid IANA timezone/);
 });
+
+test("cli disputes list blocks removed status enum before network request", async () => {
+  const result = await runCli([
+    "--base-url",
+    "http://127.0.0.1:1",
+    "disputes",
+    "list",
+    "--status",
+    "RESOLVED_NOT_COMPLETED"
+  ]);
+  assert.equal(result.code, 2);
+  const errorJson = JSON.parse(result.stderr.trim()) as {
+    type: string;
+    command: string;
+    message: string;
+  };
+  assert.equal(errorJson.type, "VALIDATION_ERROR");
+  assert.equal(errorJson.command, "disputes list");
+  assert.match(errorJson.message, /--status must be OPEN\|RESOLVED_COMPLETED/);
+});
+
+test("cli activities list accepts TASK_SUBMITTED and SUBMISSION_REJECTED enum values", async () => {
+  for (const activityType of ["TASK_SUBMITTED", "SUBMISSION_REJECTED"] as const) {
+    const result = await runCli([
+      "--base-url",
+      "http://127.0.0.1:1",
+      "activities",
+      "list",
+      "--type",
+      activityType
+    ]);
+    assert.equal(result.code, 5);
+    const errorJson = JSON.parse(result.stderr.trim()) as {
+      type: string;
+      command: string;
+    };
+    assert.equal(errorJson.type, "NETWORK_ERROR");
+    assert.equal(errorJson.command, "activities list");
+  }
+});

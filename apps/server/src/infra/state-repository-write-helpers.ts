@@ -464,7 +464,7 @@ export const writeSubmitTaskDirect = async (
   deps: SubmitTaskWriteDeps,
   input: SubmitTaskDirectInput
 ): Promise<PrismaSubmission> => {
-  return deps.executeWithRetry(async () =>
+  const txResult = await deps.executeWithRetry(async () =>
     prisma.$transaction(async (tx) => {
       const now = new Date();
       const runtime = await deps.lockRuntimeWithTx(tx);
@@ -496,7 +496,15 @@ export const writeSubmitTaskDirect = async (
         taskRow.rewardEscrowRemaining
       );
       if (confirmedSlots >= taskRow.slotsTotal || taskRow.rewardEscrowRemaining < taskRow.rewardPerSlot) {
-        throw new DomainError("TASK_NOT_SUBMITTABLE", "task is not open for submissions", 409);
+        await tx.task.update({
+          where: { id: taskRow.id },
+          data: {
+            status: DomainTaskStatus.CLOSED,
+            updatedAt: now
+          }
+        });
+        await deps.touchRuntimeStateWithTx(tx);
+        return { kind: "noSlots" as const };
       }
       if (taskRow.deadlineUtc.getTime() <= now.getTime()) {
         throw new DomainError("TASK_EXPIRED", "task deadline has passed", 409);
@@ -562,9 +570,14 @@ export const writeSubmitTaskDirect = async (
         createdAt: now
       });
       await deps.touchRuntimeStateWithTx(tx);
-      return created;
+      return { kind: "created" as const, submission: created };
     })
   );
+
+  if (txResult.kind === "noSlots") {
+    throw new DomainError("TASK_NOT_SUBMITTABLE", "task is not open for submissions", 409);
+  }
+  return txResult.submission;
 };
 
 export const writePublishTaskDirect = async (
@@ -892,7 +905,7 @@ export const writeConfirmSubmissionDirect = async (
   submissionId: string,
   publisher: Address
 ): Promise<PrismaSubmission> => {
-  return deps.executeWithRetry(async () =>
+  const txResult = await deps.executeWithRetry(async () =>
     prisma.$transaction(async (tx) => {
       const now = new Date();
       const runtime = await deps.lockRuntimeWithTx(tx);
@@ -911,7 +924,7 @@ export const writeConfirmSubmissionDirect = async (
         throw new DomainError("FORBIDDEN", "only the publisher can confirm submission", 403);
       }
       if (submissionRow.status === DomainSubmissionStatus.CONFIRMED) {
-        return submissionRow;
+        return { kind: "confirmed" as const, submission: submissionRow };
       }
       if (
         submissionRow.status !== DomainSubmissionStatus.SUBMITTED &&
@@ -942,7 +955,15 @@ export const writeConfirmSubmissionDirect = async (
         taskRow.rewardEscrowRemaining
       );
       if (confirmedSlotsBefore >= taskRow.slotsTotal || taskRow.rewardEscrowRemaining < taskRow.rewardPerSlot) {
-        throw new DomainError("SUBMISSION_NOT_CONFIRMABLE", "task has no remaining payable slots", 409);
+        await tx.task.update({
+          where: { id: taskRow.id },
+          data: {
+            status: DomainTaskStatus.CLOSED,
+            updatedAt: now
+          }
+        });
+        await deps.touchRuntimeStateWithTx(tx);
+        return { kind: "noSlots" as const };
       }
 
       await deps.confirmSubmissionInternalWithTx(
@@ -954,9 +975,15 @@ export const writeConfirmSubmissionDirect = async (
         publisher
       );
       await deps.touchRuntimeStateWithTx(tx);
-      return tx.submission.findUniqueOrThrow({ where: { id: submissionRow.id } });
+      const submission = await tx.submission.findUniqueOrThrow({ where: { id: submissionRow.id } });
+      return { kind: "confirmed" as const, submission };
     })
   );
+
+  if (txResult.kind === "noSlots") {
+    throw new DomainError("SUBMISSION_NOT_CONFIRMABLE", "task has no remaining payable slots", 409);
+  }
+  return txResult.submission;
 };
 
 export const writeVoteDisputeDirect = async (

@@ -208,6 +208,10 @@ export class AgentradeEngine {
     return this.requireAgent(address);
   }
 
+  findAgent(address: Address): AgentProfile | null {
+    return this.profiles.get(address) ?? null;
+  }
+
   updateAgentProfile(address: Address, payload: UpdateProfilePayload): AgentProfile {
     const profile = this.requireAgent(address);
     profile.name = payload.name ?? profile.name;
@@ -218,6 +222,10 @@ export class AgentradeEngine {
 
   getLedger(address: Address): LedgerBalance {
     return this.requireBalance(address);
+  }
+
+  findLedger(address: Address): LedgerBalance | null {
+    return this.balances.get(address) ?? null;
   }
 
   publishTask(input: {

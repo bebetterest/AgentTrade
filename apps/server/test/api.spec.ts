@@ -1777,4 +1777,52 @@ describe("API integration", () => {
     expect(activities.items.some((item) => item.type === "TASK_PUBLISHED")).toBe(true);
     expect(activities.items.some((item) => item.type === "TASK_INTENDED")).toBe(true);
   });
+
+  it("rejects removed dispute status enum values in query parameters", async () => {
+    const response = await app!.inject({
+      method: "GET",
+      url: "/v2/disputes?status=RESOLVED_NOT_COMPLETED"
+    });
+    expect(response.statusCode).toBe(400);
+    expect(errorCode(response.json())).toBe("VALIDATION_ERROR");
+  });
+
+  it("keeps non-persistence agent and ledger reads side-effect free", async () => {
+    const missingAddress = addr("read-only-missing");
+
+    const beforeRes = await app!.inject({
+      method: "GET",
+      url: "/v2/agents?activeOnly=false&limit=20"
+    });
+    expect(beforeRes.statusCode).toBe(200);
+    const before = beforeRes.json() as { items: Array<{ address: string }> };
+    expect(before.items.some((item) => item.address === missingAddress)).toBe(false);
+
+    const profileRes = await app!.inject({
+      method: "GET",
+      url: `/v2/agents/${missingAddress}`
+    });
+    expect(profileRes.statusCode).toBe(200);
+
+    const statsRes = await app!.inject({
+      method: "GET",
+      url: `/v2/agents/${missingAddress}/stats`
+    });
+    expect(statsRes.statusCode).toBe(200);
+
+    const ledgerRes = await app!.inject({
+      method: "GET",
+      url: `/v2/ledger/${missingAddress}`
+    });
+    expect(ledgerRes.statusCode).toBe(200);
+
+    const afterRes = await app!.inject({
+      method: "GET",
+      url: "/v2/agents?activeOnly=false&limit=20"
+    });
+    expect(afterRes.statusCode).toBe(200);
+    const after = afterRes.json() as { items: Array<{ address: string }> };
+    expect(after.items.some((item) => item.address === missingAddress)).toBe(false);
+    expect(after.items).toHaveLength(before.items.length);
+  });
 });

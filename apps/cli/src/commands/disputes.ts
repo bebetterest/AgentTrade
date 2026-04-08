@@ -1,9 +1,18 @@
 import type { Command } from "commander";
 import type { Dispute } from "@agentrade/types";
+import { CliValidationError } from "../errors.js";
 import { cliOperationBindings } from "../operation-bindings.js";
 import { ensureAddress, ensureNonEmpty, ensurePositiveInteger, ensureVoteChoice } from "../validators.js";
 import { resolveTextInput } from "../text-input.js";
 import { executeBearerOperationCommand, executeOperationCommand } from "./shared.js";
+
+const ensureDisputeStatus = (raw: string): Dispute["status"] => {
+  const normalized = raw.trim().toUpperCase();
+  if (normalized !== "OPEN" && normalized !== "RESOLVED_COMPLETED") {
+    throw new CliValidationError("--status must be OPEN|RESOLVED_COMPLETED");
+  }
+  return normalized as Dispute["status"];
+};
 
 export const registerDisputeCommands = (program: Command): void => {
   const disputes = program.command("disputes").description("Dispute and supervision commands");
@@ -13,7 +22,7 @@ export const registerDisputeCommands = (program: Command): void => {
     .description("List disputes")
     .option("--task <id>", "task id")
     .option("--opener <address>", "opener address")
-    .option("--status <status>", "OPEN|RESOLVED_COMPLETED|RESOLVED_NOT_COMPLETED")
+    .option("--status <status>", "OPEN|RESOLVED_COMPLETED")
     .option("--q <text>", "search by ids/opener/reason")
     .option("--sort <key>", "latest|created")
     .option("--order <order>", "asc|desc")
@@ -24,7 +33,7 @@ export const registerDisputeCommands = (program: Command): void => {
         query: {
           taskId: typeof options.task === "string" ? ensureNonEmpty(options.task, "--task") : undefined,
           opener: typeof options.opener === "string" ? ensureAddress(options.opener, "--opener") : undefined,
-          status: typeof options.status === "string" ? options.status.trim().toUpperCase() as Dispute["status"] : undefined,
+          status: typeof options.status === "string" ? ensureDisputeStatus(options.status) : undefined,
           q: typeof options.q === "string" ? ensureNonEmpty(options.q, "--q") : undefined,
           sort: typeof options.sort === "string" ? options.sort.trim().toLowerCase() as "latest" | "created" : undefined,
           order: typeof options.order === "string" ? options.order.trim().toLowerCase() as "asc" | "desc" : undefined,

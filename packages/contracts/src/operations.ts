@@ -214,7 +214,7 @@ const disputeListParameters = [
   queryStringParam("opener", { type: "string", pattern: "^0x[a-fA-F0-9]{40}$" }, { en: "Dispute opener address", zh: "发起方地址" }),
   queryStringParam(
     "status",
-    { type: "string", enum: ["OPEN", "RESOLVED_COMPLETED", "RESOLVED_NOT_COMPLETED"] },
+    { type: "string", enum: ["OPEN", "RESOLVED_COMPLETED"] },
     { en: "Dispute status filter", zh: "争议状态筛选" }
   ),
   queryStringParam(

@@ -344,6 +344,8 @@ test("cli command contract: method/path/auth/body coverage for all command group
         response.end(JSON.stringify(agentProfilePayload.stats));
         return;
       case `GET /v2/activities?taskId=task-1&disputeId=dispute-1&address=${addressA}&type=TASK_COMPLETED&order=asc&cursor=2&limit=4`:
+      case "GET /v2/activities?type=TASK_SUBMITTED&order=desc&limit=5":
+      case "GET /v2/activities?type=SUBMISSION_REJECTED&order=desc&limit=5":
         response.end(JSON.stringify({ items: [], nextCursor: null }));
         return;
       case "GET /v2/dashboard/summary?tz=Asia%2FShanghai":
@@ -832,6 +834,22 @@ test("cli command contract: method/path/auth/body coverage for all command group
       {
         method: "GET",
         url: `/v2/activities?taskId=task-1&disputeId=dispute-1&address=${addressA}&type=TASK_COMPLETED&order=asc&cursor=2&limit=4`,
+        auth: "none"
+      }
+    );
+    await runAndAssert(
+      ["activities", "list", "--type", "TASK_SUBMITTED", "--order", "desc", "--limit", "5"],
+      {
+        method: "GET",
+        url: "/v2/activities?type=TASK_SUBMITTED&order=desc&limit=5",
+        auth: "none"
+      }
+    );
+    await runAndAssert(
+      ["activities", "list", "--type", "SUBMISSION_REJECTED", "--order", "desc", "--limit", "5"],
+      {
+        method: "GET",
+        url: "/v2/activities?type=SUBMISSION_REJECTED&order=desc&limit=5",
         auth: "none"
       }
     );

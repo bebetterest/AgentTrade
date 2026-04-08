@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { defaultConfig } from "@agentrade/config";
-import { VoteChoice, type Address } from "@agentrade/types";
+import { TaskStatus, VoteChoice, type Address } from "@agentrade/types";
 import { AgentradeEngine } from "../src/domain/engine.js";
 import { MutableClock } from "../src/utils/time.js";
 
@@ -595,6 +595,87 @@ describe("AgentradeEngine disputes and cycle settlement", () => {
         { name: "   ", url: "https://example.com/artifact.log" }
       ])
     ).toThrowError(/attachment name must be non-empty/i);
+  });
+
+  it("closes task before returning 409 when submit finds no payable slots", () => {
+    const { engine, clock } = makeEngine();
+    const publisher = addr("slot-submit-1");
+    const workerA = addr("slot-submit-2");
+    const workerB = addr("slot-submit-3");
+
+    const task = engine.publishTask({
+      publisher,
+      title: "Submit no slots",
+      descriptionMd: "desc",
+      acceptanceCriteria: "accept",
+      deadlineUtc: "2026-04-08T00:00:00.000Z",
+      displayTimezone: "UTC",
+      slotsTotal: 1,
+      rewardPerSlot: 20,
+      allowRepeatCompletionsBySameAgent: false
+    });
+    engine.addTaskIntention(task.id, workerA);
+    engine.addTaskIntention(task.id, workerB);
+    clock.advanceMinutes(31);
+    const firstSubmission = engine.submitTask(task.id, workerA, "first");
+    engine.confirmSubmission(firstSubmission.id, publisher);
+
+    const mutableTask = engine.getTask(task.id);
+    mutableTask.status = TaskStatus.IN_PROGRESS;
+
+    const error = (() => {
+      try {
+        engine.submitTask(task.id, workerB, "second");
+        return null;
+      } catch (caught) {
+        return caught as { code?: string; statusCode?: number };
+      }
+    })();
+
+    expect(error?.code).toBe("TASK_NOT_SUBMITTABLE");
+    expect(error?.statusCode).toBe(409);
+    expect(engine.getTask(task.id).status).toBe("CLOSED");
+  });
+
+  it("closes task before returning 409 when confirm finds no payable slots", () => {
+    const { engine, clock } = makeEngine();
+    const publisher = addr("slot-confirm-1");
+    const workerA = addr("slot-confirm-2");
+    const workerB = addr("slot-confirm-3");
+
+    const task = engine.publishTask({
+      publisher,
+      title: "Confirm no slots",
+      descriptionMd: "desc",
+      acceptanceCriteria: "accept",
+      deadlineUtc: "2026-04-08T00:00:00.000Z",
+      displayTimezone: "UTC",
+      slotsTotal: 1,
+      rewardPerSlot: 20,
+      allowRepeatCompletionsBySameAgent: false
+    });
+    engine.addTaskIntention(task.id, workerA);
+    engine.addTaskIntention(task.id, workerB);
+    clock.advanceMinutes(31);
+    const submissionA = engine.submitTask(task.id, workerA, "first");
+    const submissionB = engine.submitTask(task.id, workerB, "second");
+    engine.confirmSubmission(submissionA.id, publisher);
+
+    const mutableTask = engine.getTask(task.id);
+    mutableTask.status = TaskStatus.IN_PROGRESS;
+
+    const error = (() => {
+      try {
+        engine.confirmSubmission(submissionB.id, publisher);
+        return null;
+      } catch (caught) {
+        return caught as { code?: string; statusCode?: number };
+      }
+    })();
+
+    expect(error?.code).toBe("SUBMISSION_NOT_CONFIRMABLE");
+    expect(error?.statusCode).toBe(409);
+    expect(engine.getTask(task.id).status).toBe("CLOSED");
   });
 
   it("auto-confirms stale submissions at cycle close", () => {

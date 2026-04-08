@@ -59,7 +59,7 @@
 
 ## 4. 运维说明
 
-- Server 启动时先执行 `prisma db push`，再启动 API。
+- Server 启动时会先执行争议旧状态回填（`prisma db execute --file prisma/pre_migrations/20260408_dispute_status_backfill.sql`），再执行 `prisma db push`，最后启动 API。
 - 已为 `postgres`、`redis`、`server`、`web` 与云端 `gateway` 配置健康检查。
 - 运行时服务统一开启 `restart: unless-stopped`。
 - 本地/云端模式切换时，建议在 `up` 中使用 `--remove-orphans`（或先执行 `down`），避免旧模式容器残留。

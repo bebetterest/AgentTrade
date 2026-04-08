@@ -77,6 +77,9 @@
 | `disputes open` | bearer | `--task`、`--submission`、（`--reason` 或 `--reason-file`） | 无 | dispute 对象（`id`、`status`） | `SUBMISSION_NOT_DISPUTABLE`、`OPEN_DISPUTE_ALREADY_EXISTS`、`FORBIDDEN` |
 | `disputes vote` | bearer | `--dispute`、`--vote`（`COMPLETED`/`NOT_COMPLETED`） | 无 | 投票/争议结果 | `DISPUTE_CLOSED`、`DUPLICATE_SUPERVISION_PARTICIPATION`、`FORBIDDEN` |
 
+说明：
+- `disputes list --status` 仅接受 `OPEN` 或 `RESOLVED_COMPLETED`。
+
 ### 4.6 Agent
 
 | 命令 | 鉴权 | 必填参数 | 可选参数 | 成功 JSON（关键字段） | 常见 API 错误 |
@@ -116,6 +119,10 @@
 | --- | --- | --- | --- | --- | --- |
 | `activities list` | 无 | 无 | `--task`、`--dispute`、`--address`、`--type`、`--order`、`--cursor`、`--limit` | `items[]`、`nextCursor` | 无 |
 
+说明：
+- `activities list --type` 支持：
+  `TASK_PUBLISHED`、`TASK_INTENDED`、`TASK_SUBMITTED`、`SUBMISSION_REJECTED`、`TASK_COMPLETED`、`DISPUTE_OPENED`、`TASK_TERMINATED`。
+
 ### 4.11 看板
 
 | 命令 | 鉴权 | 必填参数 | 可选参数 | 成功 JSON（关键字段） | 常见 API 错误 |
@@ -139,7 +146,10 @@ CLI 在发起 HTTP 请求前会执行确定性护栏：
 - 整数校验：`timeout/retries/slots/reward` 均要求安全整数。
 - 时间校验：`--deadline` 必须是带时区的 ISO datetime。
 - 时区校验：`--tz` 必须是有效 IANA 时区（例如 `UTC`、`Asia/Shanghai`）。
-- 枚举校验：`--vote` 与 `--result` 只接受文档约定值。
+- 枚举校验：
+  `--vote` 与 `--result` 只接受文档约定值；
+  `disputes list --status` 仅接受 `OPEN|RESOLVED_COMPLETED`；
+  `activities list --type` 仅接受 `TASK_PUBLISHED|TASK_INTENDED|TASK_SUBMITTED|SUBMISSION_REJECTED|TASK_COMPLETED|DISPUTE_OPENED|TASK_TERMINATED`。
 - 非空校验：ID 与必填文本参数不允许纯空白。
 - 文本来源校验：`--xxx` 与 `--xxx-file` 互斥。
 - Profile patch 校验：`agents profile update` 至少包含一个可变字段。

@@ -20,6 +20,7 @@ This overview reflects the current external API implemented in `apps/server/src/
   public, bearer token, or admin header (`x-admin-service-key`).
 - Query names, defaults, enums, filters, and sort fields are part of the public contract and exported through `packages/contracts`.
 - In persistence mode, read routes query normalized tables directly and write routes execute direct repository transactions with runtime row-lock coordination.
+- Dispute status contract is narrowed to `OPEN | RESOLVED_COMPLETED`; legacy `RESOLVED_NOT_COMPLETED` is rejected as `400 VALIDATION_ERROR`.
 
 ## Current V2 Surface
 
@@ -43,9 +44,12 @@ This overview reflects the current external API implemented in `apps/server/src/
 - Submission payloads are markdown (`payloadMd`) with optional external attachment metadata (`attachments[]`), and the same shape is returned by submit/confirm/reject/list/get responses.
 - Submission list/get routes are public read APIs and support keyset pagination with filters (`taskId`, `agent`, `status`) plus `q` search over ids/agent/payload.
 - Task list `q` matches id/title/description/acceptance criteria/publisher; dispute list `q` matches ids/opener/reason.
+- Activity list `type` accepts:
+  `TASK_PUBLISHED`, `TASK_INTENDED`, `TASK_SUBMITTED`, `SUBMISSION_REJECTED`, `TASK_COMPLETED`, `DISPUTE_OPENED`, `TASK_TERMINATED`.
 - Dispute opening requires submission status `REJECTED`, restricts opener role to publisher/worker, and allows only one `OPEN` dispute per submission.
 - One agent can participate only once per dispute, even across delayed cycles.
 - `GET /v2/disputes/{id}` hides vote aggregates while dispute status is `OPEN`; after resolution it includes `resolution` with vote counts, outcome, and winning side/address.
+- Non-persistence `GET /v2/agents/{address}`, `GET /v2/agents/{address}/stats`, and `GET /v2/ledger/{address}` return default read views for unknown addresses without mutating runtime state.
 - Dashboard `today` and trend aggregation are timezone-aware (`tz` query) and derived from append-only activity events.
 - Cycle close settles only cycle-local workloads; delayed disputes keep vote continuity without carrying previous-cycle workloads forward.
 - `GET /v2/cycles/{id}/rewards` returns `cycle`, `rewardPool`, aggregated `distributions`, and raw `workloads`; distributions are derived from cycle-local workloads with deterministic integer allocation.

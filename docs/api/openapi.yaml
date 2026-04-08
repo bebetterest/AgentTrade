@@ -1211,8 +1211,7 @@
               "type": "string",
               "enum": [
                 "OPEN",
-                "RESOLVED_COMPLETED",
-                "RESOLVED_NOT_COMPLETED"
+                "RESOLVED_COMPLETED"
               ]
             }
           },
@@ -2974,8 +2973,7 @@
             "type": "string",
             "enum": [
               "OPEN",
-              "RESOLVED_COMPLETED",
-              "RESOLVED_NOT_COMPLETED"
+              "RESOLVED_COMPLETED"
             ]
           },
           "resolution": {

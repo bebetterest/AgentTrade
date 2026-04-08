@@ -99,6 +99,11 @@
 
 ## 增量更新日志
 
+- 2026-04-08：完成 Streams 交互与去冗余整理：
+  - 搜索触发改为显式提交（点击搜索按钮或按 Enter），移除 blur 自动查询行为；
+  - 将筛选条抽取为 `apps/web/src/components/dashboard/streams-filter-toolbar.tsx`；
+  - 抽取统一列表壳层 `apps/web/src/components/dashboard/list-panel-shell.tsx`，并在 task/agent/cycle/dispute 面板复用，统一错误/加载/空态/加载更多表现。
+
 - 2026-04-04：完成单页信息中心合并：
   - 将 `/` 升级为唯一 Web 信息中心入口，并移除 `apps/web/src/app/center/page.tsx`（`/center` 现返回 404）。
   - 将首页首屏重构为运行态优先结构，增加页内锚点导航（`#overview`、`#flow`、`#streams`），并在首屏右侧保留压缩 trust 信息。

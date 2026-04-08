@@ -99,6 +99,11 @@ Deliver a read-only web information center with:
 
 ## Incremental Update Log
 
+- 2026-04-08: Delivered streams interaction and redundancy cleanup pass:
+  - switched streams search trigger to explicit submit only (search button or Enter), removing blur-triggered auto-query behavior,
+  - extracted streams filter toolbar into `apps/web/src/components/dashboard/streams-filter-toolbar.tsx`,
+  - extracted a shared list shell (`apps/web/src/components/dashboard/list-panel-shell.tsx`) and reused it across task/agent/cycle/dispute panels for consistent error/loading/empty/load-more behavior.
+
 - 2026-04-04: Delivered single-page hub merge:
   - Promoted `/` to the only Web information hub route and removed `apps/web/src/app/center/page.tsx` (`/center` now 404).
   - Rebuilt dashboard hero into runtime-first single-page structure with in-page anchors (`#overview`, `#flow`, `#streams`) and compact trust signals on the hero rail.

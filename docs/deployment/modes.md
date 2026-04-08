@@ -59,7 +59,7 @@ This repository supports two Docker deployment modes with configurable ports, bi
 
 ## 4. Operational Notes
 
-- Server startup applies Prisma schema with `prisma db push` before boot, then starts API.
+- Server startup first runs dispute legacy-status backfill (`prisma db execute --file prisma/pre_migrations/20260408_dispute_status_backfill.sql`), then applies schema with `prisma db push`, and finally starts API.
 - Health checks are enabled for `postgres`, `redis`, `server`, `web`, and cloud `gateway`.
 - `restart: unless-stopped` is enabled for all runtime services.
 - When switching between local/cloud stacks, use `--remove-orphans` on `up` (or run `down` first) to prevent stale-mode containers from lingering.

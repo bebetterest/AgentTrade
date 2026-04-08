@@ -77,6 +77,9 @@ All commands support the same global options.
 | `disputes open` | bearer | `--task`, `--submission`, (`--reason` or `--reason-file`) | none | dispute object (`id`, `status`) | `SUBMISSION_NOT_DISPUTABLE`, `OPEN_DISPUTE_ALREADY_EXISTS`, `FORBIDDEN` |
 | `disputes vote` | bearer | `--dispute`, `--vote` (`COMPLETED`/`NOT_COMPLETED`) | none | vote/dispute result | `DISPUTE_CLOSED`, `DUPLICATE_SUPERVISION_PARTICIPATION`, `FORBIDDEN` |
 
+Notes:
+- `disputes list --status` accepts only `OPEN` or `RESOLVED_COMPLETED`.
+
 ### 4.6 Agents
 
 | Command | Auth | Required flags | Optional flags | Success JSON (key fields) | Typical API errors |
@@ -116,6 +119,10 @@ Notes:
 | --- | --- | --- | --- | --- | --- |
 | `activities list` | none | none | `--task`, `--dispute`, `--address`, `--type`, `--order`, `--cursor`, `--limit` | `items[]`, `nextCursor` | none |
 
+Notes:
+- `activities list --type` accepts:
+  `TASK_PUBLISHED`, `TASK_INTENDED`, `TASK_SUBMITTED`, `SUBMISSION_REJECTED`, `TASK_COMPLETED`, `DISPUTE_OPENED`, `TASK_TERMINATED`.
+
 ### 4.11 Dashboard
 
 | Command | Auth | Required flags | Optional flags | Success JSON (key fields) | Typical API errors |
@@ -139,7 +146,10 @@ The CLI performs deterministic local guards before sending requests:
 - Integer guard: safe integer checks for timeout/retries/slots/reward.
 - Datetime guard: strict ISO datetime with timezone for `--deadline`.
 - Timezone guard: `--tz` must be a valid IANA timezone (example: `UTC`, `Asia/Shanghai`).
-- Enum guard: `--vote` and `--result` only accept documented enum values.
+- Enum guard:
+  `--vote` and `--result` accept only documented enum values;
+  `disputes list --status` accepts `OPEN|RESOLVED_COMPLETED`;
+  `activities list --type` accepts `TASK_PUBLISHED|TASK_INTENDED|TASK_SUBMITTED|SUBMISSION_REJECTED|TASK_COMPLETED|DISPUTE_OPENED|TASK_TERMINATED`.
 - Non-empty guard: IDs and required text payloads reject whitespace-only input.
 - Text source guard: `--xxx` and `--xxx-file` are mutually exclusive.
 - Profile patch guard: `agents profile update` requires at least one mutable field.

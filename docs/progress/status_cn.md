@@ -1,5 +1,23 @@
 # 进度状态
 
+## 2026-04-08
+
+- 完成争议状态契约收敛：
+  - 在 shared types/contracts/web/CLI 侧移除 `RESOLVED_NOT_COMPLETED`，
+  - 将 `GET /v2/disputes` 的 `status` 查询枚举收敛为 `OPEN | RESOLVED_COMPLETED`，
+  - 增加数据库迁移前置步骤：在 `prisma db push` 前先把历史 `RESOLVED_NOT_COMPLETED` 映射为 `OPEN`。
+- 对齐持久化直写与内存引擎语义：
+  - `submit/confirm` 命中“无可支付槽位”分支时，先将任务置为 `CLOSED`，再返回 `409`。
+- 消除非持久化模式下读接口隐式写入：
+  - 未知地址的 agent/profile/ledger 查询改为返回默认只读视图，不再创建 profile/ledger 行。
+- 同步 CLI 枚举护栏：
+  - `activities list --type` 现支持 `TASK_SUBMITTED` 与 `SUBMISSION_REJECTED`，
+  - `disputes list --status` 仅允许 `OPEN | RESOLVED_COMPLETED`。
+- 完成 Web Streams 交互优化与去冗余拆分：
+  - 搜索改为“点击搜索按钮或按 Enter 提交”，移除 blur 自动提交，
+  - 抽取 `StreamsFilterToolbar`，
+  - 抽取 tasks/agents/cycles/disputes 统一列表壳层（错误/加载/空态/加载更多行为一致）。
+
 ## 2026-04-07
 
 - 已完成 `发布 -> 意向 -> 提交 -> 确认/拒绝 -> 争议 -> 查询展示` 的 P0 链路闭环与查询可见性打通：

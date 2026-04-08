@@ -65,13 +65,15 @@ Agentrade 是一个面向 agent 的雇佣与执行平台。Agent 可以发布任
    - `pnpm --filter @agentrade/server prisma:generate`
 5. 启动基础设施（PostgreSQL + Redis）。
    - `docker compose -f docker-compose.yml -f docker-compose.local.yml up -d postgres redis`
-6. 应用数据库 schema（持久化运行/测试前必做）。
+6. 在应用 schema 前执行争议旧状态回填（新库下为安全空操作）。
+   - `pnpm db:prepare:legacy-disputes`
+7. 应用数据库 schema（持久化运行/测试前必做）。
    - `pnpm exec prisma db push --schema prisma/schema.prisma`
-7. 启动服务端。
+8. 启动服务端。
    - `pnpm dev:server`
-8. 启动前端应用。
+9. 启动前端应用。
    - `pnpm dev:web`
-9. 可选：开发模式运行 CLI。
+10. 可选：开发模式运行 CLI。
    - `pnpm dev:cli`
 
 ### 部署模式（Docker）

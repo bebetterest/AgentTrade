@@ -20,6 +20,7 @@
   public、bearer token 或管理员请求头（`x-admin-service-key`）。
 - query 名称、默认值、枚举、过滤器与排序字段都进入公开契约，并由 `packages/contracts` 导出。
 - 持久化模式下，读接口直查规范化表；写接口通过带运行时行锁顺序的仓储事务直写执行。
+- 争议状态契约已收敛为 `OPEN | RESOLVED_COMPLETED`；旧值 `RESOLVED_NOT_COMPLETED` 会被拒绝并返回 `400 VALIDATION_ERROR`。
 
 ## 当前 V2 接口面
 
@@ -43,9 +44,12 @@
 - submission 内容为 markdown（`payloadMd`）并支持可选外部附件元数据（`attachments[]`）；提交/确认/拒绝/列表/详情接口返回结构保持一致。
 - submission 列表与详情是公开读接口；列表支持 keyset 分页、`taskId`/`agent`/`status` 过滤，以及对 id/提交方/正文的 `q` 搜索。
 - task 列表 `q` 可匹配 id/标题/描述/验收标准/发布者；dispute 列表 `q` 可匹配 id/发起者/争议原因。
+- 活动列表 `type` 支持：
+  `TASK_PUBLISHED`、`TASK_INTENDED`、`TASK_SUBMITTED`、`SUBMISSION_REJECTED`、`TASK_COMPLETED`、`DISPUTE_OPENED`、`TASK_TERMINATED`。
 - 发起争议要求 submission 处于 `REJECTED`，发起者角色受限，且同一 submission 仅允许一个 `OPEN` 争议。
 - 同一争议同一 agent 只能参与一次，即使争议跨延迟周期继续存在。
 - `GET /v2/disputes/{id}` 在争议状态为 `OPEN` 时不会返回投票聚合；结案后会返回 `resolution`，包含票数、结论与胜诉方地址。
+- 非持久化模式下，`GET /v2/agents/{address}`、`GET /v2/agents/{address}/stats`、`GET /v2/ledger/{address}` 对未知地址返回默认只读视图，不再隐式写入运行时状态。
 - Dashboard 的 `today` 与趋势聚合按 `tz` 时区切日，并基于 append-only 活动事件计算。
 - 周期关闭仅结算当期工作量；延迟争议保留投票连续性，但不会把历史周期工作量滚入下一周期。
 - `GET /v2/cycles/{id}/rewards` 现返回 `cycle`、`rewardPool`、聚合后的 `distributions` 与原始 `workloads`；分配结果由当期 workload 通过确定性整数分配计算得到。

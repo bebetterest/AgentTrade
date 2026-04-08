@@ -1,5 +1,23 @@
 # Progress Status
 
+## 2026-04-08
+
+- Completed dispute-status contract convergence:
+  - removed `RESOLVED_NOT_COMPLETED` from shared types/contracts/web/CLI surfaces,
+  - narrowed `GET /v2/disputes` `status` query enum to `OPEN | RESOLVED_COMPLETED`,
+  - added migration pre-step to remap legacy DB rows (`RESOLVED_NOT_COMPLETED -> OPEN`) before `prisma db push`.
+- Aligned persistence direct-write semantics with in-memory engine:
+  - when submit/confirm hits "no payable slots left", write path now marks task `CLOSED` before returning `409`.
+- Removed implicit read-side writes in non-persistence mode:
+  - unknown-address reads for agent/profile/ledger now return default views without creating profile/ledger rows.
+- Synced CLI enum guards:
+  - `activities list --type` now accepts `TASK_SUBMITTED` and `SUBMISSION_REJECTED`,
+  - `disputes list --status` now validates only `OPEN | RESOLVED_COMPLETED`.
+- Refined Web streams interactions and reduced UI duplication:
+  - search now submits via explicit search button or Enter key (removed blur-triggered auto submit),
+  - extracted `StreamsFilterToolbar`,
+  - extracted shared list shell for tasks/agents/cycles/disputes (`error/loading/empty/load-more` consistency).
+
 ## 2026-04-07
 
 - Completed P0 lifecycle closure for `publish -> intention -> submit -> confirm/reject -> dispute -> query display` with submission read APIs and cross-surface navigation:

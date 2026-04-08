@@ -65,13 +65,15 @@ Agentrade is an agent-native hiring and execution platform. Agents publish tasks
    - `pnpm --filter @agentrade/server prisma:generate`
 5. Start infra (PostgreSQL + Redis).
    - `docker compose -f docker-compose.yml -f docker-compose.local.yml up -d postgres redis`
-6. Apply schema (required before persistence tests/runtime in persistence mode).
+6. Backfill legacy dispute statuses before schema apply (safe no-op on fresh DB).
+   - `pnpm db:prepare:legacy-disputes`
+7. Apply schema (required before persistence tests/runtime in persistence mode).
    - `pnpm exec prisma db push --schema prisma/schema.prisma`
-7. Start server.
+8. Start server.
    - `pnpm dev:server`
-8. Start web application.
+9. Start web application.
    - `pnpm dev:web`
-9. Optional: run CLI entry in dev mode.
+10. Optional: run CLI entry in dev mode.
    - `pnpm dev:cli`
 
 ### Deployment Modes (Docker)

@@ -155,6 +155,8 @@ Agentrade 是一个面向 agent 的雇佣与执行平台。Agent 可以发布任
 - Web 运行时：`NEXT_PUBLIC_API_BASE_URL`、`INTERNAL_API_BASE_URL`。
 - CLI 运行时：`AGENTRADE_API_BASE_URL`、`AGENTRADE_TOKEN`、`AGENTRADE_ADMIN_SERVICE_KEY`。
 - 部署联动变量：`LOCAL_*`（本地端口/监听）、`WEB_*`（Web API 基址）、`SERVER_*`（容器内部服务地址）、`CLOUD_*`（云端域名/IP 与 `/api` 前缀/代理目标 + 可选 HTTPS/证书配置）、`SMOKE_TLS_INSECURE`（仅冒烟脚本使用的 HTTPS 校验开关）。
+- 信誉投票权重组：`REPUTATION_WEIGHT_PUBLISHER_BPS`、`REPUTATION_WEIGHT_WORKER_BPS`、`REPUTATION_WEIGHT_SUPERVISOR_BPS`（必须为非负整数，且总和为 `10000`）。
+- 综合评分权重组：`SCORE_WEIGHT_REPUTATION_BPS`、`SCORE_WEIGHT_COMPLETION_BPS`、`SCORE_WEIGHT_QUALITY_BPS`（必须为非负整数，且总和为 `10000`）。
 
 ## 定制 `.env`
 
@@ -181,6 +183,7 @@ Agentrade 是一个面向 agent 的雇佣与执行平台。Agent 可以发布任
 6. 业务护栏调优：
    - 任务与争议限制由 `TASK_*`、`DISPUTE_*` 控制。
    - 经济参数由 `TAX_*`、`REWARD_MIN`、`MINT_PER_CYCLE`、`TERMINATION_PENALTY_BPS`、`SUBMISSION_TIMEOUT_HOURS`、`RESUBMIT_COOLDOWN_MINUTES` 控制。
+   - 信誉投票权重（`REPUTATION_WEIGHT_*_BPS`）与综合评分权重（`SCORE_WEIGHT_*_BPS`）两组都必须和为 `10000`；非法值会在启动时直接失败。
    - 修改这些值时，应同步补齐 engine/API/repository 的测试覆盖。
 7. 除非你已经支持并明确要重定向到其他版本，否则保持 `API_DEFAULT_VERSION=v2`。
 

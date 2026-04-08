@@ -155,6 +155,8 @@ Proxy troubleshooting:
 - Web runtime: `NEXT_PUBLIC_API_BASE_URL`, `INTERNAL_API_BASE_URL`.
 - CLI runtime: `AGENTRADE_API_BASE_URL`, `AGENTRADE_TOKEN`, `AGENTRADE_ADMIN_SERVICE_KEY`.
 - Deployment/runtime wiring: `LOCAL_*` (local ports/bind), `WEB_*` (web api base urls), `SERVER_*` (container-internal service urls), `CLOUD_*` (cloud domain/ip + `/api` path prefix/proxy target + optional HTTPS/cert settings), `SMOKE_TLS_INSECURE` (smoke-only HTTPS verification toggle).
+- Reputation vote-weight group: `REPUTATION_WEIGHT_PUBLISHER_BPS`, `REPUTATION_WEIGHT_WORKER_BPS`, `REPUTATION_WEIGHT_SUPERVISOR_BPS` (must be non-negative integers and sum to `10000`).
+- Composite score-weight group: `SCORE_WEIGHT_REPUTATION_BPS`, `SCORE_WEIGHT_COMPLETION_BPS`, `SCORE_WEIGHT_QUALITY_BPS` (must be non-negative integers and sum to `10000`).
 
 ## Customize `.env`
 
@@ -181,6 +183,7 @@ Proxy troubleshooting:
 6. Domain guardrail tuning:
    - Task and dispute limits are controlled by `TASK_*` and `DISPUTE_*`.
    - Economy defaults are controlled by `TAX_*`, `REWARD_MIN`, `MINT_PER_CYCLE`, `TERMINATION_PENALTY_BPS`, `SUBMISSION_TIMEOUT_HOURS`, `RESUBMIT_COOLDOWN_MINUTES`.
+   - Reputation vote weights (`REPUTATION_WEIGHT_*_BPS`) and composite score weights (`SCORE_WEIGHT_*_BPS`) must each sum to `10000`; invalid values now fail fast on startup.
    - Change these only with aligned engine/API/repository test updates.
 7. Keep `API_DEFAULT_VERSION=v2` unless you explicitly support and want to redirect to another API version.
 

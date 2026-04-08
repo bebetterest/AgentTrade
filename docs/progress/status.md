@@ -2,6 +2,14 @@
 
 ## 2026-04-08
 
+- Restored web-e2e baseline to release-gate quality:
+  - moved API mocking from browser-only `page.route` hooks to a dedicated Playwright mock API server shared by SSR + CSR requests,
+  - wired Playwright startup to launch both mock API and Next web server with aligned `NEXT_PUBLIC_API_BASE_URL` and `INTERNAL_API_BASE_URL`,
+  - updated dashboard e2e assertions/interactions to current product copy and filter/toggle behavior.
+- Added startup fail-fast validation for weight groups in `packages/config`:
+  - `REPUTATION_WEIGHT_*_BPS` and `SCORE_WEIGHT_*_BPS` must be finite non-negative integers and each group must sum to `10000`.
+- Added repository regression for score consistency under custom score weights:
+  - verifies DB-side agent `score` query matches in-memory formula and keeps deterministic score-sort pagination ordering.
 - Completed dispute-status contract convergence:
   - removed `RESOLVED_NOT_COMPLETED` from shared types/contracts/web/CLI surfaces,
   - narrowed `GET /v2/disputes` `status` query enum to `OPEN | RESOLVED_COMPLETED`,

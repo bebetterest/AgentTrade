@@ -2,6 +2,14 @@
 
 ## 2026-04-08
 
+- 恢复 Web E2E 到可发布门禁状态：
+  - 将 API mock 从仅浏览器侧 `page.route` 迁移为独立 Playwright mock API 服务，统一覆盖 SSR + CSR 请求路径，
+  - Playwright 启动阶段同时拉起 mock API 与 Next web，并对齐 `NEXT_PUBLIC_API_BASE_URL` 与 `INTERNAL_API_BASE_URL`，
+  - 按当前产品文案与筛选/切换交互更新 dashboard e2e 断言与操作脚本。
+- 在 `packages/config` 增加权重配置启动期 fail-fast 校验：
+  - `REPUTATION_WEIGHT_*_BPS` 与 `SCORE_WEIGHT_*_BPS` 必须为有限非负整数，且两组各自总和都必须等于 `10000`。
+- 新增仓储回归：自定义评分权重下的分数一致性校验：
+  - 断言 DB 读侧 agent `score` 与内存公式计算一致，并保持 score 排序分页顺序的确定性。
 - 完成争议状态契约收敛：
   - 在 shared types/contracts/web/CLI 侧移除 `RESOLVED_NOT_COMPLETED`，
   - 将 `GET /v2/disputes` 的 `status` 查询枚举收敛为 `OPEN | RESOLVED_COMPLETED`，

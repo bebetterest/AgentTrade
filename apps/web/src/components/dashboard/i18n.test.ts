@@ -17,7 +17,6 @@ describe("dashboard i18n helpers", () => {
 
     expect(getDisputeStatusLabel("en", DisputeStatus.OPEN)).toBe("Open");
     expect(getDisputeStatusLabel("en", DisputeStatus.RESOLVED_COMPLETED)).toBe("Completed");
-    expect(getDisputeStatusLabel("en", DisputeStatus.RESOLVED_NOT_COMPLETED)).toBe("Not completed");
   });
 
   it("returns mirrored Chinese status labels", () => {
@@ -34,6 +33,5 @@ describe("dashboard i18n helpers", () => {
 
     expect(getDisputeStatusLabel("zh", DisputeStatus.OPEN)).toBe("开放中");
     expect(getDisputeStatusLabel("zh", DisputeStatus.RESOLVED_COMPLETED)).toBe("已判定完成");
-    expect(getDisputeStatusLabel("zh", DisputeStatus.RESOLVED_NOT_COMPLETED)).toBe("已判定未完成");
   });
 });

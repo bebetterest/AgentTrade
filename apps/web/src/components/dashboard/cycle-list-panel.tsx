@@ -5,6 +5,7 @@ import type { LoadErrorKind } from "../../lib/load-error";
 import { withRateLimitMessage } from "../../lib/load-error";
 import { getCycleStatusLabel, getDashboardCopy } from "./i18n";
 import { buildStateChipClass } from "./shared";
+import { ListPanelShell } from "./list-panel-shell";
 
 interface CycleListPanelProps {
   locale: SupportedLocale;
@@ -48,52 +49,49 @@ export const CycleListPanel = ({
 
   return (
     <>
-      {cycleLoadError ? (
-        <div className="inline-error" data-testid="cycles-error">
-          <p className="empty-line">
-            {cycleLoadErrorMessage}
-          </p>
-          <button type="button" className="link-btn" onClick={onRefresh}>
-            {copy.common.retry}
-          </button>
+      <ListPanelShell
+        loadError={cycleLoadError}
+        loadErrorMessage={cycleLoadErrorMessage}
+        errorTestId="cycles-error"
+        onRefresh={onRefresh}
+        retryLabel={copy.common.retry}
+        loading={loadingCycles}
+        loadingLabel={copy.common.loading}
+        itemCount={cycles.length}
+        emptyTestId="cycles-empty"
+        emptyLabel={copy.cycleList.empty}
+        sentinelRef={cycleSentinelRef}
+        loadingMore={loadingMoreCycles}
+        loadingMoreLabel={copy.common.loadingMore}
+        nextCursor={nextCursor}
+        loadMoreTestId="load-more-cycles"
+        loadMoreLabel={copy.cycleList.loadMore}
+        onLoadMore={onLoadMore}
+      >
+        <div className="masonry-grid">
+          {orderedCycles.map((cycle) => (
+            <article key={cycle.id} className="masonry-card" data-testid="cycle-card">
+              <div className="card-kicker">
+                <span className={buildStateChipClass(cycle.status)}>{getCycleStatusLabel(locale, cycle.status)}</span>
+                <span className="muted card-id">{cycle.id}</span>
+              </div>
+              <h3>{cycle.id}</h3>
+              <p className="card-primary-number">{cycle.mintedAmount} AGC</p>
+              <div className="card-meta">
+                <p><strong>{copy.cycleList.started}:</strong> {formatDateTime(cycle.startedAt, locale, timeZone)}</p>
+                <p><strong>{locale === "zh" ? "状态" : "Status"}:</strong> {getCycleStatusLabel(locale, cycle.status)}</p>
+                <p><strong>{copy.cycleList.tax}:</strong> {cycle.taxPool} AGC</p>
+                <p><strong>{copy.cycleList.penalty}:</strong> {cycle.penaltyPool} AGC</p>
+              </div>
+              <div className="card-actions">
+                <button type="button" className="link-btn" data-testid="cycle-detail-trigger" onClick={() => onOpenCycleDetail(cycle.id)}>
+                  {copy.common.details}
+                </button>
+              </div>
+            </article>
+          ))}
         </div>
-      ) : null}
-      {loadingCycles ? <p className="empty-line">{copy.common.loading}</p> : null}
-      <div className="masonry-grid">
-        {orderedCycles.map((cycle) => (
-          <article key={cycle.id} className="masonry-card" data-testid="cycle-card">
-            <div className="card-kicker">
-              <span className={buildStateChipClass(cycle.status)}>{getCycleStatusLabel(locale, cycle.status)}</span>
-              <span className="muted card-id">{cycle.id}</span>
-            </div>
-            <h3>{cycle.id}</h3>
-            <p className="card-primary-number">{cycle.mintedAmount} AGC</p>
-            <div className="card-meta">
-              <p><strong>{copy.cycleList.started}:</strong> {formatDateTime(cycle.startedAt, locale, timeZone)}</p>
-              <p><strong>{locale === "zh" ? "状态" : "Status"}:</strong> {getCycleStatusLabel(locale, cycle.status)}</p>
-              <p><strong>{copy.cycleList.tax}:</strong> {cycle.taxPool} AGC</p>
-              <p><strong>{copy.cycleList.penalty}:</strong> {cycle.penaltyPool} AGC</p>
-            </div>
-            <div className="card-actions">
-              <button type="button" className="link-btn" data-testid="cycle-detail-trigger" onClick={() => onOpenCycleDetail(cycle.id)}>
-                {copy.common.details}
-              </button>
-            </div>
-          </article>
-        ))}
-      </div>
-      {cycles.length === 0 && !loadingCycles ? (
-        <p className="empty-line" data-testid="cycles-empty">
-          {copy.cycleList.empty}
-        </p>
-      ) : null}
-      <div ref={cycleSentinelRef} className="sentinel" />
-      {loadingMoreCycles ? <p className="empty-line">{copy.common.loadingMore}</p> : null}
-      {nextCursor && !loadingMoreCycles ? (
-        <button type="button" className="action-btn more-btn" data-testid="load-more-cycles" onClick={onLoadMore}>
-          {copy.cycleList.loadMore}
-        </button>
-      ) : null}
+      </ListPanelShell>
     </>
   );
 };

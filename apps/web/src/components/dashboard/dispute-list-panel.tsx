@@ -6,6 +6,7 @@ import { withRateLimitMessage } from "../../lib/load-error";
 import { renderSafeMarkdown } from "../../lib/markdown";
 import { getDashboardCopy, getDisputeStatusLabel } from "./i18n";
 import { buildStateChipClass } from "./shared";
+import { ListPanelShell } from "./list-panel-shell";
 
 interface DisputeListPanelProps {
   locale: SupportedLocale;
@@ -72,8 +73,7 @@ export const DisputeListPanel = ({
   const disputeLoadErrorMessage = withRateLimitMessage(locale, t.loadError, disputeLoadErrorKind);
   const statuses = [
     DisputeStatus.OPEN,
-    DisputeStatus.RESOLVED_COMPLETED,
-    DisputeStatus.RESOLVED_NOT_COMPLETED
+    DisputeStatus.RESOLVED_COMPLETED
   ] as const;
 
   return (
@@ -100,49 +100,48 @@ export const DisputeListPanel = ({
         ))}
       </div>
 
-      {disputeLoadError ? (
-        <div className="inline-error" data-testid="disputes-error">
-          <p className="empty-line">{disputeLoadErrorMessage}</p>
-          <button type="button" className="link-btn" onClick={onRefresh}>
-            {dashboardCopy.common.retry}
-          </button>
+      <ListPanelShell
+        loadError={disputeLoadError}
+        loadErrorMessage={disputeLoadErrorMessage}
+        errorTestId="disputes-error"
+        onRefresh={onRefresh}
+        retryLabel={dashboardCopy.common.retry}
+        loading={loadingDisputes}
+        loadingLabel={dashboardCopy.common.loading}
+        itemCount={disputes.length}
+        emptyTestId="disputes-empty"
+        emptyLabel={hasDisputeFilters ? t.emptyFiltered : t.empty}
+        sentinelRef={disputeSentinelRef}
+        loadingMore={loadingMoreDisputes}
+        loadingMoreLabel={dashboardCopy.common.loadingMore}
+        nextCursor={nextCursor}
+        loadMoreTestId="load-more-disputes"
+        loadMoreLabel={t.loadMore}
+        onLoadMore={onLoadMore}
+      >
+        <div className="masonry-grid">
+          {disputes.map((dispute) => (
+            <article key={dispute.id} className="masonry-card" data-testid="dispute-card">
+              <div className="card-kicker">
+                <span className={buildStateChipClass(dispute.status)}>{getDisputeStatusLabel(locale, dispute.status)}</span>
+                <span className="muted card-id">{dispute.id}</span>
+              </div>
+              <div className="markdown markdown--compact">{renderSafeMarkdown(dispute.reasonMd)}</div>
+              <div className="card-meta">
+                <p><strong>{t.task}:</strong> {dispute.taskId}</p>
+                <p><strong>{t.opener}:</strong> {shortAddress(dispute.opener)}</p>
+                <p><strong>{t.created}:</strong> {formatDateTime(dispute.createdAt, locale, timeZone)}</p>
+                <p><strong>{locale === "zh" ? "更新时间" : "Updated"}:</strong> {formatDateTime(dispute.updatedAt, locale, timeZone)}</p>
+              </div>
+              <div className="card-actions">
+                <button type="button" className="link-btn" data-testid="dispute-detail-trigger" onClick={() => onOpenDisputeDetail(dispute.id)}>
+                  {dashboardCopy.common.details}
+                </button>
+              </div>
+            </article>
+          ))}
         </div>
-      ) : null}
-      {loadingDisputes ? <p className="empty-line">{dashboardCopy.common.loading}</p> : null}
-      <div className="masonry-grid">
-        {disputes.map((dispute) => (
-          <article key={dispute.id} className="masonry-card" data-testid="dispute-card">
-            <div className="card-kicker">
-              <span className={buildStateChipClass(dispute.status)}>{getDisputeStatusLabel(locale, dispute.status)}</span>
-              <span className="muted card-id">{dispute.id}</span>
-            </div>
-            <div className="markdown markdown--compact">{renderSafeMarkdown(dispute.reasonMd)}</div>
-            <div className="card-meta">
-              <p><strong>{t.task}:</strong> {dispute.taskId}</p>
-              <p><strong>{t.opener}:</strong> {shortAddress(dispute.opener)}</p>
-              <p><strong>{t.created}:</strong> {formatDateTime(dispute.createdAt, locale, timeZone)}</p>
-              <p><strong>{locale === "zh" ? "更新时间" : "Updated"}:</strong> {formatDateTime(dispute.updatedAt, locale, timeZone)}</p>
-            </div>
-            <div className="card-actions">
-              <button type="button" className="link-btn" data-testid="dispute-detail-trigger" onClick={() => onOpenDisputeDetail(dispute.id)}>
-                {dashboardCopy.common.details}
-              </button>
-            </div>
-          </article>
-        ))}
-      </div>
-      {disputes.length === 0 && !loadingDisputes ? (
-        <p className="empty-line" data-testid="disputes-empty">
-          {hasDisputeFilters ? t.emptyFiltered : t.empty}
-        </p>
-      ) : null}
-      <div ref={disputeSentinelRef} className="sentinel" />
-      {loadingMoreDisputes ? <p className="empty-line">{dashboardCopy.common.loadingMore}</p> : null}
-      {nextCursor && !loadingMoreDisputes ? (
-        <button type="button" className="action-btn more-btn" data-testid="load-more-disputes" onClick={onLoadMore}>
-          {t.loadMore}
-        </button>
-      ) : null}
+      </ListPanelShell>
     </>
   );
 };

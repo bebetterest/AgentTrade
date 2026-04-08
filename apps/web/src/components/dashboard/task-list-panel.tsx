@@ -5,6 +5,7 @@ import type { LoadErrorKind } from "../../lib/load-error";
 import { withRateLimitMessage } from "../../lib/load-error";
 import { getDashboardCopy, getTaskStatusLabel } from "./i18n";
 import { buildStateChipClass, TASK_STATUS_FILTERS } from "./shared";
+import { ListPanelShell } from "./list-panel-shell";
 
 interface TaskListPanelProps {
   locale: SupportedLocale;
@@ -72,53 +73,50 @@ export const TaskListPanel = ({
         ))}
       </div>
 
-      {taskLoadError ? (
-        <div className="inline-error" data-testid="tasks-error">
-          <p className="empty-line">
-            {taskLoadErrorMessage}
-          </p>
-          <button type="button" className="link-btn" onClick={onRefresh}>
-            {copy.common.retry}
-          </button>
+      <ListPanelShell
+        loadError={taskLoadError}
+        loadErrorMessage={taskLoadErrorMessage}
+        errorTestId="tasks-error"
+        onRefresh={onRefresh}
+        retryLabel={copy.common.retry}
+        loading={loadingTasks}
+        loadingLabel={copy.common.loading}
+        itemCount={tasks.length}
+        emptyTestId="tasks-empty"
+        emptyLabel={hasTaskFilters ? copy.taskList.emptyFiltered : copy.taskList.empty}
+        sentinelRef={taskSentinelRef}
+        loadingMore={loadingMoreTasks}
+        loadingMoreLabel={copy.common.loadingMore}
+        nextCursor={nextCursor}
+        loadMoreTestId="load-more-tasks"
+        loadMoreLabel={copy.taskList.loadMore}
+        onLoadMore={onLoadMore}
+      >
+        <div className="masonry-grid">
+          {tasks.map((task) => (
+            <article key={task.id} className="masonry-card" data-testid="task-card">
+              <div className="card-kicker">
+                <span className={buildStateChipClass(task.status)}>{getTaskStatusLabel(locale, task.status)}</span>
+                <span className="muted card-id">{task.id}</span>
+              </div>
+              <h3>{task.title}</h3>
+              <p className="card-primary-number">{task.rewardPerSlot} AGC</p>
+              <div className="card-meta">
+                <p><strong>{locale === "zh" ? "发布者" : "Publisher"}:</strong> {shortAddress(task.publisher)}</p>
+                <p><strong>{copy.taskList.slots}:</strong> {task.completedAgents.length}/{task.slotsTotal}</p>
+                <p><strong>{copy.taskDetail.intended}:</strong> {task.intentCount}</p>
+                <p><strong>{copy.taskDetail.competition}:</strong> {(task.competitionRatio * 100).toFixed(0)}%</p>
+                <p><strong>{copy.taskList.deadline}:</strong> {formatDateTime(task.deadlineUtc, locale, timeZone)}</p>
+              </div>
+              <div className="card-actions">
+                <button type="button" className="link-btn" data-testid="task-detail-trigger" onClick={() => onOpenTaskDetail(task.id)}>
+                  {copy.common.details}
+                </button>
+              </div>
+            </article>
+          ))}
         </div>
-      ) : null}
-      {loadingTasks ? <p className="empty-line">{copy.common.loading}</p> : null}
-      <div className="masonry-grid">
-        {tasks.map((task) => (
-          <article key={task.id} className="masonry-card" data-testid="task-card">
-            <div className="card-kicker">
-              <span className={buildStateChipClass(task.status)}>{getTaskStatusLabel(locale, task.status)}</span>
-              <span className="muted card-id">{task.id}</span>
-            </div>
-            <h3>{task.title}</h3>
-            <p className="card-primary-number">{task.rewardPerSlot} AGC</p>
-            <div className="card-meta">
-              <p><strong>{locale === "zh" ? "发布者" : "Publisher"}:</strong> {shortAddress(task.publisher)}</p>
-              <p><strong>{copy.taskList.slots}:</strong> {task.completedAgents.length}/{task.slotsTotal}</p>
-              <p><strong>{copy.taskDetail.intended}:</strong> {task.intentCount}</p>
-              <p><strong>{copy.taskDetail.competition}:</strong> {(task.competitionRatio * 100).toFixed(0)}%</p>
-              <p><strong>{copy.taskList.deadline}:</strong> {formatDateTime(task.deadlineUtc, locale, timeZone)}</p>
-            </div>
-            <div className="card-actions">
-              <button type="button" className="link-btn" data-testid="task-detail-trigger" onClick={() => onOpenTaskDetail(task.id)}>
-                {copy.common.details}
-              </button>
-            </div>
-          </article>
-        ))}
-      </div>
-      {tasks.length === 0 && !loadingTasks ? (
-        <p className="empty-line" data-testid="tasks-empty">
-          {hasTaskFilters ? copy.taskList.emptyFiltered : copy.taskList.empty}
-        </p>
-      ) : null}
-      <div ref={taskSentinelRef} className="sentinel" />
-      {loadingMoreTasks ? <p className="empty-line">{copy.common.loadingMore}</p> : null}
-      {nextCursor && !loadingMoreTasks ? (
-        <button type="button" className="action-btn more-btn" data-testid="load-more-tasks" onClick={onLoadMore}>
-          {copy.taskList.loadMore}
-        </button>
-      ) : null}
+      </ListPanelShell>
     </>
   );
 };

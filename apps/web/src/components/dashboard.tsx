@@ -65,7 +65,6 @@ interface DashboardProps {
 }
 
 const REFRESH_FEED_LIMIT = 12;
-const SEARCH_DEBOUNCE_MS = 320;
 const TASK_STATUS_COUNT_PREFETCH_LIMIT = 100;
 
 const buildTaskStatusCounts = (items: Task[]): Record<string, number> =>
@@ -609,18 +608,6 @@ export const Dashboard = ({
       setMetricsLoaded(true);
     }
   }, [section]);
-
-  useEffect(() => {
-    if (searchDraft === q) {
-      return;
-    }
-    const timer = setTimeout(() => {
-      updateQuery({ q: searchDraft });
-    }, SEARCH_DEBOUNCE_MS);
-    return () => {
-      clearTimeout(timer);
-    };
-  }, [searchDraft, q, updateQuery]);
 
   useEffect(() => {
     const timer = setInterval(() => {

@@ -54,6 +54,7 @@ interface DashboardCopy {
     refreshing: string;
     overviewError: string;
     search: string;
+    searchSubmit: string;
     searchPlaceholder: string;
     searchHint: string;
     clear: string;
@@ -87,7 +88,6 @@ interface DashboardCopy {
     tabDisputes: string;
     openOnly: string;
     resolvedCompleted: string;
-    resolvedNotCompleted: string;
     listingsTitle: string;
   };
   activityFeed: {
@@ -278,6 +278,7 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       refreshing: "Refreshing...",
       overviewError: "Overview modules failed to load. Try refresh.",
       search: "Search",
+      searchSubmit: "Search",
       searchPlaceholder: "Search title, description, address, dispute id...",
       searchHint: "Supports matching task descriptions, agent bios, and dispute reasons.",
       clear: "Clear",
@@ -311,7 +312,6 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       tabDisputes: "Disputes",
       openOnly: "Open",
       resolvedCompleted: "Resolved completed",
-      resolvedNotCompleted: "Resolved not completed",
       listingsTitle: "Marketplace Entities"
     },
     activityFeed: {
@@ -459,8 +459,7 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
     },
     disputeStatuses: {
       [DisputeStatus.OPEN]: "Open",
-      [DisputeStatus.RESOLVED_COMPLETED]: "Completed",
-      [DisputeStatus.RESOLVED_NOT_COMPLETED]: "Not completed"
+      [DisputeStatus.RESOLVED_COMPLETED]: "Completed"
     },
     events: {
       [ActivityEventType.TASK_PUBLISHED]: "Task Published",
@@ -523,6 +522,7 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       refreshing: "刷新中...",
       overviewError: "概览模块拉取失败，请重试。",
       search: "搜索",
+      searchSubmit: "搜索",
       searchPlaceholder: "搜索标题、描述、地址、争议 ID...",
       searchHint: "支持匹配任务描述、代理人 Bio、争议原因。",
       clear: "清除",
@@ -556,7 +556,6 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       tabDisputes: "争议",
       openOnly: "开放中",
       resolvedCompleted: "已判定完成",
-      resolvedNotCompleted: "已判定未完成",
       listingsTitle: "市场实体"
     },
     activityFeed: {
@@ -704,8 +703,7 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
     },
     disputeStatuses: {
       [DisputeStatus.OPEN]: "开放中",
-      [DisputeStatus.RESOLVED_COMPLETED]: "已判定完成",
-      [DisputeStatus.RESOLVED_NOT_COMPLETED]: "已判定未完成"
+      [DisputeStatus.RESOLVED_COMPLETED]: "已判定完成"
     },
     events: {
       [ActivityEventType.TASK_PUBLISHED]: "发布任务",

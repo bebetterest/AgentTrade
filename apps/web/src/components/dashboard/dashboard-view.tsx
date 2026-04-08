@@ -18,9 +18,10 @@ import { DisputeListPanel } from "./dispute-list-panel";
 import { FlowDiagram } from "./flow-diagram";
 import { MethodologyPanels } from "./methodology-panels";
 import { MetricsPanels } from "./metrics-panels";
+import { StreamsFilterToolbar } from "./streams-filter-toolbar";
 import { TaskListPanel } from "./task-list-panel";
-import { getCycleStatusLabel, getDashboardCopy, getTaskStatusLabel } from "./i18n";
-import { getDashboardTabNavigationTarget, TASK_STATUS_FILTERS } from "./shared";
+import { getCycleStatusLabel, getDashboardCopy } from "./i18n";
+import { getDashboardTabNavigationTarget } from "./shared";
 import { formatDateTime } from "../../lib/dashboard-format";
 import type { DashboardSection, DashboardTab } from "../../lib/dashboard-query";
 import { withRateLimitMessage, type LoadErrorKind } from "../../lib/load-error";
@@ -233,7 +234,6 @@ export const DashboardView = ({
     }
   ];
   const hasAdvancedFilters = tab !== "cycles";
-  const sortOrderValue = tab === "tasks" ? taskOrder : tab === "users" ? agentOrder : disputeOrder;
 
   useEffect(() => {
     if (tab === "cycles") {
@@ -517,148 +517,28 @@ export const DashboardView = ({
               </div>
 
               {tab !== "cycles" ? (
-                <div className="filter-toolbar">
-                  <div className="filter-row filter-row--search">
-                    <label className="sr-only" htmlFor="dashboard-search-input">
-                      {copy.page.search}
-                    </label>
-                    <input
-                      id="dashboard-search-input"
-                      data-testid="search-input"
-                      value={searchDraft}
-                      onChange={(event) => setSearchDraft(event.target.value)}
-                      onBlur={commitSearch}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          commitSearch();
-                        }
-                      }}
-                      placeholder={copy.page.searchPlaceholder}
-                    />
-                    {searchDraft.length > 0 ? (
-                      <button type="button" className="link-btn" data-testid="clear-search-button" onClick={clearSearch}>
-                        {copy.page.clear}
-                      </button>
-                    ) : null}
-                    {hasAdvancedFilters ? (
-                      <button
-                        type="button"
-                        className="link-btn"
-                        data-testid="toggle-filters"
-                        aria-expanded={showAdvancedFilters}
-                        onClick={() => setShowAdvancedFilters((prev) => !prev)}
-                      >
-                        {copy.page.filterOptions}: {showAdvancedFilters ? copy.page.hideFilters : copy.page.showFilters}
-                      </button>
-                    ) : null}
-                  </div>
-                  <p className="sub filter-search-hint">{copy.page.searchHint}</p>
-                  <div className="filter-row filter-row--primary">
-                    {tab === "tasks" ? (
-                      <select
-                        data-testid="task-sort-select"
-                        value={taskSort}
-                        onChange={(event) => updateQuery({ taskSort: event.target.value })}
-                      >
-                        <option value="latest">{copy.page.latest}</option>
-                        <option value="created">{copy.page.created}</option>
-                        <option value="deadline">{copy.page.deadline}</option>
-                        <option value="reward">{copy.page.reward}</option>
-                      </select>
-                    ) : tab === "users" ? (
-                      <>
-                        <label className={`switch-line switch-line--toggle ${activeOnly ? "active" : ""}`}>
-                          <input
-                            className="switch-line__input"
-                            data-testid="active-only-checkbox"
-                            type="checkbox"
-                            checked={activeOnly}
-                            onChange={(event) => updateQuery({ activeOnly: event.target.checked ? "true" : "false" })}
-                          />
-                          <span className="switch-line__slider" aria-hidden="true" />
-                          <span className="switch-line__text">{copy.page.activeOnly}</span>
-                        </label>
-                        <select
-                          data-testid="agent-sort-select"
-                          value={agentSort}
-                          onChange={(event) => updateQuery({ agentSort: event.target.value })}
-                        >
-                          <option value="latest">{copy.page.latest}</option>
-                          <option value="score">{copy.page.score}</option>
-                          <option value="reputation">{copy.page.reputation}</option>
-                          <option value="completed">{copy.page.completed}</option>
-                          <option value="published">{copy.page.published}</option>
-                          <option value="intented">{copy.page.intended}</option>
-                        </select>
-                      </>
-                    ) : (
-                      <select
-                        data-testid="dispute-sort-select"
-                        value={disputeSort}
-                        onChange={(event) => updateQuery({ disputeSort: event.target.value })}
-                      >
-                        <option value="latest">{copy.page.latest}</option>
-                        <option value="created">{copy.page.created}</option>
-                      </select>
-                    )}
-                    <select
-                      data-testid="sort-order-select"
-                      value={sortOrderValue}
-                      onChange={(event) => updateQuery(
-                        tab === "tasks"
-                          ? { taskOrder: event.target.value }
-                          : tab === "users"
-                            ? { agentOrder: event.target.value }
-                            : { disputeOrder: event.target.value }
-                      )}
-                    >
-                      <option value="desc">{copy.page.orderDesc}</option>
-                      <option value="asc">{copy.page.orderAsc}</option>
-                    </select>
-                  </div>
-                  {hasAdvancedFilters && showAdvancedFilters ? (
-                    <>
-                      <div className="filter-row filter-row--controls">
-                        {tab === "tasks" ? (
-                          <>
-                            <select
-                              data-testid="task-status-select"
-                              value={taskStatus ?? ""}
-                              onChange={(event) => updateQuery({ taskStatus: event.target.value || null })}
-                            >
-                              <option value="">{copy.page.allStatus}</option>
-                              {TASK_STATUS_FILTERS.map((status) => (
-                                <option key={status} value={status}>{getTaskStatusLabel(locale, status)}</option>
-                              ))}
-                            </select>
-                          </>
-                        ) : tab === "users" ? (
-                          <p className="muted">
-                            {locale === "zh" ? "常用排序和活跃筛选已前置到上方。" : "Common sort and active filters are available in the row above."}
-                          </p>
-                        ) : (
-                          <>
-                            <select
-                              data-testid="dispute-status-select"
-                              value={disputeStatus ?? ""}
-                              onChange={(event) => updateQuery({ disputeStatus: event.target.value || null })}
-                            >
-                              <option value="">{copy.page.allStatus}</option>
-                              <option value="OPEN">{copy.page.openOnly}</option>
-                              <option value="RESOLVED_COMPLETED">{copy.page.resolvedCompleted}</option>
-                              <option value="RESOLVED_NOT_COMPLETED">{copy.page.resolvedNotCompleted}</option>
-                            </select>
-                          </>
-                        )}
-                      </div>
-                    </>
-                  ) : null}
-                  <div className="filter-row filter-row--actions">
-                    <button type="button" className="action-btn" data-testid="reset-filters" onClick={resetFilters}>
-                      {copy.page.reset}
-                    </button>
-                  </div>
-                </div>
+                <StreamsFilterToolbar
+                  locale={locale}
+                  tab={tab}
+                  searchDraft={searchDraft}
+                  setSearchDraft={setSearchDraft}
+                  onCommitSearch={commitSearch}
+                  onClearSearch={clearSearch}
+                  hasAdvancedFilters={hasAdvancedFilters}
+                  showAdvancedFilters={showAdvancedFilters}
+                  onToggleAdvancedFilters={() => setShowAdvancedFilters((prev) => !prev)}
+                  taskSort={taskSort}
+                  taskOrder={taskOrder}
+                  agentSort={agentSort}
+                  agentOrder={agentOrder}
+                  disputeStatus={disputeStatus}
+                  disputeSort={disputeSort}
+                  disputeOrder={disputeOrder}
+                  activeOnly={activeOnly}
+                  taskStatus={taskStatus}
+                  onUpdateQuery={updateQuery}
+                  onResetFilters={resetFilters}
+                />
               ) : null}
 
               <div className="stream-panel" id={panelId} role="tabpanel" aria-labelledby={`stream-tab-${tab}`}>

@@ -841,12 +841,20 @@ test("task list supports search/filter/sort and load more", async ({ page }) => 
   await expect(page.getByTestId("task-card").filter({ hasText: "Gamma Summary Draft" })).toContainText("Closed");
 
   await page.getByTestId("search-input").fill("alpha");
+  await expect(page.getByTestId("task-card")).toHaveCount(3);
+  await page.getByTestId("search-submit-button").click();
   await expect(page.getByTestId("task-card")).toHaveCount(1);
   await expect(page.getByText("Alpha Content Review")).toBeVisible();
 
   await page.getByTestId("clear-search-button").click();
   await expect(page.getByTestId("search-input")).toHaveValue("");
   await expect(page.getByText("Beta Dataset Labeling")).toBeVisible();
+
+  await page.getByTestId("search-input").fill("beta");
+  await page.getByTestId("search-input").press("Enter");
+  await expect(page.getByTestId("task-card")).toHaveCount(1);
+  await expect(page.getByText("Beta Dataset Labeling")).toBeVisible();
+  await page.getByTestId("clear-search-button").click();
 
   await expandAdvancedFilters(page);
   await page.getByTestId("task-status-select").selectOption("OPEN");

@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import type { ActivityEvent, AgentProfile, LedgerBalance } from "@agentrade/types";
+import type { ActivityEvent, AgentProfile, LedgerBalance, Submission } from "@agentrade/types";
 import type { SupportedLocale } from "@agentrade/i18n";
-import { fetchActivities } from "../../lib/api";
+import { fetchActivities, fetchSubmissions } from "../../lib/api";
 import { formatDateTime, shortAddress } from "../../lib/dashboard-format";
 import { getLoadErrorKind, withRateLimitMessage, type LoadErrorKind } from "../../lib/load-error";
 import { renderSafeMarkdown } from "../../lib/markdown";
@@ -16,8 +16,11 @@ interface AgentDetailContentProps {
   timeZone: string;
   profile: AgentProfile;
   ledger: LedgerBalance | null;
+  submissions?: Submission[];
   activities: ActivityEvent[];
+  initialSubmissionsCursor?: string | null;
   initialActivitiesCursor?: string | null;
+  getSubmissionHref?: (submissionId: string) => string;
   getTaskHref?: (taskId: string) => string;
   getDisputeHref?: (disputeId: string) => string;
 }
@@ -36,13 +39,34 @@ const renderDispute = (disputeId: string, getDisputeHref: ((disputeId: string) =
   </Link>
 );
 
+const renderSubmission = (
+  submissionId: string,
+  getSubmissionHref: ((submissionId: string) => string) | undefined
+) => (
+  <Link className="inline-link" href={(getSubmissionHref?.(submissionId) ?? `/submissions/${submissionId}`)}>
+    {submissionId}
+  </Link>
+);
+
+const renderDisputeSearch = (submissionId: string, locale: SupportedLocale) => (
+  <Link
+    className="inline-link"
+    href={`/?section=streams&tab=disputes&q=${encodeURIComponent(submissionId)}`}
+  >
+    {locale === "zh" ? "筛选" : "Filter"}
+  </Link>
+);
+
 export const AgentDetailContent = ({
   locale,
   timeZone,
   profile,
   ledger,
+  submissions = [],
   activities,
+  initialSubmissionsCursor = null,
   initialActivitiesCursor = null,
+  getSubmissionHref,
   getTaskHref,
   getDisputeHref
 }: AgentDetailContentProps) => {
@@ -55,12 +79,46 @@ export const AgentDetailContent = ({
   const [loadingActivities, setLoadingActivities] = useState(false);
   const [activityErrorKind, setActivityErrorKind] = useState<LoadErrorKind | null>(null);
 
+  const [submissionItems, setSubmissionItems] = useState<Submission[]>(submissions);
+  const [submissionCursor, setSubmissionCursor] = useState<string | null>(initialSubmissionsCursor);
+  const [loadingSubmissions, setLoadingSubmissions] = useState(false);
+  const [submissionErrorKind, setSubmissionErrorKind] = useState<LoadErrorKind | null>(null);
+
   useEffect(() => {
+    setSubmissionItems(submissions);
+    setSubmissionCursor(initialSubmissionsCursor);
+    setLoadingSubmissions(false);
+    setSubmissionErrorKind(null);
+
     setActivityItems(activities);
     setActivityCursor(initialActivitiesCursor);
     setLoadingActivities(false);
     setActivityErrorKind(null);
-  }, [profile.address, activities, initialActivitiesCursor]);
+  }, [profile.address, submissions, initialSubmissionsCursor, activities, initialActivitiesCursor]);
+
+  const loadMoreSubmissions = useCallback(async () => {
+    if (!submissionCursor || loadingSubmissions) {
+      return;
+    }
+    setLoadingSubmissions(true);
+    try {
+      const response = await fetchSubmissions({
+        agent: profile.address,
+        cursor: submissionCursor,
+        limit: DETAIL_LIST_PAGE_SIZE,
+        sort: "latest",
+        order: "desc",
+        strict: true
+      });
+      setSubmissionItems((prev) => prev.concat(response.items));
+      setSubmissionCursor(response.nextCursor);
+      setSubmissionErrorKind(null);
+    } catch (error) {
+      setSubmissionErrorKind(getLoadErrorKind(error));
+    } finally {
+      setLoadingSubmissions(false);
+    }
+  }, [loadingSubmissions, profile.address, submissionCursor]);
 
   const loadMoreActivities = useCallback(async () => {
     if (!activityCursor || loadingActivities) {
@@ -87,6 +145,25 @@ export const AgentDetailContent = ({
 
   const latestActivity = activityItems[0] ?? null;
   const activityLoadErrorMessage = withRateLimitMessage(locale, loadMoreFallback, activityErrorKind);
+  const submissionLoadErrorMessage = withRateLimitMessage(locale, loadMoreFallback, submissionErrorKind);
+  const getSubmissionStatusLabel = (status: Submission["status"]): string => {
+    if (locale === "zh") {
+      if (status === "CONFIRMED") {
+        return "已确认";
+      }
+      if (status === "REJECTED") {
+        return "已拒绝";
+      }
+      return "已提交";
+    }
+    if (status === "CONFIRMED") {
+      return "Confirmed";
+    }
+    if (status === "REJECTED") {
+      return "Rejected";
+    }
+    return "Submitted";
+  };
   const publishingTitle = locale === "zh" ? "发布侧" : "Publishing";
   const executionTitle = locale === "zh" ? "执行侧" : "Execution";
   const supervisionTitle = locale === "zh" ? "监督侧" : "Supervision";
@@ -153,6 +230,50 @@ export const AgentDetailContent = ({
       <section className="detail-card">
         <h4 className="detail-subsection-title">{locale === "zh" ? "简介" : "Bio"}</h4>
         <div className="markdown">{renderSafeMarkdown(profile.bio || "-")}</div>
+      </section>
+
+      <section className="detail-card">
+        <h4 className="detail-subsection-title">{copy.agentDetail.recentSubmissions}</h4>
+        {submissionItems.length > 0 ? (
+          <>
+            <ul className="detail-list">
+              {submissionItems.map((item) => (
+                <li key={item.id} className="detail-list-row">
+                  <div className="detail-event-row__main">
+                    <strong>{renderSubmission(item.id, getSubmissionHref)}</strong>
+                    <span>{getSubmissionStatusLabel(item.status)}</span>
+                  </div>
+                  <div className="detail-subline">
+                    <span>{copy.agentDetail.relatedTask}: {renderTask(item.taskId, getTaskHref)}</span>
+                    <span>{copy.agentDetail.relatedDisputes}: {renderDisputeSearch(item.id, locale)}</span>
+                    <span>{copy.agentDetail.submissionStatus}: {item.status}</span>
+                    <span>{locale === "zh" ? "更新时间" : "Updated"}: {formatDateTime(item.updatedAt, locale, timeZone)}</span>
+                  </div>
+                  {item.attachments.length > 0 ? (
+                    <div className="detail-subline">
+                      <span>{locale === "zh" ? "附件" : "Attachments"}:</span>
+                      {item.attachments.map((attachment, index) => (
+                        <span key={`${item.id}-attachment-${index}`}>
+                          <a className="inline-link" href={attachment.url} target="_blank" rel="noreferrer">
+                            {attachment.name}
+                          </a>
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+            {submissionCursor ? (
+              <button type="button" className="action-btn more-btn" onClick={loadMoreSubmissions} disabled={loadingSubmissions}>
+                {loadingSubmissions ? copy.common.loadingMore : loadMoreLabel}
+              </button>
+            ) : null}
+            {submissionErrorKind ? <p className="empty-line">{submissionLoadErrorMessage}</p> : null}
+          </>
+        ) : (
+          <p className="empty-line">{copy.agentDetail.noRecentSubmissions}</p>
+        )}
       </section>
 
       <section className="detail-card">

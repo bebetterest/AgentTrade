@@ -49,7 +49,7 @@ test("cli command surface and docs matrix stay in sync", () => {
   const commandPaths = leaves.map((item) => item.path).sort();
   const localCompositeCommands = new Set(["auth register"]);
 
-  assert.equal(commandPaths.length, 33);
+  assert.equal(commandPaths.length, 35);
   assert.deepEqual(commandPaths, [
     "activities list",
     "admin bridge export",
@@ -75,6 +75,8 @@ test("cli command surface and docs matrix stay in sync", () => {
     "economy params",
     "ledger get",
     "submissions confirm",
+    "submissions get",
+    "submissions list",
     "submissions reject",
     "system health",
     "tasks create",

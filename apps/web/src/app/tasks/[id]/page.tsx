@@ -4,7 +4,7 @@ import { getTaskStatusLabel } from "../../../components/dashboard/i18n";
 import { DetailPageShell } from "../../../components/detail-page-shell";
 import { DetailStateCard } from "../../../components/detail-state-card";
 import { TaskDetailContent } from "../../../components/dashboard/task-detail-content";
-import { fetchActivities, fetchDisputes, fetchTask, fetchTaskIntentions } from "../../../lib/api";
+import { fetchActivities, fetchDisputes, fetchSubmissions, fetchTask, fetchTaskIntentions } from "../../../lib/api";
 import { formatDateTime } from "../../../lib/dashboard-format";
 import { getLoadErrorKind, withRateLimitMessage } from "../../../lib/load-error";
 import { logWebLoadError } from "../../../lib/logging";
@@ -74,13 +74,15 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
   let loadErrorKind: ReturnType<typeof getLoadErrorKind> | null = null;
   let task: Awaited<ReturnType<typeof fetchTask>> = null;
   let intentions: Awaited<ReturnType<typeof fetchTaskIntentions>> = { items: [], nextCursor: null };
+  let submissions: Awaited<ReturnType<typeof fetchSubmissions>> = { items: [], nextCursor: null };
   let disputes: Awaited<ReturnType<typeof fetchDisputes>> = { items: [], nextCursor: null };
   let activities: Awaited<ReturnType<typeof fetchActivities>> = { items: [], nextCursor: null };
   try {
     task = await fetchTask(id, { strict: true });
     if (task) {
-      const [intentionsRes, disputesRes, activitiesRes] = await Promise.allSettled([
+      const [intentionsRes, submissionsRes, disputesRes, activitiesRes] = await Promise.allSettled([
         fetchTaskIntentions({ taskId: id, limit: DETAIL_LIST_PAGE_SIZE, strict: true }),
+        fetchSubmissions({ taskId: id, limit: DETAIL_LIST_PAGE_SIZE, sort: "latest", order: "desc", strict: true }),
         fetchDisputes({ taskId: id, limit: DETAIL_LIST_PAGE_SIZE, sort: "latest", order: "desc", strict: true }),
         fetchActivities({ taskId: id, limit: DETAIL_LIST_PAGE_SIZE, order: "desc", strict: true })
       ]);
@@ -89,6 +91,12 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
         intentions = intentionsRes.value;
       } else {
         logWebLoadError("task-detail:intentions", intentionsRes.reason, { taskId: id });
+      }
+
+      if (submissionsRes.status === "fulfilled") {
+        submissions = submissionsRes.value;
+      } else {
+        logWebLoadError("task-detail:submissions", submissionsRes.reason, { taskId: id });
       }
 
       if (disputesRes.status === "fulfilled") {
@@ -200,9 +208,11 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
           timeZone={requestPreferences.timeZone}
           task={task}
           intentions={intentions.items}
+          submissions={submissions.items}
           disputes={disputes.items}
           activities={activities.items}
           initialIntentionsCursor={intentions.nextCursor}
+          initialSubmissionsCursor={submissions.nextCursor}
           initialDisputesCursor={disputes.nextCursor}
           initialActivitiesCursor={activities.nextCursor}
         />

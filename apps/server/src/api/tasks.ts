@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { TaskStatus, type Address, type Task } from "@agentrade/types";
+import { TaskStatus, type Address, type SubmissionAttachment, type Task } from "@agentrade/types";
 import { getApiOperation, type ApiOperationDefinition } from "@agentrade/contracts";
 import type { AppServices } from "./services.js";
 import {
@@ -11,6 +11,7 @@ import {
   toServerRoutePath,
   validateCreateTaskInput,
   validateOperationResponse,
+  validateSubmissionAttachments,
   validateSubmissionPayloadLength
 } from "./services.js";
 import { DomainError } from "../domain/errors.js";
@@ -152,6 +153,8 @@ const registerTaskListRoute = (
         (item) =>
           item.id.toLowerCase().includes(q) ||
           item.title.toLowerCase().includes(q) ||
+          item.descriptionMd.toLowerCase().includes(q) ||
+          item.acceptanceCriteria.toLowerCase().includes(q) ||
           item.publisher.toLowerCase().includes(q)
       );
     }
@@ -334,8 +337,9 @@ const registerTaskSubmitRoute = (
 ) => {
   app.post(toServerRoutePath(operation.pathTemplate), { preHandler: [app.authenticate] }, async (request) => {
     const params = parseOperationParams<{ id: string }>(operation, request);
-    const body = parseOperationBody<{ payloadMd: string }>(operation, request);
+    const body = parseOperationBody<{ payloadMd: string; attachments?: SubmissionAttachment[] }>(operation, request);
     validateSubmissionPayloadLength(body.payloadMd, services.config);
+    validateSubmissionAttachments(body.attachments, services.config);
 
     const agent = request.agentAddress as Address;
     if (services.stateRepository) {
@@ -346,7 +350,12 @@ const registerTaskSubmitRoute = (
             taskId: params.id,
             agent,
             payloadMd: body.payloadMd,
+            attachments: body.attachments,
             taskSubmissionPayloadMaxLength: services.config.taskSubmissionPayloadMaxLength,
+            taskSubmissionAttachmentMaxCount: services.config.taskSubmissionAttachmentMaxCount,
+            taskSubmissionAttachmentNameMaxLength: services.config.taskSubmissionAttachmentNameMaxLength,
+            taskSubmissionAttachmentUrlMaxLength: services.config.taskSubmissionAttachmentUrlMaxLength,
+            taskSubmissionAttachmentMaxSizeBytes: services.config.taskSubmissionAttachmentMaxSizeBytes,
             resubmitCooldownMinutes: services.config.resubmitCooldownMinutes
           }),
           services.writeMeta({ operation: "tasks.submit", actor: agent })
@@ -355,7 +364,7 @@ const registerTaskSubmitRoute = (
     }
     return validateOperationResponse(
       operation,
-      await services.mutate((engine) => engine.submitTask(params.id, agent, body.payloadMd), [
+      await services.mutate((engine) => engine.submitTask(params.id, agent, body.payloadMd, body.attachments ?? []), [
         "submissions",
         "tasks"
       ], services.writeMeta({ operation: "tasks.submit", actor: agent }))

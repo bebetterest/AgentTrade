@@ -162,7 +162,8 @@ const registerDisputeListRoute = (
           item.id.toLowerCase().includes(q) ||
           item.taskId.toLowerCase().includes(q) ||
           item.submissionId.toLowerCase().includes(q) ||
-          item.opener.toLowerCase().includes(q)
+          item.opener.toLowerCase().includes(q) ||
+          item.reasonMd.toLowerCase().includes(q)
       );
     }
 

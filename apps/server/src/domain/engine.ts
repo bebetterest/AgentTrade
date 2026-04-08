@@ -16,6 +16,7 @@ import {
   type Dispute,
   type DisputeResolutionSummary,
   type LedgerBalance,
+  type SubmissionAttachment,
   type Submission,
   type SupervisionVote,
   type Task,
@@ -136,6 +137,10 @@ export class AgentradeEngine {
     return [...this.tasks.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
 
+  listSubmissions(): Submission[] {
+    return [...this.submissions.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
   listTaskIntentions(taskId: string): TaskIntention[] {
     this.getTask(taskId);
     return [...this.taskIntentions.values()]
@@ -149,6 +154,10 @@ export class AgentradeEngine {
       throw new DomainError("TASK_NOT_FOUND", `Task ${taskId} does not exist`, 404);
     }
     return task;
+  }
+
+  getSubmission(submissionId: string): Submission {
+    return this.requireSubmission(submissionId);
   }
 
   listDisputes(): Dispute[] {
@@ -394,7 +403,12 @@ export class AgentradeEngine {
     return intention;
   }
 
-  submitTask(taskId: string, agent: Address, payloadMd: string): Submission {
+  submitTask(
+    taskId: string,
+    agent: Address,
+    payloadMd: string,
+    attachments: SubmissionAttachment[] = []
+  ): Submission {
     this.requireAgent(agent);
     const task = this.getTask(taskId);
     if (payloadMd.trim().length === 0 || payloadMd.length > this.config.taskSubmissionPayloadMaxLength) {
@@ -404,6 +418,7 @@ export class AgentradeEngine {
         400
       );
     }
+    this.validateSubmissionAttachments(attachments);
     if (task.status === TaskStatus.TERMINATED || task.status === TaskStatus.CLOSED) {
       throw new DomainError("TASK_NOT_SUBMITTABLE", "task is not open for submissions", 409);
     }
@@ -442,6 +457,7 @@ export class AgentradeEngine {
       taskId: task.id,
       agent,
       payloadMd,
+      attachments: attachments.map((item) => ({ ...item })),
       status: SubmissionStatus.SUBMITTED,
       createdAt: now,
       updatedAt: now
@@ -452,6 +468,12 @@ export class AgentradeEngine {
       task.status = TaskStatus.IN_PROGRESS;
       task.updatedAt = now;
     }
+    this.recordActivity({
+      type: ActivityEventType.TASK_SUBMITTED,
+      taskId: task.id,
+      disputeId: null,
+      actor: agent
+    });
     return submission;
   }
 
@@ -479,6 +501,12 @@ export class AgentradeEngine {
     const profile = this.requireAgent(submission.agent);
     profile.stats.submissionsRejected += 1;
     this.shiftReputation(submission.agent, "worker", -1);
+    this.recordActivity({
+      type: ActivityEventType.SUBMISSION_REJECTED,
+      taskId: task.id,
+      disputeId: null,
+      actor: publisher
+    });
     return submission;
   }
 
@@ -930,6 +958,9 @@ export class AgentradeEngine {
     if (!submission) {
       throw new DomainError("SUBMISSION_NOT_FOUND", `Submission ${submissionId} not found`, 404);
     }
+    if (!Array.isArray(submission.attachments)) {
+      submission.attachments = [];
+    }
     return submission;
   }
 
@@ -996,7 +1027,15 @@ export class AgentradeEngine {
     this.profiles = new Map(snapshot.profiles.map((item) => [item.address, item]));
     this.balances = new Map(snapshot.balances.map((item) => [item.address, item]));
     this.tasks = new Map(snapshot.tasks.map((item) => [item.id, item]));
-    this.submissions = new Map(snapshot.submissions.map((item) => [item.id, item]));
+    this.submissions = new Map(
+      snapshot.submissions.map((item) => [
+        item.id,
+        {
+          ...item,
+          attachments: Array.isArray(item.attachments) ? item.attachments : []
+        }
+      ])
+    );
     this.disputes = new Map(snapshot.disputes.map((item) => [item.id, item]));
     this.votes = new Map(snapshot.votes.map((item) => [item.id, item]));
     this.votesByDisputeAndAgent = new Map(snapshot.votesByDisputeAndAgent);
@@ -1041,5 +1080,74 @@ export class AgentradeEngine {
       return 0;
     }
     return Number((intentCount / remainingSlots).toFixed(4));
+  }
+
+  private validateSubmissionAttachments(attachments: SubmissionAttachment[]): void {
+    if (attachments.length > this.config.taskSubmissionAttachmentMaxCount) {
+      throw new DomainError(
+        "INVALID_SUBMISSION_ATTACHMENTS",
+        `attachments must contain <= ${this.config.taskSubmissionAttachmentMaxCount} items`,
+        400
+      );
+    }
+
+    for (const attachment of attachments) {
+      if (attachment.name.trim().length === 0) {
+        throw new DomainError(
+          "INVALID_SUBMISSION_ATTACHMENTS",
+          "attachment name must be non-empty",
+          400
+        );
+      }
+      if (attachment.name.length > this.config.taskSubmissionAttachmentNameMaxLength) {
+        throw new DomainError(
+          "INVALID_SUBMISSION_ATTACHMENTS",
+          `attachment name must be <= ${this.config.taskSubmissionAttachmentNameMaxLength} chars`,
+          400
+        );
+      }
+      if (attachment.url.length > this.config.taskSubmissionAttachmentUrlMaxLength) {
+        throw new DomainError(
+          "INVALID_SUBMISSION_ATTACHMENTS",
+          `attachment url must be <= ${this.config.taskSubmissionAttachmentUrlMaxLength} chars`,
+          400
+        );
+      }
+      try {
+        const parsed = new URL(attachment.url);
+        if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+          throw new Error("invalid protocol");
+        }
+      } catch {
+        throw new DomainError(
+          "INVALID_SUBMISSION_ATTACHMENTS",
+          "attachment url must be a valid http(s) URL",
+          400
+        );
+      }
+      if (attachment.mimeType !== undefined && attachment.mimeType.trim().length === 0) {
+        throw new DomainError(
+          "INVALID_SUBMISSION_ATTACHMENTS",
+          "attachment mimeType must be non-empty when provided",
+          400
+        );
+      }
+      if (attachment.sizeBytes !== undefined) {
+        if (!Number.isSafeInteger(attachment.sizeBytes) || attachment.sizeBytes < 0) {
+          throw new DomainError(
+            "INVALID_SUBMISSION_ATTACHMENTS",
+            "attachment sizeBytes must be a non-negative safe integer",
+            400
+          );
+        }
+        if (attachment.sizeBytes > this.config.taskSubmissionAttachmentMaxSizeBytes) {
+          throw new DomainError(
+            "INVALID_SUBMISSION_ATTACHMENTS",
+            `attachment sizeBytes must be <= ${this.config.taskSubmissionAttachmentMaxSizeBytes}`,
+            400
+          );
+        }
+      }
+    }
   }
 }

@@ -3,7 +3,7 @@ import type { SupportedLocale } from "@agentrade/i18n";
 import { DetailPageShell } from "../../../components/detail-page-shell";
 import { DetailStateCard } from "../../../components/detail-state-card";
 import { AgentDetailContent } from "../../../components/dashboard/agent-detail-content";
-import { fetchActivities, fetchAgent, fetchLedger } from "../../../lib/api";
+import { fetchActivities, fetchAgent, fetchLedger, fetchSubmissions } from "../../../lib/api";
 import { formatDateTime, shortAddress } from "../../../lib/dashboard-format";
 import { getLoadErrorKind, withRateLimitMessage } from "../../../lib/load-error";
 import { logWebLoadError } from "../../../lib/logging";
@@ -67,12 +67,14 @@ export default async function AgentDetailPage({ params }: AgentDetailPageProps) 
   let loadErrorKind: ReturnType<typeof getLoadErrorKind> | null = null;
   let profile: Awaited<ReturnType<typeof fetchAgent>> = null;
   let ledger: Awaited<ReturnType<typeof fetchLedger>> = null;
+  let submissions: Awaited<ReturnType<typeof fetchSubmissions>> = { items: [], nextCursor: null };
   let activities: Awaited<ReturnType<typeof fetchActivities>> = { items: [], nextCursor: null };
   try {
     profile = await fetchAgent(address, { strict: true });
     if (profile) {
-      const [ledgerRes, activitiesRes] = await Promise.allSettled([
+      const [ledgerRes, submissionsRes, activitiesRes] = await Promise.allSettled([
         fetchLedger(address, { strict: true }),
+        fetchSubmissions({ agent: address, limit: DETAIL_LIST_PAGE_SIZE, sort: "latest", order: "desc", strict: true }),
         fetchActivities({ address, limit: DETAIL_LIST_PAGE_SIZE, order: "desc", strict: true })
       ]);
 
@@ -80,6 +82,12 @@ export default async function AgentDetailPage({ params }: AgentDetailPageProps) 
         ledger = ledgerRes.value;
       } else {
         logWebLoadError("agent-detail:ledger", ledgerRes.reason, { address });
+      }
+
+      if (submissionsRes.status === "fulfilled") {
+        submissions = submissionsRes.value;
+      } else {
+        logWebLoadError("agent-detail:submissions", submissionsRes.reason, { address });
       }
 
       if (activitiesRes.status === "fulfilled") {
@@ -180,7 +188,9 @@ export default async function AgentDetailPage({ params }: AgentDetailPageProps) 
           timeZone={requestPreferences.timeZone}
           profile={profile}
           ledger={ledger}
+          submissions={submissions.items}
           activities={activities.items}
+          initialSubmissionsCursor={submissions.nextCursor}
           initialActivitiesCursor={activities.nextCursor}
         />
       </section>

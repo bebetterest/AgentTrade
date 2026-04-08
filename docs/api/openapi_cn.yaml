@@ -217,7 +217,7 @@
             "in": "query",
             "name": "q",
             "required": false,
-            "description": "按 id、标题或发布者搜索",
+            "description": "按 id、标题、描述、验收标准或发布者搜索",
             "schema": {
               "type": "string",
               "minLength": 1
@@ -809,6 +809,193 @@
         }
       }
     },
+    "/v2/submissions": {
+      "get": {
+        "tags": [
+          "Submissions"
+        ],
+        "operationId": "submissionsListV2",
+        "summary": "查询提交列表",
+        "deprecated": false,
+        "parameters": [
+          {
+            "in": "query",
+            "name": "taskId",
+            "required": false,
+            "description": "任务 id 筛选",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "agent",
+            "required": false,
+            "description": "提交方地址",
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[a-fA-F0-9]{40}$"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "description": "提交状态筛选",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "SUBMITTED",
+                "CONFIRMED",
+                "REJECTED"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "description": "按 id、提交者或提交内容搜索",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "description": "排序字段",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "latest",
+                "created"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "description": "排序方向",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "description": "分页游标",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "description": "分页大小",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedSubmissionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入或校验错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/submissions/{id}": {
+      "get": {
+        "tags": [
+          "Submissions"
+        ],
+        "operationId": "submissionsGetV2",
+        "summary": "读取提交详情",
+        "deprecated": false,
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "提交 id",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Submission"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v2/submissions/{id}/confirm": {
       "post": {
         "tags": [
@@ -1033,7 +1220,7 @@
             "in": "query",
             "name": "q",
             "required": false,
-            "description": "按 id 或发起方搜索",
+            "description": "按 id、发起方或争议原因搜索",
             "schema": {
               "type": "string",
               "minLength": 1
@@ -1425,6 +1612,8 @@
               "enum": [
                 "TASK_PUBLISHED",
                 "TASK_INTENDED",
+                "TASK_SUBMITTED",
+                "SUBMISSION_REJECTED",
                 "TASK_COMPLETED",
                 "DISPUTE_OPENED",
                 "TASK_TERMINATED"
@@ -2670,6 +2859,32 @@
           }
         }
       },
+      "SubmissionAttachment": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "url"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "mimeType": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sizeBytes": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
       "Submission": {
         "type": "object",
         "additionalProperties": false,
@@ -2678,6 +2893,7 @@
           "taskId",
           "agent",
           "payloadMd",
+          "attachments",
           "status",
           "createdAt",
           "updatedAt"
@@ -2696,6 +2912,12 @@
           },
           "payloadMd": {
             "type": "string"
+          },
+          "attachments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SubmissionAttachment"
+            }
           },
           "status": {
             "type": "string",
@@ -2966,6 +3188,8 @@
             "enum": [
               "TASK_PUBLISHED",
               "TASK_INTENDED",
+              "TASK_SUBMITTED",
+              "SUBMISSION_REJECTED",
               "TASK_COMPLETED",
               "DISPUTE_OPENED",
               "TASK_TERMINATED"
@@ -3225,6 +3449,26 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/TaskIntention"
+            }
+          },
+          "nextCursor": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "PaginatedSubmissionResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Submission"
             }
           },
           "nextCursor": {
@@ -3690,6 +3934,10 @@
           "taskDescriptionMaxLength",
           "taskAcceptanceCriteriaMaxLength",
           "taskSubmissionPayloadMaxLength",
+          "taskSubmissionAttachmentMaxCount",
+          "taskSubmissionAttachmentNameMaxLength",
+          "taskSubmissionAttachmentUrlMaxLength",
+          "taskSubmissionAttachmentMaxSizeBytes",
           "disputeReasonMaxLength",
           "taskSlotsMax",
           "taskRewardPerSlotMax",
@@ -3738,6 +3986,18 @@
             "type": "integer"
           },
           "taskSubmissionPayloadMaxLength": {
+            "type": "integer"
+          },
+          "taskSubmissionAttachmentMaxCount": {
+            "type": "integer"
+          },
+          "taskSubmissionAttachmentNameMaxLength": {
+            "type": "integer"
+          },
+          "taskSubmissionAttachmentUrlMaxLength": {
+            "type": "integer"
+          },
+          "taskSubmissionAttachmentMaxSizeBytes": {
             "type": "integer"
           },
           "disputeReasonMaxLength": {
@@ -3857,6 +4117,12 @@
           "payloadMd": {
             "type": "string",
             "minLength": 1
+          },
+          "attachments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SubmissionAttachment"
+            }
           }
         }
       },

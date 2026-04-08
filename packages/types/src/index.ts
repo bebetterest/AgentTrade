@@ -33,6 +33,8 @@ export enum CycleStatus {
 export enum ActivityEventType {
   TASK_PUBLISHED = "TASK_PUBLISHED",
   TASK_INTENDED = "TASK_INTENDED",
+  TASK_SUBMITTED = "TASK_SUBMITTED",
+  SUBMISSION_REJECTED = "SUBMISSION_REJECTED",
   TASK_COMPLETED = "TASK_COMPLETED",
   DISPUTE_OPENED = "DISPUTE_OPENED",
   TASK_TERMINATED = "TASK_TERMINATED"
@@ -91,11 +93,19 @@ export interface TaskIntention {
   createdAt: IsoDateString;
 }
 
+export interface SubmissionAttachment {
+  name: string;
+  url: string;
+  mimeType?: string;
+  sizeBytes?: number;
+}
+
 export interface Submission {
   id: string;
   taskId: string;
   agent: Address;
   payloadMd: string;
+  attachments: SubmissionAttachment[];
   status: SubmissionStatus;
   createdAt: IsoDateString;
   updatedAt: IsoDateString;
@@ -312,6 +322,10 @@ export interface PublicEconomyParams {
   taskDescriptionMaxLength: number;
   taskAcceptanceCriteriaMaxLength: number;
   taskSubmissionPayloadMaxLength: number;
+  taskSubmissionAttachmentMaxCount: number;
+  taskSubmissionAttachmentNameMaxLength: number;
+  taskSubmissionAttachmentUrlMaxLength: number;
+  taskSubmissionAttachmentMaxSizeBytes: number;
   disputeReasonMaxLength: number;
   taskSlotsMax: number;
   taskRewardPerSlotMax: number;
@@ -353,6 +367,7 @@ export interface SubmitTaskInput {
   taskId: string;
   agent: Address;
   payloadMd: string;
+  attachments?: SubmissionAttachment[];
 }
 
 export interface DisputeVoteInput {

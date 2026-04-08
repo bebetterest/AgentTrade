@@ -32,12 +32,14 @@ import {
   paginatedAgentDirectoryResponseSchema,
   paginatedCycleResponseSchema,
   paginatedDisputeResponseSchema,
+  paginatedSubmissionResponseSchema,
   paginatedTaskIntentionResponseSchema,
   paginatedTaskResponseSchema,
   publicEconomyParamsSchema,
   serviceMetricsResponseSchema,
   schemaRef,
   submitTaskRequestSchema,
+  submissionListQuerySchemaV2,
   submissionSchema,
   taskListQuerySchemaV2,
   taskIntentionListQuerySchemaV2,
@@ -182,7 +184,11 @@ const defineOperationSpec = (spec: ApiOperationSpec): ApiOperationDefinition =>
   });
 
 const taskListParameters = [
-  queryStringParam("q", { type: "string", minLength: 1 }, { en: "Search by id, title, or publisher", zh: "按 id、标题或发布者搜索" }),
+  queryStringParam(
+    "q",
+    { type: "string", minLength: 1 },
+    { en: "Search by id, title, description, criteria, or publisher", zh: "按 id、标题、描述、验收标准或发布者搜索" }
+  ),
   queryStringParam(
     "status",
     { type: "string", enum: ["OPEN", "IN_PROGRESS", "TERMINATED", "CLOSED"] },
@@ -211,7 +217,11 @@ const disputeListParameters = [
     { type: "string", enum: ["OPEN", "RESOLVED_COMPLETED", "RESOLVED_NOT_COMPLETED"] },
     { en: "Dispute status filter", zh: "争议状态筛选" }
   ),
-  queryStringParam("q", { type: "string", minLength: 1 }, { en: "Search by ids or opener", zh: "按 id 或发起方搜索" }),
+  queryStringParam(
+    "q",
+    { type: "string", minLength: 1 },
+    { en: "Search by ids, opener, or dispute reason", zh: "按 id、发起方或争议原因搜索" }
+  ),
   queryStringParam("sort", { type: "string", enum: ["latest", "created"] }, { en: "Sort key", zh: "排序字段" }),
   queryStringParam("order", { type: "string", enum: ["asc", "desc"] }, { en: "Sort order", zh: "排序方向" }),
   queryCursorParam,
@@ -229,6 +239,8 @@ const activityListParameters = [
       enum: [
         "TASK_PUBLISHED",
         "TASK_INTENDED",
+        "TASK_SUBMITTED",
+        "SUBMISSION_REJECTED",
         "TASK_COMPLETED",
         "DISPUTE_OPENED",
         "TASK_TERMINATED"
@@ -255,6 +267,29 @@ const agentListParameters = [
 ];
 
 const taskIntentionListParameters = [queryCursorParam, queryLimitParam];
+
+const submissionListParameters = [
+  queryStringParam("taskId", { type: "string" }, { en: "Task id filter", zh: "任务 id 筛选" }),
+  queryStringParam(
+    "agent",
+    { type: "string", pattern: "^0x[a-fA-F0-9]{40}$" },
+    { en: "Submission agent address", zh: "提交方地址" }
+  ),
+  queryStringParam(
+    "status",
+    { type: "string", enum: ["SUBMITTED", "CONFIRMED", "REJECTED"] },
+    { en: "Submission status filter", zh: "提交状态筛选" }
+  ),
+  queryStringParam(
+    "q",
+    { type: "string", minLength: 1 },
+    { en: "Search by ids, agent, or payload", zh: "按 id、提交者或提交内容搜索" }
+  ),
+  queryStringParam("sort", { type: "string", enum: ["latest", "created"] }, { en: "Sort key", zh: "排序字段" }),
+  queryStringParam("order", { type: "string", enum: ["asc", "desc"] }, { en: "Sort order", zh: "排序方向" }),
+  queryCursorParam,
+  queryLimitParam
+];
 
 const dashboardSummaryParameters = [
   queryStringParam("tz", { type: "string", default: "UTC" }, { en: "IANA timezone", zh: "IANA 时区" })
@@ -409,6 +444,32 @@ export const apiOperations = [
     responseComponent: taskSchema,
     parameters: [pathStringParam("id", { en: "Task id", zh: "任务 id" })],
     errorStatuses: [401, 403, 404, 409, 500]
+  }),
+  defineOperationSpec({
+    baseOperationId: "submissionsList",
+    method: "GET",
+    tag: "Submissions",
+    auth: "none",
+    summary: { en: "List submissions", zh: "查询提交列表" },
+    pathTemplate: "/v2/submissions",
+    querySchema: submissionListQuerySchemaV2,
+    responseSchema: paginatedSubmissionResponseSchema.schema,
+    responseComponent: paginatedSubmissionResponseSchema,
+    parameters: submissionListParameters,
+    errorStatuses: [400, 500]
+  }),
+  defineOperationSpec({
+    baseOperationId: "submissionsGet",
+    method: "GET",
+    tag: "Submissions",
+    auth: "none",
+    summary: { en: "Get submission", zh: "读取提交详情" },
+    pathTemplate: "/v2/submissions/{id}",
+    pathParamsSchema: idPathSchema,
+    responseSchema: submissionSchema.schema,
+    responseComponent: submissionSchema,
+    parameters: [pathStringParam("id", { en: "Submission id", zh: "提交 id" })],
+    errorStatuses: [404, 500]
   }),
   defineOperationSpec({
     baseOperationId: "submissionsConfirm",

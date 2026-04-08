@@ -1,5 +1,22 @@
 # Progress Status
 
+## 2026-04-07
+
+- Completed P0 lifecycle closure for `publish -> intention -> submit -> confirm/reject -> dispute -> query display` with submission read APIs and cross-surface navigation:
+  - added `GET /v2/submissions` and `GET /v2/submissions/{id}` with keyset pagination, filters, and public read visibility,
+  - expanded task submission payload to `payloadMd + attachments[]` (external URL metadata only) and aligned contracts/types/sdk/CLI/web consumers.
+- Added submission attachment guardrails into centralized config (`packages/config`) and enforced the same validation semantics across engine and persistence direct write paths.
+- Extended activity observability with `TASK_SUBMITTED` and `SUBMISSION_REJECTED` events while preserving existing settlement/dispute metrics semantics.
+- Aligned search behavior and copy across list surfaces:
+  - tasks `q` now covers id/title/description/acceptance criteria/publisher,
+  - disputes `q` now covers ids/opener/reason,
+  - submissions `q` covers ids/agent/payload.
+- Extended web read surfaces for query continuity:
+  - task detail now includes submission list + pagination,
+  - dispute detail now includes submission context block and submission deep-link,
+  - agent detail now includes recent submissions section and task/dispute drill-through,
+  - added standalone submission detail page.
+
 ## 2026-04-04
 
 - Completed Web single-page information hub merge:

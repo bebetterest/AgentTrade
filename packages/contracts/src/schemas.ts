@@ -247,6 +247,27 @@ export const taskIntentionSchema = defineSchema(
   }
 );
 
+export const submissionAttachmentSchema = defineSchema(
+  "SubmissionAttachment",
+  z.object({
+    name: nonEmptyStringSchema,
+    url: z.string().url(),
+    mimeType: z.string().trim().min(1).optional(),
+    sizeBytes: z.number().int().nonnegative().optional()
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: ["name", "url"],
+    properties: {
+      name: { ...nonEmptyStringField },
+      url: { ...stringField, format: "uri" },
+      mimeType: { ...nonEmptyStringField },
+      sizeBytes: { ...integerField, minimum: 0 }
+    }
+  }
+);
+
 export const submissionSchema = defineSchema(
   "Submission",
   z.object({
@@ -254,6 +275,7 @@ export const submissionSchema = defineSchema(
     taskId: z.string(),
     agent: addressSchema,
     payloadMd: z.string(),
+    attachments: z.array(submissionAttachmentSchema.schema),
     status: z.nativeEnum(SubmissionStatus),
     createdAt: isoDateSchema,
     updatedAt: isoDateSchema
@@ -261,12 +283,16 @@ export const submissionSchema = defineSchema(
   {
     type: "object",
     additionalProperties: false,
-    required: ["id", "taskId", "agent", "payloadMd", "status", "createdAt", "updatedAt"],
+    required: ["id", "taskId", "agent", "payloadMd", "attachments", "status", "createdAt", "updatedAt"],
     properties: {
       id: { ...stringField },
       taskId: { ...stringField },
       agent: { ...addressField },
       payloadMd: { ...stringField },
+      attachments: {
+        type: "array",
+        items: schemaRef(submissionAttachmentSchema)
+      },
       status: {
         type: "string",
         enum: Object.values(SubmissionStatus)
@@ -658,6 +684,10 @@ export const paginatedTaskIntentionResponseSchema = definePaginatedResponseSchem
   "PaginatedTaskIntentionResponse",
   taskIntentionSchema
 );
+export const paginatedSubmissionResponseSchema = definePaginatedResponseSchema(
+  "PaginatedSubmissionResponse",
+  submissionSchema
+);
 export const paginatedDisputeResponseSchema = definePaginatedResponseSchema(
   "PaginatedDisputeResponse",
   disputeSchema
@@ -1009,6 +1039,10 @@ export const publicEconomyParamsSchema = defineSchema(
     taskDescriptionMaxLength: z.number().int(),
     taskAcceptanceCriteriaMaxLength: z.number().int(),
     taskSubmissionPayloadMaxLength: z.number().int(),
+    taskSubmissionAttachmentMaxCount: z.number().int(),
+    taskSubmissionAttachmentNameMaxLength: z.number().int(),
+    taskSubmissionAttachmentUrlMaxLength: z.number().int(),
+    taskSubmissionAttachmentMaxSizeBytes: z.number().int(),
     disputeReasonMaxLength: z.number().int(),
     taskSlotsMax: z.number().int(),
     taskRewardPerSlotMax: z.number().int(),
@@ -1042,6 +1076,10 @@ export const publicEconomyParamsSchema = defineSchema(
       "taskDescriptionMaxLength",
       "taskAcceptanceCriteriaMaxLength",
       "taskSubmissionPayloadMaxLength",
+      "taskSubmissionAttachmentMaxCount",
+      "taskSubmissionAttachmentNameMaxLength",
+      "taskSubmissionAttachmentUrlMaxLength",
+      "taskSubmissionAttachmentMaxSizeBytes",
       "disputeReasonMaxLength",
       "taskSlotsMax",
       "taskRewardPerSlotMax",
@@ -1072,6 +1110,10 @@ export const publicEconomyParamsSchema = defineSchema(
       taskDescriptionMaxLength: { ...integerField },
       taskAcceptanceCriteriaMaxLength: { ...integerField },
       taskSubmissionPayloadMaxLength: { ...integerField },
+      taskSubmissionAttachmentMaxCount: { ...integerField },
+      taskSubmissionAttachmentNameMaxLength: { ...integerField },
+      taskSubmissionAttachmentUrlMaxLength: { ...integerField },
+      taskSubmissionAttachmentMaxSizeBytes: { ...integerField },
       disputeReasonMaxLength: { ...integerField },
       taskSlotsMax: { ...integerField },
       taskRewardPerSlotMax: { ...integerField },
@@ -1138,14 +1180,19 @@ export const createTaskRequestSchema = defineSchema(
 export const submitTaskRequestSchema = defineSchema(
   "SubmitTaskRequest",
   z.object({
-    payloadMd: nonEmptyStringSchema
+    payloadMd: nonEmptyStringSchema,
+    attachments: z.array(submissionAttachmentSchema.schema).optional()
   }),
   {
     type: "object",
     additionalProperties: false,
     required: ["payloadMd"],
     properties: {
-      payloadMd: { ...nonEmptyStringField }
+      payloadMd: { ...nonEmptyStringField },
+      attachments: {
+        type: "array",
+        items: schemaRef(submissionAttachmentSchema)
+      }
     }
   }
 );
@@ -1286,6 +1333,17 @@ export const taskIntentionListQuerySchemaV2 = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20)
 });
 
+export const submissionListQuerySchemaV2 = z.object({
+  taskId: z.string().optional(),
+  agent: z.string().optional(),
+  status: z.nativeEnum(SubmissionStatus).optional(),
+  q: nonEmptyStringSchema.optional(),
+  sort: z.enum(["latest", "created"]).default("latest"),
+  order: z.enum(["asc", "desc"]).default("desc"),
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(20)
+});
+
 export const disputeListQuerySchemaV2 = z.object({
   taskId: z.string().optional(),
   opener: z.string().optional(),
@@ -1346,6 +1404,7 @@ export const namedSchemas = [
   agentProfileSchema,
   taskSchema,
   taskIntentionSchema,
+  submissionAttachmentSchema,
   submissionSchema,
   disputeSchema,
   supervisionVoteSchema,
@@ -1359,6 +1418,7 @@ export const namedSchemas = [
   agentDirectoryItemSchema,
   paginatedTaskResponseSchema,
   paginatedTaskIntentionResponseSchema,
+  paginatedSubmissionResponseSchema,
   paginatedDisputeResponseSchema,
   paginatedAgentDirectoryResponseSchema,
   paginatedActivityResponseSchema,

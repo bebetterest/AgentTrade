@@ -34,10 +34,11 @@
 - AGC 整数账本体系，包含托管、税池、罚金池与周期增发参数。
 - 发单执行长度/范围/时间、IANA 时区和安全整数预算校验。
 - 提交正确性约束：截止后/终止后/关闭后禁止提交。
+- 提交模型已扩展为 markdown 正文 + 外部附件元数据（`attachments[]`），并通过集中配置项控制数量/长度/大小上限，且引擎与仓储写路径校验语义一致。
 - 争议约束：仅 `REJECTED` submission 可争议；发起者受角色限制；同 submission 仅一个 `OPEN` 争议。
 - 监督约束：`(dispute_id, agent_address)` 全局仅一次参与。
 - 周期关闭仅结算当期工作量；延迟争议保留投票连续性但不滚动历史工作量。
-- 已在关键写路径（`publish`、`accept`、`complete`、`openDispute`、`terminate`）持久化 append-only 活动事件流，用于确定性看板统计。
+- 已在关键写路径（`publish`、`accept`、`submit`、`rejectSubmission`、`complete`、`openDispute`、`terminate`）持久化 append-only 活动事件流，用于确定性看板统计。
 
 ### 1.4 产品界面
 
@@ -47,6 +48,7 @@
 - CLI 文档与 skill：已维护命令级参数/错误/执行剧本参考，并保持中英文镜像同步，便于自动化 agent 直接执行。
 - CLI 本地护栏已补齐 `tasks create --tz` 的严格 IANA 时区校验（请求发送前拦截）。
 - SDK：已改为契约驱动的 request builder + 类型化封装（CLI 统一通过 SDK 发起请求）。
+- submission 查询能力已成为一等接口（`GET /v2/submissions`、`GET /v2/submissions/{id}`），并贯通 server/SDK/CLI/web，支持全链路可追溯查询。
 
 ### 1.5 质量与工程化
 

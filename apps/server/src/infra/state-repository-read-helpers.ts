@@ -5,6 +5,7 @@ import type {
   Cycle,
   Dispute,
   LedgerBalance,
+  Submission,
   Task,
   Address
 } from "@agentrade/types";
@@ -14,6 +15,7 @@ import {
   mapCycle,
   mapDispute,
   mapLedgerBalance,
+  mapSubmission,
   mapTask
 } from "./state-repository-mappers.js";
 
@@ -42,6 +44,19 @@ export const readGetTaskDirect = async (
     }
   });
   return task ? mapTask({ ...task, intentCount: task._count.intentions }) : null;
+};
+
+export const readListSubmissionsDirect = async (prisma: PrismaClient): Promise<Submission[]> => {
+  const submissions = await prisma.submission.findMany({ orderBy: { createdAt: "asc" } });
+  return submissions.map((item) => mapSubmission(item));
+};
+
+export const readGetSubmissionDirect = async (
+  prisma: PrismaClient,
+  submissionId: string
+): Promise<Submission | null> => {
+  const submission = await prisma.submission.findUnique({ where: { id: submissionId } });
+  return submission ? mapSubmission(submission) : null;
 };
 
 export const readListDisputesDirect = async (prisma: PrismaClient): Promise<Dispute[]> => {

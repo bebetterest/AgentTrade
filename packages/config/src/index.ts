@@ -16,6 +16,10 @@ export interface AppConfig {
   taskDescriptionMaxLength: number;
   taskAcceptanceCriteriaMaxLength: number;
   taskSubmissionPayloadMaxLength: number;
+  taskSubmissionAttachmentMaxCount: number;
+  taskSubmissionAttachmentNameMaxLength: number;
+  taskSubmissionAttachmentUrlMaxLength: number;
+  taskSubmissionAttachmentMaxSizeBytes: number;
   disputeReasonMaxLength: number;
   taskSlotsMax: number;
   taskRewardPerSlotMax: number;
@@ -62,6 +66,10 @@ export type PublicEconomyParams = Pick<
   | "taskDescriptionMaxLength"
   | "taskAcceptanceCriteriaMaxLength"
   | "taskSubmissionPayloadMaxLength"
+  | "taskSubmissionAttachmentMaxCount"
+  | "taskSubmissionAttachmentNameMaxLength"
+  | "taskSubmissionAttachmentUrlMaxLength"
+  | "taskSubmissionAttachmentMaxSizeBytes"
   | "disputeReasonMaxLength"
   | "taskSlotsMax"
   | "taskRewardPerSlotMax"
@@ -156,6 +164,10 @@ export const defaultConfig: AppConfig = {
   taskDescriptionMaxLength: 20_000,
   taskAcceptanceCriteriaMaxLength: 8_000,
   taskSubmissionPayloadMaxLength: 20_000,
+  taskSubmissionAttachmentMaxCount: 10,
+  taskSubmissionAttachmentNameMaxLength: 200,
+  taskSubmissionAttachmentUrlMaxLength: 2_000,
+  taskSubmissionAttachmentMaxSizeBytes: 100 * 1024 * 1024,
   disputeReasonMaxLength: 4_000,
   taskSlotsMax: 100,
   taskRewardPerSlotMax: 1_000_000,
@@ -187,6 +199,10 @@ export const toPublicEconomyParams = (config: AppConfig): PublicEconomyParams =>
   taskDescriptionMaxLength: config.taskDescriptionMaxLength,
   taskAcceptanceCriteriaMaxLength: config.taskAcceptanceCriteriaMaxLength,
   taskSubmissionPayloadMaxLength: config.taskSubmissionPayloadMaxLength,
+  taskSubmissionAttachmentMaxCount: config.taskSubmissionAttachmentMaxCount,
+  taskSubmissionAttachmentNameMaxLength: config.taskSubmissionAttachmentNameMaxLength,
+  taskSubmissionAttachmentUrlMaxLength: config.taskSubmissionAttachmentUrlMaxLength,
+  taskSubmissionAttachmentMaxSizeBytes: config.taskSubmissionAttachmentMaxSizeBytes,
   disputeReasonMaxLength: config.disputeReasonMaxLength,
   taskSlotsMax: config.taskSlotsMax,
   taskRewardPerSlotMax: config.taskRewardPerSlotMax,
@@ -240,6 +256,22 @@ export const loadConfig = (): AppConfig => {
     taskSubmissionPayloadMaxLength: envNumber(
       "TASK_SUBMISSION_PAYLOAD_MAX_LENGTH",
       defaultConfig.taskSubmissionPayloadMaxLength
+    ),
+    taskSubmissionAttachmentMaxCount: envNumber(
+      "TASK_SUBMISSION_ATTACHMENT_MAX_COUNT",
+      defaultConfig.taskSubmissionAttachmentMaxCount
+    ),
+    taskSubmissionAttachmentNameMaxLength: envNumber(
+      "TASK_SUBMISSION_ATTACHMENT_NAME_MAX_LENGTH",
+      defaultConfig.taskSubmissionAttachmentNameMaxLength
+    ),
+    taskSubmissionAttachmentUrlMaxLength: envNumber(
+      "TASK_SUBMISSION_ATTACHMENT_URL_MAX_LENGTH",
+      defaultConfig.taskSubmissionAttachmentUrlMaxLength
+    ),
+    taskSubmissionAttachmentMaxSizeBytes: envNumber(
+      "TASK_SUBMISSION_ATTACHMENT_MAX_SIZE_BYTES",
+      defaultConfig.taskSubmissionAttachmentMaxSizeBytes
     ),
     disputeReasonMaxLength: envNumber(
       "DISPUTE_REASON_MAX_LENGTH",

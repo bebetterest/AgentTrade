@@ -1059,8 +1059,23 @@ runDbSuite("API persistence mode", () => {
       items: Array<{ type: string }>;
       nextCursor: string | null;
     };
-    expect(activitiesPageTwo.items.map((item) => item.type)).toEqual(["DISPUTE_OPENED"]);
-    expect(activitiesPageTwo.nextCursor).toBeNull();
+    expect(activitiesPageTwo.items.map((item) => item.type)).toEqual([
+      "TASK_SUBMITTED",
+      "SUBMISSION_REJECTED"
+    ]);
+    expect(parseCursorOffset(activitiesPageTwo.nextCursor ?? undefined)).toBe(4);
+
+    const activitiesPageThreeRes = await app!.inject({
+      method: "GET",
+      url: `/v2/activities?taskId=${beta.id}&order=asc&limit=2&cursor=${activitiesPageTwo.nextCursor}`
+    });
+    expect(activitiesPageThreeRes.statusCode).toBe(200);
+    const activitiesPageThree = activitiesPageThreeRes.json() as {
+      items: Array<{ type: string }>;
+      nextCursor: string | null;
+    };
+    expect(activitiesPageThree.items.map((item) => item.type)).toEqual(["DISPUTE_OPENED"]);
+    expect(activitiesPageThree.nextCursor).toBeNull();
 
     const dormantAgentsRes = await app!.inject({
       method: "GET",

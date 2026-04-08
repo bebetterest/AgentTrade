@@ -18,6 +18,8 @@ Auth security note:
 | tasks | `tasks intentions` | none | `GET /v2/tasks/{id}/intentions` | `--task` | `--cursor`, `--limit` | non-empty task id | `items[]`, `nextCursor` |
 | tasks | `tasks submit` | bearer | `POST /v2/tasks/{id}/submissions` | `--task`, one of `--payload`/`--payload-file` | none | non-empty task id/payload | submission `id`, `status` |
 | tasks | `tasks terminate` | bearer | `POST /v2/tasks/{id}/terminate` | `--task` | none | non-empty task id | task `status` |
+| submissions | `submissions list` | none | `GET /v2/submissions` | none | `--task`, `--agent`, `--status`, `--q`, `--sort`, `--order`, `--cursor`, `--limit` | optional query guardrails | `items[]`, `nextCursor` |
+| submissions | `submissions get` | none | `GET /v2/submissions/{id}` | `--submission` | none | non-empty submission id | submission `id`, `status` |
 | submissions | `submissions confirm` | bearer | `POST /v2/submissions/{id}/confirm` | `--submission` | none | non-empty submission id | submission `status` |
 | submissions | `submissions reject` | bearer | `POST /v2/submissions/{id}/reject` | `--submission` | none | non-empty submission id | submission `status` |
 | disputes | `disputes list` | none | `GET /v2/disputes` | none | `--task`, `--opener`, `--status`, `--q`, `--sort`, `--order`, `--cursor`, `--limit` | optional query guardrails | `items[]`, `nextCursor` |

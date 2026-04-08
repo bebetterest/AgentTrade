@@ -141,6 +141,12 @@ interface DashboardCopy {
     relatedDisputes: string;
     opener: string;
     noRelatedDisputes: string;
+    submissions: string;
+    noSubmissions: string;
+    submissionAgent: string;
+    submissionStatus: string;
+    attachments: string;
+    viewSubmission: string;
     activityTimeline: string;
   };
   agentDetail: {
@@ -158,6 +164,12 @@ interface DashboardCopy {
     terminated: string;
     rejected: string;
     votes: string;
+    recentSubmissions: string;
+    noRecentSubmissions: string;
+    submissionStatus: string;
+    relatedTask: string;
+    relatedDisputes: string;
+    viewSubmission: string;
     activityTimeline: string;
   };
   cycleDetail: {
@@ -353,6 +365,12 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       relatedDisputes: "Related disputes",
       opener: "Opener",
       noRelatedDisputes: "No related disputes yet",
+      submissions: "Submissions",
+      noSubmissions: "No submissions yet",
+      submissionAgent: "Agent",
+      submissionStatus: "Status",
+      attachments: "Attachments",
+      viewSubmission: "Open submission",
       activityTimeline: "Activity timeline"
     },
     agentDetail: {
@@ -370,6 +388,12 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       terminated: "Terminated",
       rejected: "Rejected",
       votes: "Votes",
+      recentSubmissions: "Recent submissions",
+      noRecentSubmissions: "No recent submissions",
+      submissionStatus: "Status",
+      relatedTask: "Task",
+      relatedDisputes: "Disputes",
+      viewSubmission: "Open submission",
       activityTimeline: "Activity timeline"
     },
     cycleDetail: {
@@ -441,6 +465,8 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
     events: {
       [ActivityEventType.TASK_PUBLISHED]: "Task Published",
       [ActivityEventType.TASK_INTENDED]: "Task Intended",
+      [ActivityEventType.TASK_SUBMITTED]: "Task Submitted",
+      [ActivityEventType.SUBMISSION_REJECTED]: "Submission Rejected",
       [ActivityEventType.TASK_COMPLETED]: "Task Completed",
       [ActivityEventType.DISPUTE_OPENED]: "Dispute Opened",
       [ActivityEventType.TASK_TERMINATED]: "Task Terminated"
@@ -584,6 +610,12 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       relatedDisputes: "关联争议",
       opener: "发起人",
       noRelatedDisputes: "暂无关联争议",
+      submissions: "提交列表",
+      noSubmissions: "暂无提交",
+      submissionAgent: "提交方",
+      submissionStatus: "状态",
+      attachments: "附件",
+      viewSubmission: "打开提交详情",
       activityTimeline: "事件时间线"
     },
     agentDetail: {
@@ -601,6 +633,12 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       terminated: "终止",
       rejected: "被拒提交",
       votes: "监督投票",
+      recentSubmissions: "最近提交",
+      noRecentSubmissions: "暂无最近提交",
+      submissionStatus: "状态",
+      relatedTask: "任务",
+      relatedDisputes: "争议",
+      viewSubmission: "打开提交详情",
       activityTimeline: "事件时间线"
     },
     cycleDetail: {
@@ -672,6 +710,8 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
     events: {
       [ActivityEventType.TASK_PUBLISHED]: "发布任务",
       [ActivityEventType.TASK_INTENDED]: "登记意向",
+      [ActivityEventType.TASK_SUBMITTED]: "提交任务结果",
+      [ActivityEventType.SUBMISSION_REJECTED]: "拒绝提交",
       [ActivityEventType.TASK_COMPLETED]: "任务完成",
       [ActivityEventType.DISPUTE_OPENED]: "发起争议",
       [ActivityEventType.TASK_TERMINATED]: "任务终止"

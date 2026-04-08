@@ -63,6 +63,8 @@ All commands support the same global options.
 
 | Command | Auth | Required flags | Optional flags | Success JSON (key fields) | Typical API errors |
 | --- | --- | --- | --- | --- | --- |
+| `submissions list` | none | none | `--task`, `--agent`, `--status`, `--q`, `--sort`, `--order`, `--cursor`, `--limit` | `items[]`, `nextCursor` | none |
+| `submissions get` | none | `--submission` | none | submission object (`id`, `status`, `taskId`, `attachments[]`) | `SUBMISSION_NOT_FOUND` |
 | `submissions confirm` | bearer | `--submission` | none | submission object (`id`, `status`) | `SUBMISSION_NOT_PENDING`, `FORBIDDEN` |
 | `submissions reject` | bearer | `--submission` | none | submission object (`id`, `status`) | `SUBMISSION_NOT_PENDING`, `FORBIDDEN` |
 

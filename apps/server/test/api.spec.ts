@@ -659,6 +659,162 @@ describe("API integration", () => {
     expect(resubmit.statusCode).toBe(409);
   });
 
+  it("accepts submission attachments and exposes submissions list/get routes", async () => {
+    const publisher = addr("sub-list-pub");
+    const worker = addr("sub-list-worker");
+    const task = await createSingleSlotTask(publisher);
+
+    const intendRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/intentions`,
+      headers: { authorization: `Bearer ${bearer(worker)}` }
+    });
+    expect(intendRes.statusCode).toBe(200);
+
+    const attachments = [
+      {
+        name: "artifact-log",
+        url: "https://example.com/artifacts/run.log",
+        mimeType: "text/plain",
+        sizeBytes: 128
+      }
+    ];
+
+    const submitRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/submissions`,
+      headers: { authorization: `Bearer ${bearer(worker)}` },
+      payload: { payloadMd: "deliverable-with-attachments", attachments }
+    });
+    expect(submitRes.statusCode).toBe(200);
+    const submitted = submitRes.json() as {
+      id: string;
+      taskId: string;
+      agent: string;
+      payloadMd: string;
+      attachments: Array<{ name: string; url: string; mimeType?: string; sizeBytes?: number }>;
+      status: string;
+    };
+    expect(submitted.attachments).toEqual(attachments);
+
+    const listRes = await app!.inject({
+      method: "GET",
+      url: `/v2/submissions?taskId=${task.id}&agent=${worker}&status=SUBMITTED&q=deliverable`
+    });
+    expect(listRes.statusCode).toBe(200);
+    const listBody = listRes.json() as {
+      items: Array<{ id: string; attachments: Array<{ name: string; url: string }> }>;
+      nextCursor: string | null;
+    };
+    expect(listBody.items.map((item) => item.id)).toContain(submitted.id);
+    expect(listBody.items.find((item) => item.id === submitted.id)?.attachments).toEqual(attachments);
+    expect(listBody.nextCursor === null || typeof listBody.nextCursor === "string").toBe(true);
+
+    const getRes = await app!.inject({
+      method: "GET",
+      url: `/v2/submissions/${submitted.id}`
+    });
+    expect(getRes.statusCode).toBe(200);
+    const getBody = getRes.json() as { id: string; attachments: Array<{ name: string; url: string }> };
+    expect(getBody.id).toBe(submitted.id);
+    expect(getBody.attachments).toEqual(attachments);
+  });
+
+  it("rejects invalid submission attachment url", async () => {
+    const publisher = addr("sub-invalid-pub");
+    const worker = addr("sub-invalid-worker");
+    const task = await createSingleSlotTask(publisher);
+
+    const intendRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/intentions`,
+      headers: { authorization: `Bearer ${bearer(worker)}` }
+    });
+    expect(intendRes.statusCode).toBe(200);
+
+    const submitRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/submissions`,
+      headers: { authorization: `Bearer ${bearer(worker)}` },
+      payload: {
+        payloadMd: "result",
+        attachments: [{ name: "invalid", url: "ftp://example.com/invalid.txt" }]
+      }
+    });
+    expect(submitRes.statusCode).toBe(400);
+    expect(errorCode(submitRes.json())).toBe("VALIDATION_ERROR");
+  });
+
+  it("supports task/dispute q search for description, criteria, and dispute reason", async () => {
+    const publisher = addr("search-rich-pub");
+    const worker = addr("search-rich-worker");
+
+    const taskRes = await app!.inject({
+      method: "POST",
+      url: "/v2/tasks",
+      headers: { authorization: `Bearer ${bearer(publisher)}` },
+      payload: {
+        title: "search-title",
+        descriptionMd: "contains alpha-description-token",
+        acceptanceCriteria: "requires beta-criteria-token",
+        deadlineUtc: futureDeadline(),
+        displayTimezone: "UTC",
+        slotsTotal: 1,
+        rewardPerSlot: 10,
+        allowRepeatCompletionsBySameAgent: false
+      }
+    });
+    expect(taskRes.statusCode).toBe(200);
+    const task = taskRes.json() as { id: string };
+
+    await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/intentions`,
+      headers: { authorization: `Bearer ${bearer(worker)}` }
+    });
+    const submitRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/submissions`,
+      headers: { authorization: `Bearer ${bearer(worker)}` },
+      payload: { payloadMd: "result" }
+    });
+    const submission = submitRes.json() as { id: string };
+    await rejectSubmission(submission.id, publisher);
+
+    const disputeRes = await app!.inject({
+      method: "POST",
+      url: "/v2/disputes",
+      headers: { authorization: `Bearer ${bearer(publisher)}` },
+      payload: {
+        taskId: task.id,
+        submissionId: submission.id,
+        reasonMd: "gamma-dispute-reason-token"
+      }
+    });
+    expect(disputeRes.statusCode).toBe(200);
+
+    const byDescription = await app!.inject({
+      method: "GET",
+      url: `/v2/tasks?q=alpha-description-token`
+    });
+    expect(byDescription.statusCode).toBe(200);
+    expect((byDescription.json() as { items: Array<{ id: string }> }).items.map((item) => item.id)).toContain(task.id);
+
+    const byCriteria = await app!.inject({
+      method: "GET",
+      url: `/v2/tasks?q=beta-criteria-token`
+    });
+    expect(byCriteria.statusCode).toBe(200);
+    expect((byCriteria.json() as { items: Array<{ id: string }> }).items.map((item) => item.id)).toContain(task.id);
+
+    const byReason = await app!.inject({
+      method: "GET",
+      url: `/v2/disputes?q=gamma-dispute-reason-token`
+    });
+    expect(byReason.statusCode).toBe(200);
+    expect((byReason.json() as { items: Array<{ taskId: string }> }).items.some((item) => item.taskId === task.id)).toBe(true);
+  });
+
   it("closes repeatable multi-slot task by confirmed slot count", async () => {
     await app!.close();
     app = null;

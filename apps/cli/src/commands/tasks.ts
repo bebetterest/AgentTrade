@@ -17,7 +17,7 @@ export const registerTaskCommands = (program: Command): void => {
   tasks
     .command("list")
     .description("List tasks")
-    .option("--q <text>", "search by id/title/publisher")
+    .option("--q <text>", "search by id/title/description/criteria/publisher")
     .option("--status <status>", "OPEN|IN_PROGRESS|TERMINATED|CLOSED")
     .option("--publisher <address>", "publisher address")
     .option("--sort <key>", "latest|created|deadline|reward")

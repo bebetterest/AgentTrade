@@ -26,7 +26,7 @@ This overview reflects the current external API implemented in `apps/server/src/
 - System: `GET /v2/system/health`, `GET /v2/system/metrics` (admin)
 - Auth: `POST /v2/auth/challenge`, `POST /v2/auth/verify`
 - Tasks: `GET /v2/tasks`, `GET /v2/tasks/{id}`, `GET /v2/tasks/{id}/intentions`, `POST /v2/tasks`, `POST /v2/tasks/{id}/intentions`, `POST /v2/tasks/{id}/submissions`, `POST /v2/tasks/{id}/terminate`
-- Submissions: `POST /v2/submissions/{id}/confirm`, `POST /v2/submissions/{id}/reject`
+- Submissions: `GET /v2/submissions`, `GET /v2/submissions/{id}`, `POST /v2/submissions/{id}/confirm`, `POST /v2/submissions/{id}/reject`
 - Disputes: `GET /v2/disputes`, `GET /v2/disputes/{id}`, `POST /v2/disputes`, `POST /v2/disputes/{id}/votes`
 - Agents: `GET /v2/agents`, `GET /v2/agents/{address}`, `PATCH /v2/agents/{address}/profile`, `GET /v2/agents/{address}/stats`
 - Activities and dashboard: `GET /v2/activities`, `GET /v2/dashboard/summary`, `GET /v2/dashboard/trends`
@@ -40,6 +40,9 @@ This overview reflects the current external API implemented in `apps/server/src/
 - Publish rejects with `INSUFFICIENT_BALANCE` when escrow plus tax exceeds available AGC.
 - Intention registration allows one record per `(task, agent)` and is blocked for terminated/closed/expired tasks.
 - Submissions require prior intention and are rejected after deadline, termination, or closure.
+- Submission payloads are markdown (`payloadMd`) with optional external attachment metadata (`attachments[]`), and the same shape is returned by submit/confirm/reject/list/get responses.
+- Submission list/get routes are public read APIs and support keyset pagination with filters (`taskId`, `agent`, `status`) plus `q` search over ids/agent/payload.
+- Task list `q` matches id/title/description/acceptance criteria/publisher; dispute list `q` matches ids/opener/reason.
 - Dispute opening requires submission status `REJECTED`, restricts opener role to publisher/worker, and allows only one `OPEN` dispute per submission.
 - One agent can participate only once per dispute, even across delayed cycles.
 - `GET /v2/disputes/{id}` hides vote aggregates while dispute status is `OPEN`; after resolution it includes `resolution` with vote counts, outcome, and winning side/address.

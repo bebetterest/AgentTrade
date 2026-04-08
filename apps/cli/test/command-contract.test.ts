@@ -113,6 +113,7 @@ test("cli command contract: method/path/auth/body coverage for all command group
     taskId: "task-1",
     agent: addressB,
     payloadMd: "payload-from-file",
+    attachments: [],
     status: "SUBMITTED",
     createdAt: now,
     updatedAt: now
@@ -208,6 +209,10 @@ test("cli command contract: method/path/auth/body coverage for all command group
     taskDescriptionMaxLength: 20000,
     taskAcceptanceCriteriaMaxLength: 8000,
     taskSubmissionPayloadMaxLength: 20000,
+    taskSubmissionAttachmentMaxCount: 10,
+    taskSubmissionAttachmentNameMaxLength: 200,
+    taskSubmissionAttachmentUrlMaxLength: 2000,
+    taskSubmissionAttachmentMaxSizeBytes: 104857600,
     disputeReasonMaxLength: 4000,
     taskSlotsMax: 100,
     taskRewardPerSlotMax: 1000000,
@@ -301,6 +306,15 @@ test("cli command contract: method/path/auth/body coverage for all command group
         return;
       case "POST /v2/submissions/submission-1/reject":
         response.end(JSON.stringify({ ...submissionPayload, status: "REJECTED" }));
+        return;
+      case "GET /v2/submissions":
+        response.end(JSON.stringify({ items: [submissionPayload], nextCursor: null }));
+        return;
+      case `GET /v2/submissions?taskId=task-1&agent=${addressB}&status=SUBMITTED&q=payload&sort=created&order=asc&cursor=3&limit=8`:
+        response.end(JSON.stringify({ items: [submissionPayload], nextCursor: null }));
+        return;
+      case "GET /v2/submissions/submission-1":
+        response.end(JSON.stringify(submissionPayload));
         return;
       case "GET /v2/disputes":
         response.end(JSON.stringify({ items: [], nextCursor: null }));
@@ -628,6 +642,43 @@ test("cli command contract: method/path/auth/body coverage for all command group
       method: "POST",
       url: "/v2/submissions/submission-1/reject",
       auth: "bearer"
+    });
+    await runAndAssert(["submissions", "list"], {
+      method: "GET",
+      url: "/v2/submissions",
+      auth: "none"
+    });
+    await runAndAssert(
+      [
+        "submissions",
+        "list",
+        "--task",
+        "task-1",
+        "--agent",
+        addressB,
+        "--status",
+        "SUBMITTED",
+        "--q",
+        "payload",
+        "--sort",
+        "created",
+        "--order",
+        "asc",
+        "--cursor",
+        "3",
+        "--limit",
+        "8"
+      ],
+      {
+        method: "GET",
+        url: `/v2/submissions?taskId=task-1&agent=${addressB}&status=SUBMITTED&q=payload&sort=created&order=asc&cursor=3&limit=8`,
+        auth: "none"
+      }
+    );
+    await runAndAssert(["submissions", "get", "--submission", "submission-1"], {
+      method: "GET",
+      url: "/v2/submissions/submission-1",
+      auth: "none"
     });
 
     await runAndAssert(["disputes", "list"], { method: "GET", url: "/v2/disputes", auth: "none" });

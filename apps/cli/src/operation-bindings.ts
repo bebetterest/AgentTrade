@@ -23,6 +23,8 @@ export const cliOperationBindings = {
   "disputes vote": "disputesVoteV2",
   "economy params": "economyGetParamsV2",
   "ledger get": "ledgerGetV2",
+  "submissions get": "submissionsGetV2",
+  "submissions list": "submissionsListV2",
   "submissions confirm": "submissionsConfirmV2",
   "submissions reject": "submissionsRejectV2",
   "system health": "systemHealthV2",

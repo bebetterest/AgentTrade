@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import type { ActivityEvent, Dispute, Task } from "@agentrade/types";
+import type { ActivityEvent, Dispute, Submission, Task } from "@agentrade/types";
 import type { SupportedLocale } from "@agentrade/i18n";
 import { fetchActivities } from "../../lib/api";
 import { formatDateTime, shortAddress } from "../../lib/dashboard-format";
@@ -17,11 +17,13 @@ interface DisputeDetailContentProps {
   timeZone: string;
   dispute: Dispute;
   task: Task | null;
+  submission?: Submission | null;
   activities: ActivityEvent[];
   initialActivitiesCursor?: string | null;
   onOpenAgentDetail?: (address: string) => void;
   getAgentHref?: (address: string) => string;
   getTaskHref?: (taskId: string) => string;
+  getSubmissionHref?: (submissionId: string) => string;
   showOverviewTitle?: boolean;
 }
 
@@ -38,6 +40,10 @@ const copy = {
     createdAt: "Created At",
     updatedAt: "Updated At",
     taskContext: "Task Context",
+    submissionContext: "Submission Context",
+    submissionAgent: "Submission Agent",
+    submissionStatus: "Submission Status",
+    attachments: "Attachments",
     reward: "Reward",
     deadline: "Deadline",
     slotProgress: "Slot Progress",
@@ -62,6 +68,10 @@ const copy = {
     createdAt: "创建时间",
     updatedAt: "更新时间",
     taskContext: "任务上下文",
+    submissionContext: "提交上下文",
+    submissionAgent: "提交方",
+    submissionStatus: "提交状态",
+    attachments: "附件",
     reward: "奖励",
     deadline: "截止时间",
     slotProgress: "槽位进度",
@@ -104,16 +114,27 @@ const renderTask = (task: Task | null, taskId: string, getTaskHref: ((taskId: st
   </Link>
 );
 
+const renderSubmission = (
+  submissionId: string,
+  getSubmissionHref: ((submissionId: string) => string) | undefined
+) => (
+  <Link className="inline-link" href={(getSubmissionHref?.(submissionId) ?? `/submissions/${submissionId}`)}>
+    {submissionId}
+  </Link>
+);
+
 export const DisputeDetailContent = ({
   locale,
   timeZone,
   dispute,
   task,
+  submission = null,
   activities,
   initialActivitiesCursor = null,
   onOpenAgentDetail,
   getAgentHref,
   getTaskHref,
+  getSubmissionHref,
   showOverviewTitle = true
 }: DisputeDetailContentProps) => {
   const t = copy[locale];
@@ -122,6 +143,19 @@ export const DisputeDetailContent = ({
   const disputeStatusLabel = getDisputeStatusLabel(locale, dispute.status);
   const resolution = dispute.resolution;
   const winnerLabel = resolution?.winnerRole === "SUBMISSION_AGENT" ? t.submissionWins : t.publisherWins;
+  const submissionStatusLabel = submission
+    ? locale === "zh"
+      ? submission.status === "CONFIRMED"
+        ? "已确认"
+        : submission.status === "REJECTED"
+          ? "已拒绝"
+          : "已提交"
+      : submission.status === "CONFIRMED"
+        ? "Confirmed"
+        : submission.status === "REJECTED"
+          ? "Rejected"
+          : "Submitted"
+    : "-";
   const overviewAnchor = "dispute-overview";
   const contextAnchor = "dispute-context";
   const reasonAnchor = "dispute-reason";
@@ -177,7 +211,10 @@ export const DisputeDetailContent = ({
         <div className="detail-card" id={overviewAnchor}>
           <div className="metric-line"><span>{t.disputeId}</span><strong>{dispute.id}</strong></div>
           <div className="metric-line"><span>{t.task}</span><strong>{renderTask(task, dispute.taskId, getTaskHref)}</strong></div>
-          <div className="metric-line"><span>{t.submission}</span><strong>{dispute.submissionId}</strong></div>
+          <div className="metric-line">
+            <span>{t.submission}</span>
+            <strong>{renderSubmission(dispute.submissionId, getSubmissionHref)}</strong>
+          </div>
           <div className="metric-line"><span>{t.opener}</span><strong>{renderAgent(dispute.opener, onOpenAgentDetail, getAgentHref)}</strong></div>
           <div className="metric-line">
             <span>{t.status}</span>
@@ -195,6 +232,35 @@ export const DisputeDetailContent = ({
               <div className="metric-line"><span>{t.reward}</span><strong>{task.rewardPerSlot} AGC</strong></div>
               <div className="metric-line"><span>{t.deadline}</span><strong>{formatDateTime(task.deadlineUtc, locale, timeZone)}</strong></div>
               <div className="metric-line"><span>{t.slotProgress}</span><strong>{task.completedAgents.length}/{task.slotsTotal}</strong></div>
+            </>
+          ) : (
+            <p className="empty-line">-</p>
+          )}
+
+          <h4 className="detail-subsection-title">{t.submissionContext}</h4>
+          {submission ? (
+            <>
+              <div className="metric-line">
+                <span>{t.submissionAgent}</span>
+                <strong>{renderAgent(submission.agent, onOpenAgentDetail, getAgentHref)}</strong>
+              </div>
+              <div className="metric-line">
+                <span>{t.submissionStatus}</span>
+                <strong>{submissionStatusLabel}</strong>
+              </div>
+              {submission.attachments.length > 0 ? (
+                <div className="detail-subline">
+                  <span>{t.attachments}:</span>
+                  {submission.attachments.map((attachment, index) => (
+                    <span key={`${submission.id}-attachment-${index}`}>
+                      <a className="inline-link" href={attachment.url} target="_blank" rel="noreferrer">
+                        {attachment.name}
+                      </a>
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+              <div className="markdown markdown--compact">{renderSafeMarkdown(submission.payloadMd)}</div>
             </>
           ) : (
             <p className="empty-line">-</p>

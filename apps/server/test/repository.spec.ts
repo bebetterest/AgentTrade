@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { defaultConfig } from "@agentrade/config";
 import type { Address } from "@agentrade/types";
-import { ActivityEventType, DisputeStatus, TaskStatus, VoteChoice } from "@agentrade/types";
+import { ActivityEventType, DisputeStatus, SubmissionStatus, TaskStatus, VoteChoice } from "@agentrade/types";
 import { AgentradeEngine } from "../src/domain/engine.js";
 import { parseCursorOffset } from "../src/api/services.js";
 import { MutableClock } from "../src/utils/time.js";
@@ -174,8 +174,8 @@ runDbSuite("PrismaStateRepository", () => {
     const alpha = engine.publishTask({
       publisher: publisherA,
       title: "alpha-open",
-      descriptionMd: "desc",
-      acceptanceCriteria: "ok",
+      descriptionMd: "alpha-desc-token",
+      acceptanceCriteria: "alpha-criteria-token",
       deadlineUtc: deadline(),
       displayTimezone: "UTC",
       slotsTotal: 1,
@@ -224,8 +224,12 @@ runDbSuite("PrismaStateRepository", () => {
 
     engine.addTaskIntention(beta.id, worker);
     clock.advanceMinutes(31);
-    const betaSubmission = engine.submitTask(beta.id, worker, "beta-result");
+    const betaSubmission = engine.submitTask(beta.id, worker, "beta-result", [
+      { name: "beta-log", url: "https://example.com/beta.log" }
+    ]);
+    clock.advanceMinutes(1);
     engine.rejectSubmission(betaSubmission.id, publisherA);
+    clock.advanceMinutes(1);
     const dispute = engine.openDispute({
       taskId: beta.id,
       submissionId: betaSubmission.id,
@@ -267,7 +271,7 @@ runDbSuite("PrismaStateRepository", () => {
     expect(publisherPageTwo.nextCursor).toBeNull();
 
     const alphaOnly = await repo.queryTasksDirect({
-      q: "alpha",
+      q: "alpha-desc-token",
       status: TaskStatus.OPEN,
       sort: "latest",
       order: "desc",
@@ -277,10 +281,22 @@ runDbSuite("PrismaStateRepository", () => {
     });
     expect(alphaOnly.items.map((item) => item.id)).toEqual([alpha.id]);
 
+    const alphaByCriteria = await repo.queryTasksDirect({
+      q: "alpha-criteria-token",
+      status: TaskStatus.OPEN,
+      sort: "latest",
+      order: "desc",
+      offset: 0,
+      limit: 20,
+      paged: true
+    });
+    expect(alphaByCriteria.items.map((item) => item.id)).toEqual([alpha.id]);
+
     const disputes = await repo.queryDisputesDirect({
       taskId: beta.id,
       opener: publisherA,
       status: DisputeStatus.OPEN,
+      q: "beta-review",
       sort: "latest",
       order: "desc",
       offset: 0,
@@ -289,6 +305,21 @@ runDbSuite("PrismaStateRepository", () => {
     });
     expect(disputes.items.map((item) => item.id)).toEqual([dispute.id]);
     expect(disputes.nextCursor).toBeNull();
+
+    const submissions = await repo.querySubmissionsDirect({
+      taskId: beta.id,
+      agent: worker,
+      status: SubmissionStatus.REJECTED,
+      q: "beta-result",
+      sort: "latest",
+      order: "desc",
+      offset: 0,
+      limit: 10,
+      paged: true
+    });
+    expect(submissions.items.map((item) => item.id)).toEqual([betaSubmission.id]);
+    expect(submissions.items[0]?.attachments).toEqual([{ name: "beta-log", url: "https://example.com/beta.log" }]);
+    expect(submissions.nextCursor).toBeNull();
 
     const betaActivityPageOne = await repo.queryActivitiesDirect({
       taskId: beta.id,
@@ -311,9 +342,22 @@ runDbSuite("PrismaStateRepository", () => {
       paged: true
     });
     expect(betaActivityPageTwo.items.map((item) => item.type)).toEqual([
+      ActivityEventType.TASK_SUBMITTED,
+      ActivityEventType.SUBMISSION_REJECTED
+    ]);
+    expect(parseCursorOffset(betaActivityPageTwo.nextCursor ?? undefined)).toBe(4);
+
+    const betaActivityPageThree = await repo.queryActivitiesDirect({
+      taskId: beta.id,
+      order: "asc",
+      offset: 4,
+      limit: 2,
+      paged: true
+    });
+    expect(betaActivityPageThree.items.map((item) => item.type)).toEqual([
       ActivityEventType.DISPUTE_OPENED
     ]);
-    expect(betaActivityPageTwo.nextCursor).toBeNull();
+    expect(betaActivityPageThree.nextCursor).toBeNull();
   });
 
   it("queries agents and dashboard aggregates directly from normalized tables", async () => {

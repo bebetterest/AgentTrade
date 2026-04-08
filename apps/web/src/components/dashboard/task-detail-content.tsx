@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import type { ActivityEvent, Dispute, Task, TaskIntention } from "@agentrade/types";
+import type { ActivityEvent, Dispute, Submission, Task, TaskIntention } from "@agentrade/types";
 import type { SupportedLocale } from "@agentrade/i18n";
-import { fetchActivities, fetchDisputes, fetchTaskIntentions } from "../../lib/api";
+import { fetchActivities, fetchDisputes, fetchSubmissions, fetchTaskIntentions } from "../../lib/api";
 import { formatDateTime, shortAddress } from "../../lib/dashboard-format";
 import { getLoadErrorKind, withRateLimitMessage, type LoadErrorKind } from "../../lib/load-error";
 import { renderSafeMarkdown } from "../../lib/markdown";
@@ -19,13 +19,16 @@ interface TaskDetailContentProps {
   timeZone: string;
   task: Task;
   intentions: TaskIntention[];
+  submissions?: Submission[];
   disputes: Dispute[];
   activities: ActivityEvent[];
   initialIntentionsCursor?: string | null;
+  initialSubmissionsCursor?: string | null;
   initialDisputesCursor?: string | null;
   initialActivitiesCursor?: string | null;
   onOpenAgentDetail?: (address: string) => void;
   getAgentHref?: (address: string) => string;
+  getSubmissionHref?: (submissionId: string) => string;
   getDisputeHref?: (disputeId: string) => string;
 }
 
@@ -37,13 +40,16 @@ export const TaskDetailContent = ({
   timeZone,
   task,
   intentions,
+  submissions = [],
   disputes,
   activities,
   initialIntentionsCursor = null,
+  initialSubmissionsCursor = null,
   initialDisputesCursor = null,
   initialActivitiesCursor = null,
   onOpenAgentDetail,
   getAgentHref,
+  getSubmissionHref,
   getDisputeHref
 }: TaskDetailContentProps) => {
   const copy = getDashboardCopy(locale);
@@ -52,16 +58,23 @@ export const TaskDetailContent = ({
   const participantsAnchor = "task-participants";
   const acceptanceAnchor = "task-acceptance";
   const descriptionAnchor = "task-description";
+  const submissionsAnchor = "task-submissions";
   const disputesAnchor = "task-disputes";
   const timelineAnchor = "task-timeline";
   const openDisputeLabel = locale === "zh" ? "打开争议页" : "Open dispute";
   const resolveAgentHref = (address: string) => getAgentHref?.(address) ?? `/agents/${address}`;
+  const resolveSubmissionHref = (submissionId: string) => getSubmissionHref?.(submissionId) ?? `/submissions/${submissionId}`;
   const resolveDisputeHref = (disputeId: string) => getDisputeHref?.(disputeId) ?? `/disputes/${disputeId}`;
 
   const [intentionItems, setIntentionItems] = useState<TaskIntention[]>(intentions);
   const [intentionCursor, setIntentionCursor] = useState<string | null>(initialIntentionsCursor);
   const [loadingIntentions, setLoadingIntentions] = useState(false);
   const [intentionErrorKind, setIntentionErrorKind] = useState<LoadErrorKind | null>(null);
+
+  const [submissionItems, setSubmissionItems] = useState<Submission[]>(submissions);
+  const [submissionCursor, setSubmissionCursor] = useState<string | null>(initialSubmissionsCursor);
+  const [loadingSubmissions, setLoadingSubmissions] = useState(false);
+  const [submissionErrorKind, setSubmissionErrorKind] = useState<LoadErrorKind | null>(null);
 
   const [disputeItems, setDisputeItems] = useState<Dispute[]>(disputes);
   const [disputeCursor, setDisputeCursor] = useState<string | null>(initialDisputesCursor);
@@ -81,6 +94,11 @@ export const TaskDetailContent = ({
     setLoadingIntentions(false);
     setIntentionErrorKind(null);
 
+    setSubmissionItems(submissions);
+    setSubmissionCursor(initialSubmissionsCursor);
+    setLoadingSubmissions(false);
+    setSubmissionErrorKind(null);
+
     setDisputeItems(disputes);
     setDisputeCursor(initialDisputesCursor);
     setLoadingDisputes(false);
@@ -95,9 +113,11 @@ export const TaskDetailContent = ({
   }, [
     task.id,
     intentions,
+    submissions,
     disputes,
     activities,
     initialIntentionsCursor,
+    initialSubmissionsCursor,
     initialDisputesCursor,
     initialActivitiesCursor
   ]);
@@ -148,6 +168,30 @@ export const TaskDetailContent = ({
     }
   }, [disputeCursor, loadingDisputes, task.id]);
 
+  const loadMoreSubmissions = useCallback(async () => {
+    if (!submissionCursor || loadingSubmissions) {
+      return;
+    }
+    setLoadingSubmissions(true);
+    try {
+      const response = await fetchSubmissions({
+        taskId: task.id,
+        cursor: submissionCursor,
+        limit: DETAIL_LIST_PAGE_SIZE,
+        sort: "latest",
+        order: "desc",
+        strict: true
+      });
+      setSubmissionItems((prev) => prev.concat(response.items));
+      setSubmissionCursor(response.nextCursor);
+      setSubmissionErrorKind(null);
+    } catch (error) {
+      setSubmissionErrorKind(getLoadErrorKind(error));
+    } finally {
+      setLoadingSubmissions(false);
+    }
+  }, [loadingSubmissions, submissionCursor, task.id]);
+
   const loadMoreActivities = useCallback(async () => {
     if (!activityCursor || loadingActivities) {
       return;
@@ -174,7 +218,27 @@ export const TaskDetailContent = ({
   const visibleCompletedItems = task.completedAgents.slice(0, visibleCompleted);
   const hasMoreCompleted = visibleCompletedItems.length < task.completedAgents.length;
 
+  const getSubmissionStatusLabel = (status: Submission["status"]): string => {
+    if (locale === "zh") {
+      if (status === "CONFIRMED") {
+        return "已确认";
+      }
+      if (status === "REJECTED") {
+        return "已拒绝";
+      }
+      return "已提交";
+    }
+    if (status === "CONFIRMED") {
+      return "Confirmed";
+    }
+    if (status === "REJECTED") {
+      return "Rejected";
+    }
+    return "Submitted";
+  };
+
   const intentionLoadErrorMessage = withRateLimitMessage(locale, loadMoreFallback, intentionErrorKind);
+  const submissionLoadErrorMessage = withRateLimitMessage(locale, loadMoreFallback, submissionErrorKind);
   const disputeLoadErrorMessage = withRateLimitMessage(locale, loadMoreFallback, disputeErrorKind);
   const activityLoadErrorMessage = withRateLimitMessage(locale, loadMoreFallback, activityErrorKind);
 
@@ -184,6 +248,7 @@ export const TaskDetailContent = ({
         <a href={`#${participantsAnchor}`}>{copy.taskDetail.participants}</a>
         <a href={`#${acceptanceAnchor}`}>{copy.taskDetail.acceptanceCriteria}</a>
         <a href={`#${descriptionAnchor}`}>{locale === "zh" ? "任务说明" : "Task Description"}</a>
+        <a href={`#${submissionsAnchor}`}>{copy.taskDetail.submissions}</a>
         <a href={`#${disputesAnchor}`}>{copy.taskDetail.relatedDisputes}</a>
         <a href={`#${timelineAnchor}`}>{copy.taskDetail.activityTimeline}</a>
       </nav>
@@ -270,6 +335,60 @@ export const TaskDetailContent = ({
       <section className="detail-card" id={descriptionAnchor}>
         <h4 className="detail-subsection-title">{locale === "zh" ? "任务说明" : "Task Description"}</h4>
         <div className="markdown">{renderSafeMarkdown(task.descriptionMd)}</div>
+      </section>
+
+      <section className="detail-card" id={submissionsAnchor}>
+        <h4 className="detail-subsection-title">{copy.taskDetail.submissions}</h4>
+        {submissionItems.length > 0 ? (
+          <>
+            <ul className="detail-list">
+              {submissionItems.map((item) => (
+                <li key={item.id} className="detail-card">
+                  <div className="section-head compact-head">
+                    <strong>{item.id}</strong>
+                    <StateChip status={item.status} label={getSubmissionStatusLabel(item.status)} />
+                  </div>
+                  <p className="muted">
+                    {copy.taskDetail.submissionAgent}:{" "}
+                    <EntityLink
+                      address={item.agent}
+                      label={shortAddress(item.agent)}
+                      onClick={onOpenAgentDetail ? () => onOpenAgentDetail(item.agent) : undefined}
+                      href={resolveAgentHref(item.agent)}
+                    />
+                  </p>
+                  <p className="muted">
+                    {locale === "zh" ? "更新时间" : "Updated"}: {formatDateTime(item.updatedAt, locale, timeZone)}
+                  </p>
+                  <div className="markdown markdown--compact">{renderSafeMarkdown(item.payloadMd)}</div>
+                  {item.attachments.length > 0 ? (
+                    <div className="detail-subline">
+                      <span>{copy.taskDetail.attachments}:</span>
+                      {item.attachments.map((attachment, index) => (
+                        <span key={`${item.id}-attachment-${index}`}>
+                          <a className="inline-link" href={attachment.url} target="_blank" rel="noreferrer">
+                            {attachment.name}
+                          </a>
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
+                  <Link className="inline-link" href={resolveSubmissionHref(item.id)}>
+                    {copy.taskDetail.viewSubmission}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+            {submissionCursor ? (
+              <button type="button" className="action-btn more-btn" onClick={loadMoreSubmissions} disabled={loadingSubmissions}>
+                {loadingSubmissions ? copy.common.loadingMore : loadMoreLabel}
+              </button>
+            ) : null}
+            {submissionErrorKind ? <p className="empty-line">{submissionLoadErrorMessage}</p> : null}
+          </>
+        ) : (
+          <p className="empty-line">{copy.taskDetail.noSubmissions}</p>
+        )}
       </section>
 
       <section className="detail-card" id={disputesAnchor}>

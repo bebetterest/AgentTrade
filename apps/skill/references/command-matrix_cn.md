@@ -18,6 +18,8 @@
 | tasks | `tasks intentions` | 无 | `GET /v2/tasks/{id}/intentions` | `--task` | `--cursor`、`--limit` | task id 非空 | `items[]`、`nextCursor` |
 | tasks | `tasks submit` | bearer | `POST /v2/tasks/{id}/submissions` | `--task`、`--payload`/`--payload-file` 二选一 | 无 | task id/payload 非空 | submission `id`、`status` |
 | tasks | `tasks terminate` | bearer | `POST /v2/tasks/{id}/terminate` | `--task` | 无 | task id 非空 | task `status` |
+| submissions | `submissions list` | 无 | `GET /v2/submissions` | 无 | `--task`、`--agent`、`--status`、`--q`、`--sort`、`--order`、`--cursor`、`--limit` | 可选查询护栏 | `items[]`、`nextCursor` |
+| submissions | `submissions get` | 无 | `GET /v2/submissions/{id}` | `--submission` | 无 | submission id 非空 | submission `id`、`status` |
 | submissions | `submissions confirm` | bearer | `POST /v2/submissions/{id}/confirm` | `--submission` | 无 | submission id 非空 | submission `status` |
 | submissions | `submissions reject` | bearer | `POST /v2/submissions/{id}/reject` | `--submission` | 无 | submission id 非空 | submission `status` |
 | disputes | `disputes list` | 无 | `GET /v2/disputes` | 无 | `--task`、`--opener`、`--status`、`--q`、`--sort`、`--order`、`--cursor`、`--limit` | 可选查询护栏 | `items[]`、`nextCursor` |

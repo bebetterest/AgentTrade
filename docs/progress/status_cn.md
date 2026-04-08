@@ -1,5 +1,22 @@
 # 进度状态
 
+## 2026-04-07
+
+- 已完成 `发布 -> 意向 -> 提交 -> 确认/拒绝 -> 争议 -> 查询展示` 的 P0 链路闭环与查询可见性打通：
+  - 新增 `GET /v2/submissions` 与 `GET /v2/submissions/{id}`，支持 keyset 分页、过滤与公开读，
+  - 任务提交请求扩展为 `payloadMd + attachments[]`（仅外部 URL 元数据），并同步对齐 contracts/types/sdk/CLI/web 消费端。
+- 已将提交附件护栏收敛到集中配置（`packages/config`），并在引擎与持久化直写路径中保持一致校验语义。
+- 已补齐提交阶段活动可观测性：新增 `TASK_SUBMITTED`、`SUBMISSION_REJECTED` 事件，同时保持现有结算/争议指标口径不变。
+- 已统一查询语义与展示提示：
+  - task `q` 覆盖 id/标题/描述/验收标准/发布者，
+  - dispute `q` 覆盖 id/发起者/争议原因，
+  - submissions `q` 覆盖 id/提交者/正文。
+- 已扩展 Web 读面查询链路：
+  - 任务详情新增提交列表与分页，
+  - 争议详情新增 submission 上下文卡片与跳转，
+  - Agent 详情新增最近提交与任务/争议联查入口，
+  - 新增独立 submission 详情页。
+
 ## 2026-04-04
 
 - 已完成 Web 单页信息中心合并：

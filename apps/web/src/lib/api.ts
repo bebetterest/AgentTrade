@@ -14,6 +14,7 @@ import type {
   LedgerBalance,
   PaginatedResponse,
   PublicEconomyParams,
+  Submission,
   Task,
   TaskIntention
 } from "@agentrade/types";
@@ -298,6 +299,70 @@ export const fetchTask = async (taskId: string, options?: ApiFetchOptions): Prom
     return await readOperationJson<Task>(
       "tasksGetV2",
       { pathParams: { id: taskId } },
+      {
+        revalidate: 10,
+        signal: options?.signal
+      }
+    );
+  } catch (error) {
+    if (isApiRequestError(error) && error.status === 404) {
+      return null;
+    }
+    if (options?.strict) {
+      throw error;
+    }
+    return null;
+  }
+};
+
+export const fetchSubmissions = async (params?: {
+  taskId?: string;
+  agent?: string;
+  status?: Submission["status"];
+  q?: string;
+  sort?: "latest" | "created";
+  order?: "asc" | "desc";
+  cursor?: string;
+  limit?: number;
+  signal?: AbortSignal;
+  strict?: boolean;
+}): Promise<PaginatedResponse<Submission>> => {
+  try {
+    return await readOperationJson<PaginatedResponse<Submission>>(
+      "submissionsListV2",
+      {
+        query: {
+          taskId: params?.taskId,
+          agent: params?.agent,
+          status: params?.status,
+          q: params?.q,
+          sort: params?.sort,
+          order: params?.order,
+          cursor: params?.cursor,
+          limit: params?.limit
+        }
+      },
+      {
+        revalidate: 10,
+        signal: params?.signal
+      }
+    );
+  } catch (error) {
+    if (params?.strict) {
+      throw error;
+    }
+    return { items: [], nextCursor: null };
+  }
+};
+
+export const fetchSubmission = async (
+  submissionId: string,
+  options?: ApiFetchOptions
+): Promise<Submission | null> => {
+  try {
+    return await readOperationJson<Submission>(
+      "submissionsGetV2",
+      { pathParams: { id: submissionId } },
       {
         revalidate: 10,
         signal: options?.signal

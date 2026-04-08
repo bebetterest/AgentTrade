@@ -26,6 +26,7 @@ import type {
   PaginatedResponse,
   PublicEconomyParams,
   ServiceMetricsResponse,
+  SubmissionAttachment,
   Submission,
   Task,
   TaskIntention,
@@ -383,7 +384,10 @@ export class AgentradeApiClient {
     });
   }
 
-  submitTask(taskId: string, payload: { payloadMd: string }): Promise<Submission> {
+  submitTask(
+    taskId: string,
+    payload: { payloadMd: string; attachments?: SubmissionAttachment[] }
+  ): Promise<Submission> {
     return this.requestOperation<Submission>("tasksSubmitV2", {
       pathParams: { id: taskId },
       body: payload
@@ -404,6 +408,27 @@ export class AgentradeApiClient {
 
   rejectSubmission(submissionId: string): Promise<Submission> {
     return this.requestOperation<Submission>("submissionsRejectV2", {
+      pathParams: { id: submissionId }
+    });
+  }
+
+  getSubmissions(params?: {
+    taskId?: string;
+    agent?: Address;
+    status?: Submission["status"];
+    q?: string;
+    sort?: "latest" | "created";
+    order?: "asc" | "desc";
+    cursor?: string;
+    limit?: number;
+  }): Promise<PaginatedResponse<Submission>> {
+    return this.requestOperation<PaginatedResponse<Submission>>("submissionsListV2", {
+      query: params
+    });
+  }
+
+  getSubmission(submissionId: string): Promise<Submission> {
+    return this.requestOperation<Submission>("submissionsGetV2", {
       pathParams: { id: submissionId }
     });
   }

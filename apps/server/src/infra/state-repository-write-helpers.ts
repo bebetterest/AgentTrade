@@ -18,7 +18,8 @@ import {
   TaskStatus as DomainTaskStatus,
   VoteChoice as DomainVoteChoice,
   type CloseCycleResult,
-  type Address
+  type Address,
+  type SubmissionAttachment
 } from "@agentrade/types";
 import { nanoid } from "nanoid";
 import { DomainError } from "../domain/errors.js";
@@ -88,6 +89,17 @@ interface AddTaskIntentionWriteDeps extends RejectSubmissionWriteDeps {
 
 interface SubmitTaskWriteDeps extends CommonWriteDeps {
   getConfirmedSlots(slotsTotal: number, rewardPerSlot: number, rewardEscrowRemaining: number): number;
+  appendActivityEventWithTx(
+    tx: Prisma.TransactionClient,
+    input: {
+      type: DomainActivityEventType;
+      cycleId: string;
+      taskId: string | null;
+      disputeId: string | null;
+      actor: Address;
+      createdAt: Date;
+    }
+  ): Promise<void>;
 }
 
 interface ActivityWriteDeps extends RejectSubmissionWriteDeps {
@@ -183,7 +195,12 @@ export interface SubmitTaskDirectInput {
   taskId: string;
   agent: Address;
   payloadMd: string;
+  attachments?: SubmissionAttachment[];
   taskSubmissionPayloadMaxLength: number;
+  taskSubmissionAttachmentMaxCount: number;
+  taskSubmissionAttachmentNameMaxLength: number;
+  taskSubmissionAttachmentUrlMaxLength: number;
+  taskSubmissionAttachmentMaxSizeBytes: number;
   resubmitCooldownMinutes: number;
 }
 
@@ -211,6 +228,85 @@ const asAddressArray = (value: Prisma.JsonValue): Address[] =>
   asStringArray(value).map((item) => asAddress(item));
 const toJsonAddressArray = (value: string[]): Prisma.InputJsonValue =>
   value as unknown as Prisma.InputJsonValue;
+const toJsonSubmissionAttachments = (
+  value: SubmissionAttachment[]
+): Prisma.InputJsonValue => value as unknown as Prisma.InputJsonValue;
+
+const validateSubmissionAttachments = (
+  attachments: SubmissionAttachment[],
+  input: {
+    taskSubmissionAttachmentMaxCount: number;
+    taskSubmissionAttachmentNameMaxLength: number;
+    taskSubmissionAttachmentUrlMaxLength: number;
+    taskSubmissionAttachmentMaxSizeBytes: number;
+  }
+): void => {
+  if (attachments.length > input.taskSubmissionAttachmentMaxCount) {
+    throw new DomainError(
+      "INVALID_SUBMISSION_ATTACHMENTS",
+      `attachments must contain <= ${input.taskSubmissionAttachmentMaxCount} items`,
+      400
+    );
+  }
+  for (const attachment of attachments) {
+    if (attachment.name.trim().length === 0) {
+      throw new DomainError(
+        "INVALID_SUBMISSION_ATTACHMENTS",
+        "attachment name must be non-empty",
+        400
+      );
+    }
+    if (attachment.name.length > input.taskSubmissionAttachmentNameMaxLength) {
+      throw new DomainError(
+        "INVALID_SUBMISSION_ATTACHMENTS",
+        `attachment name must be <= ${input.taskSubmissionAttachmentNameMaxLength} chars`,
+        400
+      );
+    }
+    if (attachment.url.length > input.taskSubmissionAttachmentUrlMaxLength) {
+      throw new DomainError(
+        "INVALID_SUBMISSION_ATTACHMENTS",
+        `attachment url must be <= ${input.taskSubmissionAttachmentUrlMaxLength} chars`,
+        400
+      );
+    }
+    try {
+      const parsed = new URL(attachment.url);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+        throw new Error("invalid protocol");
+      }
+    } catch {
+      throw new DomainError(
+        "INVALID_SUBMISSION_ATTACHMENTS",
+        "attachment url must be a valid http(s) URL",
+        400
+      );
+    }
+    if (attachment.mimeType && attachment.mimeType.trim().length === 0) {
+      throw new DomainError(
+        "INVALID_SUBMISSION_ATTACHMENTS",
+        "attachment mimeType must be non-empty when provided",
+        400
+      );
+    }
+    if (attachment.sizeBytes !== undefined) {
+      if (!Number.isSafeInteger(attachment.sizeBytes) || attachment.sizeBytes < 0) {
+        throw new DomainError(
+          "INVALID_SUBMISSION_ATTACHMENTS",
+          "attachment sizeBytes must be a non-negative safe integer",
+          400
+        );
+      }
+      if (attachment.sizeBytes > input.taskSubmissionAttachmentMaxSizeBytes) {
+        throw new DomainError(
+          "INVALID_SUBMISSION_ATTACHMENTS",
+          `attachment sizeBytes must be <= ${input.taskSubmissionAttachmentMaxSizeBytes}`,
+          400
+        );
+      }
+    }
+  }
+};
 
 export const writeUpdateAgentProfileDirect = async (
   prisma: PrismaClient,
@@ -243,13 +339,13 @@ export const writeUpdateAgentProfileDirect = async (
 
 export const writeRejectSubmissionDirect = async (
   prisma: PrismaClient,
-  deps: RejectSubmissionWriteDeps,
+  deps: ActivityWriteDeps,
   submissionId: string,
   publisher: Address
 ): Promise<PrismaSubmission> => {
   return deps.executeWithRetry(async () =>
     prisma.$transaction(async (tx) => {
-      await deps.lockRuntimeWithTx(tx);
+      const runtime = await deps.lockRuntimeWithTx(tx);
       const now = new Date();
       await tx.$queryRaw`SELECT id FROM "Submission" WHERE id = ${submissionId} FOR UPDATE`;
       const submissionRow = await tx.submission.findUnique({ where: { id: submissionId } });
@@ -278,6 +374,14 @@ export const writeRejectSubmissionDirect = async (
       await deps.applyProfileDeltaWithTx(tx, asAddress(submissionRow.agentAddress), now, {
         workerReputationDelta: -1,
         submissionsRejected: 1
+      });
+      await deps.appendActivityEventWithTx(tx, {
+        type: DomainActivityEventType.SUBMISSION_REJECTED,
+        cycleId: runtime.activeCycleId,
+        taskId: task.id,
+        disputeId: null,
+        actor: publisher,
+        createdAt: now
       });
       await deps.touchRuntimeStateWithTx(tx);
       return updated;
@@ -363,7 +467,7 @@ export const writeSubmitTaskDirect = async (
   return deps.executeWithRetry(async () =>
     prisma.$transaction(async (tx) => {
       const now = new Date();
-      await deps.lockRuntimeWithTx(tx);
+      const runtime = await deps.lockRuntimeWithTx(tx);
       await deps.ensureAgentAndLedgerWithTx(tx, input.agent, now);
 
       await tx.$queryRaw`SELECT id FROM "Task" WHERE id = ${input.taskId} FOR UPDATE`;
@@ -381,6 +485,8 @@ export const writeSubmitTaskDirect = async (
           400
         );
       }
+      const attachments = input.attachments ?? [];
+      validateSubmissionAttachments(attachments, input);
       if (taskRow.status === DomainTaskStatus.TERMINATED || taskRow.status === DomainTaskStatus.CLOSED) {
         throw new DomainError("TASK_NOT_SUBMITTABLE", "task is not open for submissions", 409);
       }
@@ -432,6 +538,7 @@ export const writeSubmitTaskDirect = async (
           taskId: taskRow.id,
           agentAddress: input.agent,
           payloadMd: input.payloadMd,
+          attachments: toJsonSubmissionAttachments(attachments),
           status: DomainSubmissionStatus.SUBMITTED,
           createdAt: now,
           updatedAt: now
@@ -446,6 +553,14 @@ export const writeSubmitTaskDirect = async (
           }
         });
       }
+      await deps.appendActivityEventWithTx(tx, {
+        type: DomainActivityEventType.TASK_SUBMITTED,
+        cycleId: runtime.activeCycleId,
+        taskId: taskRow.id,
+        disputeId: null,
+        actor: input.agent,
+        createdAt: now
+      });
       await deps.touchRuntimeStateWithTx(tx);
       return created;
     })

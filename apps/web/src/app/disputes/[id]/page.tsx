@@ -3,7 +3,7 @@ import type { SupportedLocale } from "@agentrade/i18n";
 import { DetailPageShell } from "../../../components/detail-page-shell";
 import { DetailStateCard } from "../../../components/detail-state-card";
 import { DisputeDetailContent } from "../../../components/dashboard/dispute-detail-content";
-import { fetchActivities, fetchDispute, fetchTask } from "../../../lib/api";
+import { fetchActivities, fetchDispute, fetchSubmission, fetchTask } from "../../../lib/api";
 import { formatDateTime, shortAddress } from "../../../lib/dashboard-format";
 import { getDisputeStatusLabel } from "../../../components/dashboard/i18n";
 import { getLoadErrorKind, withRateLimitMessage } from "../../../lib/load-error";
@@ -66,13 +66,15 @@ export default async function DisputeDetailPage({ params }: DisputeDetailPagePro
   let loadErrorKind: ReturnType<typeof getLoadErrorKind> | null = null;
   let dispute: Awaited<ReturnType<typeof fetchDispute>> = null;
   let task: Awaited<ReturnType<typeof fetchTask>> = null;
+  let submission: Awaited<ReturnType<typeof fetchSubmission>> = null;
   let activities: Awaited<ReturnType<typeof fetchActivities>> = { items: [], nextCursor: null };
 
   try {
     dispute = await fetchDispute(id, { strict: true });
     if (dispute) {
-      const [taskRes, activitiesRes] = await Promise.allSettled([
+      const [taskRes, submissionRes, activitiesRes] = await Promise.allSettled([
         fetchTask(dispute.taskId, { strict: true }),
+        fetchSubmission(dispute.submissionId, { strict: true }),
         fetchActivities({ disputeId: dispute.id, limit: DETAIL_LIST_PAGE_SIZE, order: "desc", strict: true })
       ]);
 
@@ -82,6 +84,15 @@ export default async function DisputeDetailPage({ params }: DisputeDetailPagePro
         logWebLoadError("dispute-detail:task", taskRes.reason, {
           disputeId: dispute.id,
           taskId: dispute.taskId
+        });
+      }
+
+      if (submissionRes.status === "fulfilled") {
+        submission = submissionRes.value;
+      } else {
+        logWebLoadError("dispute-detail:submission", submissionRes.reason, {
+          disputeId: dispute.id,
+          submissionId: dispute.submissionId
         });
       }
 
@@ -165,7 +176,9 @@ export default async function DisputeDetailPage({ params }: DisputeDetailPagePro
         {
           label: t.submission,
           value: dispute.submissionId,
-          note: `${t.updatedAt}: ${formatDateTime(dispute.updatedAt, requestPreferences.locale, requestPreferences.timeZone)}`
+          note:
+            `${t.updatedAt}: ${formatDateTime(dispute.updatedAt, requestPreferences.locale, requestPreferences.timeZone)}` +
+            (submission ? ` · ${requestPreferences.locale === "zh" ? "状态" : "Status"}: ${submission.status}` : "")
         },
         { label: t.opener, value: shortAddress(dispute.opener), note: dispute.opener },
         {
@@ -181,6 +194,7 @@ export default async function DisputeDetailPage({ params }: DisputeDetailPagePro
           timeZone={requestPreferences.timeZone}
           dispute={dispute}
           task={task}
+          submission={submission}
           activities={activities.items}
           initialActivitiesCursor={activities.nextCursor}
           showOverviewTitle={false}

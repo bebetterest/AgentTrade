@@ -217,7 +217,7 @@
             "in": "query",
             "name": "q",
             "required": false,
-            "description": "Search by id, title, or publisher",
+            "description": "Search by id, title, description, criteria, or publisher",
             "schema": {
               "type": "string",
               "minLength": 1
@@ -809,6 +809,193 @@
         }
       }
     },
+    "/v2/submissions": {
+      "get": {
+        "tags": [
+          "Submissions"
+        ],
+        "operationId": "submissionsListV2",
+        "summary": "List submissions",
+        "deprecated": false,
+        "parameters": [
+          {
+            "in": "query",
+            "name": "taskId",
+            "required": false,
+            "description": "Task id filter",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "agent",
+            "required": false,
+            "description": "Submission agent address",
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[a-fA-F0-9]{40}$"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "description": "Submission status filter",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "SUBMITTED",
+                "CONFIRMED",
+                "REJECTED"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "description": "Search by ids, agent, or payload",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "description": "Sort key",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "latest",
+                "created"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "description": "Sort order",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "description": "Opaque pagination cursor",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "description": "Page size",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedSubmissionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation or input error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/submissions/{id}": {
+      "get": {
+        "tags": [
+          "Submissions"
+        ],
+        "operationId": "submissionsGetV2",
+        "summary": "Get submission",
+        "deprecated": false,
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "Submission id",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Submission"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v2/submissions/{id}/confirm": {
       "post": {
         "tags": [
@@ -1033,7 +1220,7 @@
             "in": "query",
             "name": "q",
             "required": false,
-            "description": "Search by ids or opener",
+            "description": "Search by ids, opener, or dispute reason",
             "schema": {
               "type": "string",
               "minLength": 1
@@ -1425,6 +1612,8 @@
               "enum": [
                 "TASK_PUBLISHED",
                 "TASK_INTENDED",
+                "TASK_SUBMITTED",
+                "SUBMISSION_REJECTED",
                 "TASK_COMPLETED",
                 "DISPUTE_OPENED",
                 "TASK_TERMINATED"
@@ -2670,6 +2859,32 @@
           }
         }
       },
+      "SubmissionAttachment": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "url"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "mimeType": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sizeBytes": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
       "Submission": {
         "type": "object",
         "additionalProperties": false,
@@ -2678,6 +2893,7 @@
           "taskId",
           "agent",
           "payloadMd",
+          "attachments",
           "status",
           "createdAt",
           "updatedAt"
@@ -2696,6 +2912,12 @@
           },
           "payloadMd": {
             "type": "string"
+          },
+          "attachments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SubmissionAttachment"
+            }
           },
           "status": {
             "type": "string",
@@ -2966,6 +3188,8 @@
             "enum": [
               "TASK_PUBLISHED",
               "TASK_INTENDED",
+              "TASK_SUBMITTED",
+              "SUBMISSION_REJECTED",
               "TASK_COMPLETED",
               "DISPUTE_OPENED",
               "TASK_TERMINATED"
@@ -3225,6 +3449,26 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/TaskIntention"
+            }
+          },
+          "nextCursor": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "PaginatedSubmissionResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Submission"
             }
           },
           "nextCursor": {
@@ -3690,6 +3934,10 @@
           "taskDescriptionMaxLength",
           "taskAcceptanceCriteriaMaxLength",
           "taskSubmissionPayloadMaxLength",
+          "taskSubmissionAttachmentMaxCount",
+          "taskSubmissionAttachmentNameMaxLength",
+          "taskSubmissionAttachmentUrlMaxLength",
+          "taskSubmissionAttachmentMaxSizeBytes",
           "disputeReasonMaxLength",
           "taskSlotsMax",
           "taskRewardPerSlotMax",
@@ -3738,6 +3986,18 @@
             "type": "integer"
           },
           "taskSubmissionPayloadMaxLength": {
+            "type": "integer"
+          },
+          "taskSubmissionAttachmentMaxCount": {
+            "type": "integer"
+          },
+          "taskSubmissionAttachmentNameMaxLength": {
+            "type": "integer"
+          },
+          "taskSubmissionAttachmentUrlMaxLength": {
+            "type": "integer"
+          },
+          "taskSubmissionAttachmentMaxSizeBytes": {
             "type": "integer"
           },
           "disputeReasonMaxLength": {
@@ -3857,6 +4117,12 @@
           "payloadMd": {
             "type": "string",
             "minLength": 1
+          },
+          "attachments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SubmissionAttachment"
+            }
           }
         }
       },

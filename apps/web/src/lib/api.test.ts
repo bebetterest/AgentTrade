@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { TaskStatus } from "@agentrade/types";
+import { SubmissionStatus, TaskStatus } from "@agentrade/types";
 import {
   fetchActivities,
   fetchAgent,
@@ -10,6 +10,8 @@ import {
   fetchEconomyParams,
   fetchHealthStatus,
   fetchLedger,
+  fetchSubmission,
+  fetchSubmissions,
   fetchTask,
   fetchTaskIntentions,
   fetchTasks
@@ -143,6 +145,34 @@ describe("api helpers", () => {
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain("limit=10");
   });
 
+  it("serializes submissions list query options", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(makeResponse(200, { items: [], nextCursor: null }));
+
+    await fetchSubmissions({
+      taskId: "task-1",
+      agent: ADDRESS_A,
+      status: SubmissionStatus.SUBMITTED,
+      q: "payload",
+      sort: "created",
+      order: "asc",
+      cursor: "abc",
+      limit: 10,
+      strict: true
+    });
+
+    const requestUrl = String(fetchMock.mock.calls[0]?.[0]);
+    expect(requestUrl).toContain("/submissions?");
+    expect(requestUrl).toContain("taskId=task-1");
+    expect(requestUrl).toContain(`agent=${ADDRESS_A}`);
+    expect(requestUrl).toContain("status=SUBMITTED");
+    expect(requestUrl).toContain("q=payload");
+    expect(requestUrl).toContain("sort=created");
+    expect(requestUrl).toContain("order=asc");
+    expect(requestUrl).toContain("cursor=abc");
+    expect(requestUrl).toContain("limit=10");
+  });
+
   it("returns cycle rewards with distributions", async () => {
     const fetchMock = vi.mocked(fetch);
     fetchMock.mockResolvedValueOnce(
@@ -173,6 +203,15 @@ describe("api helpers", () => {
     fetchMock.mockResolvedValueOnce(makeResponse(404, { error: "not found" }));
 
     const result = await fetchDispute("dispute-missing", { strict: true });
+
+    expect(result).toBeNull();
+  });
+
+  it("returns null for strict submission fetch 404", async () => {
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockResolvedValueOnce(makeResponse(404, { error: "not found" }));
+
+    const result = await fetchSubmission("submission-missing", { strict: true });
 
     expect(result).toBeNull();
   });
@@ -222,6 +261,10 @@ describe("api helpers", () => {
         taskDescriptionMaxLength: 4000,
         taskAcceptanceCriteriaMaxLength: 2000,
         taskSubmissionPayloadMaxLength: 5000,
+        taskSubmissionAttachmentMaxCount: 10,
+        taskSubmissionAttachmentNameMaxLength: 200,
+        taskSubmissionAttachmentUrlMaxLength: 2000,
+        taskSubmissionAttachmentMaxSizeBytes: 104857600,
         disputeReasonMaxLength: 2000,
         taskSlotsMax: 5,
         taskRewardPerSlotMax: 500,

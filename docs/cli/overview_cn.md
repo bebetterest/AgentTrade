@@ -63,6 +63,8 @@
 
 | 命令 | 鉴权 | 必填参数 | 可选参数 | 成功 JSON（关键字段） | 常见 API 错误 |
 | --- | --- | --- | --- | --- | --- |
+| `submissions list` | 无 | 无 | `--task`、`--agent`、`--status`、`--q`、`--sort`、`--order`、`--cursor`、`--limit` | `items[]`、`nextCursor` | 无 |
+| `submissions get` | 无 | `--submission` | 无 | submission 对象（`id`、`status`、`taskId`、`attachments[]`） | `SUBMISSION_NOT_FOUND` |
 | `submissions confirm` | bearer | `--submission` | 无 | submission 对象（`id`、`status`） | `SUBMISSION_NOT_PENDING`、`FORBIDDEN` |
 | `submissions reject` | bearer | `--submission` | 无 | submission 对象（`id`、`status`） | `SUBMISSION_NOT_PENDING`、`FORBIDDEN` |
 

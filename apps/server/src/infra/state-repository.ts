@@ -60,11 +60,13 @@ import {
   readGetCycleDirect,
   readGetDisputeDirect,
   readGetLedgerDirect,
+  readGetSubmissionDirect,
   readGetTaskDirect,
   readListActivitiesDirect,
   readListAgentsDirect,
   readListCyclesDirect,
   readListDisputesDirect,
+  readListSubmissionsDirect,
   readListTasksDirect
 } from "./state-repository-read-helpers.js";
 import {
@@ -72,10 +74,12 @@ import {
   type AgentListQuery,
   type CycleListQuery,
   type DisputeListQuery,
+  type SubmissionListQuery,
   queryActivitiesDirect,
   queryAgentsDirect,
   queryCyclesDirect,
   queryDisputesDirect,
+  querySubmissionsDirect,
   queryTasksDirect,
   type TaskListQuery
 } from "./state-repository-query-helpers.js";
@@ -112,6 +116,9 @@ const toIso = (value: Date): string => value.toISOString();
 const asAddress = (value: string): Address => value as Address;
 const toJsonAddressArray = (value: string[]): Prisma.InputJsonValue =>
   value as unknown as Prisma.InputJsonValue;
+const toJsonSubmissionAttachments = (
+  value: Submission["attachments"]
+): Prisma.InputJsonValue => value as unknown as Prisma.InputJsonValue;
 
 const asStringArray = (value: Prisma.JsonValue): string[] => {
   if (!Array.isArray(value)) {
@@ -325,6 +332,18 @@ export class PrismaStateRepository {
 
   async getTaskDirect(taskId: string): Promise<Task | null> {
     return readGetTaskDirect(this.prisma, taskId);
+  }
+
+  async listSubmissionsDirect(): Promise<Submission[]> {
+    return readListSubmissionsDirect(this.prisma);
+  }
+
+  async querySubmissionsDirect(query: SubmissionListQuery): Promise<PaginatedResponse<Submission>> {
+    return querySubmissionsDirect(this.prisma, query);
+  }
+
+  async getSubmissionDirect(submissionId: string): Promise<Submission | null> {
+    return readGetSubmissionDirect(this.prisma, submissionId);
   }
 
   async queryTaskIntentionsDirect(input: {
@@ -685,7 +704,8 @@ export class PrismaStateRepository {
           this.ensureAgentAndLedgerWithTx(tx, address, now),
         touchRuntimeStateWithTx: (tx) => this.touchRuntimeStateWithTx(tx),
         applyProfileDeltaWithTx: (tx, address, now, input) =>
-          this.applyProfileDeltaWithTx(tx, address, now, input)
+          this.applyProfileDeltaWithTx(tx, address, now, input),
+        appendActivityEventWithTx: (tx, input) => this.appendActivityEventWithTx(tx, input)
       },
       submissionId,
       publisher
@@ -806,7 +826,8 @@ export class PrismaStateRepository {
           this.ensureAgentAndLedgerWithTx(tx, address, now),
         touchRuntimeStateWithTx: (tx) => this.touchRuntimeStateWithTx(tx),
         getConfirmedSlots: (slotsTotal, rewardPerSlot, rewardEscrowRemaining) =>
-          this.getConfirmedSlots(slotsTotal, rewardPerSlot, rewardEscrowRemaining)
+          this.getConfirmedSlots(slotsTotal, rewardPerSlot, rewardEscrowRemaining),
+        appendActivityEventWithTx: (tx, input) => this.appendActivityEventWithTx(tx, input)
       },
       input
     );
@@ -1286,6 +1307,7 @@ export class PrismaStateRepository {
           taskId: item.taskId,
           agentAddress: item.agent,
           payloadMd: item.payloadMd,
+          attachments: toJsonSubmissionAttachments(item.attachments),
           status: item.status,
           createdAt: toDate(item.createdAt),
           updatedAt: toDate(item.updatedAt)
@@ -1294,6 +1316,7 @@ export class PrismaStateRepository {
           taskId: item.taskId,
           agentAddress: item.agent,
           payloadMd: item.payloadMd,
+          attachments: toJsonSubmissionAttachments(item.attachments),
           status: item.status,
           createdAt: toDate(item.createdAt),
           updatedAt: toDate(item.updatedAt)
@@ -1652,15 +1675,7 @@ export class PrismaStateRepository {
       createdAt: toIso(item.createdAt)
     })) satisfies NonNullable<EngineStateSnapshot["intentions"]>;
 
-    const mappedSubmissions = submissions.map((item) => ({
-      id: item.id,
-      taskId: item.taskId,
-      agent: asAddress(item.agentAddress),
-      payloadMd: item.payloadMd,
-      status: item.status as unknown as DomainSubmissionStatus,
-      createdAt: toIso(item.createdAt),
-      updatedAt: toIso(item.updatedAt)
-    })) satisfies EngineStateSnapshot["submissions"];
+    const mappedSubmissions = submissions.map((item) => mapSubmission(item)) satisfies EngineStateSnapshot["submissions"];
 
     const mappedDisputes = disputes.map((item) => ({
       id: item.id,

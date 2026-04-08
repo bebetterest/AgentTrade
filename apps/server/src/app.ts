@@ -4,7 +4,16 @@ import jwt from "jsonwebtoken";
 import { z } from "zod";
 import { loadConfig } from "@agentrade/config";
 import { supportedApiVersions } from "@agentrade/contracts";
-import { type ActivityEvent, type Address, type AgentProfile, type Cycle, type Dispute, type LedgerBalance, type Task } from "@agentrade/types";
+import {
+  type ActivityEvent,
+  type Address,
+  type AgentProfile,
+  type Cycle,
+  type Dispute,
+  type LedgerBalance,
+  type Submission,
+  type Task
+} from "@agentrade/types";
 import { AgentradeEngine, INITIAL_AGENT_BALANCE } from "./domain/engine.js";
 import { DomainError } from "./domain/errors.js";
 import { applyRateLimit } from "./core/rate-limit.js";
@@ -17,6 +26,7 @@ import {
 import { registerAgentRoutes } from "./api/agents.js";
 import { registerAuthRoutes } from "./api/auth.js";
 import { registerDisputeRoutes } from "./api/disputes.js";
+import { registerSubmissionRoutes } from "./api/submissions.js";
 import {
   isAddress,
   toV2ErrorEnvelope,
@@ -299,6 +309,13 @@ export const buildApp = async () => {
     return read((engine) => engine.listTasks());
   };
 
+  const readSubmissions = async (): Promise<Submission[]> => {
+    if (stateRepository) {
+      return stateRepository.listSubmissionsDirect();
+    }
+    return read((engine) => engine.listSubmissions());
+  };
+
   const readDisputes = async (): Promise<Dispute[]> => {
     if (stateRepository) {
       return stateRepository.listDisputesDirect();
@@ -343,6 +360,7 @@ export const buildApp = async () => {
     mutate,
     mutateDirect,
     readTasks,
+    readSubmissions,
     readDisputes,
     readAgents,
     readActivities,
@@ -486,6 +504,7 @@ export const buildApp = async () => {
   registerSystemRoutes(app, services);
   registerAuthRoutes(app, services);
   registerTaskRoutes(app, services);
+  registerSubmissionRoutes(app, services);
   registerDisputeRoutes(app, services);
   registerAgentRoutes(app, services);
 

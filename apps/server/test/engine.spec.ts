@@ -573,6 +573,30 @@ describe("AgentradeEngine disputes and cycle settlement", () => {
     );
   });
 
+  it("rejects submission attachment with blank name", () => {
+    const { engine } = makeEngine();
+    const publisher = addr("attach1");
+    const worker = addr("attach2");
+    const task = engine.publishTask({
+      publisher,
+      title: "Attachment validation",
+      descriptionMd: "desc",
+      acceptanceCriteria: "accept",
+      deadlineUtc: "2026-04-08T00:00:00.000Z",
+      displayTimezone: "UTC",
+      slotsTotal: 1,
+      rewardPerSlot: 20,
+      allowRepeatCompletionsBySameAgent: false
+    });
+    engine.addTaskIntention(task.id, worker);
+
+    expect(() =>
+      engine.submitTask(task.id, worker, "payload", [
+        { name: "   ", url: "https://example.com/artifact.log" }
+      ])
+    ).toThrowError(/attachment name must be non-empty/i);
+  });
+
   it("auto-confirms stale submissions at cycle close", () => {
     const { engine, clock } = makeEngine();
     const publisher = addr("c2");

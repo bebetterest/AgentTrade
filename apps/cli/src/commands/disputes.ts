@@ -14,7 +14,7 @@ export const registerDisputeCommands = (program: Command): void => {
     .option("--task <id>", "task id")
     .option("--opener <address>", "opener address")
     .option("--status <status>", "OPEN|RESOLVED_COMPLETED|RESOLVED_NOT_COMPLETED")
-    .option("--q <text>", "search by ids/opener")
+    .option("--q <text>", "search by ids/opener/reason")
     .option("--sort <key>", "latest|created")
     .option("--order <order>", "asc|desc")
     .option("--cursor <offset>", "pagination cursor")

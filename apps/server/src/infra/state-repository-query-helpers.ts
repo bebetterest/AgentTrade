@@ -7,6 +7,7 @@ import type {
   Cycle,
   Dispute,
   PaginatedResponse,
+  Submission,
   Task
 } from "@agentrade/types";
 import { DomainError } from "../domain/errors.js";
@@ -23,12 +24,14 @@ import {
   mapAgentDirectoryItem,
   mapCycle,
   mapDispute,
+  mapSubmission,
   mapTask
 } from "./state-repository-mappers.js";
 
 export type SortOrder = "asc" | "desc";
 export type TaskListSort = "latest" | "created" | "deadline" | "reward";
 export type DisputeListSort = "latest" | "created";
+export type SubmissionListSort = "latest" | "created";
 export type AgentListSort =
   | "latest"
   | "score"
@@ -55,6 +58,19 @@ export interface DisputeListQuery {
   status?: Dispute["status"];
   q?: string;
   sort: DisputeListSort;
+  order: SortOrder;
+  cursor?: string;
+  offset?: number;
+  limit: number;
+  paged: boolean;
+}
+
+export interface SubmissionListQuery {
+  taskId?: string;
+  agent?: Address;
+  status?: Submission["status"];
+  q?: string;
+  sort: SubmissionListSort;
   order: SortOrder;
   cursor?: string;
   offset?: number;
@@ -203,6 +219,8 @@ export const queryTasksDirect = async (
       ? [
           { id: { contains: query.q, mode: "insensitive" } },
           { title: { contains: query.q, mode: "insensitive" } },
+          { descriptionMd: { contains: query.q, mode: "insensitive" } },
+          { acceptanceCriteria: { contains: query.q, mode: "insensitive" } },
           { publisherAddress: { contains: query.q, mode: "insensitive" } }
         ]
       : undefined
@@ -324,7 +342,8 @@ export const queryDisputesDirect = async (
           { id: { contains: query.q, mode: "insensitive" } },
           { taskId: { contains: query.q, mode: "insensitive" } },
           { submissionId: { contains: query.q, mode: "insensitive" } },
-          { openerAddress: { contains: query.q, mode: "insensitive" } }
+          { openerAddress: { contains: query.q, mode: "insensitive" } },
+          { reasonMd: { contains: query.q, mode: "insensitive" } }
         ]
       : undefined
   };
@@ -382,6 +401,100 @@ export const queryDisputesDirect = async (
   return query.paged
     ? buildPaginatedResponse(mapped, boundedLimit, parsedCursor, {
         resource: "disputes",
+        sort: query.sort,
+        order: query.order,
+        toCursorValues: (item) => ({
+          primary: query.sort === "created" ? item.createdAt : item.updatedAt,
+          id: item.id
+        })
+      })
+    : { items: mapped, nextCursor: null };
+};
+
+export const querySubmissionsDirect = async (
+  prisma: PrismaClient,
+  query: SubmissionListQuery
+): Promise<PaginatedResponse<Submission>> => {
+  const boundedLimit = clampPageLimit(query.limit);
+  const parsedCursor: ParsedCursor = query.paged
+    ? parseListCursor(resolveCursorInput(query.cursor, query.offset), {
+        resource: "submissions",
+        sort: query.sort,
+        order: query.order
+      })
+    : { mode: "start", offset: 0 };
+  const where: Prisma.SubmissionWhereInput = {
+    taskId: query.taskId,
+    status: query.status,
+    agentAddress: query.agent
+      ? {
+          equals: query.agent,
+          mode: "insensitive"
+        }
+      : undefined,
+    OR: query.q
+      ? [
+          { id: { contains: query.q, mode: "insensitive" } },
+          { taskId: { contains: query.q, mode: "insensitive" } },
+          { agentAddress: { contains: query.q, mode: "insensitive" } },
+          { payloadMd: { contains: query.q, mode: "insensitive" } }
+        ]
+      : undefined
+  };
+
+  const orderBy: Prisma.SubmissionOrderByWithRelationInput[] =
+    query.sort === "created"
+      ? [{ createdAt: query.order }, { id: query.order }]
+      : [{ updatedAt: query.order }, { id: query.order }];
+
+  const primaryField: "createdAt" | "updatedAt" = query.sort === "created" ? "createdAt" : "updatedAt";
+  const keysetWhere =
+    parsedCursor.mode === "keyset"
+      ? (() => {
+          const cursorId = requireCursorString(parsedCursor.values.id, "id");
+          const primaryValue = requireCursorDate(parsedCursor.values.primary, "primary");
+          const primaryCompare = query.order === "asc" ? "gt" : "lt";
+          const idCompare = query.order === "asc" ? "gt" : "lt";
+          return {
+            OR: [
+              { [primaryField]: { [primaryCompare]: primaryValue } } as Prisma.SubmissionWhereInput,
+              {
+                AND: [
+                  { [primaryField]: primaryValue } as Prisma.SubmissionWhereInput,
+                  { id: { [idCompare]: cursorId } }
+                ]
+              }
+            ]
+          } satisfies Prisma.SubmissionWhereInput;
+        })()
+      : null;
+
+  const whereWithCursor =
+    keysetWhere && query.paged
+      ? ({
+          AND: [where, keysetWhere]
+        } satisfies Prisma.SubmissionWhereInput)
+      : where;
+
+  const submissions = await prisma.submission.findMany({
+    where: whereWithCursor,
+    orderBy,
+    ...(query.paged
+      ? {
+          ...(parsedCursor.mode === "legacy-offset"
+            ? {
+                skip: parsedCursor.offset
+              }
+            : {}),
+          take: boundedLimit + 1
+        }
+      : {})
+  });
+
+  const mapped = submissions.map((item) => mapSubmission(item));
+  return query.paged
+    ? buildPaginatedResponse(mapped, boundedLimit, parsedCursor, {
+        resource: "submissions",
         sort: query.sort,
         order: query.order,
         toCursorValues: (item) => ({

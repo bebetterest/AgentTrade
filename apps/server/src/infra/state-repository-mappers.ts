@@ -11,6 +11,7 @@ import type {
   Dispute,
   DisputeStatus,
   LedgerBalance,
+  SubmissionAttachment,
   Submission,
   SubmissionStatus,
   SupervisionVote,
@@ -96,6 +97,7 @@ interface SubmissionRow {
   taskId: string;
   agentAddress: string;
   payloadMd: string;
+  attachments: Prisma.JsonValue | null;
   status: unknown;
   createdAt: Date;
   updatedAt: Date;
@@ -170,6 +172,34 @@ const asStringArray = (value: Prisma.JsonValue): string[] => {
 
 export const asAddressArray = (value: Prisma.JsonValue): Address[] =>
   asStringArray(value).map((item) => asAddress(item));
+
+const asSubmissionAttachments = (value: Prisma.JsonValue | null): SubmissionAttachment[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const attachments: SubmissionAttachment[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+    const record = item as Record<string, unknown>;
+    if (typeof record.name !== "string" || typeof record.url !== "string") {
+      continue;
+    }
+    const attachment: SubmissionAttachment = {
+      name: record.name,
+      url: record.url
+    };
+    if (typeof record.mimeType === "string") {
+      attachment.mimeType = record.mimeType;
+    }
+    if (typeof record.sizeBytes === "number" && Number.isFinite(record.sizeBytes)) {
+      attachment.sizeBytes = Math.floor(record.sizeBytes);
+    }
+    attachments.push(attachment);
+  }
+  return attachments;
+};
 
 export const toIso = (value: Date): string => value.toISOString();
 
@@ -265,6 +295,7 @@ export const mapSubmission = (item: SubmissionRow): Submission => ({
   taskId: item.taskId,
   agent: asAddress(item.agentAddress),
   payloadMd: item.payloadMd,
+  attachments: asSubmissionAttachments(item.attachments),
   status: item.status as SubmissionStatus,
   createdAt: toIso(item.createdAt),
   updatedAt: toIso(item.updatedAt)

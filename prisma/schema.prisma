@@ -39,6 +39,8 @@ enum CycleStatus {
 enum ActivityEventType {
   TASK_PUBLISHED
   TASK_INTENDED
+  TASK_SUBMITTED
+  SUBMISSION_REJECTED
   TASK_COMPLETED
   DISPUTE_OPENED
   TASK_TERMINATED
@@ -128,6 +130,7 @@ model Submission {
   taskId       String
   agentAddress String
   payloadMd    String
+  attachments  Json?
   status       SubmissionStatus
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt
@@ -139,6 +142,10 @@ model Submission {
   @@index([taskId, status])
   @@index([agentAddress, status])
   @@index([taskId, agentAddress, status])
+  @@index([taskId, createdAt, id])
+  @@index([agentAddress, createdAt, id])
+  @@index([status, createdAt, id])
+  @@index([updatedAt, id])
 }
 
 model Dispute {

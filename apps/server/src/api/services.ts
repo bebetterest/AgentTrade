@@ -2,7 +2,19 @@ import type { FastifyRequest } from "fastify";
 import { z } from "zod";
 import { isAddress as isEvmAddress } from "viem";
 import type { ApiOperationDefinition } from "@agentrade/contracts";
-import { ActivityEventType, type ActivityEvent, type Address, type AgentProfile, type Cycle, type DashboardMetricSnapshot, type Dispute, type LedgerBalance, type Task } from "@agentrade/types";
+import {
+  ActivityEventType,
+  type ActivityEvent,
+  type Address,
+  type AgentProfile,
+  type Cycle,
+  type DashboardMetricSnapshot,
+  type Dispute,
+  type LedgerBalance,
+  type Submission,
+  type SubmissionAttachment,
+  type Task
+} from "@agentrade/types";
 import type { AppConfig } from "@agentrade/config";
 import type { AgentradeEngine } from "../domain/engine.js";
 import type { PrismaStateRepository, PersistenceMutationScope } from "../infra/state-repository.js";
@@ -38,6 +50,7 @@ export interface AppServices {
   ): Promise<T>;
   mutateDirect<T>(operation: () => Promise<T>, meta?: WriteOperationMeta): Promise<T>;
   readTasks(): Promise<Task[]>;
+  readSubmissions(): Promise<Submission[]>;
   readDisputes(): Promise<Dispute[]>;
   readAgents(): Promise<AgentProfile[]>;
   readActivities(): Promise<ActivityEvent[]>;
@@ -298,6 +311,94 @@ export const validateSubmissionPayloadLength = (payloadMd: string, config: AppCo
         type: "string"
       }
     );
+  }
+};
+
+export const validateSubmissionAttachments = (
+  attachments: SubmissionAttachment[] | undefined,
+  config: AppConfig
+): void => {
+  if (!attachments) {
+    return;
+  }
+  if (attachments.length > config.taskSubmissionAttachmentMaxCount) {
+    throw createValidationError(
+      ["attachments"],
+      `attachments must contain <= ${config.taskSubmissionAttachmentMaxCount} items`,
+      {
+        maximum: config.taskSubmissionAttachmentMaxCount,
+        type: "number"
+      }
+    );
+  }
+
+  for (let index = 0; index < attachments.length; index += 1) {
+    const attachment = attachments[index];
+    if (!attachment) {
+      throw createValidationError(["attachments", String(index)], "attachment is required");
+    }
+    if (attachment.name.trim().length === 0) {
+      throw createValidationError(
+        ["attachments", String(index), "name"],
+        "attachment name must be non-empty"
+      );
+    }
+    if (attachment.name.length > config.taskSubmissionAttachmentNameMaxLength) {
+      throw createValidationError(
+        ["attachments", String(index), "name"],
+        `attachment name must be <= ${config.taskSubmissionAttachmentNameMaxLength} chars`,
+        {
+          maximum: config.taskSubmissionAttachmentNameMaxLength,
+          type: "string"
+        }
+      );
+    }
+    if (attachment.url.length > config.taskSubmissionAttachmentUrlMaxLength) {
+      throw createValidationError(
+        ["attachments", String(index), "url"],
+        `attachment url must be <= ${config.taskSubmissionAttachmentUrlMaxLength} chars`,
+        {
+          maximum: config.taskSubmissionAttachmentUrlMaxLength,
+          type: "string"
+        }
+      );
+    }
+    try {
+      const parsed = new URL(attachment.url);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+        throw new Error("invalid protocol");
+      }
+    } catch {
+      throw createValidationError(
+        ["attachments", String(index), "url"],
+        "attachment url must be a valid http(s) URL"
+      );
+    }
+
+    if (attachment.mimeType && attachment.mimeType.trim().length === 0) {
+      throw createValidationError(
+        ["attachments", String(index), "mimeType"],
+        "attachment mimeType must be non-empty when provided"
+      );
+    }
+    if (attachment.sizeBytes !== undefined) {
+      if (!Number.isSafeInteger(attachment.sizeBytes) || attachment.sizeBytes < 0) {
+        throw createValidationError(
+          ["attachments", String(index), "sizeBytes"],
+          "attachment sizeBytes must be a non-negative safe integer"
+        );
+      }
+      if (attachment.sizeBytes > config.taskSubmissionAttachmentMaxSizeBytes) {
+        throw createValidationError(
+          ["attachments", String(index), "sizeBytes"],
+          `attachment sizeBytes must be <= ${config.taskSubmissionAttachmentMaxSizeBytes}`,
+          {
+            maximum: config.taskSubmissionAttachmentMaxSizeBytes,
+            type: "number"
+          }
+        );
+      }
+    }
   }
 };
 

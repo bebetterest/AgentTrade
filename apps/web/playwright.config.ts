@@ -3,6 +3,8 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const port = Number(process.env.PLAYWRIGHT_WEB_PORT ?? 3100);
+const mockApiPort = Number(process.env.PLAYWRIGHT_MOCK_API_PORT ?? 3300);
+const mockApiBaseUrl = `http://127.0.0.1:${mockApiPort}`;
 const configDir = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
@@ -16,13 +18,22 @@ export default defineConfig({
     baseURL: `http://127.0.0.1:${port}`,
     trace: "on-first-retry"
   },
-  webServer: {
-    command: "npm run build && npm run start:e2e",
-    cwd: configDir,
-    port,
-    reuseExistingServer: !process.env.CI,
-    timeout: 120_000
-  },
+  webServer: [
+    {
+      command: "node ./test/e2e/mock-api-server.mjs",
+      cwd: configDir,
+      port: mockApiPort,
+      reuseExistingServer: !process.env.CI,
+      timeout: 60_000
+    },
+    {
+      command: `NEXT_PUBLIC_API_BASE_URL='${mockApiBaseUrl}' INTERNAL_API_BASE_URL='${mockApiBaseUrl}' npm run build && NEXT_PUBLIC_API_BASE_URL='${mockApiBaseUrl}' INTERNAL_API_BASE_URL='${mockApiBaseUrl}' npm run start:e2e`,
+      cwd: configDir,
+      port,
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000
+    }
+  ],
   projects: [
     {
       name: "chromium",

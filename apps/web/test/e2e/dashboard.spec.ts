@@ -4,6 +4,32 @@ import { ActivityEventType, CycleStatus, DisputeStatus, TaskStatus, type Activit
 
 const ISO_NOW = "2026-03-31T12:00:00.000Z";
 const API_ROUTE_PATTERN = "**/*";
+const MOCK_API_BASE_URL =
+  process.env.PLAYWRIGHT_MOCK_API_BASE_URL ??
+  `http://127.0.0.1:${process.env.PLAYWRIGHT_MOCK_API_PORT ?? "3300"}`;
+
+interface MockApiScenarioPatch {
+  failActivitiesByTaskIdOnce?: string;
+  failActivitiesByAddressOnce?: string;
+  failTaskById?: string;
+  failAgentByAddress?: string;
+  failCycleById?: string;
+  failDisputeById?: string;
+}
+
+const configureMockApiScenario = async (patch: MockApiScenarioPatch = {}) => {
+  const response = await fetch(`${MOCK_API_BASE_URL}/__mock__/state`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json"
+    },
+    body: JSON.stringify(patch)
+  });
+
+  if (!response.ok) {
+    throw new Error(`failed to configure mock api scenario: ${response.status}`);
+  }
+};
 
 const tasks: Task[] = [
   {
@@ -418,6 +444,9 @@ const installApiMocks = async (page: Page, options: InstallApiMocksOptions = {})
           reputationWeightPublisherBps: 3000,
           reputationWeightWorkerBps: 5000,
           reputationWeightSupervisorBps: 2000,
+          scoreWeightReputationBps: 4500,
+          scoreWeightCompletionBps: 3500,
+          scoreWeightQualityBps: 2000,
           bridgeChain: "base-sepolia",
           bridgeMode: "OFFCHAIN_EXPORT_ONLY"
         })
@@ -715,8 +744,8 @@ const installApiMocks = async (page: Page, options: InstallApiMocksOptions = {})
   });
 };
 
-test.beforeEach(async ({ page }) => {
-  await installApiMocks(page);
+test.beforeEach(async () => {
+  await configureMockApiScenario();
 });
 
 const openStreamsSection = async (page: Page) => {
@@ -734,16 +763,15 @@ const expandAdvancedFilters = async (page: Page) => {
 
 test("information hub renders and supports stream shortcuts", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByText("AgentHire Platform")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "AgentHire for AI agent collaboration" })).toBeVisible();
   await expect(page.getByTestId("section-tab-overview")).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("heading", { name: "Marketplace Entities" })).toHaveCount(0);
 
   await page.getByRole("button", { name: "Open Marketplace" }).click();
   await expect(page.getByTestId("section-tab-streams")).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("heading", { name: "Marketplace Entities" })).toBeVisible();
-
-  await page.getByTestId("section-tab-overview").click();
-  await page.getByRole("button", { name: "View Disputes" }).click();
+  await page.getByTestId("tab-disputes").click();
+  await expect(page.getByTestId("tab-disputes")).toHaveAttribute("aria-selected", "true");
   await expect(page).toHaveURL(/section=streams/);
   await expect(page).toHaveURL(/tab=disputes/);
   await expandAdvancedFilters(page);
@@ -785,29 +813,31 @@ test("legacy stream links still recover streams state", async ({ page }) => {
 
 test("locale switch persists across hub and direct detail routes", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByText("AgentHire Platform")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "AgentHire for AI agent collaboration" })).toBeVisible();
 
   await page.getByRole("button", { name: "Switch language to Chinese" }).click();
-  await expect(page.getByText("AgentHire 平台")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "AgentHire：面向Agent的雇佣与协作平台" })).toBeVisible();
   await expect(page.getByRole("button", { name: "进入市场" })).toBeVisible();
   await expect.poll(() => page.evaluate(() => window.localStorage.getItem("agentrade.locale"))).toBe("zh");
   await expect.poll(() => page.evaluate(() => document.cookie)).toContain("agentrade.locale=zh");
 
-  await page.getByRole("button", { name: "查看争议" }).click();
+  await page.getByRole("button", { name: "进入市场" }).click();
+  await page.getByTestId("tab-disputes").click();
   await expect(page).toHaveURL(/section=streams/);
   await expect(page).toHaveURL(/tab=disputes/);
-  await expect(page.getByText("AgentHire 平台")).toBeVisible();
   await expect(page.getByTestId("tab-tasks")).toContainText("任务");
   await expect(page.getByTestId("dispute-card")).toHaveCount(1);
 
   await page.goto("/tasks/task-beta");
   await expect(page.getByText("任务档案")).toBeVisible();
-  await expect(page.getByRole("link", { name: "返回 AgentHire 平台" })).toHaveAttribute("href", "/?section=streams&tab=tasks");
+  await expect(page.getByTestId("header-back-button")).toHaveAttribute("aria-label", "返回 AgentHire 平台");
+  await expect(page.getByTestId("header-back-button")).toContainText("返回");
   await expect(page.getByText("进行中")).toBeVisible();
 
   await page.getByRole("button", { name: "切换语言到英文" }).click();
   await expect(page.getByText("Task Dossier")).toBeVisible();
-  await expect(page.getByRole("link", { name: "Back to AgentHire" })).toHaveAttribute("href", "/?section=streams&tab=tasks");
+  await expect(page.getByTestId("header-back-button")).toHaveAttribute("aria-label", "Back to AgentHire");
+  await expect(page.getByTestId("header-back-button")).toContainText("Back");
   await expect.poll(() => page.evaluate(() => window.localStorage.getItem("agentrade.locale"))).toBe("en");
   await expect.poll(() => page.evaluate(() => document.cookie)).toContain("agentrade.locale=en");
 });
@@ -865,6 +895,7 @@ test("task list supports search/filter/sort and load more", async ({ page }) => 
 
   await page.getByTestId("reset-filters").click();
   await expect(page.getByTestId("search-input")).toHaveValue("");
+  await expandAdvancedFilters(page);
   await expect(page.getByTestId("task-status-select")).toHaveValue("");
   await expect(page.getByTestId("task-card").first()).toBeVisible();
 });
@@ -883,8 +914,10 @@ test("user tab supports sorting and pagination", async ({ page }) => {
   await page.getByTestId("sort-order-select").selectOption("desc");
   await expect(page.getByTestId("agent-card").first()).toContainText("Agent Two");
 
-  await page.getByTestId("active-only-checkbox").click();
-  await expect(page.getByTestId("active-only-checkbox")).not.toBeChecked();
+  const activeOnlyToggle = page.getByTestId("active-only-checkbox");
+  await expect(activeOnlyToggle).toBeChecked();
+  await page.locator("label.switch-line--toggle", { hasText: "Active only" }).click();
+  await expect(activeOnlyToggle).not.toBeChecked();
 
   const agentCards = page.getByTestId("agent-card");
   await expect(async () => {
@@ -904,96 +937,115 @@ test("user tab supports sorting and pagination", async ({ page }) => {
   await expect(page.getByTestId("agent-card").filter({ hasText: "Agent Three" })).toContainText("Idle");
 });
 
-test("task and agent detail drawers show enriched fields", async ({ page }) => {
+test("task and agent detail actions navigate to full pages and show enriched fields", async ({ page }) => {
   await page.goto("/");
   await openStreamsSection(page);
 
   await page.getByTestId("task-card").filter({ hasText: "Beta Dataset Labeling" }).getByTestId("task-detail-trigger").click();
-  await expect(page.getByTestId("detail-drawer")).toBeVisible();
-  await expect(page.getByText("Beta Dataset Labeling")).toBeVisible();
-  await expect(page.getByText("Escrow Remaining")).toBeVisible();
+  await expect(page).toHaveURL(/\/tasks\/task-beta$/);
+  await expect(page.getByText("Task Dossier")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Beta Dataset Labeling", level: 1 })).toBeVisible();
+  await expect(page.locator(".detail-summary-card__label", { hasText: "Escrow Remaining" })).toBeVisible();
   await expect(page.getByText("Output quality mismatch.")).toBeVisible();
 
-  await page.locator(".drawer-mask").click();
+  await page.goto("/");
+  await openStreamsSection(page);
   await page.getByTestId("tab-users").click();
   await page.getByTestId("agent-card").filter({ hasText: "Agent One" }).getByTestId("agent-detail-trigger").click();
-  await expect(page.getByTestId("detail-drawer")).toBeVisible();
-  await expect(page.getByText("42 AGC")).toBeVisible();
+  await expect(page).toHaveURL(/\/agents\/0x3333333333333333333333333333333333333333$/);
+  await expect(page.getByText("Agent Profile")).toBeVisible();
+  const balanceSummaryCard = page
+    .locator(".detail-summary-card")
+    .filter({ has: page.locator(".detail-summary-card__label", { hasText: "Balance" }) });
+  await expect(balanceSummaryCard.locator(".detail-summary-card__value")).toHaveText("42 AGC");
 });
 
 test("direct task and agent detail pages use the unified detail shell", async ({ page }) => {
   await page.goto("/tasks/task-beta");
   await expect(page.getByText("Task Dossier")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Beta Dataset Labeling" })).toBeVisible();
-  await expect(page.getByText("Escrow Remaining")).toBeVisible();
-  await expect(page.getByText("related disputes")).toBeVisible();
-  await expect(page.getByRole("link", { name: "Back to AgentHire" })).toHaveAttribute("href", "/?section=streams&tab=tasks");
+  await expect(page.locator(".detail-summary-card__label", { hasText: "Escrow Remaining" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Related disputes", level: 4 })).toBeVisible();
+  await expect(page.getByTestId("header-back-button")).toHaveAttribute("aria-label", "Back to AgentHire");
+  await expect(page.getByTestId("header-back-button")).toContainText("Back");
 
   await page.goto("/agents/0x3333333333333333333333333333333333333333");
   await expect(page.getByText("Agent Profile")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Agent One" })).toBeVisible();
   await expect(page.getByText("Balance & Reputation")).toBeVisible();
-  await expect(page.getByText("42 AGC")).toBeVisible();
+  const balanceSummaryCard = page
+    .locator(".detail-summary-card")
+    .filter({ has: page.locator(".detail-summary-card__label", { hasText: "Balance" }) });
+  await expect(balanceSummaryCard.locator(".detail-summary-card__value")).toHaveText("42 AGC");
 });
 
-test("cycle tab and active cycle card open reward detail drawer", async ({ page }) => {
+test("cycle tab and active cycle card open reward detail pages", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator("body")).not.toContainText("CLOSED");
 
   await page.getByTestId("section-tab-metrics").click();
   await page.getByRole("button", { name: "View details" }).click();
-  await expect(page.getByTestId("detail-drawer")).toBeVisible();
-  await expect(page.getByText("Reward Pool")).toBeVisible();
-  await expect(page.getByText("1090 AGC")).toBeVisible();
+  await expect(page).toHaveURL(/\/cycles\/cycle-9$/);
+  await expect(page.getByText("Cycle Settlement File")).toBeVisible();
+  await expect(page.locator(".detail-summary-card__label", { hasText: "Reward Pool" })).toBeVisible();
+  const rewardPoolSummaryCard = page
+    .locator(".detail-summary-card")
+    .filter({ has: page.locator(".detail-summary-card__label", { hasText: "Reward Pool" }) });
+  await expect(rewardPoolSummaryCard.locator(".detail-summary-card__value")).toHaveText("1090 AGC");
 
-  await page.locator(".drawer-mask").click();
-  await openStreamsSection(page);
-  await page.getByTestId("tab-cycles").click();
-  await expect(page.getByTestId("cycle-card")).toHaveCount(2);
+  await page.goto("/?section=streams&tab=cycles");
+  await expect(page.getByTestId("cycle-card").filter({ hasText: "cycle-9" })).toHaveCount(1);
   await expect(page.getByTestId("cycle-card").filter({ hasText: "cycle-9" })).toContainText("Open");
+  await expect(page.getByTestId("cycle-card").filter({ hasText: "cycle-8" })).toHaveCount(1);
   await expect(page.getByTestId("cycle-card").filter({ hasText: "cycle-8" })).toContainText("Closed");
   await page.getByTestId("cycle-card").filter({ hasText: "cycle-9" }).getByTestId("cycle-detail-trigger").click();
-  await expect(page.getByText("Raw Workloads")).toBeVisible();
-  await expect(page.getByText("dispute-1")).toBeVisible();
+  await expect(page).toHaveURL(/\/cycles\/cycle-9$/);
+  await expect(page.getByRole("heading", { name: "Raw Workloads", level: 4 })).toBeVisible();
+  await expect(page.locator("table.data-table tbody tr").filter({ hasText: "dispute-1" }).first()).toBeVisible();
 });
 
 test("direct cycle and dispute detail pages expose summary-first layouts", async ({ page }) => {
   await page.goto("/cycles/cycle-9");
   await expect(page.getByText("Cycle Settlement File")).toBeVisible();
   await expect(page.getByRole("heading", { name: "cycle-9" })).toBeVisible();
-  await expect(page.getByText("Reward Pool")).toBeVisible();
-  await expect(page.getByText("1090 AGC")).toBeVisible();
-  await expect(page.getByText("Raw Workloads")).toBeVisible();
+  await expect(page.locator(".detail-summary-card__label", { hasText: "Reward Pool" })).toBeVisible();
+  const rewardPoolSummaryCard = page
+    .locator(".detail-summary-card")
+    .filter({ has: page.locator(".detail-summary-card__label", { hasText: "Reward Pool" }) });
+  await expect(rewardPoolSummaryCard.locator(".detail-summary-card__value")).toHaveText("1090 AGC");
+  await expect(page.getByRole("heading", { name: "Raw Workloads", level: 4 })).toBeVisible();
 
   await page.goto("/disputes/dispute-1");
   await expect(page.getByText("Dispute File")).toBeVisible();
   await expect(page.getByRole("heading", { name: "dispute-1" })).toBeVisible();
-  await expect(page.getByText("Submission")).toBeVisible();
+  await expect(page.locator(".detail-summary-card__label", { hasText: "Submission" })).toBeVisible();
   await expect(page.getByText("Output quality mismatch.")).toBeVisible();
   await expect(page.getByText("Dispute Opened")).toBeVisible();
 });
 
 test("direct detail pages show not-found state cards", async ({ page }) => {
   await page.goto("/tasks/task-missing");
-  await expect(page.getByRole("heading", { name: "Task Not Found" })).toBeVisible();
-  await expect(page.getByText("There is no public record for this task id. Return to the platform hub and choose another entity.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Task Not Found", level: 1 })).toBeVisible();
+  await expect(page.getByText("There is no public record for this task id. Return to AgentHire and choose another entity.")).toBeVisible();
 
   await page.goto("/disputes/dispute-missing");
-  await expect(page.getByRole("heading", { name: "Dispute Not Found" })).toBeVisible();
-  await expect(page.getByText("There is no public record for this dispute id. Return to the platform hub and choose another dispute.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Dispute Not Found", level: 1 })).toBeVisible();
+  await expect(page.getByText("There is no public record for this dispute id. Return to AgentHire and choose another dispute.")).toBeVisible();
 });
 
 test("direct detail pages show load-failed state cards on API errors", async ({ page }) => {
-  await page.unroute(API_ROUTE_PATTERN);
-  await installApiMocks(page, { failTaskById: "task-beta", failAgentByAddress: "0x3333333333333333333333333333333333333333" });
+  await configureMockApiScenario({
+    failTaskById: "task-beta",
+    failAgentByAddress: "0x3333333333333333333333333333333333333333"
+  });
 
   await page.goto("/tasks/task-beta");
-  await expect(page.getByRole("heading", { name: "Task Detail Load Failed" })).toBeVisible();
-  await expect(page.getByText("The task detail service is unavailable right now. Return to the platform hub and inspect another entity.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Task Detail Load Failed", level: 1 })).toBeVisible();
+  await expect(page.getByText("The task detail service is unavailable right now. Return to AgentHire and inspect another entity.")).toBeVisible();
 
   await page.goto("/agents/0x3333333333333333333333333333333333333333");
-  await expect(page.getByRole("heading", { name: "Agent Detail Load Failed" })).toBeVisible();
-  await expect(page.getByText("The agent detail service is unavailable right now. Return to the platform hub and inspect another public entity.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Agent Detail Load Failed", level: 1 })).toBeVisible();
+  await expect(page.getByText("The agent detail service is unavailable right now. Return to AgentHire and inspect another public entity.")).toBeVisible();
 });
 
 test("invalid query params are sanitized and still return usable results", async ({ page }) => {
@@ -1004,20 +1056,23 @@ test("invalid query params are sanitized and still return usable results", async
   await expect(page.getByText("Alpha Content Review")).toBeVisible();
 });
 
-test("task detail supports retry after transient API failures", async ({ page }) => {
-  await page.unroute(API_ROUTE_PATTERN);
-  await installApiMocks(page, { failActivitiesByTaskIdOnce: "task-beta" });
+test("task detail tolerates transient activity API failures", async ({ page }) => {
+  await configureMockApiScenario({
+    failActivitiesByTaskIdOnce: "task-beta"
+  });
 
   await page.goto("/");
   await openStreamsSection(page);
   await page.getByTestId("task-card").filter({ hasText: "Beta Dataset Labeling" }).getByTestId("task-detail-trigger").click();
-  await expect(page.getByTestId("task-detail-error")).toBeVisible();
+  await expect(page).toHaveURL(/\/tasks\/task-beta$/);
+  await expect(page.getByRole("heading", { name: "Activity timeline", level: 4 })).toBeVisible();
+  await expect(page.getByText("No activity yet")).toBeVisible();
 
-  await page.getByTestId("retry-task-detail").click();
-  await expect(page.getByText("Beta Dataset Labeling")).toBeVisible();
+  await page.getByTestId("header-refresh-button").click();
+  await expect(page.getByText("Dispute Opened")).toBeVisible();
 });
 
-test("disputes tab supports filters and detail drawer", async ({ page }) => {
+test("disputes tab supports filters and detail page navigation", async ({ page }) => {
   await page.goto("/");
   await openStreamsSection(page);
 
@@ -1027,5 +1082,8 @@ test("disputes tab supports filters and detail drawer", async ({ page }) => {
   await page.getByTestId("dispute-status-select").selectOption("OPEN");
   await expect(page.getByTestId("dispute-card")).toContainText("dispute-1");
   await page.getByTestId("dispute-detail-trigger").click();
-  await expect(page.getByTestId("detail-drawer")).toContainText("Dispute Overview");
+  await expect(page).toHaveURL(/\/disputes\/dispute-1$/);
+  await expect(page.getByText("Dispute File")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Dispute Overview" })).toBeVisible();
+  await expect(page.locator("#dispute-overview")).toContainText("dispute-1");
 });

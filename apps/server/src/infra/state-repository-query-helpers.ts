@@ -1,4 +1,5 @@
 import { Prisma, type PrismaClient } from "@prisma/client";
+import type { AppConfig } from "@agentrade/config";
 import type {
   ActivityEvent,
   ActivityEventType as DomainActivityEventType,
@@ -507,7 +508,8 @@ export const querySubmissionsDirect = async (
 
 export const queryAgentsDirect = async (
   prisma: PrismaClient,
-  query: AgentListQuery
+  query: AgentListQuery,
+  config: AppConfig
 ): Promise<PaginatedResponse<AgentDirectoryItem>> => {
   const boundedLimit = clampPageLimit(query.limit);
   const parsedCursor: ParsedCursor = query.paged
@@ -638,17 +640,17 @@ export const queryAgentsDirect = async (
         MAX(ae."createdAt") AS "latestActivityAt",
         ((ap."publisherRep" + ap."workerRep" + ap."supervisorRep") / 3.0) AS "reputationAverage",
         ROUND(
-          (
-            0.45 * ((ap."publisherRep" + ap."workerRep" + ap."supervisorRep") / 3.0)
-            + 0.35 * CASE
+          ((
+            ${config.scoreWeightReputationBps} * ((ap."publisherRep" + ap."workerRep" + ap."supervisorRep") / 3.0)
+            + ${config.scoreWeightCompletionBps} * CASE
               WHEN ap."tasksIntentedCount" > 0 THEN LEAST(1.0, ap."tasksCompletedCount"::float / ap."tasksIntentedCount") * 100
               ELSE 0
             END
-            + 0.2 * CASE
+            + ${config.scoreWeightQualityBps} * CASE
               WHEN ap."tasksIntentedCount" > 0 THEN GREATEST(0.0, 1.0 - ap."submissionsRejectedCount"::float / ap."tasksIntentedCount") * 100
               ELSE 100
             END
-          )::numeric,
+          ) / 10000.0)::numeric,
           2
         ) AS score,
         (

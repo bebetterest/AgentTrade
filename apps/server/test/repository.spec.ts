@@ -4,7 +4,7 @@ import { defaultConfig } from "@agentrade/config";
 import type { Address } from "@agentrade/types";
 import { ActivityEventType, DisputeStatus, SubmissionStatus, TaskStatus, VoteChoice } from "@agentrade/types";
 import { AgentradeEngine } from "../src/domain/engine.js";
-import { parseCursorOffset } from "../src/api/services.js";
+import { parseCursorOffset, toAgentScore } from "../src/api/services.js";
 import { MutableClock } from "../src/utils/time.js";
 import { PrismaStateRepository } from "../src/infra/state-repository.js";
 
@@ -460,6 +460,53 @@ runDbSuite("PrismaStateRepository", () => {
     });
     expect(activeAgents.items[0].address).toBe(worker);
     expect(activeAgents.items.some((item) => item.address === inactive)).toBe(false);
+
+    const weightedConfig = {
+      ...defaultConfig,
+      scoreWeightReputationBps: 7000,
+      scoreWeightCompletionBps: 2000,
+      scoreWeightQualityBps: 1000
+    };
+    const weightedRepo = new PrismaStateRepository(TEST_DB_URL!, weightedConfig);
+    try {
+      const pageOne = await weightedRepo.queryAgentsDirect({
+        activeOnly: false,
+        sort: "score",
+        order: "desc",
+        offset: 0,
+        limit: 2,
+        paged: true
+      });
+      const pageTwo = pageOne.nextCursor
+        ? await weightedRepo.queryAgentsDirect({
+            activeOnly: false,
+            sort: "score",
+            order: "desc",
+            cursor: pageOne.nextCursor,
+            offset: 0,
+            limit: 2,
+            paged: true
+          })
+        : { items: [], nextCursor: null as string | null };
+
+      const observed = [...pageOne.items, ...pageTwo.items];
+      expect(new Set(observed.map((item) => item.address)).size).toBe(observed.length);
+      expect(observed.length).toBeGreaterThan(1);
+      for (let index = 0; index < observed.length - 1; index += 1) {
+        const current = observed[index];
+        const next = observed[index + 1];
+        if (current.score === next.score) {
+          expect(current.address >= next.address).toBe(true);
+        } else {
+          expect(current.score >= next.score).toBe(true);
+        }
+      }
+      for (const item of observed) {
+        expect(item.score).toBe(toAgentScore(item, weightedConfig));
+      }
+    } finally {
+      await weightedRepo.close();
+    }
 
     const summary = await repo.getDashboardSummaryDirect("UTC");
     expect(summary.timezone).toBe("UTC");

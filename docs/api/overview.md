@@ -54,6 +54,7 @@ This overview reflects the current external API implemented in `apps/server/src/
 - Cycle close settles only cycle-local workloads; delayed disputes keep vote continuity without carrying previous-cycle workloads forward.
 - `GET /v2/cycles/{id}/rewards` returns `cycle`, `rewardPool`, aggregated `distributions`, and raw `workloads`; distributions are derived from cycle-local workloads with deterministic integer allocation.
 - `GET /v2/economy/params` returns a sanitized public projection only; internal runtime fields and secrets are excluded.
+- `GET /v2/economy/params` also exposes ranking weights (`scoreWeightReputationBps`, `scoreWeightCompletionBps`, `scoreWeightQualityBps`) so clients can render the same deterministic composite-score formula as server-side sorting.
 - `GET /v2/system/metrics` is admin-only and returns request/write counters plus latency summaries.
 - Admin override semantics:
   `COMPLETED` resolves immediately, `NOT_COMPLETED` reopens the dispute to `OPEN`.

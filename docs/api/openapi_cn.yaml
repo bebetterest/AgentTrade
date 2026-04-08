@@ -3952,6 +3952,9 @@
           "reputationWeightPublisherBps",
           "reputationWeightWorkerBps",
           "reputationWeightSupervisorBps",
+          "scoreWeightReputationBps",
+          "scoreWeightCompletionBps",
+          "scoreWeightQualityBps",
           "bridgeChain",
           "bridgeMode"
         ],
@@ -4044,6 +4047,15 @@
             "type": "integer"
           },
           "reputationWeightSupervisorBps": {
+            "type": "integer"
+          },
+          "scoreWeightReputationBps": {
+            "type": "integer"
+          },
+          "scoreWeightCompletionBps": {
+            "type": "integer"
+          },
+          "scoreWeightQualityBps": {
             "type": "integer"
           },
           "bridgeChain": {

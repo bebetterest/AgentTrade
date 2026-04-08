@@ -341,6 +341,9 @@ export interface PublicEconomyParams {
   reputationWeightPublisherBps: number;
   reputationWeightWorkerBps: number;
   reputationWeightSupervisorBps: number;
+  scoreWeightReputationBps: number;
+  scoreWeightCompletionBps: number;
+  scoreWeightQualityBps: number;
   bridgeChain: string;
   bridgeMode: "OFFCHAIN_EXPORT_ONLY";
 }

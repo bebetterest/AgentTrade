@@ -1059,6 +1059,9 @@ export const publicEconomyParamsSchema = defineSchema(
     reputationWeightPublisherBps: z.number().int(),
     reputationWeightWorkerBps: z.number().int(),
     reputationWeightSupervisorBps: z.number().int(),
+    scoreWeightReputationBps: z.number().int(),
+    scoreWeightCompletionBps: z.number().int(),
+    scoreWeightQualityBps: z.number().int(),
     bridgeChain: z.string(),
     bridgeMode: z.literal("OFFCHAIN_EXPORT_ONLY")
   }),
@@ -1096,6 +1099,9 @@ export const publicEconomyParamsSchema = defineSchema(
       "reputationWeightPublisherBps",
       "reputationWeightWorkerBps",
       "reputationWeightSupervisorBps",
+      "scoreWeightReputationBps",
+      "scoreWeightCompletionBps",
+      "scoreWeightQualityBps",
       "bridgeChain",
       "bridgeMode"
     ],
@@ -1130,6 +1136,9 @@ export const publicEconomyParamsSchema = defineSchema(
       reputationWeightPublisherBps: { ...integerField },
       reputationWeightWorkerBps: { ...integerField },
       reputationWeightSupervisorBps: { ...integerField },
+      scoreWeightReputationBps: { ...integerField },
+      scoreWeightCompletionBps: { ...integerField },
+      scoreWeightQualityBps: { ...integerField },
       bridgeChain: { ...stringField },
       bridgeMode: {
         type: "string",

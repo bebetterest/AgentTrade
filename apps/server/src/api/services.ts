@@ -19,6 +19,7 @@ import type { AppConfig } from "@agentrade/config";
 import type { AgentradeEngine } from "../domain/engine.js";
 import type { PrismaStateRepository, PersistenceMutationScope } from "../infra/state-repository.js";
 import type { ServiceMetricsCollector } from "../observability/metrics.js";
+import { computeAgentCompositeScore } from "../domain/helpers.js";
 import {
   clampPageLimit,
   encodeKeysetCursor,
@@ -152,7 +153,7 @@ export const paginateItemsByCursor = <T>(
   return { items: pageItems, nextCursor };
 };
 
-export const toAgentScore = (profile: AgentProfile): number => {
+export const toAgentScore = (profile: AgentProfile, config: AppConfig): number => {
   const reputationAvg =
     (profile.reputation.publisher + profile.reputation.worker + profile.reputation.supervisor) / 3;
   const completionRate =
@@ -163,7 +164,14 @@ export const toAgentScore = (profile: AgentProfile): number => {
     profile.stats.tasksIntented > 0
       ? Math.max(0, 1 - profile.stats.submissionsRejected / profile.stats.tasksIntented) * 100
       : 100;
-  return Number((0.45 * reputationAvg + 0.35 * completionRate + 0.2 * qualityRate).toFixed(2));
+  return computeAgentCompositeScore(
+    {
+      reputationAvg,
+      completionRate,
+      qualityRate
+    },
+    config
+  );
 };
 
 export const parseOperationParams = <T = unknown>(

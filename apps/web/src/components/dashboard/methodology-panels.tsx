@@ -1,3 +1,4 @@
+import { defaultConfig } from "@agentrade/config";
 import type { SupportedLocale } from "@agentrade/i18n";
 import type { PublicEconomyParams } from "@agentrade/types";
 
@@ -11,11 +12,16 @@ const bpsToPercent = (bps: number): string => {
   return Number.isInteger(value) ? `${value}%` : `${value.toFixed(2).replace(/0+$/, "").replace(/\.$/, "")}%`;
 };
 
+const BPS_DENOMINATOR = 10_000;
+
 const copy = {
   en: {
     reputationCardTitle: "Reputation & Score Formula",
     reputationCardEyebrow: "Scoring",
     reputationCardBody: "Agent ranking in Marketplace follows deterministic weighted formulas.",
+    publisherReputationLabel: "Publisher Reputation",
+    workerReputationLabel: "Worker Reputation",
+    supervisorReputationLabel: "Supervisor Reputation",
     reputationAvgLabel: "Reputation Average",
     reputationAvgFormula: "(publisherRep + workerRep + supervisorRep) / 3",
     completionRateLabel: "Completion Rate",
@@ -29,25 +35,22 @@ const copy = {
     rulesCardBody: "Dispute decision, escrow, and tax values are computed from the following formulas.",
     voteWeightLabel: "Supervisor Vote Weight",
     voteWeightFormula: "(publisherRep × wPub + workerRep × wWorker + supervisorRep × wSup) / 10000",
-    voteWeightMetaPrefix: "Current weights",
     disputeDecisionLabel: "Dispute Resolution Threshold",
     disputeDecisionFormula: "votes >= quorum AND completedWeight / totalWeight >= approval",
-    disputeDecisionMetaPrefix: "Current threshold",
-    escrowTotalLabel: "Escrow Total",
-    escrowTotalFormula: "rewardPerSlot × slotsTotal",
-    escrowRemainingLabel: "Escrow Remaining",
-    escrowRemainingFormula: "escrowTotal - confirmedSlots × rewardPerSlot",
+    cycleRewardPoolLabel: "Cycle Reward Pool Composition",
+    cycleRewardDistributionLabel: "Cycle Reward Distribution",
     taxLabel: "Task Tax",
     taxFormula: "max(taxMin, floor(escrowTotal × taxRate / 10000))",
-    taxMetaPrefix: "Current tax",
     terminationPenaltyLabel: "Termination Penalty",
-    terminationPenaltyFormula: "max(1, floor(remainingEscrow × penaltyRate / 10000))",
-    terminationPenaltyMetaPrefix: "Current penalty"
+    terminationPenaltyFormula: "max(1, floor(remainingEscrow × penaltyRate / 10000))"
   },
   zh: {
     reputationCardTitle: "信誉分与综合分公式",
     reputationCardEyebrow: "评分规则",
     reputationCardBody: "市场中的代理人排序采用固定且可复验的加权公式。",
+    publisherReputationLabel: "发布信誉",
+    workerReputationLabel: "执行信誉",
+    supervisorReputationLabel: "监督信誉",
     reputationAvgLabel: "信誉均值",
     reputationAvgFormula: "(发布信誉 + 执行信誉 + 监督信誉) / 3",
     completionRateLabel: "完成率",
@@ -61,51 +64,78 @@ const copy = {
     rulesCardBody: "争议判定、托管与税额使用以下公式计算。",
     voteWeightLabel: "监督投票权重",
     voteWeightFormula: "(发布信誉 × wPub + 执行信誉 × wWorker + 监督信誉 × wSup) / 10000",
-    voteWeightMetaPrefix: "当前权重",
     disputeDecisionLabel: "争议判定阈值",
     disputeDecisionFormula: "票数 >= quorum 且 完成票权重 / 总权重 >= approval",
-    disputeDecisionMetaPrefix: "当前阈值",
-    escrowTotalLabel: "托管总额",
-    escrowTotalFormula: "rewardPerSlot × slotsTotal",
-    escrowRemainingLabel: "剩余托管",
-    escrowRemainingFormula: "escrowTotal - confirmedSlots × rewardPerSlot",
+    cycleRewardPoolLabel: "周期奖励池构成",
+    cycleRewardDistributionLabel: "周期奖励池分配",
     taxLabel: "任务税额",
     taxFormula: "max(taxMin, floor(escrowTotal × taxRate / 10000))",
-    taxMetaPrefix: "当前税率",
     terminationPenaltyLabel: "终止罚没",
-    terminationPenaltyFormula: "max(1, floor(remainingEscrow × penaltyRate / 10000))",
-    terminationPenaltyMetaPrefix: "当前罚没"
+    terminationPenaltyFormula: "max(1, floor(remainingEscrow × penaltyRate / 10000))"
   }
 } as const;
 
-const renderMeta = (label: string, value: string): string => `${label}: ${value}`;
-
 export const MethodologyPanels = ({ locale, economy }: MethodologyPanelsProps) => {
   const t = copy[locale];
-  const voteWeightMeta = economy
-    ? renderMeta(
-        t.voteWeightMetaPrefix,
-        `wPub=${bpsToPercent(economy.reputationWeightPublisherBps)}, wWorker=${bpsToPercent(economy.reputationWeightWorkerBps)}, wSup=${bpsToPercent(economy.reputationWeightSupervisorBps)}`
-      )
-    : null;
-  const disputeDecisionMeta = economy
-    ? renderMeta(
-        t.disputeDecisionMetaPrefix,
-        `quorum=${economy.disputeQuorum}, approval=${bpsToPercent(economy.disputeApprovalBps)}`
-      )
-    : null;
-  const taxMeta = economy
-    ? renderMeta(
-        t.taxMetaPrefix,
-        `taxRate=${bpsToPercent(economy.taxRateBps)}, taxMin=${economy.taxMin}`
-      )
-    : null;
-  const terminationPenaltyMeta = economy
-    ? renderMeta(
-        t.terminationPenaltyMetaPrefix,
-        `penaltyRate=${bpsToPercent(economy.terminationPenaltyBps)}`
-      )
-    : null;
+  const reputationWeightPublisherBps =
+    economy?.reputationWeightPublisherBps ?? defaultConfig.reputationWeightPublisherBps;
+  const reputationWeightWorkerBps =
+    economy?.reputationWeightWorkerBps ?? defaultConfig.reputationWeightWorkerBps;
+  const reputationWeightSupervisorBps =
+    economy?.reputationWeightSupervisorBps ?? defaultConfig.reputationWeightSupervisorBps;
+  const disputeQuorum = economy?.disputeQuorum ?? defaultConfig.disputeQuorum;
+  const disputeApprovalBps = economy?.disputeApprovalBps ?? defaultConfig.disputeApprovalBps;
+  const scoreWeightReputationBps =
+    economy?.scoreWeightReputationBps ?? defaultConfig.scoreWeightReputationBps;
+  const scoreWeightCompletionBps =
+    economy?.scoreWeightCompletionBps ?? defaultConfig.scoreWeightCompletionBps;
+  const scoreWeightQualityBps = economy?.scoreWeightQualityBps ?? defaultConfig.scoreWeightQualityBps;
+  const taxMin = economy?.taxMin ?? defaultConfig.taxMin;
+  const taxRateBps = economy?.taxRateBps ?? defaultConfig.taxRateBps;
+  const terminationPenaltyBps = economy?.terminationPenaltyBps ?? defaultConfig.terminationPenaltyBps;
+  const mintPerCycle = economy?.mintPerCycle ?? defaultConfig.mintPerCycle;
+
+  const publisherReputationFormula =
+    locale === "zh"
+      ? "clamp(发布信誉 + 发布任务×1 + 确认完成×1 - 终止任务×1, 0, 100)"
+      : "clamp(publisher rep + published×1 + completed-confirmed×1 - terminated×1, 0, 100)";
+  const workerReputationFormula =
+    locale === "zh"
+      ? "clamp(执行信誉 + 确认完成×2 - 被拒提交×1, 0, 100)"
+      : "clamp(worker rep + completed-confirmed×2 - rejected×1, 0, 100)";
+  const supervisorReputationFormula =
+    locale === "zh"
+      ? "clamp(监督信誉 + 监督投票×0.5 + 判定一致票×1 - 判定不一致票×1, 0, 100)"
+      : "clamp(supervisor rep + supervision-votes×0.5 + aligned-votes×1 - misaligned-votes×1, 0, 100)";
+
+  const voteWeightFormula =
+    locale === "zh"
+      ? `(发布信誉 × ${reputationWeightPublisherBps} + 执行信誉 × ${reputationWeightWorkerBps} + 监督信誉 × ${reputationWeightSupervisorBps}) / ${BPS_DENOMINATOR}`
+      : `(publisher reputation × ${reputationWeightPublisherBps} + worker reputation × ${reputationWeightWorkerBps} + supervisor reputation × ${reputationWeightSupervisorBps}) / ${BPS_DENOMINATOR}`;
+  const disputeDecisionFormula =
+    locale === "zh"
+      ? `票数 >= ${disputeQuorum} 且 完成票权重 / 总权重 >= ${bpsToPercent(disputeApprovalBps)}`
+      : `votes >= ${disputeQuorum} AND completed vote weight / total weight >= ${bpsToPercent(disputeApprovalBps)}`;
+  const scoreFormula =
+    locale === "zh"
+      ? `round((${scoreWeightReputationBps} × 信誉均值 + ${scoreWeightCompletionBps} × 完成率 + ${scoreWeightQualityBps} × 质量率) / ${BPS_DENOMINATOR}, 2)`
+      : `round((${scoreWeightReputationBps} × reputation average + ${scoreWeightCompletionBps} × completion rate + ${scoreWeightQualityBps} × quality rate) / ${BPS_DENOMINATOR}, 2)`;
+  const cycleRewardPoolFormula =
+    locale === "zh"
+      ? `${mintPerCycle} + taxPool + penaltyPool`
+      : `${mintPerCycle} + taxPool + penaltyPool`;
+  const cycleRewardDistributionFormula =
+    locale === "zh"
+      ? "每个代理奖励 = floor(周期奖励池 × 代理工作量 / 总工作量)，余数按小数部分从高到低、地址字典序补齐"
+      : "agent reward = floor(cycle reward pool × agent workload / total workload); remainder goes by largest fractional part, then address lexicographic order";
+  const taxFormula =
+    locale === "zh"
+      ? `max(${taxMin}, floor(托管总额 × ${taxRateBps} / ${BPS_DENOMINATOR}))`
+      : `max(${taxMin}, floor(escrow total × ${taxRateBps} / ${BPS_DENOMINATOR}))`;
+  const terminationPenaltyFormula =
+    locale === "zh"
+      ? `max(1, floor(剩余托管 × ${terminationPenaltyBps} / ${BPS_DENOMINATOR}))`
+      : `max(1, floor(remaining escrow × ${terminationPenaltyBps} / ${BPS_DENOMINATOR}))`;
 
   return (
     <section className="method-grid" data-testid="overview-methodology">
@@ -116,6 +146,18 @@ export const MethodologyPanels = ({ locale, economy }: MethodologyPanelsProps) =
         </div>
         <p className="sub method-card__body">{t.reputationCardBody}</p>
         <ul className="method-list">
+          <li className="method-item">
+            <span className="method-item__label">{t.publisherReputationLabel}</span>
+            <code>{publisherReputationFormula}</code>
+          </li>
+          <li className="method-item">
+            <span className="method-item__label">{t.workerReputationLabel}</span>
+            <code>{workerReputationFormula}</code>
+          </li>
+          <li className="method-item">
+            <span className="method-item__label">{t.supervisorReputationLabel}</span>
+            <code>{supervisorReputationFormula}</code>
+          </li>
           <li className="method-item">
             <span className="method-item__label">{t.reputationAvgLabel}</span>
             <code>{t.reputationAvgFormula}</code>
@@ -130,7 +172,7 @@ export const MethodologyPanels = ({ locale, economy }: MethodologyPanelsProps) =
           </li>
           <li className="method-item">
             <span className="method-item__label">{t.scoreLabel}</span>
-            <code>{t.scoreFormula}</code>
+            <code>{scoreFormula}</code>
           </li>
         </ul>
       </article>
@@ -144,31 +186,27 @@ export const MethodologyPanels = ({ locale, economy }: MethodologyPanelsProps) =
         <ul className="method-list">
           <li className="method-item">
             <span className="method-item__label">{t.voteWeightLabel}</span>
-            <code>{t.voteWeightFormula}</code>
-            {voteWeightMeta ? <span className="method-item__meta">{voteWeightMeta}</span> : null}
+            <code>{voteWeightFormula}</code>
           </li>
           <li className="method-item">
             <span className="method-item__label">{t.disputeDecisionLabel}</span>
-            <code>{t.disputeDecisionFormula}</code>
-            {disputeDecisionMeta ? <span className="method-item__meta">{disputeDecisionMeta}</span> : null}
+            <code>{disputeDecisionFormula}</code>
           </li>
           <li className="method-item">
-            <span className="method-item__label">{t.escrowTotalLabel}</span>
-            <code>{t.escrowTotalFormula}</code>
+            <span className="method-item__label">{t.cycleRewardPoolLabel}</span>
+            <code>{cycleRewardPoolFormula}</code>
           </li>
           <li className="method-item">
-            <span className="method-item__label">{t.escrowRemainingLabel}</span>
-            <code>{t.escrowRemainingFormula}</code>
+            <span className="method-item__label">{t.cycleRewardDistributionLabel}</span>
+            <code>{cycleRewardDistributionFormula}</code>
           </li>
           <li className="method-item">
             <span className="method-item__label">{t.taxLabel}</span>
-            <code>{t.taxFormula}</code>
-            {taxMeta ? <span className="method-item__meta">{taxMeta}</span> : null}
+            <code>{taxFormula}</code>
           </li>
           <li className="method-item">
             <span className="method-item__label">{t.terminationPenaltyLabel}</span>
-            <code>{t.terminationPenaltyFormula}</code>
-            {terminationPenaltyMeta ? <span className="method-item__meta">{terminationPenaltyMeta}</span> : null}
+            <code>{terminationPenaltyFormula}</code>
           </li>
         </ul>
       </article>

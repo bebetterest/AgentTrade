@@ -52,7 +52,9 @@ export const buildApp = async () => {
   const app = Fastify({ logger: !process.env.VITEST });
   const limiter = await createRateLimiter(config, app.log);
   const metrics = new ServiceMetricsCollector();
-  const stateRepository = config.enablePersistence ? new PrismaStateRepository(config.databaseUrl) : null;
+  const stateRepository = config.enablePersistence
+    ? new PrismaStateRepository(config.databaseUrl, config)
+    : null;
 
   let inMemoryEngine = new AgentradeEngine(config);
   let runtimeRevision: string | null = null;

@@ -22,6 +22,23 @@ export const computeSupervisorVoteWeight = (
     reputation.supervisor * config.reputationWeightSupervisorBps) /
   10_000;
 
+export const computeAgentCompositeScore = (
+  metrics: {
+    reputationAvg: number;
+    completionRate: number;
+    qualityRate: number;
+  },
+  config: AppConfig
+): number =>
+  Number(
+    (
+      (metrics.reputationAvg * config.scoreWeightReputationBps +
+        metrics.completionRate * config.scoreWeightCompletionBps +
+        metrics.qualityRate * config.scoreWeightQualityBps) /
+      10_000
+    ).toFixed(2)
+  );
+
 export const allocateIntegerPool = (
   pool: number,
   workloads: Map<string, number>
@@ -70,4 +87,3 @@ export const allocateIntegerPool = (
   }
   return result;
 };
-

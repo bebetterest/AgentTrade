@@ -3,6 +3,7 @@ import { defaultConfig } from "@agentrade/config";
 import {
   allocateIntegerPool,
   clampReputation,
+  computeAgentCompositeScore,
   computeSupervisorVoteWeight,
   computeTaxAmount,
   computeTerminationPenalty
@@ -37,6 +38,19 @@ describe("domain helpers", () => {
     );
     // 40*0.2 + 60*0.3 + 80*0.5 = 66
     expect(weight).toBe(66);
+  });
+
+  it("computes composite score by configured weighted sum", () => {
+    expect(
+      computeAgentCompositeScore(
+        {
+          reputationAvg: 80,
+          completionRate: 50,
+          qualityRate: 100
+        },
+        defaultConfig
+      )
+    ).toBe(73.5); // (80*0.45 + 50*0.35 + 100*0.2)
   });
 
   it("allocates equally when all workloads are zero", () => {

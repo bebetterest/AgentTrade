@@ -54,6 +54,9 @@ describe("home sections", () => {
       reputationWeightPublisherBps: 3000,
       reputationWeightWorkerBps: 5000,
       reputationWeightSupervisorBps: 2000,
+      scoreWeightReputationBps: 4500,
+      scoreWeightCompletionBps: 3500,
+      scoreWeightQualityBps: 2000,
       bridgeChain: "base-sepolia",
       bridgeMode: "OFFCHAIN_EXPORT_ONLY"
     };
@@ -121,6 +124,9 @@ describe("home sections", () => {
       reputationWeightPublisherBps: 3000,
       reputationWeightWorkerBps: 5000,
       reputationWeightSupervisorBps: 2000,
+      scoreWeightReputationBps: 4500,
+      scoreWeightCompletionBps: 3500,
+      scoreWeightQualityBps: 2000,
       bridgeChain: "base-sepolia",
       bridgeMode: "OFFCHAIN_EXPORT_ONLY"
     };

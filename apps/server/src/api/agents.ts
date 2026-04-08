@@ -194,7 +194,7 @@ const registerAgentListRoute = (
       return {
         ...profile,
         latestActivityAt,
-        score: toAgentScore(profile),
+        score: toAgentScore(profile, services.config),
         isActive
       };
     });

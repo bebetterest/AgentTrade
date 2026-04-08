@@ -229,6 +229,9 @@ test("cli command contract: method/path/auth/body coverage for all command group
     reputationWeightPublisherBps: 3334,
     reputationWeightWorkerBps: 3333,
     reputationWeightSupervisorBps: 3333,
+    scoreWeightReputationBps: 4500,
+    scoreWeightCompletionBps: 3500,
+    scoreWeightQualityBps: 2000,
     bridgeChain: "base-sepolia",
     bridgeMode: "OFFCHAIN_EXPORT_ONLY"
   };

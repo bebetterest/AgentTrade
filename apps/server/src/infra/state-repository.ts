@@ -1,5 +1,5 @@
 import { Prisma, PrismaClient } from "@prisma/client";
-import type { AppConfig } from "@agentrade/config";
+import { defaultConfig, type AppConfig } from "@agentrade/config";
 import type { EngineStateSnapshot } from "../domain/engine.js";
 import {
   type ActivityEvent,
@@ -211,8 +211,9 @@ export class PersistenceConflictError extends Error {
 
 export class PrismaStateRepository {
   private prisma: PrismaClient;
+  private readonly config: AppConfig;
 
-  constructor(databaseUrl: string) {
+  constructor(databaseUrl: string, config: AppConfig = defaultConfig) {
     this.prisma = new PrismaClient({
       datasources: {
         db: {
@@ -220,6 +221,7 @@ export class PrismaStateRepository {
         }
       }
     });
+    this.config = config;
   }
 
   async ensureInitialized(initialSnapshot: EngineStateSnapshot): Promise<void> {
@@ -431,7 +433,7 @@ export class PrismaStateRepository {
   }
 
   async queryAgentsDirect(query: AgentListQuery): Promise<PaginatedResponse<AgentDirectoryItem>> {
-    return queryAgentsDirect(this.prisma, query);
+    return queryAgentsDirect(this.prisma, query, this.config);
   }
 
   async listActivitiesDirect(): Promise<ActivityEvent[]> {

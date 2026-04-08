@@ -70,6 +70,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   const shouldPrefetchStreams = initialSection === "streams";
   const shouldPrefetchActivity = initialSection === "activity";
   const shouldPrefetchMetrics = initialSection === "metrics";
+  const shouldPrefetchEconomy = initialSection === "overview" || initialSection === "metrics";
 
   const [summary, activeCycle, tasks, agents, activities, cycles, disputes, economy, health] = await Promise.all([
     fetchDashboardSummary(requestPreferences.timeZone),
@@ -89,7 +90,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
     shouldPrefetchStreams
       ? fetchDisputes({ limit: 20, sort: "latest", order: "desc" })
       : Promise.resolve(createEmptyPage<Dispute>()),
-    shouldPrefetchMetrics
+    shouldPrefetchEconomy
       ? fetchEconomyParams()
       : Promise.resolve(null),
     shouldPrefetchMetrics
@@ -122,7 +123,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         initialHealth={health}
         initialStreamsLoaded={shouldPrefetchStreams}
         initialActivityLoaded={shouldPrefetchActivity}
-        initialMetricsLoaded={shouldPrefetchMetrics}
+        initialMetricsLoaded={shouldPrefetchEconomy}
       />
     </Suspense>
   );

@@ -36,6 +36,9 @@ export interface AppConfig {
   reputationWeightPublisherBps: number;
   reputationWeightWorkerBps: number;
   reputationWeightSupervisorBps: number;
+  scoreWeightReputationBps: number;
+  scoreWeightCompletionBps: number;
+  scoreWeightQualityBps: number;
   bridgeChain: string;
   bridgeMode: "OFFCHAIN_EXPORT_ONLY";
 }
@@ -86,6 +89,9 @@ export type PublicEconomyParams = Pick<
   | "reputationWeightPublisherBps"
   | "reputationWeightWorkerBps"
   | "reputationWeightSupervisorBps"
+  | "scoreWeightReputationBps"
+  | "scoreWeightCompletionBps"
+  | "scoreWeightQualityBps"
   | "bridgeChain"
   | "bridgeMode"
 >;
@@ -124,7 +130,52 @@ const PLACEHOLDER_VALUES = {
   ADMIN_SERVICE_KEY: "replace-this-admin-key"
 } as const;
 
+const BPS_TOTAL = 10_000;
+
+const assertWeightValue = (value: number, key: string): void => {
+  if (!Number.isFinite(value)) {
+    throw new Error(`invalid runtime config: ${key} must be a finite number`);
+  }
+  if (!Number.isInteger(value)) {
+    throw new Error(`invalid runtime config: ${key} must be an integer`);
+  }
+  if (value < 0) {
+    throw new Error(`invalid runtime config: ${key} must be >= 0`);
+  }
+};
+
+const assertWeightGroup = (
+  groupName: string,
+  weights: Array<{ key: string; value: number }>
+): void => {
+  for (const weight of weights) {
+    assertWeightValue(weight.value, weight.key);
+  }
+  const total = weights.reduce((sum, weight) => sum + weight.value, 0);
+  if (total !== BPS_TOTAL) {
+    throw new Error(
+      `invalid runtime config: ${groupName} must sum to ${BPS_TOTAL} bps (got ${total})`
+    );
+  }
+};
+
+const assertRuntimeWeightConfig = (config: AppConfig): void => {
+  assertWeightGroup("REPUTATION_WEIGHT_*_BPS", [
+    { key: "REPUTATION_WEIGHT_PUBLISHER_BPS", value: config.reputationWeightPublisherBps },
+    { key: "REPUTATION_WEIGHT_WORKER_BPS", value: config.reputationWeightWorkerBps },
+    { key: "REPUTATION_WEIGHT_SUPERVISOR_BPS", value: config.reputationWeightSupervisorBps }
+  ]);
+
+  assertWeightGroup("SCORE_WEIGHT_*_BPS", [
+    { key: "SCORE_WEIGHT_REPUTATION_BPS", value: config.scoreWeightReputationBps },
+    { key: "SCORE_WEIGHT_COMPLETION_BPS", value: config.scoreWeightCompletionBps },
+    { key: "SCORE_WEIGHT_QUALITY_BPS", value: config.scoreWeightQualityBps }
+  ]);
+};
+
 const assertRuntimeConfig = (config: AppConfig): void => {
+  assertRuntimeWeightConfig(config);
+
   if (process.env.NODE_ENV === "test") {
     return;
   }
@@ -184,6 +235,9 @@ export const defaultConfig: AppConfig = {
   reputationWeightPublisherBps: 2000,
   reputationWeightWorkerBps: 3000,
   reputationWeightSupervisorBps: 5000,
+  scoreWeightReputationBps: 4500,
+  scoreWeightCompletionBps: 3500,
+  scoreWeightQualityBps: 2000,
   bridgeChain: "Base Sepolia",
   bridgeMode: "OFFCHAIN_EXPORT_ONLY"
 };
@@ -219,6 +273,9 @@ export const toPublicEconomyParams = (config: AppConfig): PublicEconomyParams =>
   reputationWeightPublisherBps: config.reputationWeightPublisherBps,
   reputationWeightWorkerBps: config.reputationWeightWorkerBps,
   reputationWeightSupervisorBps: config.reputationWeightSupervisorBps,
+  scoreWeightReputationBps: config.scoreWeightReputationBps,
+  scoreWeightCompletionBps: config.scoreWeightCompletionBps,
+  scoreWeightQualityBps: config.scoreWeightQualityBps,
   bridgeChain: config.bridgeChain,
   bridgeMode: config.bridgeMode
 });
@@ -316,6 +373,18 @@ export const loadConfig = (): AppConfig => {
       "REPUTATION_WEIGHT_SUPERVISOR_BPS",
       defaultConfig.reputationWeightSupervisorBps
     ),
+    scoreWeightReputationBps: envNumber(
+      "SCORE_WEIGHT_REPUTATION_BPS",
+      defaultConfig.scoreWeightReputationBps
+    ),
+    scoreWeightCompletionBps: envNumber(
+      "SCORE_WEIGHT_COMPLETION_BPS",
+      defaultConfig.scoreWeightCompletionBps
+    ),
+    scoreWeightQualityBps: envNumber(
+      "SCORE_WEIGHT_QUALITY_BPS",
+      defaultConfig.scoreWeightQualityBps
+    ),
     bridgeChain: envString("BRIDGE_CHAIN", defaultConfig.bridgeChain),
     bridgeMode: "OFFCHAIN_EXPORT_ONLY"
   };
@@ -332,11 +401,14 @@ export const loadCliRuntimeConfig = (): CliRuntimeConfig => ({
   retries: envString("AGENTRADE_RETRIES", "1")
 });
 
+const envPublicString = (value: string | undefined, fallback: string): string =>
+  value && value.length > 0 ? value : fallback;
+
 export const loadWebRuntimeConfig = (): WebRuntimeConfig => ({
-  publicApiBaseUrl: envString("NEXT_PUBLIC_API_BASE_URL", "http://localhost:3000"),
+  publicApiBaseUrl: envPublicString(process.env.NEXT_PUBLIC_API_BASE_URL, "http://localhost:3000"),
   internalApiBaseUrl: process.env.INTERNAL_API_BASE_URL,
-  skillsInstallCommand: envString(
-    "NEXT_PUBLIC_AGENT_SKILLS_INSTALL_COMMAND",
+  skillsInstallCommand: envPublicString(
+    process.env.NEXT_PUBLIC_AGENT_SKILLS_INSTALL_COMMAND,
     "codex skill install ./apps/skill"
   )
 });

@@ -58,3 +58,4 @@ This overview reflects the current external API implemented in `apps/server/src/
 - `GET /v2/system/metrics` is admin-only and returns request/write counters plus latency summaries.
 - Admin override semantics:
   `COMPLETED` resolves immediately, `NOT_COMPLETED` reopens the dispute to `OPEN`.
+- If `NOT_COMPLETED` override races with another open-dispute creation/reopen for the same submission, server returns `409 OPEN_DISPUTE_ALREADY_EXISTS` and keeps exactly one `OPEN` dispute.

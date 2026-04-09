@@ -2,6 +2,19 @@
 
 ## 2026-04-09
 
+- Implemented full-chain robustness hardening follow-up:
+  - added strict DB gate mode (`check:db:strict`) and fail-fast env guards in DB suites (`REQUIRE_TEST_DATABASE_URL=true` now rejects silent skip runs without `TEST_DATABASE_URL`),
+  - kept `check:db` as alias to strict mode to avoid false-green local checks.
+- Added DB concurrency defense-in-depth for disputes:
+  - introduced partial unique index guard (`uq_dispute_open_submission`) so each submission can have only one `OPEN` dispute at DB level,
+  - mapped unique-key conflicts in dispute open/reopen write paths to deterministic `OPEN_DISPUTE_ALREADY_EXISTS`,
+  - added persistence-mode race regression (`reopen` vs `open`) to assert stable `409` behavior and single-open invariant under concurrent requests.
+- Expanded security audit baseline:
+  - pinned `vite >= 7.3.2` via workspace overrides to eliminate known high vulnerabilities in test tooling dependency chains,
+  - CI `security-audit` now runs both production-only and full dependency audits.
+- Updated operator docs:
+  - README now includes the new dispute-open guard pre-step, strict DB gate usage, local full-dependency audit command, and a local fallback checklist when Playwright Chromium cannot launch in sandboxed macOS environments.
+
 - Completed release-hardening convergence for single-instance container deployment behind proxy gateways:
   - web locale default resolution is now `locale cookie (zh/en) -> Accept-Language (zh/en only) -> en fallback`,
   - server runtime now supports `TRUST_PROXY` and CORS allowlist control (`CORS_ALLOWED_ORIGINS`), replacing permissive `origin: true`.

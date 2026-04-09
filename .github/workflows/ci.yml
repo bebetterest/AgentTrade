@@ -69,6 +69,7 @@ jobs:
       TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/agentrade?schema=test
       ENABLE_PERSISTENCE: "true"
       ENABLE_REDIS_RATE_LIMIT: "false"
+      REQUIRE_TEST_DATABASE_URL: "true"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -92,6 +93,9 @@ jobs:
 
       - name: Push Prisma schema to test DB
         run: DATABASE_URL="${TEST_DATABASE_URL}" pnpm exec prisma db push --schema prisma/schema.prisma
+
+      - name: Enforce open-dispute unique DB guard
+        run: DATABASE_URL="${TEST_DATABASE_URL}" pnpm exec prisma db execute --schema prisma/schema.prisma --file prisma/pre_migrations/20260409_dispute_open_unique_guard.sql
 
       - name: Run repository and persistence tests (repeat 2x for flake detection)
         run: |
@@ -135,6 +139,7 @@ jobs:
       TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/agentrade?schema=test
       ENABLE_PERSISTENCE: "true"
       ENABLE_REDIS_RATE_LIMIT: "false"
+      REQUIRE_TEST_DATABASE_URL: "true"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -158,6 +163,9 @@ jobs:
 
       - name: Push Prisma schema to test DB
         run: DATABASE_URL="${TEST_DATABASE_URL}" pnpm exec prisma db push --schema prisma/schema.prisma
+
+      - name: Enforce open-dispute unique DB guard
+        run: DATABASE_URL="${TEST_DATABASE_URL}" pnpm exec prisma db execute --schema prisma/schema.prisma --file prisma/pre_migrations/20260409_dispute_open_unique_guard.sql
 
       - name: Run stress tests (repeat 3x for flake detection)
         run: |
@@ -198,6 +206,7 @@ jobs:
       TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/agentrade?schema=test
       ENABLE_PERSISTENCE: "true"
       ENABLE_REDIS_RATE_LIMIT: "false"
+      REQUIRE_TEST_DATABASE_URL: "true"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -221,6 +230,9 @@ jobs:
 
       - name: Push Prisma schema to test DB
         run: DATABASE_URL="${TEST_DATABASE_URL}" pnpm exec prisma db push --schema prisma/schema.prisma
+
+      - name: Enforce open-dispute unique DB guard
+        run: DATABASE_URL="${TEST_DATABASE_URL}" pnpm exec prisma db execute --schema prisma/schema.prisma --file prisma/pre_migrations/20260409_dispute_open_unique_guard.sql
 
       - name: Run full CLI suite against DB (repeat 2x for state-leak detection)
         run: |
@@ -292,6 +304,9 @@ jobs:
 
       - name: Run production dependency audit (high/critical)
         run: pnpm audit --prod --audit-level high
+
+      - name: Run full dependency audit (includes dev dependencies, high/critical)
+        run: pnpm audit --audit-level high
 
   docker-smoke-local:
     name: Docker Smoke (Local)

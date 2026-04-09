@@ -11,6 +11,13 @@ import { PrismaStateRepository } from "../src/infra/state-repository.js";
 import { AgentradeEngine } from "../src/domain/engine.js";
 
 const TEST_DB_URL = process.env.TEST_DATABASE_URL;
+const REQUIRE_DB_URL = process.env.REQUIRE_TEST_DATABASE_URL === "true";
+if (REQUIRE_DB_URL && !TEST_DB_URL) {
+  throw new Error(
+    "TEST_DATABASE_URL is required when REQUIRE_TEST_DATABASE_URL=true. " +
+      "Set TEST_DATABASE_URL explicitly or run Docker-backed DB scripts."
+  );
+}
 const runDbSuite = TEST_DB_URL ? describe : describe.skip;
 const addr = (seed: string): Address =>
   `0x${Buffer.from(seed).toString("hex").slice(0, 40).padEnd(40, "0")}` as Address;
@@ -1059,6 +1066,131 @@ runDbSuite("API persistence mode", () => {
     expect(taskAfter.status).toBe("CLOSED");
     expect(taskAfter.rewardEscrowRemaining).toBe(0);
   });
+
+  it(
+    "keeps one-open-dispute invariant under reopen/open race when legacy data replays submission to REJECTED",
+    async () => {
+      const publisher = addr("persist-race-reopen-open-pub");
+      const worker = addr("persist-race-reopen-open-worker");
+      const taskRes = await app!.inject({
+        method: "POST",
+        url: "/v2/tasks",
+        headers: { authorization: `Bearer ${bearer(publisher)}` },
+        payload: {
+          title: "persist-race-reopen-open-task",
+          descriptionMd: "desc",
+          acceptanceCriteria: "ok",
+          deadlineUtc: futureDeadline(),
+          displayTimezone: "UTC",
+          slotsTotal: 1,
+          rewardPerSlot: 10,
+          allowRepeatCompletionsBySameAgent: false
+        }
+      });
+      expect(taskRes.statusCode).toBe(200);
+      const task = taskRes.json() as { id: string };
+
+      const acceptRes = await app!.inject({
+        method: "POST",
+        url: `/v2/tasks/${task.id}/intentions`,
+        headers: { authorization: `Bearer ${bearer(worker)}` }
+      });
+      expect(acceptRes.statusCode).toBe(200);
+
+      const submitRes = await app!.inject({
+        method: "POST",
+        url: `/v2/tasks/${task.id}/submissions`,
+        headers: { authorization: `Bearer ${bearer(worker)}` },
+        payload: { payloadMd: "result" }
+      });
+      expect(submitRes.statusCode).toBe(200);
+      const submission = submitRes.json() as { id: string };
+      await rejectSubmission(submission.id, publisher);
+
+      const firstDisputeRes = await app!.inject({
+        method: "POST",
+        url: "/v2/disputes",
+        headers: { authorization: `Bearer ${bearer(worker)}` },
+        payload: {
+          taskId: task.id,
+          submissionId: submission.id,
+          reasonMd: "seed dispute for reopen/open race"
+        }
+      });
+      expect(firstDisputeRes.statusCode).toBe(200);
+      const seededDispute = firstDisputeRes.json() as { id: string };
+
+      const finalizeRes = await app!.inject({
+        method: "POST",
+        url: `/v2/admin/disputes/${seededDispute.id}/override`,
+        headers: { "x-admin-service-key": adminKey },
+        payload: { result: "COMPLETED" }
+      });
+      expect(finalizeRes.statusCode).toBe(200);
+      expect((finalizeRes.json() as { status: string }).status).toBe("RESOLVED_COMPLETED");
+
+      // Simulate legacy/manual replay where the submission was reverted back to REJECTED.
+      const prisma = new PrismaClient({
+        datasources: {
+          db: {
+            url: TEST_DB_URL!
+          }
+        }
+      });
+      await prisma.submission.update({
+        where: { id: submission.id },
+        data: { status: "REJECTED" }
+      });
+      await prisma.$disconnect();
+
+      const reopenAttempt = app!.inject({
+        method: "POST",
+        url: `/v2/admin/disputes/${seededDispute.id}/override`,
+        headers: { "x-admin-service-key": adminKey },
+        payload: { result: "NOT_COMPLETED" }
+      });
+      const openAttempts = Array.from({ length: 40 }).map(() =>
+        app!.inject({
+          method: "POST",
+          url: "/v2/disputes",
+          headers: { authorization: `Bearer ${bearer(publisher)}` },
+          payload: {
+            taskId: task.id,
+            submissionId: submission.id,
+            reasonMd: "race between reopen and duplicate open"
+          }
+        })
+      );
+
+      const attempts = await Promise.all([reopenAttempt, ...openAttempts]);
+      const success = attempts.filter((item) => item.statusCode === 200).length;
+      const conflicts = attempts.filter((item) => item.statusCode === 409);
+      const unexpected = attempts.filter((item) => ![200, 409].includes(item.statusCode));
+      expect(unexpected).toHaveLength(0);
+      expect(success).toBe(1);
+      expect(conflicts).toHaveLength(attempts.length - 1);
+      for (const response of conflicts) {
+        expect(errorCode(response.json())).toBe("OPEN_DISPUTE_ALREADY_EXISTS");
+      }
+
+      const prismaVerify = new PrismaClient({
+        datasources: {
+          db: {
+            url: TEST_DB_URL!
+          }
+        }
+      });
+      const openDisputeCount = await prismaVerify.dispute.count({
+        where: {
+          submissionId: submission.id,
+          status: "OPEN"
+        }
+      });
+      await prismaVerify.$disconnect();
+      expect(openDisputeCount).toBe(1);
+    },
+    30_000
+  );
 
   it("serves filtered persistence-mode list reads and dashboard aggregates directly from DB queries", async () => {
     const publisherA = addr("persist-read-a");

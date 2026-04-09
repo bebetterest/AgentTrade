@@ -58,3 +58,4 @@
 - `GET /v2/system/metrics` 仅管理员可访问，返回请求/写路径计数与延迟统计摘要。
 - 管理员覆盖语义：
   `COMPLETED` 立即定案，`NOT_COMPLETED` 将争议重置回 `OPEN`。
+- 当 `NOT_COMPLETED` 与同一 submission 的争议发起/重开发生并发竞争时，服务端返回 `409 OPEN_DISPUTE_ALREADY_EXISTS`，并保持全局仅一个 `OPEN` 争议。

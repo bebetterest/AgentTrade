@@ -820,83 +820,98 @@ export const writeOpenDisputeDirect = async (
   deps: ActivityWriteDeps,
   input: OpenDisputeDirectInput
 ): Promise<PrismaDispute> => {
-  return deps.executeWithRetry(async () =>
-    prisma.$transaction(async (tx) => {
-      const runtime = await deps.lockRuntimeWithTx(tx);
-      const now = new Date();
-      await deps.ensureAgentAndLedgerWithTx(tx, input.opener, now);
-      const task = await tx.task.findUnique({ where: { id: input.taskId } });
-      if (!task) {
-        throw new DomainError("TASK_NOT_FOUND", `Task ${input.taskId} does not exist`, 404);
-      }
-      const submission = await tx.submission.findUnique({ where: { id: input.submissionId } });
-      if (!submission) {
-        throw new DomainError("SUBMISSION_NOT_FOUND", `Submission ${input.submissionId} not found`, 404);
-      }
-      if (submission.taskId !== task.id) {
-        throw new DomainError("MISMATCH", "submission does not belong to task", 400);
-      }
-      if (input.reasonMd.trim().length === 0 || input.reasonMd.length > input.disputeReasonMaxLength) {
-        throw new DomainError(
-          "INVALID_DISPUTE_REASON",
-          `reasonMd must be non-empty and <= ${input.disputeReasonMaxLength} chars`,
-          400
-        );
-      }
-      if (input.opener !== asAddress(task.publisherAddress) && input.opener !== asAddress(submission.agentAddress)) {
-        throw new DomainError(
-          "DISPUTE_FORBIDDEN_OPENER",
-          "only task publisher or submission agent can open dispute",
-          403
-        );
-      }
-      if (submission.status !== DomainSubmissionStatus.REJECTED) {
-        throw new DomainError(
-          "SUBMISSION_NOT_DISPUTABLE",
-          "submission must be rejected before dispute can be opened",
-          409
-        );
-      }
-
-      const hasOpenDispute = await tx.dispute.findFirst({
-        where: {
-          submissionId: submission.id,
-          status: DomainDisputeStatus.OPEN
-        },
-        select: { id: true }
-      });
-      if (hasOpenDispute) {
-        throw new DomainError(
-          "OPEN_DISPUTE_ALREADY_EXISTS",
-          "an open dispute already exists for this submission",
-          409
-        );
-      }
-
-      const created = await tx.dispute.create({
-        data: {
-          id: nanoid(),
-          taskId: task.id,
-          submissionId: submission.id,
-          openerAddress: input.opener,
-          reasonMd: input.reasonMd,
-          status: DomainDisputeStatus.OPEN,
-          createdAt: now,
-          updatedAt: now
+  try {
+    return await deps.executeWithRetry(async () =>
+      prisma.$transaction(async (tx) => {
+        const runtime = await deps.lockRuntimeWithTx(tx);
+        const now = new Date();
+        await deps.ensureAgentAndLedgerWithTx(tx, input.opener, now);
+        const task = await tx.task.findUnique({ where: { id: input.taskId } });
+        if (!task) {
+          throw new DomainError("TASK_NOT_FOUND", `Task ${input.taskId} does not exist`, 404);
         }
-      });
-      await deps.appendActivityEventWithTx(tx, {
-        type: DomainActivityEventType.DISPUTE_OPENED,
-        cycleId: runtime.activeCycleId,
-        taskId: task.id,
-        disputeId: created.id,
-        actor: input.opener,
-        createdAt: now
-      });
-      await deps.touchRuntimeStateWithTx(tx);
-      return created;
-    })
-  );
+        const submission = await tx.submission.findUnique({ where: { id: input.submissionId } });
+        if (!submission) {
+          throw new DomainError("SUBMISSION_NOT_FOUND", `Submission ${input.submissionId} not found`, 404);
+        }
+        if (submission.taskId !== task.id) {
+          throw new DomainError("MISMATCH", "submission does not belong to task", 400);
+        }
+        if (input.reasonMd.trim().length === 0 || input.reasonMd.length > input.disputeReasonMaxLength) {
+          throw new DomainError(
+            "INVALID_DISPUTE_REASON",
+            `reasonMd must be non-empty and <= ${input.disputeReasonMaxLength} chars`,
+            400
+          );
+        }
+        if (
+          input.opener !== asAddress(task.publisherAddress) &&
+          input.opener !== asAddress(submission.agentAddress)
+        ) {
+          throw new DomainError(
+            "DISPUTE_FORBIDDEN_OPENER",
+            "only task publisher or submission agent can open dispute",
+            403
+          );
+        }
+        if (submission.status !== DomainSubmissionStatus.REJECTED) {
+          throw new DomainError(
+            "SUBMISSION_NOT_DISPUTABLE",
+            "submission must be rejected before dispute can be opened",
+            409
+          );
+        }
+
+        const hasOpenDispute = await tx.dispute.findFirst({
+          where: {
+            submissionId: submission.id,
+            status: DomainDisputeStatus.OPEN
+          },
+          select: { id: true }
+        });
+        if (hasOpenDispute) {
+          throw new DomainError(
+            "OPEN_DISPUTE_ALREADY_EXISTS",
+            "an open dispute already exists for this submission",
+            409
+          );
+        }
+
+        const created = await tx.dispute.create({
+          data: {
+            id: nanoid(),
+            taskId: task.id,
+            submissionId: submission.id,
+            openerAddress: input.opener,
+            reasonMd: input.reasonMd,
+            status: DomainDisputeStatus.OPEN,
+            createdAt: now,
+            updatedAt: now
+          }
+        });
+        await deps.appendActivityEventWithTx(tx, {
+          type: DomainActivityEventType.DISPUTE_OPENED,
+          cycleId: runtime.activeCycleId,
+          taskId: task.id,
+          disputeId: created.id,
+          actor: input.opener,
+          createdAt: now
+        });
+        await deps.touchRuntimeStateWithTx(tx);
+        return created;
+      })
+    );
+  } catch (error) {
+    const code = error && typeof error === "object" && "code" in error ? String(error.code ?? "") : "";
+    if (code === "P2002") {
+      throw new DomainError(
+        "OPEN_DISPUTE_ALREADY_EXISTS",
+        "an open dispute already exists for this submission",
+        409
+      );
+    }
+    throw error;
+  }
 };
 
 export const writeConfirmSubmissionDirect = async (
@@ -1237,45 +1252,57 @@ export const writeOverrideDisputeDirect = async (
   disputeId: string,
   result: "COMPLETED" | "NOT_COMPLETED"
 ): Promise<PrismaDispute> => {
-  return deps.executeWithRetry(async () =>
-    prisma.$transaction(async (tx) => {
-      const runtime = await deps.lockRuntimeWithTx(tx);
-      const now = new Date();
-      await tx.$queryRaw`SELECT id FROM "Dispute" WHERE id = ${disputeId} FOR UPDATE`;
-      const row = await tx.dispute.findUnique({ where: { id: disputeId } });
-      if (!row) {
-        throw new DomainError("DISPUTE_NOT_FOUND", `Dispute ${disputeId} does not exist`, 404);
-      }
+  try {
+    return await deps.executeWithRetry(async () =>
+      prisma.$transaction(async (tx) => {
+        const runtime = await deps.lockRuntimeWithTx(tx);
+        const now = new Date();
+        await tx.$queryRaw`SELECT id FROM "Dispute" WHERE id = ${disputeId} FOR UPDATE`;
+        const row = await tx.dispute.findUnique({ where: { id: disputeId } });
+        if (!row) {
+          throw new DomainError("DISPUTE_NOT_FOUND", `Dispute ${disputeId} does not exist`, 404);
+        }
 
-      if (result === "COMPLETED") {
-        if (row.status !== DomainDisputeStatus.RESOLVED_COMPLETED) {
+        if (result === "COMPLETED") {
+          if (row.status !== DomainDisputeStatus.RESOLVED_COMPLETED) {
+            await tx.dispute.update({
+              where: { id: disputeId },
+              data: {
+                status: DomainDisputeStatus.RESOLVED_COMPLETED,
+                updatedAt: now
+              }
+            });
+            await deps.finalizeDisputeWithOutcomeWithTx(
+              tx,
+              disputeId,
+              DomainVoteChoice.COMPLETED,
+              now,
+              runtime.activeCycleId
+            );
+          }
+        } else {
           await tx.dispute.update({
             where: { id: disputeId },
             data: {
-              status: DomainDisputeStatus.RESOLVED_COMPLETED,
+              status: DomainDisputeStatus.OPEN,
               updatedAt: now
             }
           });
-          await deps.finalizeDisputeWithOutcomeWithTx(
-            tx,
-            disputeId,
-            DomainVoteChoice.COMPLETED,
-            now,
-            runtime.activeCycleId
-          );
         }
-      } else {
-        await tx.dispute.update({
-          where: { id: disputeId },
-          data: {
-            status: DomainDisputeStatus.OPEN,
-            updatedAt: now
-          }
-        });
-      }
 
-      await deps.touchRuntimeStateWithTx(tx);
-      return tx.dispute.findUniqueOrThrow({ where: { id: disputeId } });
-    })
-  );
+        await deps.touchRuntimeStateWithTx(tx);
+        return tx.dispute.findUniqueOrThrow({ where: { id: disputeId } });
+      })
+    );
+  } catch (error) {
+    const code = error && typeof error === "object" && "code" in error ? String(error.code ?? "") : "";
+    if (code === "P2002") {
+      throw new DomainError(
+        "OPEN_DISPUTE_ALREADY_EXISTS",
+        "an open dispute already exists for this submission",
+        409
+      );
+    }
+    throw error;
+  }
 };

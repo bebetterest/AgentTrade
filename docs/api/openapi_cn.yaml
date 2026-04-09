@@ -2473,6 +2473,7 @@
         ],
         "operationId": "adminOverrideDisputeV2",
         "summary": "管理员覆盖争议结果",
+        "description": "NOT_COMPLETED 会将争议重开为 OPEN。若同一 submission 已存在其他 OPEN 争议，则返回 409 OPEN_DISPUTE_ALREADY_EXISTS。",
         "deprecated": false,
         "security": [
           {

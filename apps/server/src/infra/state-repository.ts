@@ -107,6 +107,7 @@ import {
 } from "./state-repository-write-helpers.js";
 
 const RUNTIME_ID = "singleton";
+const OPEN_DISPUTE_UNIQUE_INDEX = "uq_dispute_open_submission";
 const MAX_SERIALIZABLE_RETRIES = 20;
 const SERIALIZABLE_RETRY_BACKOFF_MS = 10;
 const MAX_SERIALIZABLE_RETRY_BACKOFF_MS = 200;
@@ -212,6 +213,7 @@ export class PersistenceConflictError extends Error {
 export class PrismaStateRepository {
   private prisma: PrismaClient;
   private readonly config: AppConfig;
+  private persistenceGuardsPromise: Promise<void> | null = null;
 
   constructor(databaseUrl: string, config: AppConfig = defaultConfig) {
     this.prisma = new PrismaClient({
@@ -225,6 +227,7 @@ export class PrismaStateRepository {
   }
 
   async ensureInitialized(initialSnapshot: EngineStateSnapshot): Promise<void> {
+    await this.ensurePersistenceGuards();
     await this.prisma.$transaction(async (tx) => {
       const existing = await tx.runtimeState.findUnique({
         where: { id: RUNTIME_ID }
@@ -1536,6 +1539,7 @@ export class PrismaStateRepository {
   }
 
   private async executeWithRetry<T>(operation: () => Promise<T>): Promise<T> {
+    await this.ensurePersistenceGuards();
     let attempt = 0;
 
     while (true) {
@@ -1586,6 +1590,19 @@ export class PrismaStateRepository {
 
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private async ensurePersistenceGuards(): Promise<void> {
+    if (!this.persistenceGuardsPromise) {
+      this.persistenceGuardsPromise = this.prisma
+        .$executeRawUnsafe(
+          `CREATE UNIQUE INDEX IF NOT EXISTS "${OPEN_DISPUTE_UNIQUE_INDEX}" ` +
+            `ON "Dispute" ("submissionId") ` +
+            `WHERE "status" = '${DomainDisputeStatus.OPEN}'::"DisputeStatus"`
+        )
+        .then(() => undefined);
+    }
+    await this.persistenceGuardsPromise;
   }
 
   private cloneSnapshot(snapshot: EngineStateSnapshot): EngineStateSnapshot {

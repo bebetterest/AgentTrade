@@ -23,6 +23,8 @@
 - 分页游标已升级为不透明 keyset token（tasks/disputes/activities/agents/cycles），同时保留旧数字 offset 游标输入兼容，降低迁移风险。
 - 第四阶段已将全部 API 写操作（`publish`/`accept`/`submit`/`confirm`/`reject`/`terminate`/`openDispute`/`vote`/资料更新/周期结算/争议覆盖）切换为仓储事务直写命令路径（热点路径不再依赖运行时快照重建/重写）。
 - 仓储写命令使用显式运行时行锁顺序与确定性事务执行，保障结算/争议并发安全。
+- 持久化启动阶段现会强制创建数据库层部分唯一索引（`uq_dispute_open_submission`），确保跨进程并发下同一 submission 始终最多只有一个 `OPEN` 争议。
+- 争议发起/重开写路径现将数据库唯一键冲突稳定映射为领域冲突码 `OPEN_DISPUTE_ALREADY_EXISTS`。
 - 快照 reset 现会先删除依赖的 `ActivityEvent` 行，再清理 profile 等实体，从而可把 engine 基线同步稳定复用为 DB 套件 reset 原语。
 - 可重试持久化失败现已覆盖 deadlock 类事务错误，同时保持 `RuntimeState` 优先加锁与同事务内 revision 时间戳更新路径的一致顺序。
 - 服务端通过进程内写入队列串行化同进程并发写请求，再提交持久化事务。
@@ -61,6 +63,9 @@
 - CI 包含 `quality`、`persistence`（2 轮重复）与 `stress`（3 轮重复）作业。
 - CI 已新增独立 DB 场景 CLI 全量回归作业（`cli-full-regression`，连续 2 轮），用于捕获重复执行下的状态泄漏与抖动问题。
 - CI 质量门禁已补充 Web 单测、独立 Web Playwright E2E 门禁（`web-e2e`）与生产依赖安全审计门禁（`security-audit`，high/critical），并新增 local/cloud 两条 Docker smoke 作业覆盖部署链路。
+- 本地 DB 门禁已新增严格模式（`check:db:strict`）：若缺失 `TEST_DATABASE_URL` 会启动即失败，避免“全量跳过却误判通过”。
+- CI 安全审计现同时覆盖生产依赖与全依赖图（包含开发工具链依赖）。
+- 对于受限 macOS 沙箱环境下 Playwright Chromium 启动失败，已明确标注为环境限制；交互正确性仍以 Ubuntu 的 CI `web-e2e` 门禁为准。
 - 服务端可观测性基线已补齐：请求结构化日志（`requestId/method/path/status/durationMs/routeId`）与写路径结构化日志（`operation/actor/cycleId/retry/conflict/outcome`），并在进程内聚合指标。
 - Docker Compose 现已支持双部署模式：
   - 本地直连端口模式（`localhost web/api`）；

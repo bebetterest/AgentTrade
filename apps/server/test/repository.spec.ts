@@ -9,6 +9,13 @@ import { MutableClock } from "../src/utils/time.js";
 import { PrismaStateRepository } from "../src/infra/state-repository.js";
 
 const TEST_DB_URL = process.env.TEST_DATABASE_URL;
+const REQUIRE_DB_URL = process.env.REQUIRE_TEST_DATABASE_URL === "true";
+if (REQUIRE_DB_URL && !TEST_DB_URL) {
+  throw new Error(
+    "TEST_DATABASE_URL is required when REQUIRE_TEST_DATABASE_URL=true. " +
+      "Set TEST_DATABASE_URL explicitly or run Docker-backed DB scripts."
+  );
+}
 const runDbSuite = TEST_DB_URL ? describe : describe.skip;
 const addr = (seed: string): Address => `0x${seed.padEnd(40, "0")}` as Address;
 

@@ -2,6 +2,19 @@
 
 ## 2026-04-09
 
+- 已完成全链路鲁棒性加固收尾：
+  - 新增严格 DB 门禁模式（`check:db:strict`），并在 DB 套件入口增加 fail-fast 环境校验（`REQUIRE_TEST_DATABASE_URL=true` 且缺失 `TEST_DATABASE_URL` 时直接失败），
+  - `check:db` 现作为严格模式别名，避免本地出现“全量跳过但误判通过”。
+- 已增加争议并发的数据库纵深防线：
+  - 新增部分唯一索引 `uq_dispute_open_submission`，从数据库层保证同一 submission 同时最多一个 `OPEN` 争议，
+  - 在争议发起/重开写路径中，将唯一键冲突统一映射为确定性 `OPEN_DISPUTE_ALREADY_EXISTS`，
+  - 新增持久化并发回归（`reopen` 与 `open` 竞争）验证高并发下稳定 `409` 语义与单 OPEN 不变量。
+- 已扩展安全审计基线：
+  - 通过 workspace override 锁定 `vite >= 7.3.2`，消除测试工具链依赖中的已知高危漏洞，
+  - CI `security-audit` 现同时执行“生产依赖审计”和“全依赖审计”。
+- 已更新运维文档：
+  - README 已补充争议 OPEN 防线预处理步骤、严格 DB 门禁用法、全依赖本地审计命令，以及在受限 macOS 沙箱中 Playwright Chromium 无法启动时的本地替代回归清单。
+
 - 完成“单实例容器 + 网关后部署”上线收敛加固：
   - Web 默认语言解析规则已收敛为 `locale cookie(zh/en) -> Accept-Language(仅 zh/en) -> 其他回退 en`，
   - 服务端运行时新增 `TRUST_PROXY` 与 CORS 白名单（`CORS_ALLOWED_ORIGINS`），替换原先 `origin: true` 全开放配置。

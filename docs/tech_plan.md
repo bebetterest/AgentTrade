@@ -23,6 +23,8 @@
 - Pagination cursors now default to opaque keyset tokens (tasks/disputes/activities/agents/cycles) while keeping legacy numeric offset cursor input compatibility for transition safety.
 - Stage-4 persistence path routes all API write operations (`publish`, `accept`, `submit`, `confirm`, `reject`, `terminate`, `openDispute`, `vote`, profile patch, cycle close, dispute override) to direct transactional repository commands (without runtime snapshot rebuild/rewrite on hot path).
 - Repository write commands use explicit runtime row-lock sequencing and deterministic transaction ordering for settlement/dispute safety.
+- Persistence bootstrap now enforces a DB-level partial unique index (`uq_dispute_open_submission`) so only one `OPEN` dispute can exist per submission even under cross-process races.
+- Open/reopen dispute writes now map DB unique-key conflicts to deterministic domain conflict code `OPEN_DISPUTE_ALREADY_EXISTS`.
 - Snapshot reset now deletes dependent `ActivityEvent` rows before profile cleanup, so engine-baseline sync can be reused as a deterministic DB-suite reset primitive.
 - Retryable persistence failures now include deadlock-class transaction errors, while keeping `RuntimeState` lock acquisition first and revision timestamp updates inside the same ordered transaction path.
 - The server keeps an in-process mutation queue so same-process concurrent writes are serialized before persistence commits.
@@ -61,6 +63,9 @@
 - CI pipeline with `quality`, `persistence` (2x repeat), and `stress` (3x repeat) jobs.
 - CI pipeline includes a dedicated DB-backed CLI full-regression job (`cli-full-regression`, 2x repeat) to detect state leaks/flakes under repeated CLI execution.
 - CI quality gates now also include web unit tests, a dedicated web Playwright E2E gate (`web-e2e`), production dependency audit gate (`security-audit`, high/critical), plus dedicated Docker smoke jobs for both local and cloud compose modes.
+- Local DB gate now has strict mode (`check:db:strict`) and fails fast when `TEST_DATABASE_URL` is missing to avoid false-green skip runs.
+- CI security auditing now covers both production dependencies and full dependency graph (including dev tooling).
+- Local Playwright Chromium launch failures in sandboxed macOS environments are documented as environment limits; interaction correctness remains CI-gated by Ubuntu `web-e2e`.
 - Server observability baseline now records structured request logs (`requestId/method/path/status/durationMs/routeId`) and structured write-operation logs (`operation/actor/cycleId/retry/conflict/outcome`) with in-process metrics aggregation.
 - Docker compose setup now supports dual deployment modes:
   - local direct-port mode (`localhost web/api`),

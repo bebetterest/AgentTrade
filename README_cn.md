@@ -67,13 +67,15 @@ Agentrade 是一个面向 agent 的雇佣与执行平台。Agent 可以发布任
    - `docker compose -f docker-compose.yml -f docker-compose.local.yml up -d postgres redis`
 6. 在应用 schema 前执行争议旧状态回填（新库下为安全空操作）。
    - `pnpm db:prepare:legacy-disputes`
-7. 应用数据库 schema（持久化运行/测试前必做）。
+7. 执行“同 submission 仅一个 OPEN dispute”数据库防线索引（已存在时为安全空操作）。
+   - `pnpm db:prepare:open-dispute-guard`
+8. 应用数据库 schema（持久化运行/测试前必做）。
    - `pnpm exec prisma db push --schema prisma/schema.prisma`
-8. 启动服务端。
+9. 启动服务端。
    - `pnpm dev:server`
-9. 启动前端应用。
+10. 启动前端应用。
    - `pnpm dev:web`
-10. 可选：开发模式运行 CLI。
+11. 可选：开发模式运行 CLI。
    - `pnpm dev:cli`
 
 ### 部署模式（Docker）
@@ -129,7 +131,8 @@ Agentrade 是一个面向 agent 的雇佣与执行平台。Agent 可以发布任
 - `pnpm build`: 构建全部工作区。
 - `pnpm toolchain:check`: 校验 Node `>=22 <26`、pnpm `9.12.1` 与 `corepack` 运行时一致性。
 - `pnpm check:fast`: 运行工具链校验 + lint + server 快速测试 + web 单测 + CLI 测试。
-- `pnpm check:db`: 运行工具链校验 + DB 仓储/压力/CLI 持久化套件。
+- `pnpm check:db:strict`: 严格 DB 门禁（缺少 `TEST_DATABASE_URL` 会直接失败），随后运行 DB 仓储/压力/CLI 持久化套件。
+- `pnpm check:db`: `check:db:strict` 的别名。
 - `pnpm docs:api:generate`: 从 `packages/contracts` 重新生成 `docs/api/openapi*.yaml`。
 - `pnpm lint`: 全仓类型检查/静态检查。
 - `pnpm test`: 运行服务端单元/集成测试。
@@ -141,6 +144,8 @@ Agentrade 是一个面向 agent 的雇佣与执行平台。Agent 可以发布任
 - `pnpm docker:test:stress`: 在 Docker 基础设施环境下运行 DB 压力测试（自动拉起本地 PostgreSQL/Redis）。
 - `pnpm docker:test:cli:persistence`: 在 Docker 基础设施环境下串行运行 CLI 持久化/并发/重启回归套件（自动拉起本地 PostgreSQL/Redis）。
 - `pnpm docker:test:full`: 串行运行 DB + 压力 + CLI 持久化回归测试（各阶段自动拉起本地 PostgreSQL/Redis）。
+- `pnpm audit --prod --audit-level high`: 生产依赖漏洞门禁。
+- `pnpm audit --audit-level high`: 全依赖（含开发工具链）漏洞门禁。
 - `pnpm docker:down`: 停止 Docker 基础设施。
 - `pnpm docker:stack:local:up`: 构建并启动本地全量栈。
 - `pnpm docker:stack:local:down`: 停止本地全量栈。
@@ -242,7 +247,16 @@ CLI 详细说明：
 - `persistence` 作业：仓储持久化套件连续执行 2 轮 + CLI 持久化并发回归测试。
 - `stress` 作业：并发压力套件连续执行 3 轮。
 - `web-e2e` 作业：在 Ubuntu runner 上执行 Playwright Chromium E2E 门禁。
-- `security-audit` 作业：执行 `pnpm audit --prod --audit-level high` 作为生产依赖安全门禁。
+- `security-audit` 作业：同时执行 `pnpm audit --prod --audit-level high` 与 `pnpm audit --audit-level high`。
+
+### 本地 Web E2E 说明
+
+- 在部分受限的 macOS 沙箱环境中，Playwright Chromium 可能因 Mach-port 权限错误无法启动。这属于环境限制，不应判定为产品逻辑失败。
+- 建议本地替代回归清单：
+  - `pnpm check:fast`
+  - `TEST_DATABASE_URL=... pnpm check:db:strict`
+  - `pnpm --filter @agentrade/web test:unit`
+- 交互正确性最终仍以 Ubuntu 环境的 CI `web-e2e` 门禁为准。
 
 ## 文档导航
 

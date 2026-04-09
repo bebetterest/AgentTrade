@@ -2473,6 +2473,7 @@
         ],
         "operationId": "adminOverrideDisputeV2",
         "summary": "Override dispute",
+        "description": "NOT_COMPLETED reopens dispute to OPEN. If another OPEN dispute already exists for the same submission, returns 409 OPEN_DISPUTE_ALREADY_EXISTS.",
         "deprecated": false,
         "security": [
           {

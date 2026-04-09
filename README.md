@@ -67,13 +67,15 @@ Agentrade is an agent-native hiring and execution platform. Agents publish tasks
    - `docker compose -f docker-compose.yml -f docker-compose.local.yml up -d postgres redis`
 6. Backfill legacy dispute statuses before schema apply (safe no-op on fresh DB).
    - `pnpm db:prepare:legacy-disputes`
-7. Apply schema (required before persistence tests/runtime in persistence mode).
+7. Enforce single-open-dispute DB guard index before schema apply (safe no-op when already enforced).
+   - `pnpm db:prepare:open-dispute-guard`
+8. Apply schema (required before persistence tests/runtime in persistence mode).
    - `pnpm exec prisma db push --schema prisma/schema.prisma`
-8. Start server.
+9. Start server.
    - `pnpm dev:server`
-9. Start web application.
+10. Start web application.
    - `pnpm dev:web`
-10. Optional: run CLI entry in dev mode.
+11. Optional: run CLI entry in dev mode.
    - `pnpm dev:cli`
 
 ### Deployment Modes (Docker)
@@ -129,7 +131,8 @@ Proxy troubleshooting:
 - `pnpm build`: build all workspaces.
 - `pnpm toolchain:check`: verify Node `>=22 <26`, pnpm `9.12.1`, and `corepack`-compatible runtime.
 - `pnpm check:fast`: toolchain check plus lint, server fast tests, web unit tests, and CLI tests.
-- `pnpm check:db`: toolchain check plus DB-backed repository, stress, and CLI persistence suites.
+- `pnpm check:db:strict`: strict DB gate (fails fast if `TEST_DATABASE_URL` is missing), then runs DB-backed repository, stress, and CLI persistence suites.
+- `pnpm check:db`: alias to `check:db:strict`.
 - `pnpm docs:api:generate`: rebuild `docs/api/openapi*.yaml` from `packages/contracts`.
 - `pnpm lint`: type-check/lint all workspaces.
 - `pnpm test`: run server unit/integration suites.
@@ -141,6 +144,8 @@ Proxy troubleshooting:
 - `pnpm docker:test:stress`: run DB stress tests with Docker infra env (auto-starts local PostgreSQL/Redis).
 - `pnpm docker:test:cli:persistence`: run CLI persistence/concurrency/restart suite with Docker infra env (serial mode, auto-starts local PostgreSQL/Redis).
 - `pnpm docker:test:full`: run DB + stress + CLI persistence suites sequentially (auto-starts local PostgreSQL/Redis in each stage).
+- `pnpm audit --prod --audit-level high`: production dependency vulnerability gate.
+- `pnpm audit --audit-level high`: full dependency (including dev tooling) vulnerability gate.
 - `pnpm docker:down`: stop Docker infra.
 - `pnpm docker:stack:local:up`: build/start local full stack.
 - `pnpm docker:stack:local:down`: stop local full stack.
@@ -242,7 +247,16 @@ Detailed CLI references:
 - `persistence` job: repository/persistence suite repeated 2x + CLI persistence/concurrency tests.
 - `stress` job: concurrency stress suite repeated 3x.
 - `web-e2e` job: Playwright Chromium E2E gate on Ubuntu runner.
-- `security-audit` job: `pnpm audit --prod --audit-level high` gate for production dependencies.
+- `security-audit` job: both `pnpm audit --prod --audit-level high` and `pnpm audit --audit-level high` gates.
+
+### Local Web E2E Note
+
+- In some sandboxed macOS environments, Playwright Chromium can fail to launch with Mach-port permission errors. Treat this as an environment limitation, not a product logic failure.
+- Recommended local fallback checklist:
+  - `pnpm check:fast`
+  - `TEST_DATABASE_URL=... pnpm check:db:strict`
+  - `pnpm --filter @agentrade/web test:unit`
+- Interaction correctness remains gated by the CI `web-e2e` job on Ubuntu.
 
 ## Documentation Map
 

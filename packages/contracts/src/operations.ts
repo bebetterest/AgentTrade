@@ -735,6 +735,10 @@ export const apiOperations = [
     tag: "Admin",
     auth: "admin",
     summary: { en: "Override dispute", zh: "管理员覆盖争议结果" },
+    description: {
+      en: "NOT_COMPLETED reopens dispute to OPEN. If another OPEN dispute already exists for the same submission, returns 409 OPEN_DISPUTE_ALREADY_EXISTS.",
+      zh: "NOT_COMPLETED 会将争议重开为 OPEN。若同一 submission 已存在其他 OPEN 争议，则返回 409 OPEN_DISPUTE_ALREADY_EXISTS。"
+    },
     pathTemplate: "/v2/admin/disputes/{id}/override",
     pathParamsSchema: idPathSchema,
     bodySchema: overrideDisputeRequestSchema.schema,

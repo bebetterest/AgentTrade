@@ -144,6 +144,40 @@ describe("API integration", () => {
     ).toContain("unsupported api version 'v9'");
   });
 
+  it("applies CORS allowlist to preflight requests", async () => {
+    await app!.close();
+    app = null;
+    process.env.CORS_ALLOWED_ORIGINS = "https://allowed.example";
+    try {
+      app = await buildApp();
+      await app.ready();
+
+      const allowed = await app.inject({
+        method: "OPTIONS",
+        url: "/v2/tasks",
+        headers: {
+          origin: "https://allowed.example",
+          "access-control-request-method": "GET"
+        }
+      });
+      expect([200, 204]).toContain(allowed.statusCode);
+      expect(allowed.headers["access-control-allow-origin"]).toBe("https://allowed.example");
+
+      const blocked = await app.inject({
+        method: "OPTIONS",
+        url: "/v2/tasks",
+        headers: {
+          origin: "https://blocked.example",
+          "access-control-request-method": "GET"
+        }
+      });
+      expect([200, 204, 404]).toContain(blocked.statusCode);
+      expect(blocked.headers["access-control-allow-origin"]).toBeUndefined();
+    } finally {
+      delete process.env.CORS_ALLOWED_ORIGINS;
+    }
+  });
+
   it("exposes system metrics only to admin channel with v2 envelope", async () => {
     const forbidden = await app!.inject({
       method: "GET",
@@ -369,6 +403,73 @@ describe("API integration", () => {
     }
   });
 
+  it("rejects auth challenge creation when pending challenge capacity is exhausted", async () => {
+    await app!.close();
+    app = null;
+    process.env.AUTH_CHALLENGE_MAX_ENTRIES = "2";
+    process.env.AUTH_CHALLENGE_TTL_MINUTES = "60";
+    process.env.AUTH_CHALLENGE_SWEEP_INTERVAL_MS = "60000";
+    try {
+      app = await buildApp();
+      await app.ready();
+
+      const first = await app.inject({
+        method: "POST",
+        url: "/v2/auth/challenge",
+        payload: { address: addr("auth-capacity-1") }
+      });
+      const second = await app.inject({
+        method: "POST",
+        url: "/v2/auth/challenge",
+        payload: { address: addr("auth-capacity-2") }
+      });
+      const third = await app.inject({
+        method: "POST",
+        url: "/v2/auth/challenge",
+        payload: { address: addr("auth-capacity-3") }
+      });
+
+      expect(first.statusCode).toBe(200);
+      expect(second.statusCode).toBe(200);
+      expect(third.statusCode).toBe(429);
+      expect(errorCode(third.json())).toBe("HTTP_ERROR");
+    } finally {
+      delete process.env.AUTH_CHALLENGE_MAX_ENTRIES;
+      delete process.env.AUTH_CHALLENGE_TTL_MINUTES;
+      delete process.env.AUTH_CHALLENGE_SWEEP_INTERVAL_MS;
+    }
+  });
+
+  it("sweeps expired auth challenges before enforcing challenge capacity", async () => {
+    await app!.close();
+    app = null;
+    process.env.AUTH_CHALLENGE_MAX_ENTRIES = "1";
+    process.env.AUTH_CHALLENGE_TTL_MINUTES = "0";
+    process.env.AUTH_CHALLENGE_SWEEP_INTERVAL_MS = "0";
+    try {
+      app = await buildApp();
+      await app.ready();
+
+      const first = await app.inject({
+        method: "POST",
+        url: "/v2/auth/challenge",
+        payload: { address: addr("auth-sweep-1") }
+      });
+      const second = await app.inject({
+        method: "POST",
+        url: "/v2/auth/challenge",
+        payload: { address: addr("auth-sweep-2") }
+      });
+
+      expect(first.statusCode).toBe(200);
+      expect(second.statusCode).toBe(200);
+    } finally {
+      delete process.env.AUTH_CHALLENGE_MAX_ENTRIES;
+      delete process.env.AUTH_CHALLENGE_TTL_MINUTES;
+      delete process.env.AUTH_CHALLENGE_SWEEP_INTERVAL_MS;
+    }
+  });
+
   it("rejects bearer tokens with non-EVM subject addresses", async () => {
     const badToken = jwt.sign({ sub: "0xnothex" }, secret, { expiresIn: "1h" });
     const response = await app!.inject({
@@ -410,6 +511,47 @@ describe("API integration", () => {
     expect(second.statusCode).toBe(429);
     expect(errorCode(second.json())).toBe("RATE_LIMITED");
     expect((second.json() as { error: { requestId: string; retryable: boolean } }).error.retryable).toBe(true);
+  });
+
+  it("uses forwarded client IP for rate limiting when trust proxy is enabled", async () => {
+    await app!.close();
+    app = null;
+    process.env.RATE_LIMIT_PER_MINUTE = "1";
+    process.env.RATE_LIMIT_BURST = "0";
+    process.env.TRUST_PROXY = "true";
+    try {
+      app = await buildApp();
+      await app.ready();
+
+      const ipAFirst = await app.inject({
+        method: "GET",
+        url: "/v2/tasks",
+        headers: {
+          "x-forwarded-for": "203.0.113.10"
+        }
+      });
+      const ipBFirst = await app.inject({
+        method: "GET",
+        url: "/v2/tasks",
+        headers: {
+          "x-forwarded-for": "203.0.113.11"
+        }
+      });
+      const ipASecond = await app.inject({
+        method: "GET",
+        url: "/v2/tasks",
+        headers: {
+          "x-forwarded-for": "203.0.113.10"
+        }
+      });
+
+      expect(ipAFirst.statusCode).toBe(200);
+      expect(ipBFirst.statusCode).toBe(200);
+      expect(ipASecond.statusCode).toBe(429);
+      expect(errorCode(ipASecond.json())).toBe("RATE_LIMITED");
+    } finally {
+      delete process.env.TRUST_PROXY;
+    }
   });
 
   it("returns opaque pagination cursors while keeping legacy numeric cursor compatibility", async () => {

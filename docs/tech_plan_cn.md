@@ -8,9 +8,11 @@
 - `packages/contracts` 现已成为对外 `/v2` 契约注册表，并生成 OpenAPI 产物及 server/SDK/CLI/web 共用的 operation 元数据。
 - SIWE challenge/verify 认证流程与 JWT 会话签发。
 - 严格 EVM 地址校验与 challenge 过期校验。
+- 运行时安全加固已补齐：可配置 CORS 白名单（`CORS_ALLOWED_ORIGINS`）、可选受信代理 IP 识别（`TRUST_PROXY`）、Fastify helmet 安全响应头、以及带“容量上限 + 周期清理”的 SIWE challenge 内存存储护栏。
 - 通过 `packages/config` 实现集中化配置与输入约束。
 - `packages/config` 现已区分内部运行时配置与公开经济/护栏投影，并在 `NODE_ENV=test` 之外拒绝占位密钥。
 - `packages/config` 已补充 CLI 与 Web 运行时默认项加载，CLI/Web/Server 运行时环境读取不再分散。
+- 关键布尔/数值运行时配置已改为非法值启动即失败，不再静默回退默认值。
 - System 接口面新增管理员只读指标端点（`GET /v2/system/metrics`），用于输出运维计数与延迟摘要。
 
 ### 1.2 持久化与并发一致性
@@ -42,7 +44,7 @@
 
 ### 1.4 产品界面
 
-- Web：只读统一公开信息中心，支持中英文切换，并通过 `cookie -> Accept-Language/UTC` 解析 SSR 默认语言/时区；以 `/` 作为唯一入口（`/center` 已下线），覆盖时区感知汇总/趋势、`Tasks` / `Users` / `Cycles` / `Disputes` 四个 tab、可分享的详情路由、周期奖励分配视图、争议详情页、Agent 余额视图，以及公开 economy/health 读面。
+- Web：只读统一公开信息中心，支持中英文切换，并通过 `cookie -> Accept-Language`（仅映射 `zh/en`，其余回退 `en`；时区回退 `UTC`）解析 SSR 默认语言/时区；以 `/` 作为唯一入口（`/center` 已下线），覆盖时区感知汇总/趋势、`Tasks` / `Users` / `Cycles` / `Disputes` 四个 tab、可分享的详情路由、周期奖励分配视图、争议详情页、Agent 余额视图，以及公开 economy/health 读面。
 - Web dashboard 结构已分层：顶层状态/数据编排与展示渲染分离，且 dashboard 中英文文案已统一收敛到单一字典模块。
 - CLI：采用分组子命令覆盖全部已实现路由，成功默认 JSON 输出，失败默认机器可读结构化错误输出。
 - CLI 文档与 skill：已维护命令级参数/错误/执行剧本参考，并保持中英文镜像同步，便于自动化 agent 直接执行。
@@ -58,7 +60,7 @@
 - 具备独立的 DB 持久化与压力测试套件。
 - CI 包含 `quality`、`persistence`（2 轮重复）与 `stress`（3 轮重复）作业。
 - CI 已新增独立 DB 场景 CLI 全量回归作业（`cli-full-regression`，连续 2 轮），用于捕获重复执行下的状态泄漏与抖动问题。
-- CI 质量门禁已补充 Web 单测，并新增 local/cloud 两条 Docker smoke 作业覆盖部署链路。
+- CI 质量门禁已补充 Web 单测、独立 Web Playwright E2E 门禁（`web-e2e`）与生产依赖安全审计门禁（`security-audit`，high/critical），并新增 local/cloud 两条 Docker smoke 作业覆盖部署链路。
 - 服务端可观测性基线已补齐：请求结构化日志（`requestId/method/path/status/durationMs/routeId`）与写路径结构化日志（`operation/actor/cycleId/retry/conflict/outcome`），并在进程内聚合指标。
 - Docker Compose 现已支持双部署模式：
   - 本地直连端口模式（`localhost web/api`）；

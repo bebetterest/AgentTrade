@@ -8,9 +8,11 @@
 - `packages/contracts` now defines the external `/v2` contract registry and generates OpenAPI artifacts plus shared operation metadata for server/SDK/CLI/web.
 - SIWE challenge/verify auth flow with JWT session token issuance.
 - Strict EVM address validation and challenge expiration checks.
+- Runtime hardening now includes configurable CORS allowlist (`CORS_ALLOWED_ORIGINS`), optional trusted-proxy IP extraction (`TRUST_PROXY`), security headers via Fastify helmet, and bounded SIWE challenge storage with capacity + periodic expiration sweep controls.
 - Config-driven guardrails loaded from `packages/config`.
 - `packages/config` now separates internal runtime config from public economy/guardrail projection and rejects placeholder secrets outside `NODE_ENV=test`.
 - `packages/config` now also centralizes CLI and web runtime endpoint/env defaults so CLI/web/server runtime env reads are no longer scattered.
+- Critical boolean/numeric runtime fields now fail fast on invalid env values instead of silently falling back.
 - System surface now includes an admin-only metrics endpoint (`GET /v2/system/metrics`) for operational counters and latency summaries.
 
 ### 1.2 Persistence and Concurrency
@@ -42,7 +44,7 @@
 
 ### 1.4 Product Surfaces
 
-- Web: read-only unified public information hub at `/` with zh/en locale switch, SSR locale/timezone preference resolution (`cookie -> Accept-Language/UTC`), timezone-aware summary/trends, `Tasks` / `Users` / `Cycles` / `Disputes` tabs, shareable drill-down routes, cycle reward distributions, dispute detail routes, agent balance views, and public economy/health readouts (`/center` removed).
+- Web: read-only unified public information hub at `/` with zh/en locale switch, SSR locale/timezone preference resolution (`cookie -> Accept-Language` with `zh/en` mapping and `en` fallback, timezone fallback `UTC`), timezone-aware summary/trends, `Tasks` / `Users` / `Cycles` / `Disputes` tabs, shareable drill-down routes, cycle reward distributions, dispute detail routes, agent balance views, and public economy/health readouts (`/center` removed).
 - Web dashboard composition is now layered: top-level state/data orchestration is separated from display rendering, and dashboard zh/en copy is centralized in a unified dictionary module.
 - CLI: grouped subcommands covering all implemented routes, with default JSON success output and machine-readable structured error output.
 - CLI documentation and skills: command-level parameter/error/playbook references are maintained in bilingual mirrors for autonomous-agent operation.
@@ -58,7 +60,7 @@
 - Dedicated DB persistence and stress suites.
 - CI pipeline with `quality`, `persistence` (2x repeat), and `stress` (3x repeat) jobs.
 - CI pipeline includes a dedicated DB-backed CLI full-regression job (`cli-full-regression`, 2x repeat) to detect state leaks/flakes under repeated CLI execution.
-- CI quality gates now also include web unit tests plus dedicated Docker smoke jobs for both local and cloud compose modes.
+- CI quality gates now also include web unit tests, a dedicated web Playwright E2E gate (`web-e2e`), production dependency audit gate (`security-audit`, high/critical), plus dedicated Docker smoke jobs for both local and cloud compose modes.
 - Server observability baseline now records structured request logs (`requestId/method/path/status/durationMs/routeId`) and structured write-operation logs (`operation/actor/cycleId/retry/conflict/outcome`) with in-process metrics aggregation.
 - Docker compose setup now supports dual deployment modes:
   - local direct-port mode (`localhost web/api`),

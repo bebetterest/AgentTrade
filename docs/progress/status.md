@@ -1,5 +1,25 @@
 # Progress Status
 
+## 2026-04-09
+
+- Completed release-hardening convergence for single-instance container deployment behind proxy gateways:
+  - web locale default resolution is now `locale cookie (zh/en) -> Accept-Language (zh/en only) -> en fallback`,
+  - server runtime now supports `TRUST_PROXY` and CORS allowlist control (`CORS_ALLOWED_ORIGINS`), replacing permissive `origin: true`.
+- Strengthened security baseline in server runtime:
+  - enabled Fastify helmet security headers,
+  - added SIWE challenge in-memory guardrails with max-capacity and periodic expiration sweep (`AUTH_CHALLENGE_MAX_ENTRIES`, `AUTH_CHALLENGE_SWEEP_INTERVAL_MS`) to prevent unbounded map growth.
+- Hardened config parsing with startup fail-fast for critical fields:
+  - critical boolean and numeric env values now reject invalid input on startup instead of silently falling back.
+- Expanded regression coverage:
+  - added server API tests for CORS preflight allowlist behavior,
+  - added auth challenge capacity exhaustion and expiration-sweep recovery tests,
+  - added trust-proxy rate-limit IP extraction behavior test,
+  - added runtime config strict-parse tests for boolean/numeric/CORS/challenge capacity fields.
+- Updated CI release gates:
+  - `quality` now runs `pnpm check:fast`,
+  - added `security-audit` job using `pnpm audit --prod --audit-level high`,
+  - kept web Playwright E2E gate on Ubuntu runner.
+
 ## 2026-04-08
 
 - Restored web-e2e baseline to release-gate quality:

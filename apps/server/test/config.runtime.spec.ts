@@ -85,3 +85,49 @@ describe("runtime config weight validation", () => {
     ).toThrow(/must be an integer/);
   });
 });
+
+describe("runtime config strict parsing", () => {
+  it("rejects invalid numeric values for critical fields", () => {
+    expect(() =>
+      withEnv(
+        {
+          RATE_LIMIT_PER_MINUTE: "not-a-number"
+        },
+        () => loadConfig()
+      )
+    ).toThrow(/RATE_LIMIT_PER_MINUTE/);
+  });
+
+  it("rejects invalid boolean values for critical fields", () => {
+    expect(() =>
+      withEnv(
+        {
+          TRUST_PROXY: "definitely"
+        },
+        () => loadConfig()
+      )
+    ).toThrow(/TRUST_PROXY/);
+  });
+
+  it("rejects mixed wildcard and explicit CORS allowlist origins", () => {
+    expect(() =>
+      withEnv(
+        {
+          CORS_ALLOWED_ORIGINS: "*,https://example.com"
+        },
+        () => loadConfig()
+      )
+    ).toThrow(/CORS_ALLOWED_ORIGINS/);
+  });
+
+  it("rejects non-positive auth challenge capacity", () => {
+    expect(() =>
+      withEnv(
+        {
+          AUTH_CHALLENGE_MAX_ENTRIES: "0"
+        },
+        () => loadConfig()
+      )
+    ).toThrow(/AUTH_CHALLENGE_MAX_ENTRIES/);
+  });
+});

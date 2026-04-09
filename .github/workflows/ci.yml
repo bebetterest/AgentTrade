@@ -31,17 +31,8 @@ jobs:
       - name: Generate Prisma client
         run: pnpm --filter @agentrade/server prisma:generate
 
-      - name: Type check / lint
-        run: pnpm -r lint
-
-      - name: Run unit and API tests
-        run: pnpm --filter @agentrade/server test
-
-      - name: Run Web unit tests
-        run: pnpm --filter @agentrade/web test:unit
-
-      - name: Run CLI tests
-        run: pnpm --filter @agentrade/cli test
+      - name: Run fast gate
+        run: pnpm check:fast
 
       - name: Build all packages
         run: pnpm -r build
@@ -276,6 +267,31 @@ jobs:
             apps/web/playwright-report
             apps/web/test-results
           if-no-files-found: ignore
+
+  security-audit:
+    name: Security Audit (Production Dependencies)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run production dependency audit (high/critical)
+        run: pnpm audit --prod --audit-level high
 
   docker-smoke-local:
     name: Docker Smoke (Local)

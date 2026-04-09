@@ -17,23 +17,84 @@ const authChallengeOperation = getApiOperation("authChallengeV2");
 
 const authVerifyOperation = getApiOperation("authVerifyV2");
 
+interface ChallengeMaintenance {
+  ttlMs: number;
+  maybeSweep(nowMs: number, force?: boolean): void;
+  ensureCapacity(addressKey: string, nowMs: number): void;
+}
+
+const createChallengeMaintenance = (services: AppServices): ChallengeMaintenance => {
+  const ttlMs = Math.max(0, services.config.authChallengeTtlMinutes * 60_000);
+  const sweepIntervalMs = Math.max(0, services.config.authChallengeSweepIntervalMs);
+  const maxEntries = services.config.authChallengeMaxEntries;
+  let nextSweepAt = 0;
+
+  const sweepExpired = (nowMs: number): void => {
+    if (services.challenges.size === 0) {
+      return;
+    }
+    if (ttlMs === 0) {
+      services.challenges.clear();
+      return;
+    }
+    for (const [key, challenge] of services.challenges) {
+      if (nowMs - challenge.createdAt >= ttlMs) {
+        services.challenges.delete(key);
+      }
+    }
+  };
+
+  const maybeSweep = (nowMs: number, force = false): void => {
+    if (!force && nowMs < nextSweepAt) {
+      return;
+    }
+    sweepExpired(nowMs);
+    nextSweepAt = nowMs + sweepIntervalMs;
+  };
+
+  const ensureCapacity = (addressKey: string, nowMs: number): void => {
+    if (services.challenges.has(addressKey)) {
+      return;
+    }
+    if (services.challenges.size < maxEntries) {
+      return;
+    }
+    maybeSweep(nowMs, true);
+    if (services.challenges.size >= maxEntries) {
+      throw new HttpError(429, "too many pending auth challenges");
+    }
+  };
+
+  return {
+    ttlMs,
+    maybeSweep,
+    ensureCapacity
+  };
+};
+
 const registerAuthChallengeRoute = (
   app: FastifyInstance,
   services: AppServices,
-  operation: ApiOperationDefinition
+  operation: ApiOperationDefinition,
+  maintenance: ChallengeMaintenance
 ) => {
   app.post(toServerRoutePath(operation.pathTemplate), async (request) => {
     const body = parseOperationBody<{ address: string }>(operation, request);
     if (!isAddress(body.address)) {
       throw new HttpError(400, "invalid address");
     }
+    const addressKey = body.address.toLowerCase();
+    const nowMs = Date.now();
+    maintenance.maybeSweep(nowMs);
+    maintenance.ensureCapacity(addressKey, nowMs);
+
     const nonce = nanoid(12);
-    const message = `Agentrade SIWE\nAddress: ${body.address}\nNonce: ${nonce}\nIssuedAt: ${new Date().toISOString()}`;
-    services.challenges.set(body.address.toLowerCase(), {
+    const message = `Agentrade SIWE\nAddress: ${body.address}\nNonce: ${nonce}\nIssuedAt: ${new Date(nowMs).toISOString()}`;
+    services.challenges.set(addressKey, {
       address: body.address as Address,
       nonce,
       message,
-      createdAt: Date.now()
+      createdAt: nowMs
     });
     return validateOperationResponse(operation, {
       nonce,
@@ -45,7 +106,8 @@ const registerAuthChallengeRoute = (
 const registerAuthVerifyRoute = (
   app: FastifyInstance,
   services: AppServices,
-  operation: ApiOperationDefinition
+  operation: ApiOperationDefinition,
+  maintenance: ChallengeMaintenance
 ) => {
   app.post(toServerRoutePath(operation.pathTemplate), async (request) => {
     const body = parseOperationBody<{
@@ -57,13 +119,14 @@ const registerAuthVerifyRoute = (
     if (!isAddress(body.address)) {
       throw new HttpError(400, "invalid address");
     }
-    const challenge = services.challenges.get(body.address.toLowerCase());
+    const addressKey = body.address.toLowerCase();
+    const nowMs = Date.now();
+    const challenge = services.challenges.get(addressKey);
     if (!challenge) {
       throw new HttpError(401, "challenge not found");
     }
-    const challengeTtlMs = Math.max(0, services.config.authChallengeTtlMinutes * 60_000);
-    if (Date.now() - challenge.createdAt >= challengeTtlMs) {
-      services.challenges.delete(body.address.toLowerCase());
+    if (nowMs - challenge.createdAt >= maintenance.ttlMs) {
+      services.challenges.delete(addressKey);
       throw new HttpError(401, "challenge expired");
     }
     if (challenge.nonce !== body.nonce || challenge.message !== body.message) {
@@ -78,7 +141,7 @@ const registerAuthVerifyRoute = (
       throw new HttpError(401, "invalid signature");
     }
     const token = jwt.sign({ sub: body.address }, services.config.jwtSecret, { expiresIn: "15m" });
-    services.challenges.delete(body.address.toLowerCase());
+    services.challenges.delete(addressKey);
     return validateOperationResponse(operation, {
       token,
       expiresIn: "15m"
@@ -87,6 +150,7 @@ const registerAuthVerifyRoute = (
 };
 
 export const registerAuthRoutes = (app: FastifyInstance, services: AppServices): void => {
-  registerAuthChallengeRoute(app, services, authChallengeOperation);
-  registerAuthVerifyRoute(app, services, authVerifyOperation);
+  const maintenance = createChallengeMaintenance(services);
+  registerAuthChallengeRoute(app, services, authChallengeOperation, maintenance);
+  registerAuthVerifyRoute(app, services, authVerifyOperation, maintenance);
 };

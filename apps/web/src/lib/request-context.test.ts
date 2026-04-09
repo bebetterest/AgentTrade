@@ -27,6 +27,18 @@ describe("request context", () => {
         timeZoneCookie: "Mars/OlympusMons"
       })
     ).toEqual({
+      locale: "zh",
+      timeZone: "UTC"
+    });
+  });
+
+  it("falls back to English when accept-language has no zh/en preference", () => {
+    expect(
+      resolveRequestPreferences({
+        acceptLanguage: "fr-FR,fr;q=0.9",
+        timeZoneCookie: "UTC"
+      })
+    ).toEqual({
       locale: "en",
       timeZone: "UTC"
     });

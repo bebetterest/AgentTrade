@@ -7,9 +7,13 @@ export interface AppConfig {
   redisUrl: string;
   enablePersistence: boolean;
   enableRedisRateLimit: boolean;
+  trustProxy: boolean;
+  corsAllowedOrigins: string[];
   jwtSecret: string;
   adminServiceKey: string;
   authChallengeTtlMinutes: number;
+  authChallengeMaxEntries: number;
+  authChallengeSweepIntervalMs: number;
   rateLimitPerMinute: number;
   rateLimitBurst: number;
   taskTitleMaxLength: number;
@@ -96,13 +100,37 @@ export type PublicEconomyParams = Pick<
   | "bridgeMode"
 >;
 
-const envNumber = (key: string, fallback: number): number => {
+const envNumberStrict = (
+  key: string,
+  fallback: number,
+  options: {
+    integer?: boolean;
+    min?: number;
+    max?: number;
+  } = {}
+): number => {
   const raw = process.env[key];
-  if (!raw) {
+  if (raw === undefined) {
     return fallback;
   }
-  const value = Number(raw);
-  return Number.isFinite(value) ? value : fallback;
+  const normalized = raw.trim();
+  if (normalized.length === 0) {
+    throw new Error(`invalid runtime config: ${key} must be a non-empty numeric value`);
+  }
+  const value = Number(normalized);
+  if (!Number.isFinite(value)) {
+    throw new Error(`invalid runtime config: ${key} must be a finite number`);
+  }
+  if (options.integer && !Number.isInteger(value)) {
+    throw new Error(`invalid runtime config: ${key} must be an integer`);
+  }
+  if (options.min !== undefined && value < options.min) {
+    throw new Error(`invalid runtime config: ${key} must be >= ${options.min}`);
+  }
+  if (options.max !== undefined && value > options.max) {
+    throw new Error(`invalid runtime config: ${key} must be <= ${options.max}`);
+  }
+  return value;
 };
 
 const envString = (key: string, fallback: string): string => {
@@ -110,19 +138,34 @@ const envString = (key: string, fallback: string): string => {
   return raw && raw.length > 0 ? raw : fallback;
 };
 
-const envBoolean = (key: string, fallback: boolean): boolean => {
+const envBooleanStrict = (key: string, fallback: boolean): boolean => {
   const raw = process.env[key];
-  if (!raw) {
+  if (raw === undefined) {
     return fallback;
   }
-  const lower = raw.toLowerCase();
-  if (lower === "true" || lower === "1" || lower === "yes") {
+  const normalized = raw.trim().toLowerCase();
+  if (normalized === "true" || normalized === "1" || normalized === "yes") {
     return true;
   }
-  if (lower === "false" || lower === "0" || lower === "no") {
+  if (normalized === "false" || normalized === "0" || normalized === "no") {
     return false;
   }
-  return fallback;
+  throw new Error(`invalid runtime config: ${key} must be a boolean`);
+};
+
+const envCsv = (key: string, fallback: string[]): string[] => {
+  const raw = process.env[key];
+  if (raw === undefined) {
+    return fallback;
+  }
+  const values = raw
+    .split(",")
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+  if (values.length === 0) {
+    throw new Error(`invalid runtime config: ${key} must contain at least one origin`);
+  }
+  return values;
 };
 
 const PLACEHOLDER_VALUES = {
@@ -173,8 +216,34 @@ const assertRuntimeWeightConfig = (config: AppConfig): void => {
   ]);
 };
 
+const assertCorsOrigins = (origins: string[]): void => {
+  if (origins.length === 0) {
+    throw new Error("invalid runtime config: CORS_ALLOWED_ORIGINS must not be empty");
+  }
+  if (origins.includes("*") && origins.length > 1) {
+    throw new Error("invalid runtime config: CORS_ALLOWED_ORIGINS cannot mix '*' with explicit origins");
+  }
+  for (const origin of origins) {
+    if (origin === "*") {
+      continue;
+    }
+    let parsed: URL;
+    try {
+      parsed = new URL(origin);
+    } catch {
+      throw new Error(`invalid runtime config: CORS_ALLOWED_ORIGINS contains invalid origin '${origin}'`);
+    }
+    if ((parsed.protocol !== "http:" && parsed.protocol !== "https:") || parsed.host.length === 0) {
+      throw new Error(
+        `invalid runtime config: CORS_ALLOWED_ORIGINS contains unsupported origin '${origin}'`
+      );
+    }
+  }
+};
+
 const assertRuntimeConfig = (config: AppConfig): void => {
   assertRuntimeWeightConfig(config);
+  assertCorsOrigins(config.corsAllowedOrigins);
 
   if (process.env.NODE_ENV === "test") {
     return;
@@ -206,9 +275,18 @@ export const defaultConfig: AppConfig = {
   redisUrl: "redis://localhost:6379",
   enablePersistence: true,
   enableRedisRateLimit: true,
+  trustProxy: false,
+  corsAllowedOrigins: [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:3001",
+    "http://127.0.0.1:3001"
+  ],
   jwtSecret: PLACEHOLDER_VALUES.JWT_SECRET,
   adminServiceKey: PLACEHOLDER_VALUES.ADMIN_SERVICE_KEY,
   authChallengeTtlMinutes: 10,
+  authChallengeMaxEntries: 10_000,
+  authChallengeSweepIntervalMs: 30_000,
   rateLimitPerMinute: 60,
   rateLimitBurst: 10,
   taskTitleMaxLength: 120,
@@ -284,106 +362,167 @@ export const loadConfig = (): AppConfig => {
   const config: AppConfig = {
     appName: envString("APP_NAME", defaultConfig.appName),
     host: envString("HOST", defaultConfig.host),
-    port: envNumber("PORT", defaultConfig.port),
+    port: envNumberStrict("PORT", defaultConfig.port, { integer: true, min: 1, max: 65535 }),
     apiDefaultVersion: envString("API_DEFAULT_VERSION", defaultConfig.apiDefaultVersion),
     databaseUrl: envString("DATABASE_URL", defaultConfig.databaseUrl),
     redisUrl: envString("REDIS_URL", defaultConfig.redisUrl),
-    enablePersistence: envBoolean("ENABLE_PERSISTENCE", defaultConfig.enablePersistence),
-    enableRedisRateLimit: envBoolean(
+    enablePersistence: envBooleanStrict("ENABLE_PERSISTENCE", defaultConfig.enablePersistence),
+    enableRedisRateLimit: envBooleanStrict(
       "ENABLE_REDIS_RATE_LIMIT",
       defaultConfig.enableRedisRateLimit
     ),
+    trustProxy: envBooleanStrict("TRUST_PROXY", defaultConfig.trustProxy),
+    corsAllowedOrigins: envCsv("CORS_ALLOWED_ORIGINS", defaultConfig.corsAllowedOrigins),
     jwtSecret: envString("JWT_SECRET", defaultConfig.jwtSecret),
     adminServiceKey: envString("ADMIN_SERVICE_KEY", defaultConfig.adminServiceKey),
-    authChallengeTtlMinutes: envNumber(
+    authChallengeTtlMinutes: envNumberStrict(
       "AUTH_CHALLENGE_TTL_MINUTES",
-      defaultConfig.authChallengeTtlMinutes
+      defaultConfig.authChallengeTtlMinutes,
+      { integer: true, min: 0 }
     ),
-    rateLimitPerMinute: envNumber("RATE_LIMIT_PER_MINUTE", defaultConfig.rateLimitPerMinute),
-    rateLimitBurst: envNumber("RATE_LIMIT_BURST", defaultConfig.rateLimitBurst),
-    taskTitleMaxLength: envNumber("TASK_TITLE_MAX_LENGTH", defaultConfig.taskTitleMaxLength),
-    taskDescriptionMaxLength: envNumber(
+    authChallengeMaxEntries: envNumberStrict(
+      "AUTH_CHALLENGE_MAX_ENTRIES",
+      defaultConfig.authChallengeMaxEntries,
+      { integer: true, min: 1 }
+    ),
+    authChallengeSweepIntervalMs: envNumberStrict(
+      "AUTH_CHALLENGE_SWEEP_INTERVAL_MS",
+      defaultConfig.authChallengeSweepIntervalMs,
+      { integer: true, min: 0 }
+    ),
+    rateLimitPerMinute: envNumberStrict("RATE_LIMIT_PER_MINUTE", defaultConfig.rateLimitPerMinute, {
+      integer: true,
+      min: 1
+    }),
+    rateLimitBurst: envNumberStrict("RATE_LIMIT_BURST", defaultConfig.rateLimitBurst, {
+      integer: true,
+      min: 0
+    }),
+    taskTitleMaxLength: envNumberStrict("TASK_TITLE_MAX_LENGTH", defaultConfig.taskTitleMaxLength, {
+      integer: true,
+      min: 1
+    }),
+    taskDescriptionMaxLength: envNumberStrict(
       "TASK_DESCRIPTION_MAX_LENGTH",
-      defaultConfig.taskDescriptionMaxLength
+      defaultConfig.taskDescriptionMaxLength,
+      { integer: true, min: 1 }
     ),
-    taskAcceptanceCriteriaMaxLength: envNumber(
+    taskAcceptanceCriteriaMaxLength: envNumberStrict(
       "TASK_ACCEPTANCE_CRITERIA_MAX_LENGTH",
-      defaultConfig.taskAcceptanceCriteriaMaxLength
+      defaultConfig.taskAcceptanceCriteriaMaxLength,
+      { integer: true, min: 1 }
     ),
-    taskSubmissionPayloadMaxLength: envNumber(
+    taskSubmissionPayloadMaxLength: envNumberStrict(
       "TASK_SUBMISSION_PAYLOAD_MAX_LENGTH",
-      defaultConfig.taskSubmissionPayloadMaxLength
+      defaultConfig.taskSubmissionPayloadMaxLength,
+      { integer: true, min: 1 }
     ),
-    taskSubmissionAttachmentMaxCount: envNumber(
+    taskSubmissionAttachmentMaxCount: envNumberStrict(
       "TASK_SUBMISSION_ATTACHMENT_MAX_COUNT",
-      defaultConfig.taskSubmissionAttachmentMaxCount
+      defaultConfig.taskSubmissionAttachmentMaxCount,
+      { integer: true, min: 0 }
     ),
-    taskSubmissionAttachmentNameMaxLength: envNumber(
+    taskSubmissionAttachmentNameMaxLength: envNumberStrict(
       "TASK_SUBMISSION_ATTACHMENT_NAME_MAX_LENGTH",
-      defaultConfig.taskSubmissionAttachmentNameMaxLength
+      defaultConfig.taskSubmissionAttachmentNameMaxLength,
+      { integer: true, min: 1 }
     ),
-    taskSubmissionAttachmentUrlMaxLength: envNumber(
+    taskSubmissionAttachmentUrlMaxLength: envNumberStrict(
       "TASK_SUBMISSION_ATTACHMENT_URL_MAX_LENGTH",
-      defaultConfig.taskSubmissionAttachmentUrlMaxLength
+      defaultConfig.taskSubmissionAttachmentUrlMaxLength,
+      { integer: true, min: 1 }
     ),
-    taskSubmissionAttachmentMaxSizeBytes: envNumber(
+    taskSubmissionAttachmentMaxSizeBytes: envNumberStrict(
       "TASK_SUBMISSION_ATTACHMENT_MAX_SIZE_BYTES",
-      defaultConfig.taskSubmissionAttachmentMaxSizeBytes
+      defaultConfig.taskSubmissionAttachmentMaxSizeBytes,
+      { integer: true, min: 0 }
     ),
-    disputeReasonMaxLength: envNumber(
+    disputeReasonMaxLength: envNumberStrict(
       "DISPUTE_REASON_MAX_LENGTH",
-      defaultConfig.disputeReasonMaxLength
+      defaultConfig.disputeReasonMaxLength,
+      { integer: true, min: 1 }
     ),
-    taskSlotsMax: envNumber("TASK_SLOTS_MAX", defaultConfig.taskSlotsMax),
-    taskRewardPerSlotMax: envNumber(
+    taskSlotsMax: envNumberStrict("TASK_SLOTS_MAX", defaultConfig.taskSlotsMax, {
+      integer: true,
+      min: 1
+    }),
+    taskRewardPerSlotMax: envNumberStrict(
       "TASK_REWARD_PER_SLOT_MAX",
-      defaultConfig.taskRewardPerSlotMax
+      defaultConfig.taskRewardPerSlotMax,
+      { integer: true, min: 1 }
     ),
-    taskDeadlineMaxHours: envNumber(
+    taskDeadlineMaxHours: envNumberStrict(
       "TASK_DEADLINE_MAX_HOURS",
-      defaultConfig.taskDeadlineMaxHours
+      defaultConfig.taskDeadlineMaxHours,
+      { integer: true, min: 1 }
     ),
-    taxRateBps: envNumber("TAX_RATE_BPS", defaultConfig.taxRateBps),
-    taxMin: envNumber("TAX_MIN", defaultConfig.taxMin),
-    rewardMin: envNumber("REWARD_MIN", defaultConfig.rewardMin),
-    mintPerCycle: envNumber("MINT_PER_CYCLE", defaultConfig.mintPerCycle),
-    terminationPenaltyBps: envNumber(
+    taxRateBps: envNumberStrict("TAX_RATE_BPS", defaultConfig.taxRateBps, {
+      integer: true,
+      min: 0,
+      max: BPS_TOTAL
+    }),
+    taxMin: envNumberStrict("TAX_MIN", defaultConfig.taxMin, { integer: true, min: 0 }),
+    rewardMin: envNumberStrict("REWARD_MIN", defaultConfig.rewardMin, {
+      integer: true,
+      min: 1
+    }),
+    mintPerCycle: envNumberStrict("MINT_PER_CYCLE", defaultConfig.mintPerCycle, {
+      integer: true,
+      min: 0
+    }),
+    terminationPenaltyBps: envNumberStrict(
       "TERMINATION_PENALTY_BPS",
-      defaultConfig.terminationPenaltyBps
+      defaultConfig.terminationPenaltyBps,
+      { integer: true, min: 0, max: BPS_TOTAL }
     ),
-    submissionTimeoutHours: envNumber(
+    submissionTimeoutHours: envNumberStrict(
       "SUBMISSION_TIMEOUT_HOURS",
-      defaultConfig.submissionTimeoutHours
+      defaultConfig.submissionTimeoutHours,
+      { integer: true, min: 1 }
     ),
-    resubmitCooldownMinutes: envNumber(
+    resubmitCooldownMinutes: envNumberStrict(
       "RESUBMIT_COOLDOWN_MINUTES",
-      defaultConfig.resubmitCooldownMinutes
+      defaultConfig.resubmitCooldownMinutes,
+      { integer: true, min: 0 }
     ),
-    disputeQuorum: envNumber("DISPUTE_QUORUM", defaultConfig.disputeQuorum),
-    disputeApprovalBps: envNumber("DISPUTE_APPROVAL_BPS", defaultConfig.disputeApprovalBps),
-    reputationWeightPublisherBps: envNumber(
+    disputeQuorum: envNumberStrict("DISPUTE_QUORUM", defaultConfig.disputeQuorum, {
+      integer: true,
+      min: 1
+    }),
+    disputeApprovalBps: envNumberStrict(
+      "DISPUTE_APPROVAL_BPS",
+      defaultConfig.disputeApprovalBps,
+      { integer: true, min: 0, max: BPS_TOTAL }
+    ),
+    reputationWeightPublisherBps: envNumberStrict(
       "REPUTATION_WEIGHT_PUBLISHER_BPS",
-      defaultConfig.reputationWeightPublisherBps
+      defaultConfig.reputationWeightPublisherBps,
+      { integer: true, min: 0, max: BPS_TOTAL }
     ),
-    reputationWeightWorkerBps: envNumber(
+    reputationWeightWorkerBps: envNumberStrict(
       "REPUTATION_WEIGHT_WORKER_BPS",
-      defaultConfig.reputationWeightWorkerBps
+      defaultConfig.reputationWeightWorkerBps,
+      { integer: true, min: 0, max: BPS_TOTAL }
     ),
-    reputationWeightSupervisorBps: envNumber(
+    reputationWeightSupervisorBps: envNumberStrict(
       "REPUTATION_WEIGHT_SUPERVISOR_BPS",
-      defaultConfig.reputationWeightSupervisorBps
+      defaultConfig.reputationWeightSupervisorBps,
+      { integer: true, min: 0, max: BPS_TOTAL }
     ),
-    scoreWeightReputationBps: envNumber(
+    scoreWeightReputationBps: envNumberStrict(
       "SCORE_WEIGHT_REPUTATION_BPS",
-      defaultConfig.scoreWeightReputationBps
+      defaultConfig.scoreWeightReputationBps,
+      { integer: true, min: 0, max: BPS_TOTAL }
     ),
-    scoreWeightCompletionBps: envNumber(
+    scoreWeightCompletionBps: envNumberStrict(
       "SCORE_WEIGHT_COMPLETION_BPS",
-      defaultConfig.scoreWeightCompletionBps
+      defaultConfig.scoreWeightCompletionBps,
+      { integer: true, min: 0, max: BPS_TOTAL }
     ),
-    scoreWeightQualityBps: envNumber(
+    scoreWeightQualityBps: envNumberStrict(
       "SCORE_WEIGHT_QUALITY_BPS",
-      defaultConfig.scoreWeightQualityBps
+      defaultConfig.scoreWeightQualityBps,
+      { integer: true, min: 0, max: BPS_TOTAL }
     ),
     bridgeChain: envString("BRIDGE_CHAIN", defaultConfig.bridgeChain),
     bridgeMode: "OFFCHAIN_EXPORT_ONLY"

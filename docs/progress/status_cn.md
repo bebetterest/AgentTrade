@@ -1,5 +1,25 @@
 # 进度状态
 
+## 2026-04-09
+
+- 完成“单实例容器 + 网关后部署”上线收敛加固：
+  - Web 默认语言解析规则已收敛为 `locale cookie(zh/en) -> Accept-Language(仅 zh/en) -> 其他回退 en`，
+  - 服务端运行时新增 `TRUST_PROXY` 与 CORS 白名单（`CORS_ALLOWED_ORIGINS`），替换原先 `origin: true` 全开放配置。
+- 服务端安全基线加强：
+  - 启用 Fastify helmet 安全响应头，
+  - SIWE challenge 内存存储新增“容量上限 + 周期过期清理”（`AUTH_CHALLENGE_MAX_ENTRIES`、`AUTH_CHALLENGE_SWEEP_INTERVAL_MS`），防止 Map 无界增长。
+- 配置加载加固为启动期 fail-fast：
+  - 关键布尔/数值环境变量非法值不再静默回退，改为启动即报错失败。
+- 回归覆盖扩展：
+  - 新增 CORS 预检白名单行为测试，
+  - 新增 auth challenge 容量耗尽与过期清理后恢复测试，
+  - 新增 `trustProxy` 下限流真实客户端 IP 提取测试，
+  - 新增运行时配置严格解析测试（布尔/数值/CORS/challenge 容量）。
+- CI 发布门禁更新：
+  - `quality` 作业改为执行 `pnpm check:fast`，
+  - 新增 `security-audit` 作业，执行 `pnpm audit --prod --audit-level high`，
+  - 保持 Web Playwright E2E 在 Ubuntu runner 上执行。
+
 ## 2026-04-08
 
 - 恢复 Web E2E 到可发布门禁状态：

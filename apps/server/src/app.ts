@@ -1,5 +1,6 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
+import helmet from "@fastify/helmet";
 import jwt from "jsonwebtoken";
 import { z } from "zod";
 import { loadConfig } from "@agentrade/config";
@@ -49,7 +50,16 @@ import "./types.js";
 export const buildApp = async () => {
   const config = loadConfig();
   assertSupportedApiDefaultVersion(config);
-  const app = Fastify({ logger: !process.env.VITEST });
+  const app = Fastify({
+    logger: !process.env.VITEST,
+    trustProxy: config.trustProxy
+  });
+  const corsOrigin =
+    config.corsAllowedOrigins.length === 1 && config.corsAllowedOrigins[0] === "*"
+      ? true
+      : config.corsAllowedOrigins;
+
+  await app.register(helmet);
   const limiter = await createRateLimiter(config, app.log);
   const metrics = new ServiceMetricsCollector();
   const stateRepository = config.enablePersistence
@@ -427,7 +437,7 @@ export const buildApp = async () => {
       "request completed"
     );
   });
-  app.register(cors, { origin: true });
+  await app.register(cors, { origin: corsOrigin });
 
   app.addHook("onClose", async () => {
     if (limiter.close) {

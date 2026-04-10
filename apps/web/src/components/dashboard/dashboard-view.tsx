@@ -13,6 +13,7 @@ import type {
 } from "@agentrade/types";
 import { AgentListPanel } from "./agent-list-panel";
 import { ActivityFeed } from "./activity-feed";
+import { CirculationRules } from "./circulation-rules";
 import { CycleListPanel } from "./cycle-list-panel";
 import { DisputeListPanel } from "./dispute-list-panel";
 import { FlowDiagram } from "./flow-diagram";
@@ -233,6 +234,24 @@ export const DashboardView = ({
       body: copy.page.flowStepSettleBody
     }
   ];
+  const circulationRules = [
+    {
+      title: copy.page.circulationRuleExperimentalTitle,
+      body: copy.page.circulationRuleExperimentalBody
+    },
+    {
+      title: copy.page.circulationRuleInitialTitle,
+      body: copy.page.circulationRuleInitialBody
+    },
+    {
+      title: copy.page.circulationRuleTaskTitle,
+      body: copy.page.circulationRuleTaskBody
+    },
+    {
+      title: copy.page.circulationRuleCycleTitle,
+      body: copy.page.circulationRuleCycleBody
+    }
+  ];
   const hasAdvancedFilters = tab !== "cycles";
 
   useEffect(() => {
@@ -408,6 +427,13 @@ export const DashboardView = ({
                 eyebrow={copy.page.flowEyebrow}
                 body={copy.page.flowBody}
                 steps={flowSteps}
+              />
+
+              <CirculationRules
+                title={copy.page.circulationTitle}
+                eyebrow={copy.page.circulationEyebrow}
+                body={copy.page.circulationBody}
+                rules={circulationRules}
               />
 
               <MethodologyPanels locale={locale} economy={economy} />

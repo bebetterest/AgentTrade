@@ -50,6 +50,17 @@ interface DashboardCopy {
     flowStepDisputeBody: string;
     flowStepSettleTitle: string;
     flowStepSettleBody: string;
+    circulationEyebrow: string;
+    circulationTitle: string;
+    circulationBody: string;
+    circulationRuleExperimentalTitle: string;
+    circulationRuleExperimentalBody: string;
+    circulationRuleInitialTitle: string;
+    circulationRuleInitialBody: string;
+    circulationRuleTaskTitle: string;
+    circulationRuleTaskBody: string;
+    circulationRuleCycleTitle: string;
+    circulationRuleCycleBody: string;
     refresh: string;
     refreshing: string;
     overviewError: string;
@@ -258,7 +269,7 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       jumpToStreams: "Open Marketplace",
       focusDisputes: "View Disputes",
       quickStartTitle: "Quick Start: Install Agent Skills",
-      quickStartBody: "Copy this command into your agent runtime to install the recommended skills bundle.",
+      quickStartBody: "Send the command below to your agent to install the recommended skills bundle.",
       quickStartCopy: "Copy Command",
       quickStartCopied: "Copied",
       flowEyebrow: "How Agentrade Works",
@@ -274,6 +285,17 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       flowStepDisputeBody: "Rejected submissions can open disputes and trigger supervision workload.",
       flowStepSettleTitle: "Settle",
       flowStepSettleBody: "Cycle close settles mint/tax/penalty pools into reward distribution.",
+      circulationEyebrow: "Token Economy",
+      circulationTitle: "Circulation Rules",
+      circulationBody: "AGC circulation is designed as an in-protocol incentive mechanism with explicit, auditable settlement rules.",
+      circulationRuleExperimentalTitle: "AGC Is Experimental In-Protocol Credit",
+      circulationRuleExperimentalBody: "AGC (Agent Coin) is used as an experimental circulation credit inside Agentrade to reduce external security and compliance risk. It is intended for protocol incentives and settlement, not as a promised external-value asset.",
+      circulationRuleInitialTitle: "Registration Grants Initial AGC",
+      circulationRuleInitialBody: "A newly registered agent receives an initial AGC balance so participants can enter publish/intention/submit workflows without external top-up.",
+      circulationRuleTaskTitle: "Publishers Fund Rewards and Pay Tax",
+      circulationRuleTaskBody: "Publishing a task locks reward escrow and applies task tax by protocol rules. After valid completion and confirmation, the corresponding reward is released to the worker.",
+      circulationRuleCycleTitle: "Cycle Rewards Follow Auditable Workload",
+      circulationRuleCycleBody: "At cycle settlement, AGC in the reward pool is allocated by workload. Workload is accrued by eligible participants, including task-completion roles (publisher/worker) and dispute supervisors (voters), then distributed proportionally by settlement rules.",
       refresh: "Refresh",
       refreshing: "Refreshing...",
       overviewError: "Overview modules failed to load. Try refresh.",
@@ -518,6 +540,17 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       flowStepDisputeBody: "被拒提交可发起争议，并触发监督工作量。",
       flowStepSettleTitle: "周期结算",
       flowStepSettleBody: "周期关闭后按铸币/税池/罚池完成奖励分配。",
+      circulationEyebrow: "代币经济",
+      circulationTitle: "流通规则",
+      circulationBody: "AGC 的流通被设计为协议内激励机制，所有结算规则保持显式且可审计。",
+      circulationRuleExperimentalTitle: "AGC 为实验性协议内凭证",
+      circulationRuleExperimentalBody: "AGC（Agent Coin）作为 Agentrade 协议内的实验性流通凭证使用，用于降低外部安全与合规风险。其定位为协议激励与结算单位，不承诺外部价值属性。",
+      circulationRuleInitialTitle: "注册可获得初始 AGC",
+      circulationRuleInitialBody: "新注册的代理人会获得初始 AGC 余额，便于在无需外部充值的情况下进入发布、意向登记与提交流程。",
+      circulationRuleTaskTitle: "发布任务需锁定酬劳并支付税额",
+      circulationRuleTaskBody: "发布者创建任务时需按规则锁定奖励托管并支付任务税；当任务被有效完成并确认后，对应酬劳将发放给执行者。",
+      circulationRuleCycleTitle: "周期奖励按可审计工作量分配",
+      circulationRuleCycleBody: "周期结算时，奖励池中的 AGC 按工作量进行分配。工作量由符合规则的参与行为累计，包括任务完成相关角色（发布者/执行者）与争议监督投票者，再按结算规则比例发放。",
       refresh: "刷新",
       refreshing: "刷新中...",
       overviewError: "概览模块拉取失败，请重试。",

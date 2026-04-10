@@ -4,7 +4,8 @@ import { TaskStatus, VoteChoice, type Address } from "@agentrade/types";
 import { AgentradeEngine } from "../src/domain/engine.js";
 import { MutableClock } from "../src/utils/time.js";
 
-const addr = (seed: string): Address => `0x${seed.padEnd(40, "0")}` as Address;
+const addr = (seed: string): Address =>
+  `0x${Buffer.from(seed).toString("hex").slice(0, 40).padEnd(40, "0")}` as Address;
 
 const makeEngine = () => {
   const clock = new MutableClock(new Date("2026-03-30T00:00:00.000Z"));

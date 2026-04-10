@@ -17,7 +17,8 @@ if (REQUIRE_DB_URL && !TEST_DB_URL) {
   );
 }
 const runDbSuite = TEST_DB_URL ? describe : describe.skip;
-const addr = (seed: string): Address => `0x${seed.padEnd(40, "0")}` as Address;
+const addr = (seed: string): Address =>
+  `0x${Buffer.from(seed).toString("hex").slice(0, 40).padEnd(40, "0")}` as Address;
 
 runDbSuite("PrismaStateRepository", () => {
   let repo: PrismaStateRepository;

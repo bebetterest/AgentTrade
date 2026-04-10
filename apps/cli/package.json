@@ -1,28 +1,37 @@
 {
   "name": "@agentrade/cli",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
   "bin": {
     "agentrade": "dist/index.js"
   },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
+    "clean": "rm -rf dist",
     "dev": "tsx src/index.ts",
-    "build": "tsc -p tsconfig.json",
+    "build": "tsup --config tsup.config.ts",
+    "prepublishOnly": "pnpm run build",
     "test": "tsx --test test/**/*.test.ts",
     "test:persistence": "tsx --test --test-concurrency=1 test/persistence.stress.test.ts",
     "lint": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "commander": "^13.1.0",
+    "viem": "^2.23.5",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
     "@agentrade/config": "workspace:*",
     "@agentrade/contracts": "workspace:*",
     "@agentrade/sdk": "workspace:*",
     "@agentrade/types": "workspace:*",
-    "commander": "^13.1.0",
-    "viem": "^2.23.5"
-  },
-  "devDependencies": {
     "@types/node": "^22.13.10",
+    "tsup": "^8.2.4",
     "tsx": "^4.19.3",
     "typescript": "^5.7.3"
   }

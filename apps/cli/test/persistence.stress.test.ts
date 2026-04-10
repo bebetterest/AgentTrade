@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createHmac } from "node:crypto";
 import type { AddressInfo } from "node:net";
-import { dirname, resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import type { Address } from "@agentrade/types";
@@ -26,6 +27,7 @@ const __dirname = dirname(__filename);
 const repoRoot = resolve(__dirname, "../../..");
 const cliBin = resolve(repoRoot, "apps/cli/node_modules/.bin/tsx");
 const cliEntry = resolve(repoRoot, "apps/cli/src/index.ts");
+const testConfigPath = join(tmpdir(), `agentrade-cli-persistence-${process.pid}.json`);
 
 interface CliRunResult {
   code: number | null;
@@ -63,15 +65,33 @@ const signToken = (address: Address, secret: string): string => {
   return `${header}.${payload}.${signature}`;
 };
 
+const hasOption = (args: string[], option: string): boolean =>
+  args.includes(option) || args.some((arg) => arg.startsWith(`${option}=`));
+
 const runCli = async (
   baseUrl: string,
   args: string[],
   env: NodeJS.ProcessEnv = {}
 ): Promise<CliRunResult> => {
+  const globalArgs: string[] = [];
+  if (env.AGENTRADE_TOKEN && !hasOption(args, "--token")) {
+    globalArgs.push("--token", env.AGENTRADE_TOKEN);
+  }
+  if (env.AGENTRADE_ADMIN_SERVICE_KEY && !hasOption(args, "--admin-key")) {
+    globalArgs.push("--admin-key", env.AGENTRADE_ADMIN_SERVICE_KEY);
+  }
+
+  const childEnv = { ...process.env, ...env };
+  delete childEnv.AGENTRADE_TOKEN;
+  delete childEnv.AGENTRADE_ADMIN_SERVICE_KEY;
+  if (!childEnv.AGENTRADE_CLI_CONFIG_PATH) {
+    childEnv.AGENTRADE_CLI_CONFIG_PATH = testConfigPath;
+  }
+
   return new Promise((resolvePromise, rejectPromise) => {
-    const child = spawn(cliBin, [cliEntry, "--base-url", baseUrl, ...args], {
+    const child = spawn(cliBin, [cliEntry, "--base-url", baseUrl, ...globalArgs, ...args], {
       cwd: repoRoot,
-      env: { ...process.env, ...env }
+      env: childEnv
     });
 
     let stdout = "";

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { dirname, resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
@@ -15,12 +16,17 @@ const __dirname = dirname(__filename);
 const repoRoot = resolve(__dirname, "../../..");
 const cliBin = resolve(repoRoot, "apps/cli/node_modules/.bin/tsx");
 const cliEntry = resolve(repoRoot, "apps/cli/src/index.ts");
+const testConfigPath = join(tmpdir(), `agentrade-cli-behavior-${process.pid}.json`);
 
 const runCli = async (args: string[], env: NodeJS.ProcessEnv = {}): Promise<CliResult> => {
   return new Promise((resolvePromise, rejectPromise) => {
     const child = spawn(cliBin, [cliEntry, ...args], {
       cwd: repoRoot,
-      env: { ...process.env, ...env }
+      env: {
+        ...process.env,
+        AGENTRADE_CLI_CONFIG_PATH: testConfigPath,
+        ...env
+      }
     });
 
     let stdout = "";
@@ -39,11 +45,12 @@ const runCli = async (args: string[], env: NodeJS.ProcessEnv = {}): Promise<CliR
   });
 };
 
-test("cli help includes environment fallback and error contract guidance", async () => {
+test("cli help includes global option and error contract guidance", async () => {
   const result = await runCli(["--help"]);
   assert.equal(result.code, 0);
-  assert.match(result.stdout, /Environment variable fallbacks:/);
-  assert.match(result.stdout, /AGENTRADE_API_BASE_URL/);
+  assert.match(result.stdout, /CLI runtime setting precedence:/);
+  assert.match(result.stdout, /agentrade config set\/show\/unset/);
+  assert.match(result.stdout, /--base-url/);
   assert.match(result.stdout, /Output contract:/);
   assert.match(result.stdout, /Exit codes:/);
 });
@@ -123,6 +130,8 @@ test("cli tasks create blocks invalid timezone before network request", async ()
     [
       "--base-url",
       "http://127.0.0.1:1",
+      "--token",
+      "token-1",
       "tasks",
       "create",
       "--title",
@@ -139,8 +148,7 @@ test("cli tasks create blocks invalid timezone before network request", async ()
       "1",
       "--reward",
       "1"
-    ],
-    { AGENTRADE_TOKEN: "token-1" }
+    ]
   );
   assert.equal(result.code, 2);
   const errorJson = JSON.parse(result.stderr.trim()) as {

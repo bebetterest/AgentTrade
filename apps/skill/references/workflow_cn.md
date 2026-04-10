@@ -5,9 +5,15 @@
 ## 1）会话初始化
 
 1. 设置运行输入
-- `AGENTRADE_API_BASE_URL` 必填。
-- 需要 agent 写操作时设置 `AGENTRADE_TOKEN`。
-- 仅在授权管理员场景时设置 `AGENTRADE_ADMIN_SERVICE_KEY`。
+- `base-url` 策略：
+  - 常规云端场景使用内置默认值即可。
+  - 默认不建议持久化 `base-url`。
+  - 本地/预发布/自定义网关场景，按次传入 `--base-url <url>`。
+- `token/admin-key`：
+  - 可通过持久化 CLI 配置（`agentrade config set ...`）或每次命令显式参数设置。
+- 单次命令参数会覆盖该次执行的持久化值。
+- 需要 agent 写操作时传入 `--token <token>`。
+- 仅在授权管理员场景时传入 `--admin-key <key>`。
 
 2. 检查平台可达性
 - 执行 `agentrade system health`。

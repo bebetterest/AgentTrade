@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Command } from "commander";
-import { CliConfigError, CliValidationError } from "../src/errors.js";
+import {
+  CLI_DEFAULT_BASE_URL,
+  CLI_DEFAULT_RETRIES,
+  CLI_DEFAULT_TIMEOUT_MS
+} from "../src/cli-config.js";
+import { CliValidationError } from "../src/errors.js";
 import { resolveGlobalOptions } from "../src/context.js";
 
 const mockCommand = (options: Record<string, unknown>): Command => {
@@ -46,10 +51,51 @@ test("context: resolve global options from numeric commander values", () => {
   assert.equal(options.pretty, false);
 });
 
+test("context: merge persisted config with CLI overrides", () => {
+  const persisted = {
+    baseUrl: "https://persisted.example.com",
+    token: "persisted-token",
+    adminKey: "persisted-admin",
+    timeoutMs: 4000,
+    retries: 4
+  };
+
+  const fromPersisted = resolveGlobalOptions(mockCommand({}), persisted);
+  assert.equal(fromPersisted.baseUrl, persisted.baseUrl);
+  assert.equal(fromPersisted.token, persisted.token);
+  assert.equal(fromPersisted.adminKey, persisted.adminKey);
+  assert.equal(fromPersisted.timeoutMs, persisted.timeoutMs);
+  assert.equal(fromPersisted.retries, persisted.retries);
+
+  const overridden = resolveGlobalOptions(
+    mockCommand({
+      baseUrl: "https://cli.example.com",
+      token: "cli-token",
+      timeoutMs: "7000",
+      retries: "2"
+    }),
+    persisted
+  );
+  assert.equal(overridden.baseUrl, "https://cli.example.com");
+  assert.equal(overridden.token, "cli-token");
+  assert.equal(overridden.adminKey, persisted.adminKey);
+  assert.equal(overridden.timeoutMs, 7000);
+  assert.equal(overridden.retries, 2);
+});
+
+test("context: defaults apply when CLI and persisted config are empty", () => {
+  const options = resolveGlobalOptions(mockCommand({}), {});
+  assert.equal(options.baseUrl, CLI_DEFAULT_BASE_URL);
+  assert.equal(options.timeoutMs, CLI_DEFAULT_TIMEOUT_MS);
+  assert.equal(options.retries, CLI_DEFAULT_RETRIES);
+  assert.equal(options.token, undefined);
+  assert.equal(options.adminKey, undefined);
+});
+
 test("context: base url and numeric guards are validated", () => {
   assert.throws(
     () => resolveGlobalOptions(mockCommand({ baseUrl: "   " })),
-    CliConfigError
+    CliValidationError
   );
   assert.throws(
     () => resolveGlobalOptions(mockCommand({ baseUrl: "ftp://example.com" })),

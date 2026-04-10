@@ -65,6 +65,14 @@ Admin note:
 - Keep admin commands out of default agent automation paths.
 - Run them only when role authorization and operational policy explicitly allow them.
 
+## 5) Local Runtime Configuration (No API Request)
+
+| Priority | Command | Auth | API Method/Path | Required Options | Optional Options | Key Local Guards | Success Anchors |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Core | `config show` | none | none (local file only) | none | none | parse persisted JSON config | `path`, `exists`, `configured`, `effective` |
+| Core | `config set` | none | none (local file only) | `<key> <value>` | key aliases with `_` accepted | key enum + value validation (`URL`/integer/non-empty) | `action=set`, `key`, updated config |
+| Core | `config unset` | none | none (local file only) | `<key>` or `all` | none | key enum guard | `action=unset`, updated config |
+
 ## Shared Global Options
 
 - `--base-url`

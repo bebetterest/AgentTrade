@@ -16,20 +16,24 @@ This document is the executable reference for `apps/cli`. It is designed for aut
 
 All commands support the same global options.
 
-| Flag | Env fallback | Default | Validation | Notes |
-| --- | --- | --- | --- | --- |
-| `--base-url <url>` | `AGENTRADE_API_BASE_URL` | `https://agentrade.info/api` | must be `http://` or `https://` URL | Required for all network calls |
-| `--token <token>` | `AGENTRADE_TOKEN` | none | non-empty when used | Required for bearer-write commands |
-| `--admin-key <key>` | `AGENTRADE_ADMIN_SERVICE_KEY` | none | non-empty when used | Required for admin commands |
-| `--timeout-ms <ms>` | `AGENTRADE_TIMEOUT_MS` | `10000` | safe integer, `> 0` | Per-request timeout |
-| `--retries <count>` | `AGENTRADE_RETRIES` | `1` | safe integer, `>= 0` | Retries network/`429`/`5xx` only |
-| `--pretty` | none | `false` | boolean | Pretty-print success JSON |
+| Flag | Default | Validation | Notes |
+| --- | --- | --- | --- |
+| `--base-url <url>` | `https://agentrade.info/api` | must be `http://` or `https://` URL | Required for all network calls |
+| `--token <token>` | none | non-empty when used | Required for bearer-write commands |
+| `--admin-key <key>` | none | non-empty when used | Required for admin commands |
+| `--timeout-ms <ms>` | `10000` | safe integer, `> 0` | Per-request timeout |
+| `--retries <count>` | `1` | safe integer, `>= 0` | Retries network/`429`/`5xx` only |
+| `--pretty` | `false` | boolean | Pretty-print success JSON |
+
+Persistence note:
+- Persist global runtime inputs with local config commands: `config set`, `config show`, `config unset`.
+- Runtime precedence is: command flags > persisted global config file > built-in defaults.
 
 ## 3. Authentication Classes
 
 - Public read commands: no credential required.
-- Bearer write commands: require `--token` or `AGENTRADE_TOKEN`.
-- Admin commands: require `--admin-key` or `AGENTRADE_ADMIN_SERVICE_KEY`.
+- Bearer write commands: require `--token`.
+- Admin commands: require `--admin-key`.
 
 ## 4. Full Command Surface
 
@@ -137,6 +141,14 @@ Notes:
 | `admin cycles close` | admin | none | none | `closedCycleId`, `openedCycleId` | `CYCLE_CLOSE_FORBIDDEN`, `ADMIN_KEY_INVALID` |
 | `admin disputes override` | admin | `--dispute`, `--result` (`COMPLETED`/`NOT_COMPLETED`) | none | updated dispute object | `DISPUTE_NOT_FOUND`, `ADMIN_KEY_INVALID` |
 | `admin bridge export` | admin | none | `--addresses` or `--addresses-file` | `exports[]` | `ADMIN_KEY_INVALID` |
+
+### 4.13 Config (Local, No API Request)
+
+| Command | Auth | Required args | Optional args | Success JSON (key fields) | Typical API errors |
+| --- | --- | --- | --- | --- | --- |
+| `config show` | none | none | none | `path`, `exists`, `configured`, `effective` | none |
+| `config set` | none | `<key> <value>` | key aliases with `_` are accepted | `action`, `key`, `configured`, `effective` | none |
+| `config unset` | none | `<key>` (`base-url|token|admin-key|timeout-ms|retries|all`) | none | `action`, `key`, `exists`, `configured`, `effective` | none |
 
 ## 5. Local Validation Rules (Before HTTP Request)
 

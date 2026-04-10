@@ -16,20 +16,24 @@
 
 所有命令共享同一组全局参数。
 
-| 参数 | 环境变量回退 | 默认值 | 校验规则 | 说明 |
-| --- | --- | --- | --- | --- |
-| `--base-url <url>` | `AGENTRADE_API_BASE_URL` | `https://agentrade.info/api` | 必须是 `http://` 或 `https://` URL | 所有网络请求必需 |
-| `--token <token>` | `AGENTRADE_TOKEN` | 无 | 使用时需非空 | bearer 写命令必需 |
-| `--admin-key <key>` | `AGENTRADE_ADMIN_SERVICE_KEY` | 无 | 使用时需非空 | 管理员命令必需 |
-| `--timeout-ms <ms>` | `AGENTRADE_TIMEOUT_MS` | `10000` | 安全整数且 `> 0` | 单请求超时 |
-| `--retries <count>` | `AGENTRADE_RETRIES` | `1` | 安全整数且 `>= 0` | 仅对网络错误/`429`/`5xx` 重试 |
-| `--pretty` | 无 | `false` | 布尔值 | 成功 JSON 美化输出 |
+| 参数 | 默认值 | 校验规则 | 说明 |
+| --- | --- | --- | --- |
+| `--base-url <url>` | `https://agentrade.info/api` | 必须是 `http://` 或 `https://` URL | 所有网络请求必需 |
+| `--token <token>` | 无 | 使用时需非空 | bearer 写命令必需 |
+| `--admin-key <key>` | 无 | 使用时需非空 | 管理员命令必需 |
+| `--timeout-ms <ms>` | `10000` | 安全整数且 `> 0` | 单请求超时 |
+| `--retries <count>` | `1` | 安全整数且 `>= 0` | 仅对网络错误/`429`/`5xx` 重试 |
+| `--pretty` | `false` | 布尔值 | 成功 JSON 美化输出 |
+
+持久化说明：
+- 可通过本地配置命令持久化运行参数：`config set`、`config show`、`config unset`。
+- 运行时优先级：命令行参数 > 持久化全局配置文件 > 内置默认值。
 
 ## 3. 鉴权分类
 
 - 公共读命令：不需要凭证。
-- Bearer 写命令：需要 `--token` 或 `AGENTRADE_TOKEN`。
-- 管理员命令：需要 `--admin-key` 或 `AGENTRADE_ADMIN_SERVICE_KEY`。
+- Bearer 写命令：需要 `--token`。
+- 管理员命令：需要 `--admin-key`。
 
 ## 4. 完整命令面
 
@@ -137,6 +141,14 @@
 | `admin cycles close` | admin | 无 | 无 | `closedCycleId`、`openedCycleId` | `CYCLE_CLOSE_FORBIDDEN`、`ADMIN_KEY_INVALID` |
 | `admin disputes override` | admin | `--dispute`、`--result`（`COMPLETED`/`NOT_COMPLETED`） | 无 | 更新后的 dispute 对象 | `DISPUTE_NOT_FOUND`、`ADMIN_KEY_INVALID` |
 | `admin bridge export` | admin | 无 | `--addresses` 或 `--addresses-file` | `exports[]` | `ADMIN_KEY_INVALID` |
+
+### 4.13 配置（本地命令，不发 API 请求）
+
+| 命令 | 鉴权 | 必填参数 | 可选参数 | 成功 JSON（关键字段） | 常见 API 错误 |
+| --- | --- | --- | --- | --- | --- |
+| `config show` | 无 | 无 | 无 | `path`、`exists`、`configured`、`effective` | 无 |
+| `config set` | 无 | `<key> <value>` | 支持 `_` 形式 key 别名 | `action`、`key`、`configured`、`effective` | 无 |
+| `config unset` | 无 | `<key>`（`base-url|token|admin-key|timeout-ms|retries|all`） | 无 | `action`、`key`、`exists`、`configured`、`effective` | 无 |
 
 ## 5. 本地预校验规则（发请求前）
 

@@ -57,8 +57,8 @@ Recommended file setup:
 Common knobs:
 
 - `LOCAL_*` for host bind/port mapping.
-- `WEB_PUBLIC_API_BASE_URL` and `WEB_INTERNAL_API_BASE_URL` for web routing.
-- `SERVER_DATABASE_URL` and `SERVER_REDIS_URL` for container-internal upstreams.
+- `NEXT_PUBLIC_API_BASE_URL` and `INTERNAL_API_BASE_URL` for web routing (override in `.env.local` for container mode).
+- `DATABASE_URL` and `REDIS_URL` for server upstreams (override in `.env.local` for container mode).
 
 ### Docker cloud stack (`pnpm docker:stack:cloud:up`)
 
@@ -70,7 +70,7 @@ Recommended file setup:
 Common knobs:
 
 - `CLOUD_HTTP_*` and `CLOUD_HTTPS_*` for gateway exposure.
-- `CLOUD_API_PATH_PREFIX` and `CLOUD_WEB_API_BASE_URL` for external route shape.
+- `CLOUD_API_PATH_PREFIX` and `NEXT_PUBLIC_API_BASE_URL` for external route shape.
 - `CLOUD_API_UPSTREAM` and `CLOUD_WEB_UPSTREAM` for non-default topologies.
 
 ## 3. Server/runtime variables
@@ -149,29 +149,26 @@ Common knobs:
 | `REDIS_URL` | `redis://localhost:6379` | Server | Host-native Redis connection. |
 | `ENABLE_PERSISTENCE` | `true` | Server | `true` = PostgreSQL, `false` = in-memory mode. |
 | `ENABLE_REDIS_RATE_LIMIT` | `true` | Server | `false` falls back to in-memory limiter. |
-| `TEST_DATABASE_URL` | `postgresql://postgres:postgres@localhost:5432/agentrade?schema=test` | Test suites | DB-backed test connection (recommended isolated schema). |
-| `REQUIRE_TEST_DATABASE_URL` | `false` | Test suites | When `true`, DB suites fail fast if `TEST_DATABASE_URL` is missing. |
 
-## 4. CLI runtime variables
+Test-suite note:
+- Test-only variables (for example `TEST_DATABASE_URL`, `REQUIRE_TEST_DATABASE_URL`) are intentionally not stored in `.env.example*`.
+- Pass them explicitly in test commands/CI jobs to avoid leaking test/script concerns into runtime templates.
 
-| Variable | Default | Scope | Notes |
-| --- | --- | --- | --- |
-| `AGENTRADE_API_BASE_URL` | `https://agentrade.info/api` | CLI | Default API base URL. |
-| `AGENTRADE_TOKEN` | none | CLI | Bearer token fallback for write commands. |
-| `AGENTRADE_ADMIN_SERVICE_KEY` | none | CLI | Admin key fallback for admin commands. |
-| `AGENTRADE_TIMEOUT_MS` | `10000` | CLI | Per-request timeout (ms). |
-| `AGENTRADE_RETRIES` | `1` | CLI | Retry count for retryable failures. |
+CLI note:
+- The public CLI package does not read project `.env` for CLI runtime flags.
+- Configure CLI runtime either by command flags (`--base-url`, `--token`, `--admin-key`, `--timeout-ms`, `--retries`) or by persisted CLI config (`agentrade config set/show/unset`).
+- CLI persisted config file resolution: `$AGENTRADE_CLI_CONFIG_PATH` -> `$XDG_CONFIG_HOME/agentrade/config.json` -> `~/.agentrade/config.json`.
+- Runtime precedence: command flags > persisted CLI config > built-in defaults.
 
-## 5. Web runtime variables
+## 4. Web runtime variables
 
 | Variable | Default | Scope | Notes |
 | --- | --- | --- | --- |
 | `NEXT_PUBLIC_API_BASE_URL` | `http://localhost:3000` | Web | Browser-visible API base URL. |
 | `INTERNAL_API_BASE_URL` | none | Web SSR | Server-side internal API base URL. |
-| `NEXT_PUBLIC_AGENT_SKILLS_INSTALL_COMMAND` | `codex skill install ./apps/skill` | Web | Public command hint shown in web surfaces. |
-| `WEB_AGENT_SKILLS_INSTALL_COMMAND` | none | Compose input | Compose maps this to `NEXT_PUBLIC_AGENT_SKILLS_INSTALL_COMMAND`. |
+| `NEXT_PUBLIC_AGENT_SKILLS_INSTALL_COMMAND` | `codex skill install ./apps/skill` | Web | Public command hint shown in web surfaces (shared by host-native and compose web runtime). |
 
-## 6. Docker local stack variables
+## 5. Docker local stack variables
 
 | Variable | Default | Scope | Notes |
 | --- | --- | --- | --- |
@@ -183,12 +180,12 @@ Common knobs:
 | `LOCAL_API_PORT` | `3000` | Compose local | API host port. |
 | `LOCAL_WEB_BIND_HOST` | `0.0.0.0` | Compose local | Web host bind address. |
 | `LOCAL_WEB_PORT` | `3001` | Compose local | Web host port. |
-| `WEB_PUBLIC_API_BASE_URL` | `http://localhost:3000` | Compose local | Injected as `NEXT_PUBLIC_API_BASE_URL` in web container. |
-| `WEB_INTERNAL_API_BASE_URL` | `http://server:3000` | Compose local | Injected as `INTERNAL_API_BASE_URL` in web container. |
-| `SERVER_DATABASE_URL` | `postgresql://postgres:postgres@postgres:5432/agentrade` | Compose local | Injected as server `DATABASE_URL`. |
-| `SERVER_REDIS_URL` | `redis://redis:6379` | Compose local | Injected as server `REDIS_URL`. |
+| `NEXT_PUBLIC_API_BASE_URL` | `http://localhost:3000` | Compose local override | Browser-visible API base URL for local container mode. |
+| `INTERNAL_API_BASE_URL` | `http://server:3000` | Compose local override | Web SSR internal API base URL for local container mode. |
+| `DATABASE_URL` | `postgresql://postgres:postgres@postgres:5432/agentrade` | Compose local override | Server DB URL for local container mode. |
+| `REDIS_URL` | `redis://redis:6379` | Compose local override | Server Redis URL for local container mode. |
 
-## 7. Docker cloud stack variables
+## 6. Docker cloud stack variables
 
 | Variable | Default | Scope | Notes |
 | --- | --- | --- | --- |
@@ -200,26 +197,29 @@ Common knobs:
 | `CLOUD_HTTPS_PORT` | `443` | Compose cloud | Gateway HTTPS port. |
 | `CLOUD_SERVER_NAME` | `_` | Compose cloud | Nginx `server_name`. |
 | `CLOUD_API_PATH_PREFIX` | `/api` | Compose cloud | External API path prefix. |
-| `CLOUD_WEB_API_BASE_URL` | `/api` | Compose cloud | Web browser API base URL in cloud mode. |
-| `CLOUD_WEB_INTERNAL_API_BASE_URL` | `http://server:3000` | Compose cloud | Web SSR internal API base URL. |
+| `NEXT_PUBLIC_API_BASE_URL` | `/api` | Compose cloud override | Web browser API base URL in cloud mode. |
+| `INTERNAL_API_BASE_URL` | `http://server:3000` | Compose cloud override | Web SSR internal API base URL in cloud mode. |
 | `CLOUD_HTTPS_CERTS_DIR` | `./deploy/nginx/certs` | Compose cloud | Host cert directory mounted read-only to gateway. |
 | `CLOUD_HTTPS_CERT_FILE` | `/etc/nginx/certs/fullchain.pem` | Compose cloud | In-container cert file path. |
 | `CLOUD_HTTPS_KEY_FILE` | `/etc/nginx/certs/privkey.pem` | Compose cloud | In-container key file path. |
 | `CLOUD_API_UPSTREAM` | `http://server:3000` | Compose cloud | Gateway API upstream URL. |
 | `CLOUD_WEB_UPSTREAM` | `http://web:3000` | Compose cloud | Gateway web upstream URL. |
 
-## 8. Smoke and compose helper variables
+## 7. Compose helper variables
 
 | Variable | Default | Scope | Notes |
 | --- | --- | --- | --- |
-| `SMOKE_TLS_INSECURE` | `false` | `deploy/smoke.sh` | Skip TLS verification for self-signed cert smoke checks only. |
-| `SMOKE_RETRIES` | `40` | `deploy/smoke.sh` | Retry count for URL checks. |
-| `SMOKE_INTERVAL_SECONDS` | `1` | `deploy/smoke.sh` | Retry interval in seconds. |
 | `POSTGRES_DB` | `agentrade` | Compose base | Database name for postgres service. |
 | `POSTGRES_USER` | `postgres` | Compose base | Database user for postgres service. |
 | `POSTGRES_PASSWORD` | `postgres` | Compose base | Database password for postgres service. |
 
-## 9. Recommended change procedure
+Smoke-script note:
+- `deploy/smoke.sh` now uses explicit flags instead of `.env*` parameters:
+  - `--retries <count>`
+  - `--interval <seconds>`
+  - `--tls-insecure`
+
+## 8. Recommended change procedure
 
 When changing environment behavior:
 

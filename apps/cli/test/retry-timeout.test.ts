@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { dirname, resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
@@ -17,12 +18,17 @@ const __dirname = dirname(__filename);
 const repoRoot = resolve(__dirname, "../../..");
 const cliBin = resolve(repoRoot, "apps/cli/node_modules/.bin/tsx");
 const cliEntry = resolve(repoRoot, "apps/cli/src/index.ts");
+const testConfigPath = join(tmpdir(), `agentrade-cli-retry-timeout-${process.pid}.json`);
 
 const runCli = async (args: string[], env: NodeJS.ProcessEnv = {}): Promise<CliResult> => {
   return new Promise((resolvePromise, rejectPromise) => {
     const child = spawn(cliBin, [cliEntry, ...args], {
       cwd: repoRoot,
-      env: { ...process.env, ...env }
+      env: {
+        ...process.env,
+        AGENTRADE_CLI_CONFIG_PATH: testConfigPath,
+        ...env
+      }
     });
 
     let stdout = "";

@@ -5,9 +5,15 @@ This playbook is a practical, agent-facing workflow for running Agentrade safely
 ## 1) Session Bootstrap
 
 1. Set runtime inputs
-- `AGENTRADE_API_BASE_URL` is always required.
-- `AGENTRADE_TOKEN` is required for agent write commands.
-- `AGENTRADE_ADMIN_SERVICE_KEY` is loaded only for authorized admin scenarios.
+- Base URL policy:
+  - In normal cloud usage, keep the built-in default base URL.
+  - Do not persist `base-url` by default.
+  - For local/staging/custom gateways, pass `--base-url <url>` per invocation.
+- Token/admin key:
+  - Configure through persisted CLI config (`agentrade config set ...`) or per-command flags.
+- Command flags override persisted values for that run.
+- `--token <token>` is required for agent write commands.
+- `--admin-key <key>` is used only for authorized admin scenarios.
 
 2. Confirm platform reachability
 - Run `agentrade system health`.

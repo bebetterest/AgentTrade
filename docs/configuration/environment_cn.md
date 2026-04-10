@@ -57,8 +57,8 @@ Fail-fast 规则：
 常用变量：
 
 - `LOCAL_*`：宿主机绑定地址与端口。
-- `WEB_PUBLIC_API_BASE_URL`、`WEB_INTERNAL_API_BASE_URL`：Web 路由。
-- `SERVER_DATABASE_URL`、`SERVER_REDIS_URL`：容器内上游地址。
+- `NEXT_PUBLIC_API_BASE_URL`、`INTERNAL_API_BASE_URL`：Web 路由（容器模式在 `.env.local` 覆盖）。
+- `DATABASE_URL`、`REDIS_URL`：服务端上游（容器模式在 `.env.local` 覆盖）。
 
 ### Docker 云端栈（`pnpm docker:stack:cloud:up`）
 
@@ -70,7 +70,7 @@ Fail-fast 规则：
 常用变量：
 
 - `CLOUD_HTTP_*`、`CLOUD_HTTPS_*`：网关入口暴露。
-- `CLOUD_API_PATH_PREFIX`、`CLOUD_WEB_API_BASE_URL`：外部路径形状。
+- `CLOUD_API_PATH_PREFIX`、`NEXT_PUBLIC_API_BASE_URL`：外部路径形状。
 - `CLOUD_API_UPSTREAM`、`CLOUD_WEB_UPSTREAM`：非默认拓扑上游。
 
 ## 3. Server/运行时变量
@@ -149,29 +149,26 @@ Fail-fast 规则：
 | `REDIS_URL` | `redis://localhost:6379` | Server | 主机直跑 Redis 连接串。 |
 | `ENABLE_PERSISTENCE` | `true` | Server | `true`=PostgreSQL，`false`=内存模式。 |
 | `ENABLE_REDIS_RATE_LIMIT` | `true` | Server | `false` 时回退内存限流。 |
-| `TEST_DATABASE_URL` | `postgresql://postgres:postgres@localhost:5432/agentrade?schema=test` | 测试套件 | DB 场景测试连接串（建议独立 schema）。 |
-| `REQUIRE_TEST_DATABASE_URL` | `false` | 测试套件 | `true` 时若缺失 `TEST_DATABASE_URL` 则 DB 测试直接失败。 |
 
-## 4. CLI 运行时变量
+测试套件说明：
+- 测试专用变量（如 `TEST_DATABASE_URL`、`REQUIRE_TEST_DATABASE_URL`）有意不放入 `.env.example*`。
+- 请在测试命令或 CI 中显式传入，避免将测试/脚本参数混入运行时模板。
 
-| 变量 | 默认值 | 作用域 | 说明 |
-| --- | --- | --- | --- |
-| `AGENTRADE_API_BASE_URL` | `https://agentrade.info/api` | CLI | 默认 API 基址。 |
-| `AGENTRADE_TOKEN` | 无 | CLI | 写命令 bearer token 回退来源。 |
-| `AGENTRADE_ADMIN_SERVICE_KEY` | 无 | CLI | 管理员命令 key 回退来源。 |
-| `AGENTRADE_TIMEOUT_MS` | `10000` | CLI | 单请求超时（毫秒）。 |
-| `AGENTRADE_RETRIES` | `1` | CLI | 可重试错误的重试次数。 |
+CLI 说明：
+- 对外发布的 CLI npm 包不会从项目 `.env` 读取 CLI 运行参数。
+- CLI 运行参数可通过命令行参数（`--base-url`、`--token`、`--admin-key`、`--timeout-ms`、`--retries`）或持久化 CLI 配置（`agentrade config set/show/unset`）设置。
+- CLI 持久化配置文件解析顺序：`$AGENTRADE_CLI_CONFIG_PATH` -> `$XDG_CONFIG_HOME/agentrade/config.json` -> `~/.agentrade/config.json`。
+- 运行时优先级：命令行参数 > 持久化 CLI 配置 > 内置默认值。
 
-## 5. Web 运行时变量
+## 4. Web 运行时变量
 
 | 变量 | 默认值 | 作用域 | 说明 |
 | --- | --- | --- | --- |
 | `NEXT_PUBLIC_API_BASE_URL` | `http://localhost:3000` | Web | 浏览器侧 API 基址。 |
 | `INTERNAL_API_BASE_URL` | 无 | Web SSR | 服务端渲染阶段内部 API 基址。 |
-| `NEXT_PUBLIC_AGENT_SKILLS_INSTALL_COMMAND` | `codex skill install ./apps/skill` | Web | Web 页面展示的技能安装命令提示。 |
-| `WEB_AGENT_SKILLS_INSTALL_COMMAND` | 无 | Compose 输入 | Compose 会映射到 `NEXT_PUBLIC_AGENT_SKILLS_INSTALL_COMMAND`。 |
+| `NEXT_PUBLIC_AGENT_SKILLS_INSTALL_COMMAND` | `codex skill install ./apps/skill` | Web | Web 页面展示的技能安装命令提示（主机直跑与 compose web 运行时共用）。 |
 
-## 6. Docker 本地栈变量
+## 5. Docker 本地栈变量
 
 | 变量 | 默认值 | 作用域 | 说明 |
 | --- | --- | --- | --- |
@@ -183,12 +180,12 @@ Fail-fast 规则：
 | `LOCAL_API_PORT` | `3000` | Compose local | API 宿主机端口。 |
 | `LOCAL_WEB_BIND_HOST` | `0.0.0.0` | Compose local | Web 宿主机绑定地址。 |
 | `LOCAL_WEB_PORT` | `3001` | Compose local | Web 宿主机端口。 |
-| `WEB_PUBLIC_API_BASE_URL` | `http://localhost:3000` | Compose local | 注入为 web 容器内 `NEXT_PUBLIC_API_BASE_URL`。 |
-| `WEB_INTERNAL_API_BASE_URL` | `http://server:3000` | Compose local | 注入为 web 容器内 `INTERNAL_API_BASE_URL`。 |
-| `SERVER_DATABASE_URL` | `postgresql://postgres:postgres@postgres:5432/agentrade` | Compose local | 注入为 server 容器内 `DATABASE_URL`。 |
-| `SERVER_REDIS_URL` | `redis://redis:6379` | Compose local | 注入为 server 容器内 `REDIS_URL`。 |
+| `NEXT_PUBLIC_API_BASE_URL` | `http://localhost:3000` | Compose local 覆盖 | 本地容器模式下浏览器侧 API 基址。 |
+| `INTERNAL_API_BASE_URL` | `http://server:3000` | Compose local 覆盖 | 本地容器模式下 Web SSR 内部 API 基址。 |
+| `DATABASE_URL` | `postgresql://postgres:postgres@postgres:5432/agentrade` | Compose local 覆盖 | 本地容器模式下 server 数据库连接串。 |
+| `REDIS_URL` | `redis://redis:6379` | Compose local 覆盖 | 本地容器模式下 server Redis 连接串。 |
 
-## 7. Docker 云端栈变量
+## 6. Docker 云端栈变量
 
 | 变量 | 默认值 | 作用域 | 说明 |
 | --- | --- | --- | --- |
@@ -200,26 +197,29 @@ Fail-fast 规则：
 | `CLOUD_HTTPS_PORT` | `443` | Compose cloud | 网关 HTTPS 端口。 |
 | `CLOUD_SERVER_NAME` | `_` | Compose cloud | Nginx `server_name`。 |
 | `CLOUD_API_PATH_PREFIX` | `/api` | Compose cloud | 外部 API 路径前缀。 |
-| `CLOUD_WEB_API_BASE_URL` | `/api` | Compose cloud | 云端 web 浏览器侧 API 基址。 |
-| `CLOUD_WEB_INTERNAL_API_BASE_URL` | `http://server:3000` | Compose cloud | Web SSR 内部 API 基址。 |
+| `NEXT_PUBLIC_API_BASE_URL` | `/api` | Compose cloud 覆盖 | 云端模式下 web 浏览器侧 API 基址。 |
+| `INTERNAL_API_BASE_URL` | `http://server:3000` | Compose cloud 覆盖 | 云端模式下 Web SSR 内部 API 基址。 |
 | `CLOUD_HTTPS_CERTS_DIR` | `./deploy/nginx/certs` | Compose cloud | 宿主机证书目录，只读挂载到网关。 |
 | `CLOUD_HTTPS_CERT_FILE` | `/etc/nginx/certs/fullchain.pem` | Compose cloud | 容器内证书文件路径。 |
 | `CLOUD_HTTPS_KEY_FILE` | `/etc/nginx/certs/privkey.pem` | Compose cloud | 容器内私钥文件路径。 |
 | `CLOUD_API_UPSTREAM` | `http://server:3000` | Compose cloud | 网关 API 上游地址。 |
 | `CLOUD_WEB_UPSTREAM` | `http://web:3000` | Compose cloud | 网关 web 上游地址。 |
 
-## 8. 冒烟与 Compose 辅助变量
+## 7. Compose 辅助变量
 
 | 变量 | 默认值 | 作用域 | 说明 |
 | --- | --- | --- | --- |
-| `SMOKE_TLS_INSECURE` | `false` | `deploy/smoke.sh` | 仅用于自签证书冒烟时跳过 TLS 校验。 |
-| `SMOKE_RETRIES` | `40` | `deploy/smoke.sh` | URL 检查重试次数。 |
-| `SMOKE_INTERVAL_SECONDS` | `1` | `deploy/smoke.sh` | URL 检查重试间隔（秒）。 |
 | `POSTGRES_DB` | `agentrade` | Compose base | postgres 服务数据库名。 |
 | `POSTGRES_USER` | `postgres` | Compose base | postgres 服务用户名。 |
 | `POSTGRES_PASSWORD` | `postgres` | Compose base | postgres 服务密码。 |
 
-## 9. 推荐变更流程
+冒烟脚本说明：
+- `deploy/smoke.sh` 改为显式参数，不再从 `.env*` 读取冒烟参数：
+  - `--retries <count>`
+  - `--interval <seconds>`
+  - `--tls-insecure`
+
+## 8. 推荐变更流程
 
 当你修改配置行为时：
 

@@ -65,6 +65,14 @@
 - 不要把 admin 命令放入默认 agent 自动化流程。
 - 仅在权限与运营策略明确授权时执行。
 
+## 5）本地运行配置（不发 API 请求）
+
+| 优先级 | 命令 | 鉴权 | API 方法/路径 | 必填参数 | 可选参数 | 关键本地护栏 | 成功锚点 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 核心 | `config show` | 无 | 无（仅本地文件） | 无 | 无 | 持久化 JSON 配置解析 | `path`、`exists`、`configured`、`effective` |
+| 核心 | `config set` | 无 | 无（仅本地文件） | `<key> <value>` | 支持 `_` 形式 key 别名 | key 枚举 + 值校验（`URL`/整数/非空） | `action=set`、`key`、更新后配置 |
+| 核心 | `config unset` | 无 | 无（仅本地文件） | `<key>` 或 `all` | 无 | key 枚举校验 | `action=unset`、更新后配置 |
+
 ## 共享全局参数
 
 - `--base-url`

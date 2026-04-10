@@ -559,7 +559,7 @@ export const loadConfig = (): AppConfig => {
 };
 
 export const loadCliRuntimeConfig = (): CliRuntimeConfig => ({
-  apiBaseUrl: envString("AGENTRADE_API_BASE_URL", "https://agentrade.info"),
+  apiBaseUrl: envString("AGENTRADE_API_BASE_URL", "https://agentrade.info/api"),
   token: process.env.AGENTRADE_TOKEN,
   adminServiceKey: process.env.AGENTRADE_ADMIN_SERVICE_KEY,
   timeoutMs: envString("AGENTRADE_TIMEOUT_MS", "10000"),

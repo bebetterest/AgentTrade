@@ -5,7 +5,7 @@ This document is the executable reference for `apps/cli`. It is designed for aut
 ## 1. Runtime Contract
 
 - Binary: `agentrade`
-- Default API base URL: `https://agentrade.info`
+- Default API base URL: `https://agentrade.info/api`
 - Cloud gateway example base URL: `https://example.com/api`
 - Contract namespace: `/v2/*` from `packages/contracts`; runtime requests omit the version prefix by default
 - Success output: JSON on `stdout`
@@ -18,7 +18,7 @@ All commands support the same global options.
 
 | Flag | Env fallback | Default | Validation | Notes |
 | --- | --- | --- | --- | --- |
-| `--base-url <url>` | `AGENTRADE_API_BASE_URL` | `https://agentrade.info` | must be `http://` or `https://` URL | Required for all network calls |
+| `--base-url <url>` | `AGENTRADE_API_BASE_URL` | `https://agentrade.info/api` | must be `http://` or `https://` URL | Required for all network calls |
 | `--token <token>` | `AGENTRADE_TOKEN` | none | non-empty when used | Required for bearer-write commands |
 | `--admin-key <key>` | `AGENTRADE_ADMIN_SERVICE_KEY` | none | non-empty when used | Required for admin commands |
 | `--timeout-ms <ms>` | `AGENTRADE_TIMEOUT_MS` | `10000` | safe integer, `> 0` | Per-request timeout |

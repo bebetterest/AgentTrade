@@ -107,6 +107,19 @@ normalize_host() {
   esac
 }
 
+normalize_server_name() {
+  server_name="${1:-}"
+  primary_server_name="$(printf '%s' "$server_name" | awk '{print $1}')"
+  case "$primary_server_name" in
+    ""|"_"|"*")
+      echo ""
+      ;;
+    *)
+      echo "$primary_server_name"
+      ;;
+  esac
+}
+
 normalize_api_prefix() {
   prefix="${1:-/api}"
   if [ -z "$prefix" ]; then
@@ -196,10 +209,21 @@ check_url() {
   retries="$3"
   interval="$4"
   tls_insecure="${5:-false}"
+  connect_to="${6:-}"
   attempt=1
   while [ "$attempt" -le "$retries" ]; do
     if is_true "$tls_insecure"; then
-      if curl --noproxy '*' --insecure --fail --silent -o /dev/null "$url"; then
+      if [ -n "$connect_to" ]; then
+        if curl --noproxy '*' --insecure --fail --silent --connect-to "$connect_to" -o /dev/null "$url"; then
+          echo "[ok] $label -> $url"
+          return 0
+        fi
+      elif curl --noproxy '*' --insecure --fail --silent -o /dev/null "$url"; then
+        echo "[ok] $label -> $url"
+        return 0
+      fi
+    elif [ -n "$connect_to" ]; then
+      if curl --noproxy '*' --fail --silent --connect-to "$connect_to" -o /dev/null "$url"; then
         echo "[ok] $label -> $url"
         return 0
       fi
@@ -220,9 +244,14 @@ check_https_redirect() {
   expected_prefix="$3"
   retries="$4"
   interval="$5"
+  connect_to="${6:-}"
   attempt=1
   while [ "$attempt" -le "$retries" ]; do
-    result="$(curl --noproxy '*' --silent --output /dev/null --write-out '%{http_code} %{redirect_url}' "$url")"
+    if [ -n "$connect_to" ]; then
+      result="$(curl --noproxy '*' --silent --output /dev/null --write-out '%{http_code} %{redirect_url}' --connect-to "$connect_to" "$url")"
+    else
+      result="$(curl --noproxy '*' --silent --output /dev/null --write-out '%{http_code} %{redirect_url}' "$url")"
+    fi
     status_code="${result%% *}"
     redirect_url="${result#* }"
 
@@ -280,6 +309,7 @@ fi
 
 cloud_host="$(normalize_host "$(resolve_value "CLOUD_HTTP_BIND_HOST" "127.0.0.1" "$mode_env_file")")"
 cloud_port="$(resolve_value "CLOUD_HTTP_PORT" "80" "$mode_env_file")"
+cloud_server_name="$(normalize_server_name "$(resolve_value "CLOUD_SERVER_NAME" "_" "$mode_env_file")")"
 api_prefix="$(normalize_api_prefix "$(resolve_value "CLOUD_API_PATH_PREFIX" "/api" "$mode_env_file")")"
 cloud_api_health_path="$(build_api_path "$api_prefix" "/v2/system/health")"
 cloud_api_summary_path="$(build_api_path "$api_prefix" "/v2/dashboard/summary?tz=UTC")"
@@ -289,12 +319,30 @@ cloud_http_redirect_to_https="$(resolve_value "CLOUD_HTTP_REDIRECT_TO_HTTPS" "fa
 cloud_https_host="$(normalize_host "$(resolve_value "CLOUD_HTTPS_BIND_HOST" "$cloud_host" "$mode_env_file")")"
 cloud_https_port="$(resolve_value "CLOUD_HTTPS_PORT" "443" "$mode_env_file")"
 
-cloud_http_base_url="http://${cloud_host}:${cloud_port}"
-cloud_https_base_url="https://${cloud_https_host}:${cloud_https_port}"
+cloud_http_probe_host="$cloud_host"
+cloud_https_probe_host="$cloud_https_host"
+if [ -n "$cloud_server_name" ]; then
+  # Probe HTTPS by configured domain so TLS hostname validation matches cert CN/SAN.
+  cloud_http_probe_host="$cloud_server_name"
+  cloud_https_probe_host="$cloud_server_name"
+fi
+
+cloud_http_connect_to=""
+if [ "$cloud_http_probe_host" != "$cloud_host" ]; then
+  cloud_http_connect_to="${cloud_http_probe_host}:${cloud_port}:${cloud_host}:${cloud_port}"
+fi
+
+cloud_https_connect_to=""
+if [ "$cloud_https_probe_host" != "$cloud_https_host" ]; then
+  cloud_https_connect_to="${cloud_https_probe_host}:${cloud_https_port}:${cloud_https_host}:${cloud_https_port}"
+fi
+
+cloud_http_base_url="http://${cloud_http_probe_host}:${cloud_port}"
+cloud_https_base_url="https://${cloud_https_probe_host}:${cloud_https_port}"
 if [ "$cloud_https_port" = "443" ]; then
-  expected_https_redirect_prefix="https://${cloud_https_host}"
+  expected_https_redirect_prefix="https://${cloud_https_probe_host}"
 else
-  expected_https_redirect_prefix="https://${cloud_https_host}:${cloud_https_port}"
+  expected_https_redirect_prefix="https://${cloud_https_probe_host}:${cloud_https_port}"
 fi
 
 if is_true "$cloud_https_enabled"; then
@@ -303,79 +351,99 @@ if is_true "$cloud_https_enabled"; then
     "${cloud_https_base_url}/" \
     "$smoke_retries" \
     "$smoke_interval_seconds" \
-    "$smoke_tls_insecure"
+    "$smoke_tls_insecure" \
+    "$cloud_https_connect_to"
   check_url \
     "cloud https gateway health" \
     "${cloud_https_base_url}/healthz" \
     "$smoke_retries" \
     "$smoke_interval_seconds" \
-    "$smoke_tls_insecure"
+    "$smoke_tls_insecure" \
+    "$cloud_https_connect_to"
   check_url \
     "cloud https api health" \
     "${cloud_https_base_url}${cloud_api_health_path}" \
     "$smoke_retries" \
     "$smoke_interval_seconds" \
-    "$smoke_tls_insecure"
+    "$smoke_tls_insecure" \
+    "$cloud_https_connect_to"
   check_url \
     "cloud https api summary" \
     "${cloud_https_base_url}${cloud_api_summary_path}" \
     "$smoke_retries" \
     "$smoke_interval_seconds" \
-    "$smoke_tls_insecure"
+    "$smoke_tls_insecure" \
+    "$cloud_https_connect_to"
 
   if is_true "$cloud_http_redirect_to_https"; then
     check_url \
       "cloud http gateway health" \
       "${cloud_http_base_url}/healthz" \
       "$smoke_retries" \
-      "$smoke_interval_seconds"
+      "$smoke_interval_seconds" \
+      "false" \
+      "$cloud_http_connect_to"
     check_https_redirect \
       "cloud http web redirect" \
       "${cloud_http_base_url}/" \
       "$expected_https_redirect_prefix" \
       "$smoke_retries" \
-      "$smoke_interval_seconds"
+      "$smoke_interval_seconds" \
+      "$cloud_http_connect_to"
     check_https_redirect \
       "cloud http api redirect" \
       "${cloud_http_base_url}${cloud_api_health_path}" \
       "$expected_https_redirect_prefix" \
       "$smoke_retries" \
-      "$smoke_interval_seconds"
+      "$smoke_interval_seconds" \
+      "$cloud_http_connect_to"
   else
-    check_url "cloud http web root" "${cloud_http_base_url}/" "$smoke_retries" "$smoke_interval_seconds"
+    check_url "cloud http web root" "${cloud_http_base_url}/" "$smoke_retries" "$smoke_interval_seconds" "false" "$cloud_http_connect_to"
     check_url \
       "cloud http gateway health" \
       "${cloud_http_base_url}/healthz" \
       "$smoke_retries" \
-      "$smoke_interval_seconds"
+      "$smoke_interval_seconds" \
+      "false" \
+      "$cloud_http_connect_to"
     check_url \
       "cloud http api health" \
       "${cloud_http_base_url}${cloud_api_health_path}" \
       "$smoke_retries" \
-      "$smoke_interval_seconds"
+      "$smoke_interval_seconds" \
+      "false" \
+      "$cloud_http_connect_to"
     check_url \
       "cloud http api summary" \
       "${cloud_http_base_url}${cloud_api_summary_path}" \
       "$smoke_retries" \
-      "$smoke_interval_seconds"
+      "$smoke_interval_seconds" \
+      "false" \
+      "$cloud_http_connect_to"
   fi
 else
-  check_url "cloud web root" "${cloud_http_base_url}/" "$smoke_retries" "$smoke_interval_seconds"
+  check_url "cloud web root" "${cloud_http_base_url}/" "$smoke_retries" "$smoke_interval_seconds" "false" "$cloud_http_connect_to"
   check_url \
     "cloud gateway health" \
     "${cloud_http_base_url}/healthz" \
     "$smoke_retries" \
-    "$smoke_interval_seconds"
+    "$smoke_interval_seconds" \
+    "false" \
+    "$cloud_http_connect_to"
   check_url \
     "cloud api health" \
     "${cloud_http_base_url}${cloud_api_health_path}" \
     "$smoke_retries" \
-    "$smoke_interval_seconds"
+    "$smoke_interval_seconds" \
+    "false" \
+    "$cloud_http_connect_to"
   check_url \
     "cloud api summary" \
     "${cloud_http_base_url}${cloud_api_summary_path}" \
     "$smoke_retries" \
-    "$smoke_interval_seconds"
+    "$smoke_interval_seconds" \
+    "false" \
+    "$cloud_http_connect_to"
 fi
 
 echo "Cloud smoke checks passed."

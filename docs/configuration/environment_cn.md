@@ -156,7 +156,7 @@ Fail-fast 规则：
 
 | 变量 | 默认值 | 作用域 | 说明 |
 | --- | --- | --- | --- |
-| `AGENTRADE_API_BASE_URL` | `http://localhost:3000` | CLI | 默认 API 基址。 |
+| `AGENTRADE_API_BASE_URL` | `https://agentrade.info` | CLI | 默认 API 基址。 |
 | `AGENTRADE_TOKEN` | 无 | CLI | 写命令 bearer token 回退来源。 |
 | `AGENTRADE_ADMIN_SERVICE_KEY` | 无 | CLI | 管理员命令 key 回退来源。 |
 | `AGENTRADE_TIMEOUT_MS` | `10000` | CLI | 单请求超时（毫秒）。 |

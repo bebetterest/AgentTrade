@@ -156,7 +156,7 @@ Common knobs:
 
 | Variable | Default | Scope | Notes |
 | --- | --- | --- | --- |
-| `AGENTRADE_API_BASE_URL` | `http://localhost:3000` | CLI | Default API base URL. |
+| `AGENTRADE_API_BASE_URL` | `https://agentrade.info` | CLI | Default API base URL. |
 | `AGENTRADE_TOKEN` | none | CLI | Bearer token fallback for write commands. |
 | `AGENTRADE_ADMIN_SERVICE_KEY` | none | CLI | Admin key fallback for admin commands. |
 | `AGENTRADE_TIMEOUT_MS` | `10000` | CLI | Per-request timeout (ms). |

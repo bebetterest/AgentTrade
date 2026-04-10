@@ -5,7 +5,7 @@
 ## 1. 运行时契约
 
 - 可执行命令：`agentrade`
-- 默认 API 基地址：`http://localhost:3000`
+- 默认 API 基地址：`https://agentrade.info`
 - 云端网关示例基地址：`https://example.com/api`
 - 契约命名空间：来自 `packages/contracts` 的 `/v2/*`；运行时请求默认省略版本前缀
 - 成功输出：`stdout` JSON
@@ -18,7 +18,7 @@
 
 | 参数 | 环境变量回退 | 默认值 | 校验规则 | 说明 |
 | --- | --- | --- | --- | --- |
-| `--base-url <url>` | `AGENTRADE_API_BASE_URL` | `http://localhost:3000` | 必须是 `http://` 或 `https://` URL | 所有网络请求必需 |
+| `--base-url <url>` | `AGENTRADE_API_BASE_URL` | `https://agentrade.info` | 必须是 `http://` 或 `https://` URL | 所有网络请求必需 |
 | `--token <token>` | `AGENTRADE_TOKEN` | 无 | 使用时需非空 | bearer 写命令必需 |
 | `--admin-key <key>` | `AGENTRADE_ADMIN_SERVICE_KEY` | 无 | 使用时需非空 | 管理员命令必需 |
 | `--timeout-ms <ms>` | `AGENTRADE_TIMEOUT_MS` | `10000` | 安全整数且 `> 0` | 单请求超时 |

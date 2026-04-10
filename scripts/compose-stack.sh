@@ -15,11 +15,14 @@ fi
 
 shared_env_file=".env"
 if [ ! -f "$shared_env_file" ]; then
-  if [ -f ".env.example" ]; then
+  if [ -f ".env.example.all" ]; then
+    shared_env_file=".env.example.all"
+    echo "[compose-stack] missing .env; falling back to .env.example.all" >&2
+  elif [ -f ".env.example" ]; then
     shared_env_file=".env.example"
     echo "[compose-stack] missing .env; falling back to .env.example" >&2
   else
-    echo "[compose-stack] missing shared env file: .env (and fallback .env.example not found)" >&2
+    echo "[compose-stack] missing shared env file: .env (fallback .env.example.all/.env.example not found)" >&2
     exit 1
   fi
 fi

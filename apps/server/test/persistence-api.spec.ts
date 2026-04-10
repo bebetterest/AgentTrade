@@ -184,6 +184,236 @@ runDbSuite("API persistence mode", () => {
     }
   });
 
+  it("auto-closes due cycle, settles rewards, and advances to next cycle in persistence mode", async () => {
+    const publisher = addr("persist-auto-cycle-pub");
+    const worker = addr("persist-auto-cycle-worker");
+
+    const taskRes = await app!.inject({
+      method: "POST",
+      url: "/v2/tasks",
+      headers: { authorization: `Bearer ${bearer(publisher)}` },
+      payload: {
+        title: "persist-auto-cycle-task",
+        descriptionMd: "desc",
+        acceptanceCriteria: "criteria",
+        deadlineUtc: futureDeadline(),
+        displayTimezone: "UTC",
+        slotsTotal: 1,
+        rewardPerSlot: 10,
+        allowRepeatCompletionsBySameAgent: false
+      }
+    });
+    expect(taskRes.statusCode).toBe(200);
+    const task = taskRes.json() as { id: string };
+
+    const intentRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/intentions`,
+      headers: { authorization: `Bearer ${bearer(worker)}` }
+    });
+    expect(intentRes.statusCode).toBe(200);
+
+    const submitRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/submissions`,
+      headers: { authorization: `Bearer ${bearer(worker)}` },
+      payload: { payloadMd: "result" }
+    });
+    expect(submitRes.statusCode).toBe(200);
+    const submission = submitRes.json() as { id: string };
+
+    const confirmRes = await app!.inject({
+      method: "POST",
+      url: `/v2/submissions/${submission.id}/confirm`,
+      headers: { authorization: `Bearer ${bearer(publisher)}` }
+    });
+    expect(confirmRes.statusCode).toBe(200);
+
+    const workerBeforeAutoCloseRes = await app!.inject({
+      method: "GET",
+      url: `/v2/ledger/${worker}`
+    });
+    expect(workerBeforeAutoCloseRes.statusCode).toBe(200);
+    const workerBeforeAutoClose = (workerBeforeAutoCloseRes.json() as { available: number }).available;
+
+    const prisma = new PrismaClient({
+      datasources: {
+        db: {
+          url: TEST_DB_URL!
+        }
+      }
+    });
+    await prisma.cycle.update({
+      where: { id: "cycle-1" },
+      data: {
+        startedAt: new Date(Date.now() - 8 * 24 * 3_600_000)
+      }
+    });
+    await prisma.$disconnect();
+
+    const activeAfterAutoClose = await app!.inject({
+      method: "GET",
+      url: "/v2/cycles/active"
+    });
+    expect(activeAfterAutoClose.statusCode).toBe(200);
+    expect((activeAfterAutoClose.json() as { id: string }).id).toBe("cycle-2");
+
+    const cycle1Res = await app!.inject({
+      method: "GET",
+      url: "/v2/cycles/cycle-1"
+    });
+    expect(cycle1Res.statusCode).toBe(200);
+    const cycle1 = cycle1Res.json() as { status: string; closedAt: string | null };
+    expect(cycle1.status).toBe("CLOSED");
+    expect(cycle1.closedAt).not.toBeNull();
+
+    const rewardsRes = await app!.inject({
+      method: "GET",
+      url: "/v2/cycles/cycle-1/rewards"
+    });
+    expect(rewardsRes.statusCode).toBe(200);
+    const rewards = rewardsRes.json() as {
+      rewardPool: number;
+      distributions: Array<{ agent: string; amount: number }>;
+      workloads: Array<{ taskId?: string | null; settledAt: string | null }>;
+    };
+    expect(rewards.rewardPool).toBeGreaterThan(0);
+    expect(rewards.distributions.length).toBeGreaterThan(0);
+    expect(
+      rewards.workloads.some((item) => item.taskId === task.id && item.settledAt !== null)
+    ).toBe(true);
+
+    const workerAfterAutoCloseRes = await app!.inject({
+      method: "GET",
+      url: `/v2/ledger/${worker}`
+    });
+    expect(workerAfterAutoCloseRes.statusCode).toBe(200);
+    const workerAfterAutoClose = (workerAfterAutoCloseRes.json() as { available: number }).available;
+    expect(workerAfterAutoClose).toBeGreaterThan(workerBeforeAutoClose);
+  });
+
+  it("auto-confirms stale submissions during due cycle auto-close in persistence mode", async () => {
+    const publisher = addr("persist-stale-pub");
+    const worker = addr("persist-stale-worker");
+
+    const taskRes = await app!.inject({
+      method: "POST",
+      url: "/v2/tasks",
+      headers: { authorization: `Bearer ${bearer(publisher)}` },
+      payload: {
+        title: "persist-stale-auto-confirm-task",
+        descriptionMd: "desc",
+        acceptanceCriteria: "criteria",
+        deadlineUtc: futureDeadline(),
+        displayTimezone: "UTC",
+        slotsTotal: 1,
+        rewardPerSlot: 10,
+        allowRepeatCompletionsBySameAgent: false
+      }
+    });
+    expect(taskRes.statusCode).toBe(200);
+    const task = taskRes.json() as { id: string };
+
+    const intentRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/intentions`,
+      headers: { authorization: `Bearer ${bearer(worker)}` }
+    });
+    expect(intentRes.statusCode).toBe(200);
+
+    const submitRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/submissions`,
+      headers: { authorization: `Bearer ${bearer(worker)}` },
+      payload: { payloadMd: "stale-result" }
+    });
+    expect(submitRes.statusCode).toBe(200);
+    const submission = submitRes.json() as { id: string };
+
+    const submissionBeforeAutoCloseRes = await app!.inject({
+      method: "GET",
+      url: `/v2/submissions/${submission.id}`
+    });
+    expect(submissionBeforeAutoCloseRes.statusCode).toBe(200);
+    expect((submissionBeforeAutoCloseRes.json() as { status: string }).status).toBe("SUBMITTED");
+
+    const workerBeforeAutoCloseRes = await app!.inject({
+      method: "GET",
+      url: `/v2/ledger/${worker}`
+    });
+    expect(workerBeforeAutoCloseRes.statusCode).toBe(200);
+    const workerBeforeAutoClose = (workerBeforeAutoCloseRes.json() as { available: number }).available;
+
+    const prisma = new PrismaClient({
+      datasources: {
+        db: {
+          url: TEST_DB_URL!
+        }
+      }
+    });
+    const staleCreatedAt = new Date(
+      Date.now() - (defaultConfig.submissionTimeoutHours + 1) * 3_600_000
+    );
+    await prisma.$transaction([
+      prisma.submission.update({
+        where: { id: submission.id },
+        data: {
+          createdAt: staleCreatedAt
+        }
+      }),
+      prisma.cycle.update({
+        where: { id: "cycle-1" },
+        data: {
+          startedAt: new Date(Date.now() - 8 * 24 * 3_600_000)
+        }
+      })
+    ]);
+    await prisma.$disconnect();
+
+    const activeAfterAutoClose = await app!.inject({
+      method: "GET",
+      url: "/v2/cycles/active"
+    });
+    expect(activeAfterAutoClose.statusCode).toBe(200);
+    expect((activeAfterAutoClose.json() as { id: string }).id).toBe("cycle-2");
+
+    const submissionAfterAutoCloseRes = await app!.inject({
+      method: "GET",
+      url: `/v2/submissions/${submission.id}`
+    });
+    expect(submissionAfterAutoCloseRes.statusCode).toBe(200);
+    expect((submissionAfterAutoCloseRes.json() as { status: string }).status).toBe("CONFIRMED");
+
+    const taskAfterAutoCloseRes = await app!.inject({
+      method: "GET",
+      url: `/v2/tasks/${task.id}`
+    });
+    expect(taskAfterAutoCloseRes.statusCode).toBe(200);
+    expect((taskAfterAutoCloseRes.json() as { status: string }).status).toBe("CLOSED");
+
+    const rewardsRes = await app!.inject({
+      method: "GET",
+      url: "/v2/cycles/cycle-1/rewards"
+    });
+    expect(rewardsRes.statusCode).toBe(200);
+    const rewards = rewardsRes.json() as {
+      workloads: Array<{ taskId?: string | null; disputeId: string | null; settledAt: string | null }>;
+    };
+    const completionWorkloads = rewards.workloads.filter(
+      (item) => item.taskId === task.id && item.disputeId === null
+    );
+    expect(completionWorkloads).toHaveLength(2);
+    expect(completionWorkloads.every((item) => item.settledAt !== null)).toBe(true);
+
+    const workerAfterAutoCloseRes = await app!.inject({
+      method: "GET",
+      url: `/v2/ledger/${worker}`
+    });
+    expect(workerAfterAutoCloseRes.statusCode).toBe(200);
+    const workerAfterAutoClose = (workerAfterAutoCloseRes.json() as { available: number }).available;
+    expect(workerAfterAutoClose).toBeGreaterThan(workerBeforeAutoClose);
+  });
+
   it("keeps one-time supervision participation rule across restarts", async () => {
     const publisher = addr("p2");
     const worker = addr("p3");

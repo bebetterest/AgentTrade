@@ -1,6 +1,7 @@
 import type { SupportedLocale } from "@agentrade/i18n";
 
 export const DEFAULT_TIMEZONE = "UTC";
+export const DEFAULT_CYCLE_DURATION_HOURS = 7 * 24;
 
 export const shortAddress = (value: string): string =>
   value.length > 12 ? `${value.slice(0, 6)}...${value.slice(-4)}` : value;
@@ -11,6 +12,37 @@ export const formatDateTime = (value: string, locale: SupportedLocale, timeZone?
     return "-";
   }
   return date.toLocaleString(locale === "zh" ? "zh-CN" : "en-US", { timeZone });
+};
+
+export const computeExpectedCycleCloseAt = (
+  startedAt: string,
+  cycleDurationHours?: number | null
+): string | null => {
+  const startTs = Date.parse(startedAt);
+  if (!Number.isFinite(startTs)) {
+    return null;
+  }
+  const safeDurationHours =
+    typeof cycleDurationHours === "number" && Number.isFinite(cycleDurationHours) && cycleDurationHours > 0
+      ? Math.trunc(cycleDurationHours)
+      : DEFAULT_CYCLE_DURATION_HOURS;
+  return new Date(startTs + safeDurationHours * 60 * 60 * 1000).toISOString();
+};
+
+export const computeCycleRemainingMs = (
+  startedAt: string,
+  cycleDurationHours?: number | null,
+  nowMs = Date.now()
+): number | null => {
+  const expectedCloseAt = computeExpectedCycleCloseAt(startedAt, cycleDurationHours);
+  if (!expectedCloseAt) {
+    return null;
+  }
+  const expectedCloseTs = Date.parse(expectedCloseAt);
+  if (!Number.isFinite(expectedCloseTs) || !Number.isFinite(nowMs)) {
+    return null;
+  }
+  return expectedCloseTs - nowMs;
 };
 
 export const formatDuration = (ms: number, locale: SupportedLocale): string => {
@@ -36,6 +68,19 @@ export const formatDuration = (ms: number, locale: SupportedLocale): string => {
     return `${hour}h ${minute}m`;
   }
   return `${Math.max(minute, 1)}m`;
+};
+
+export const formatRemainingDuration = (
+  remainingMs: number | null,
+  locale: SupportedLocale
+): string => {
+  if (remainingMs === null || !Number.isFinite(remainingMs)) {
+    return "-";
+  }
+  if (remainingMs <= 0) {
+    return locale === "zh" ? "已到期" : "Due";
+  }
+  return formatDuration(remainingMs, locale);
 };
 
 const toNumberList = (items: number[]): string =>

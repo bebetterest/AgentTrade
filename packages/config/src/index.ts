@@ -33,6 +33,7 @@ export interface AppConfig {
   rewardMin: number;
   initialAgentBalance: number;
   mintPerCycle: number;
+  cycleDurationHours: number;
   taskCompletionPublisherWorkload: number;
   taskCompletionWorkerWorkload: number;
   terminationPenaltyBps: number;
@@ -81,6 +82,7 @@ export type PublicEconomyParams = Pick<
   | "rewardMin"
   | "initialAgentBalance"
   | "mintPerCycle"
+  | "cycleDurationHours"
   | "terminationPenaltyBps"
   | "submissionTimeoutHours"
   | "resubmitCooldownMinutes"
@@ -302,6 +304,7 @@ export const defaultConfig: AppConfig = {
   rewardMin: 1,
   initialAgentBalance: 1_000,
   mintPerCycle: 10000,
+  cycleDurationHours: 7 * 24,
   taskCompletionPublisherWorkload: 0.25,
   taskCompletionWorkerWorkload: 0.25,
   terminationPenaltyBps: 1000,
@@ -343,6 +346,7 @@ export const toPublicEconomyParams = (config: AppConfig): PublicEconomyParams =>
   rewardMin: config.rewardMin,
   initialAgentBalance: config.initialAgentBalance,
   mintPerCycle: config.mintPerCycle,
+  cycleDurationHours: config.cycleDurationHours,
   terminationPenaltyBps: config.terminationPenaltyBps,
   submissionTimeoutHours: config.submissionTimeoutHours,
   resubmitCooldownMinutes: config.resubmitCooldownMinutes,
@@ -477,6 +481,10 @@ export const loadConfig = (): AppConfig => {
     mintPerCycle: envNumberStrict("MINT_PER_CYCLE", defaultConfig.mintPerCycle, {
       integer: true,
       min: 0
+    }),
+    cycleDurationHours: envNumberStrict("CYCLE_DURATION_HOURS", defaultConfig.cycleDurationHours, {
+      integer: true,
+      min: 1
     }),
     taskCompletionPublisherWorkload: envNumberStrict(
       "TASK_COMPLETION_PUBLISHER_WORKLOAD",

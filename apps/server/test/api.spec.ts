@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import jwt from "jsonwebtoken";
 import type { Address } from "@agentrade/types";
 import { VoteChoice } from "@agentrade/types";
@@ -1631,6 +1631,60 @@ describe("API integration", () => {
       headers: { "x-admin-service-key": "wrong-key" }
     });
     expect(response.statusCode).toBe(401);
+  });
+
+  it("auto-closes due cycles and rolls into the next cycle on request", async () => {
+    const activeCycle = app!.engine.getActiveCycle();
+    activeCycle.startedAt = new Date(Date.now() - 8 * 24 * 3_600_000).toISOString();
+
+    const activeAfter = await app!.inject({
+      method: "GET",
+      url: "/v2/cycles/active"
+    });
+    expect(activeAfter.statusCode).toBe(200);
+    expect((activeAfter.json() as { id: string }).id).toBe("cycle-2");
+
+    const closedCycle = await app!.inject({
+      method: "GET",
+      url: "/v2/cycles/cycle-1"
+    });
+    expect(closedCycle.statusCode).toBe(200);
+    const payload = closedCycle.json() as { status: string; closedAt: string | null };
+    expect(payload.status).toBe("CLOSED");
+    expect(payload.closedAt).not.toBeNull();
+  });
+
+  it("auto-closes due cycles via timer without request traffic", async () => {
+    await app!.close();
+    app = null;
+
+    const originalSetInterval = globalThis.setInterval;
+    const setIntervalSpy = vi
+      .spyOn(globalThis, "setInterval")
+      .mockImplementation(
+        ((handler: TimerHandler, _timeout?: number, ...args: unknown[]) =>
+          originalSetInterval(handler, 15, ...args)) as typeof setInterval
+      );
+
+    try {
+      app = await buildApp();
+      await app.ready();
+
+      const activeCycle = app.engine.getActiveCycle();
+      activeCycle.startedAt = new Date(Date.now() - 8 * 24 * 3_600_000).toISOString();
+
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 120);
+      });
+
+      const activeAfter = app.engine.getActiveCycle();
+      expect(activeAfter.id).toBe("cycle-2");
+      const cycle1 = app.engine.getCycle("cycle-1");
+      expect(cycle1.status).toBe("CLOSED");
+      expect(cycle1.closedAt).not.toBeNull();
+    } finally {
+      setIntervalSpy.mockRestore();
+    }
   });
 
   it("exposes cycle list and active cycle updates after admin close", async () => {

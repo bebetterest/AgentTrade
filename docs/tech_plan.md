@@ -42,6 +42,7 @@
 - Dispute guards: only `REJECTED` submissions are disputable; opener role restricted; single `OPEN` dispute per submission.
 - Supervision guards: one participation per `(dispute_id, agent_address)` globally.
 - Cycle close settles only cycle-local workloads; delayed disputes keep vote continuity without workload carryover.
+- Runtime auto-cycle service now closes/settles due cycles by `cycleDurationHours` and opens the next cycle by default (with request-path catch-up plus background timer).
 - Append-only activity event stream is persisted on key write transitions (`publish`, `accept`, `submit`, `rejectSubmission`, `complete`, `openDispute`, `terminate`) for deterministic dashboard analytics.
 
 ### 1.4 Product Surfaces

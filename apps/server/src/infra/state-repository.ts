@@ -95,6 +95,7 @@ import {
   type SubmitTaskDirectInput,
   type VoteDisputeDirectInput,
   writeAddTaskIntentionDirect,
+  writeCloseCurrentCycleIfDueDirect,
   writeCloseCurrentCycleDirect,
   writeConfirmSubmissionDirect,
   writeOpenDisputeDirect,
@@ -761,6 +762,28 @@ export class PrismaStateRepository {
 
   async closeCurrentCycleDirect(config: AppConfig): Promise<CloseCycleResult> {
     return writeCloseCurrentCycleDirect(
+      this.prisma,
+      {
+        executeWithRetry: (operation) => this.executeWithRetry(operation),
+        lockRuntimeWithTx: (tx) => this.lockRuntimeWithTx(tx),
+        ensureAgentAndLedgerWithTx: (tx, address, now) =>
+          this.ensureAgentAndLedgerWithTx(tx, address, now),
+        touchRuntimeStateWithTx: (tx, activeCycleId) =>
+          this.touchRuntimeStateWithTx(tx, activeCycleId),
+        getConfirmedSlots: (slotsTotal, rewardPerSlot, rewardEscrowRemaining) =>
+          this.getConfirmedSlots(slotsTotal, rewardPerSlot, rewardEscrowRemaining),
+        confirmSubmissionInternalWithTx: (tx, submission, task, now, cycleId, actor) =>
+          this.confirmSubmissionInternalWithTx(tx, submission, task, now, cycleId, actor),
+        evaluateDisputeWithTx: (tx, disputeId, nextConfig, now, cycleId) =>
+          this.evaluateDisputeWithTx(tx, disputeId, nextConfig, now, cycleId),
+        nextCycleId: (currentCycleId) => this.nextCycleId(currentCycleId)
+      },
+      config
+    );
+  }
+
+  async closeCurrentCycleIfDueDirect(config: AppConfig): Promise<CloseCycleResult | null> {
+    return writeCloseCurrentCycleIfDueDirect(
       this.prisma,
       {
         executeWithRetry: (operation) => this.executeWithRetry(operation),

@@ -241,6 +241,7 @@ test("cli command contract: method/path/auth/body coverage for all command group
     rewardMin: 1,
     initialAgentBalance: 1000,
     mintPerCycle: 1000,
+    cycleDurationHours: 168,
     terminationPenaltyBps: 1000,
     submissionTimeoutHours: 24,
     resubmitCooldownMinutes: 30,

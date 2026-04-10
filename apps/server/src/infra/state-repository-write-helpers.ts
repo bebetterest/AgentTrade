@@ -1097,11 +1097,12 @@ export const writeVoteDisputeDirect = async (
   }
 };
 
-export const writeCloseCurrentCycleDirect = async (
+const writeCloseCurrentCycleInternal = async (
   prisma: PrismaClient,
   deps: CloseCycleWriteDeps,
-  config: AppConfig
-): Promise<CloseCycleResult> => {
+  config: AppConfig,
+  options: { closeOnlyWhenDue: boolean }
+): Promise<CloseCycleResult | null> => {
   return deps.executeWithRetry(async () =>
     prisma.$transaction(async (tx) => {
       const runtime = await deps.lockRuntimeWithTx(tx);
@@ -1109,6 +1110,12 @@ export const writeCloseCurrentCycleDirect = async (
       const cycle = await tx.cycle.findUnique({ where: { id: runtime.activeCycleId } });
       if (!cycle) {
         throw new DomainError("CYCLE_NOT_FOUND", `Cycle ${runtime.activeCycleId} not found`, 404);
+      }
+      if (options.closeOnlyWhenDue) {
+        const closeDueAtMs = cycle.startedAt.getTime() + config.cycleDurationHours * 3_600_000;
+        if (!Number.isFinite(closeDueAtMs) || now.getTime() < closeDueAtMs) {
+          return null;
+        }
       }
 
       const staleThreshold = new Date(now.getTime() - config.submissionTimeoutHours * 3_600_000);
@@ -1246,6 +1253,29 @@ export const writeCloseCurrentCycleDirect = async (
     })
   );
 };
+
+export const writeCloseCurrentCycleDirect = async (
+  prisma: PrismaClient,
+  deps: CloseCycleWriteDeps,
+  config: AppConfig
+): Promise<CloseCycleResult> => {
+  const result = await writeCloseCurrentCycleInternal(prisma, deps, config, {
+    closeOnlyWhenDue: false
+  });
+  if (!result) {
+    throw new DomainError("CYCLE_CLOSE_FORBIDDEN", "cycle close is not due yet", 409);
+  }
+  return result;
+};
+
+export const writeCloseCurrentCycleIfDueDirect = async (
+  prisma: PrismaClient,
+  deps: CloseCycleWriteDeps,
+  config: AppConfig
+): Promise<CloseCycleResult | null> =>
+  writeCloseCurrentCycleInternal(prisma, deps, config, {
+    closeOnlyWhenDue: true
+  });
 
 export const writeOverrideDisputeDirect = async (
   prisma: PrismaClient,

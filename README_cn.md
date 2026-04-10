@@ -189,7 +189,7 @@ pnpm docker:release:cloud -- --tls-insecure --web-url https://staging.example.co
 2. 再添加 `.env.local` 或 `.env.cloud` 作为模式覆盖。
 3. 在 `.env` 中设置安全项（`JWT_SECRET`、`ADMIN_SERVICE_KEY`）。
 4. 在模式文件中调整部署路由（本地用 `LOCAL_*`，云端用 `CLOUD_*`）。
-5. 仅在需要时调优业务护栏（`TASK_*`、`DISPUTE_*`、`TAX_*`、`INITIAL_AGENT_BALANCE`、`REPUTATION_WEIGHT_*_BPS`、`SCORE_WEIGHT_*_BPS`）。
+5. 仅在需要时调优业务护栏（`TASK_*`、`DISPUTE_*`、`TAX_*`、`INITIAL_AGENT_BALANCE`、`MINT_PER_CYCLE`、`CYCLE_DURATION_HOURS`、`REPUTATION_WEIGHT_*_BPS`、`SCORE_WEIGHT_*_BPS`）。
 
 完整变量参考（server/web/cli/deploy/release/smoke）：
 

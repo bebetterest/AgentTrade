@@ -16,6 +16,7 @@ interface MetricsPanelsProps {
   summary: DashboardSummaryResponse | null;
   activeCycle: Cycle | null;
   cycleUptime: string;
+  cycleRemaining: string;
   health: HealthStatus | null;
   economy: PublicEconomyParams | null;
   onOpenCycleDetail: (cycleId: string) => void;
@@ -27,6 +28,7 @@ export const MetricsPanels = ({
   summary,
   activeCycle,
   cycleUptime,
+  cycleRemaining,
   health,
   economy,
   onOpenCycleDetail
@@ -250,6 +252,10 @@ export const MetricsPanels = ({
             <article className="status-kpi">
               <span className="status-kpi__label">{copy.overview.uptime}</span>
               <strong className="status-kpi__value">{cycleUptime}</strong>
+            </article>
+            <article className="status-kpi">
+              <span className="status-kpi__label">{copy.overview.remaining}</span>
+              <strong className="status-kpi__value">{cycleRemaining}</strong>
             </article>
             <article className="status-kpi">
               <span className="status-kpi__label">{copy.cycleList.mint}</span>

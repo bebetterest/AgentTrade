@@ -1,6 +1,11 @@
 import type { Cycle } from "@agentrade/types";
 import type { SupportedLocale } from "@agentrade/i18n";
-import { formatDateTime } from "../../lib/dashboard-format";
+import {
+  computeCycleRemainingMs,
+  computeExpectedCycleCloseAt,
+  formatDateTime,
+  formatRemainingDuration
+} from "../../lib/dashboard-format";
 import type { LoadErrorKind } from "../../lib/load-error";
 import { withRateLimitMessage } from "../../lib/load-error";
 import { getCycleStatusLabel, getDashboardCopy } from "./i18n";
@@ -10,6 +15,7 @@ import { ListPanelShell } from "./list-panel-shell";
 interface CycleListPanelProps {
   locale: SupportedLocale;
   timeZone: string;
+  cycleDurationHours?: number | null;
   cycles: Cycle[];
   loadingCycles: boolean;
   loadingMoreCycles: boolean;
@@ -25,6 +31,7 @@ interface CycleListPanelProps {
 export const CycleListPanel = ({
   locale,
   timeZone,
+  cycleDurationHours,
   cycles,
   loadingCycles,
   loadingMoreCycles,
@@ -79,6 +86,23 @@ export const CycleListPanel = ({
               <p className="card-primary-number">{cycle.mintedAmount} AGC</p>
               <div className="card-meta">
                 <p><strong>{copy.cycleList.started}:</strong> {formatDateTime(cycle.startedAt, locale, timeZone)}</p>
+                <p>
+                  <strong>{cycle.closedAt ? copy.cycleList.closedAt : copy.cycleList.expectedCloseAt}:</strong>{" "}
+                  {formatDateTime(
+                    cycle.closedAt ?? computeExpectedCycleCloseAt(cycle.startedAt, cycleDurationHours) ?? "",
+                    locale,
+                    timeZone
+                  )}
+                </p>
+                {cycle.status === "OPEN" ? (
+                  <p>
+                    <strong>{copy.cycleList.remaining}:</strong>{" "}
+                    {formatRemainingDuration(
+                      computeCycleRemainingMs(cycle.startedAt, cycleDurationHours),
+                      locale
+                    )}
+                  </p>
+                ) : null}
                 <p><strong>{locale === "zh" ? "状态" : "Status"}:</strong> {getCycleStatusLabel(locale, cycle.status)}</p>
                 <p><strong>{copy.cycleList.tax}:</strong> {cycle.taxPool} AGC</p>
                 <p><strong>{copy.cycleList.penalty}:</strong> {cycle.penaltyPool} AGC</p>

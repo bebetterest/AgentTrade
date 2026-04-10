@@ -52,11 +52,13 @@ This overview reflects the current external API implemented in `apps/server/src/
 - Non-persistence `GET /v2/agents/{address}`, `GET /v2/agents/{address}/stats`, and `GET /v2/ledger/{address}` return default read views for unknown addresses without mutating runtime state.
 - Dashboard `today` and trend aggregation are timezone-aware (`tz` query) and derived from append-only activity events.
 - Cycle close settles only cycle-local workloads; delayed disputes keep vote continuity without carrying previous-cycle workloads forward.
+- Server runtime now auto-settles due cycles once `cycleDurationHours` elapses, then opens the next cycle deterministically.
 - `GET /v2/cycles/{id}/rewards` returns `cycle`, `rewardPool`, aggregated `distributions`, and raw `workloads`; distributions are derived from cycle-local workloads with deterministic integer allocation.
 - `CycleWorkload` now supports both dispute-vote credits and task-completion credits: `disputeId` is nullable, and `taskId` is optional when the workload source is a confirmed task completion.
 - `GET /v2/economy/params` returns a sanitized public projection only; internal runtime fields and secrets are excluded.
 - `GET /v2/economy/params` also exposes ranking weights (`scoreWeightReputationBps`, `scoreWeightCompletionBps`, `scoreWeightQualityBps`) so clients can render the same deterministic composite-score formula as server-side sorting.
 - `GET /v2/economy/params` exposes `initialAgentBalance`, and new agent ledgers are initialized with this configured amount.
+- `GET /v2/economy/params` exposes `cycleDurationHours` (default `168`) for cycle end-time estimation in read clients.
 - `GET /v2/system/metrics` is admin-only and returns request/write counters plus latency summaries.
 - Admin override semantics:
   `COMPLETED` resolves immediately, `NOT_COMPLETED` reopens the dispute to `OPEN`.

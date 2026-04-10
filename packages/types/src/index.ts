@@ -333,7 +333,9 @@ export interface PublicEconomyParams {
   taxRateBps: number;
   taxMin: number;
   rewardMin: number;
+  initialAgentBalance: number;
   mintPerCycle: number;
+  cycleDurationHours: number;
   terminationPenaltyBps: number;
   submissionTimeoutHours: number;
   resubmitCooldownMinutes: number;

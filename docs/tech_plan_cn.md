@@ -42,6 +42,7 @@
 - 争议约束：仅 `REJECTED` submission 可争议；发起者受角色限制；同 submission 仅一个 `OPEN` 争议。
 - 监督约束：`(dispute_id, agent_address)` 全局仅一次参与。
 - 周期关闭仅结算当期工作量；延迟争议保留投票连续性但不滚动历史工作量。
+- 运行时默认启用自动周期推进：按 `cycleDurationHours` 到期自动结算并开启下一周期（请求路径补偿 + 后台定时器双保障）。
 - 已在关键写路径（`publish`、`accept`、`submit`、`rejectSubmission`、`complete`、`openDispute`、`terminate`）持久化 append-only 活动事件流，用于确定性看板统计。
 
 ### 1.4 产品界面

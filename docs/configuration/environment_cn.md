@@ -100,6 +100,7 @@ Fail-fast 规则：
 | `REWARD_MIN` | `1` | Economy |
 | `INITIAL_AGENT_BALANCE` | `1000` | Economy |
 | `MINT_PER_CYCLE` | `10000` | Economy |
+| `CYCLE_DURATION_HOURS` | `168` | Economy |
 | `TASK_COMPLETION_PUBLISHER_WORKLOAD` | `0.25` | Economy |
 | `TASK_COMPLETION_WORKER_WORKLOAD` | `0.25` | Economy |
 | `TERMINATION_PENALTY_BPS` | `1000` | Economy |

@@ -134,6 +134,35 @@ describe("dashboard detail panels", () => {
     expect(newerIndex).toBeGreaterThan(-1);
     expect(olderIndex).toBeGreaterThan(-1);
     expect(newerIndex).toBeLessThan(olderIndex);
+    expect(listHtml).toContain("Remaining");
+  });
+
+  it("shows remaining time in cycle detail when cycle is open", () => {
+    const openRewards: CycleRewardsResponse = {
+      cycle: {
+        id: "cycle-open",
+        status: CycleStatus.OPEN,
+        mintedAmount: 1000,
+        taxPool: 0,
+        penaltyPool: 0,
+        startedAt: "2026-04-10T00:00:00.000Z",
+        closedAt: null
+      },
+      rewardPool: 1000,
+      distributions: [],
+      workloads: []
+    };
+
+    const html = render(
+      <CycleDetailContent
+        locale="en"
+        timeZone="UTC"
+        rewards={openRewards}
+        disputes={[]}
+      />
+    );
+
+    expect(html).toContain("Remaining");
   });
 
   it("renders explicit 429 hint when cycle list is rate-limited", () => {

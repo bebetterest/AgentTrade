@@ -3,9 +3,14 @@ import type { SupportedLocale } from "@agentrade/i18n";
 import { getCycleStatusLabel } from "../../../components/dashboard/i18n";
 import { DetailPageShell } from "../../../components/detail-page-shell";
 import { DetailStateCard } from "../../../components/detail-state-card";
-import { fetchCycleRewards, fetchDispute } from "../../../lib/api";
+import { fetchCycleRewards, fetchDispute, fetchEconomyParams } from "../../../lib/api";
 import { CycleDetailContent } from "../../../components/dashboard/cycle-detail-content";
-import { formatDateTime } from "../../../lib/dashboard-format";
+import {
+  computeCycleRemainingMs,
+  computeExpectedCycleCloseAt,
+  formatDateTime,
+  formatRemainingDuration
+} from "../../../lib/dashboard-format";
 import { getLoadErrorKind, withRateLimitMessage } from "../../../lib/load-error";
 import { logWebLoadError } from "../../../lib/logging";
 import {
@@ -65,9 +70,15 @@ export default async function CycleDetailPage({ params }: CycleDetailPageProps) 
   let loadError = false;
   let loadErrorKind: ReturnType<typeof getLoadErrorKind> | null = null;
   let rewards: Awaited<ReturnType<typeof fetchCycleRewards>> = null;
+  let economy: Awaited<ReturnType<typeof fetchEconomyParams>> = null;
   let disputes: Array<NonNullable<Awaited<ReturnType<typeof fetchDispute>>>> = [];
   try {
-    rewards = await fetchCycleRewards(id, { strict: true });
+    const [rewardsResult, economyResult] = await Promise.all([
+      fetchCycleRewards(id, { strict: true }),
+      fetchEconomyParams()
+    ]);
+    rewards = rewardsResult;
+    economy = economyResult;
     if (rewards) {
       const disputeIds = [
         ...new Set(
@@ -95,6 +106,16 @@ export default async function CycleDetailPage({ params }: CycleDetailPageProps) 
     loadError = true;
     loadErrorKind = getLoadErrorKind(error);
   }
+
+  const expectedCloseAt = rewards
+    ? computeExpectedCycleCloseAt(rewards.cycle.startedAt, economy?.cycleDurationHours)
+    : null;
+  const remainingLabel = rewards
+    ? formatRemainingDuration(
+      computeCycleRemainingMs(rewards.cycle.startedAt, economy?.cycleDurationHours),
+      requestPreferences.locale
+    )
+    : "-";
 
   if (loadError) {
     const loadHint = withRateLimitMessage(requestPreferences.locale, t.loadHint, loadErrorKind);
@@ -180,7 +201,11 @@ export default async function CycleDetailPage({ params }: CycleDetailPageProps) 
           note:
             rewards.cycle.closedAt
               ? `${requestPreferences.locale === "zh" ? "关闭于" : "Closed"} ${formatDateTime(rewards.cycle.closedAt, requestPreferences.locale, requestPreferences.timeZone)}`
-              : (requestPreferences.locale === "zh" ? "周期仍在进行中" : "Cycle is still open")
+              : `${
+                requestPreferences.locale === "zh" ? "预计关闭于" : "Expected close"
+              } ${formatDateTime(expectedCloseAt ?? "", requestPreferences.locale, requestPreferences.timeZone)} · ${
+                requestPreferences.locale === "zh" ? "剩余时间" : "Remaining"
+              } ${remainingLabel}`
         }
       ]}
     >
@@ -190,6 +215,7 @@ export default async function CycleDetailPage({ params }: CycleDetailPageProps) 
           timeZone={requestPreferences.timeZone}
           rewards={rewards}
           disputes={disputes}
+          cycleDurationHours={economy?.cycleDurationHours}
           showHeading={false}
         />
       </section>

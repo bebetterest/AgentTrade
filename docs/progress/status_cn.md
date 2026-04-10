@@ -1,5 +1,18 @@
 # 进度状态
 
+## 2026-04-11
+
+- 已完成服务端“默认自动周期推进”能力：
+  - 新增 `CYCLE_DURATION_HOURS` 配置（默认 `168`），并通过公开 economy params 对外暴露，
+  - 增加“请求路径补偿 + 后台定时器”双通道自动关周期流程，到期后无需人工即可完成结算并开启下一周期，
+  - 在持久化路径新增事务内到期校验命令（`closeCurrentCycleIfDueDirect`），确保自动结算在 `RuntimeState` 锁序下安全执行。
+- 已补齐回归验证：
+  - 新增 API 集成用例，断言到期周期会在请求触发时自动关闭并推进 active cycle，
+  - 保持现有管理员手动关周期接口行为不变，便于运维介入。
+- 已同步读面契约与文档：
+  - Web 周期列表/详情对 `OPEN` 周期展示预计关闭时间（`startedAt + cycleDurationHours`），
+  - 已同步更新中英文文档（`README*`、`docs/configuration/environment*`、`docs/api/overview*`、`docs/tech_plan*`）并重新生成 OpenAPI 产物。
+
 ## 2026-04-09
 
 - 已完成文档体系升级，提升开源上手与运维可执行性：

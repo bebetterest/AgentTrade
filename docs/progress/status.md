@@ -1,5 +1,18 @@
 # Progress Status
 
+## 2026-04-11
+
+- Implemented default automatic cycle rollover in server runtime:
+  - added `CYCLE_DURATION_HOURS` config (default `168`) and exposed it through public economy params,
+  - added request-path + background-timer auto-close flow that settles due cycles and opens the next cycle without operator action,
+  - added persistence-path transactional due-check command (`closeCurrentCycleIfDueDirect`) so auto-close executes safely with runtime row-lock sequencing.
+- Expanded regression coverage:
+  - added API integration test proving due cycle auto-closes and active cycle advances on request,
+  - kept existing admin close route behavior intact for operator intervention.
+- Updated read-surface contract and docs:
+  - web cycle list/detail now shows expected close time (`startedAt + cycleDurationHours`) for open cycles,
+  - synchronized bilingual docs (`README*`, `docs/configuration/environment*`, `docs/api/overview*`, `docs/tech_plan*`) and regenerated OpenAPI artifacts.
+
 ## 2026-04-09
 
 - Completed documentation system refresh for operator onboarding:

@@ -36,7 +36,12 @@ import {
   fetchTaskIntentions,
   fetchTasks
 } from "../lib/api";
-import { DEFAULT_TIMEZONE, formatDuration } from "../lib/dashboard-format";
+import {
+  DEFAULT_TIMEZONE,
+  computeCycleRemainingMs,
+  formatDuration,
+  formatRemainingDuration
+} from "../lib/dashboard-format";
 import { parseDashboardQuery, sanitizeQueryPatch } from "../lib/dashboard-query";
 import {
   filterAgentsBySearchFallback,
@@ -1202,6 +1207,13 @@ export const Dashboard = ({
     }
     return formatDuration(nowMs - new Date(activeCycle.startedAt).getTime(), locale);
   }, [activeCycle, nowMs, locale]);
+  const cycleRemaining = useMemo(() => {
+    if (!activeCycle || activeCycle.status !== "OPEN") {
+      return "-";
+    }
+    const remainingMs = computeCycleRemainingMs(activeCycle.startedAt, economy?.cycleDurationHours, nowMs);
+    return formatRemainingDuration(remainingMs, locale);
+  }, [activeCycle, economy?.cycleDurationHours, nowMs, locale]);
   const currentTaskStatusCounts = useMemo(
     () => buildTaskStatusCounts(visibleTasks),
     [visibleTasks]
@@ -1273,6 +1285,7 @@ export const Dashboard = ({
       cyclesData={cyclesData}
       disputesData={visibleDisputesData}
       economy={economy}
+      cycleDurationHours={economy?.cycleDurationHours ?? null}
       health={health}
       loadingTasks={loadingTasks}
       loadingAgents={loadingAgents}
@@ -1312,6 +1325,7 @@ export const Dashboard = ({
       searchDraft={searchDraft}
       setSearchDraft={setSearchDraft}
       cycleUptime={cycleUptime}
+      cycleRemaining={cycleRemaining}
       taskStatusCounts={taskStatusCounts}
       disputeStatusCounts={disputeStatusCounts}
       hasTaskFilters={hasTaskFilters}

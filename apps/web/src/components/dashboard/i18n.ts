@@ -128,6 +128,9 @@ interface DashboardCopy {
   cycleList: {
     loadError: string;
     started: string;
+    closedAt: string;
+    expectedCloseAt: string;
+    remaining: string;
     mint: string;
     tax: string;
     penalty: string;
@@ -191,6 +194,8 @@ interface DashboardCopy {
     status: string;
     startedAt: string;
     closedAt: string;
+    expectedCloseAt: string;
+    remaining: string;
     mint: string;
     taxPool: string;
     penaltyPool: string;
@@ -222,6 +227,7 @@ interface DashboardCopy {
     status: string;
     startedAt: string;
     uptime: string;
+    remaining: string;
     mintTaxPenalty: string;
     generatedAt: string;
     drillIntoCycle: string;
@@ -363,6 +369,9 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
     cycleList: {
       loadError: "Cycle list failed to load. Retry with refresh.",
       started: "Started",
+      closedAt: "Closed",
+      expectedCloseAt: "Expected Close",
+      remaining: "Remaining",
       mint: "Mint",
       tax: "Tax",
       penalty: "Penalty",
@@ -426,6 +435,8 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       status: "Status",
       startedAt: "Started At",
       closedAt: "Closed At",
+      expectedCloseAt: "Expected Close",
+      remaining: "Remaining",
       mint: "Mint",
       taxPool: "Tax Pool",
       penaltyPool: "Penalty Pool",
@@ -457,6 +468,7 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       status: "Status",
       startedAt: "Started At",
       uptime: "Uptime",
+      remaining: "Remaining",
       mintTaxPenalty: "Mint/Tax/Penalty",
       generatedAt: "Generated At",
       drillIntoCycle: "Drill into active cycle",
@@ -618,6 +630,9 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
     cycleList: {
       loadError: "周期列表加载失败，请重试。",
       started: "开始时间",
+      closedAt: "关闭时间",
+      expectedCloseAt: "预计关闭",
+      remaining: "剩余时间",
       mint: "铸造量",
       tax: "税池",
       penalty: "罚没池",
@@ -681,6 +696,8 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       status: "状态",
       startedAt: "开始时间",
       closedAt: "关闭时间",
+      expectedCloseAt: "预计关闭",
+      remaining: "剩余时间",
       mint: "铸造量",
       taxPool: "税池",
       penaltyPool: "罚没池",
@@ -712,6 +729,7 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       status: "状态",
       startedAt: "开始时间",
       uptime: "运行时长",
+      remaining: "剩余时间",
       mintTaxPenalty: "铸造/税/罚没",
       generatedAt: "数据更新时间",
       drillIntoCycle: "下钻当前周期",

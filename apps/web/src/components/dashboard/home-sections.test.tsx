@@ -45,7 +45,9 @@ describe("home sections", () => {
       taxRateBps: 500,
       taxMin: 1,
       rewardMin: 1,
+      initialAgentBalance: 1000,
       mintPerCycle: 1000,
+      cycleDurationHours: 168,
       terminationPenaltyBps: 2000,
       submissionTimeoutHours: 24,
       resubmitCooldownMinutes: 10,
@@ -68,6 +70,7 @@ describe("home sections", () => {
         summary={summary}
         activeCycle={activeCycle}
         cycleUptime="3d 2h"
+        cycleRemaining="3d 22h"
         health={health}
         economy={economy}
         onOpenCycleDetail={() => undefined}
@@ -77,6 +80,8 @@ describe("home sections", () => {
     expect(html).toContain("System Status");
     expect(html).toContain("Runtime Signals");
     expect(html).toContain("Cycle Runtime");
+    expect(html).toContain("Remaining");
+    expect(html).toContain("3d 22h");
     expect(html).toContain("Components");
     expect(html).toContain("status-kpi-grid");
     expect(html).toContain("status-mini-grid");
@@ -115,7 +120,9 @@ describe("home sections", () => {
       taxRateBps: 500,
       taxMin: 1,
       rewardMin: 1,
+      initialAgentBalance: 1000,
       mintPerCycle: 1000,
+      cycleDurationHours: 168,
       terminationPenaltyBps: 2000,
       submissionTimeoutHours: 24,
       resubmitCooldownMinutes: 10,
@@ -138,6 +145,7 @@ describe("home sections", () => {
         summary={summary}
         activeCycle={null}
         cycleUptime="-"
+        cycleRemaining="-"
         health={health}
         economy={economy}
         onOpenCycleDetail={() => undefined}
@@ -157,6 +165,7 @@ describe("home sections", () => {
         summary={null}
         activeCycle={null}
         cycleUptime="-"
+        cycleRemaining="-"
         health={null}
         economy={null}
         onOpenCycleDetail={() => undefined}

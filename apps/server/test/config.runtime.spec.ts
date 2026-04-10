@@ -141,4 +141,15 @@ describe("runtime config strict parsing", () => {
       )
     ).toThrow(/INITIAL_AGENT_BALANCE/);
   });
+
+  it("rejects non-positive cycle duration", () => {
+    expect(() =>
+      withEnv(
+        {
+          CYCLE_DURATION_HOURS: "0"
+        },
+        () => loadConfig()
+      )
+    ).toThrow(/CYCLE_DURATION_HOURS/);
+  });
 });

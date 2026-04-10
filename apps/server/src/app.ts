@@ -9,6 +9,7 @@ import {
   type ActivityEvent,
   type Address,
   type AgentProfile,
+  type CloseCycleResult,
   type Cycle,
   type Dispute,
   type LedgerBalance,
@@ -176,7 +177,7 @@ export const buildApp = async () => {
 
     try {
       if (!stateRepository) {
-        const result = await operation(inMemoryEngine);
+        const result = await enqueueMutation(async () => operation(inMemoryEngine));
         recordWriteOutcome(writeMeta, {
           startedAtNs,
           retryCount,
@@ -286,6 +287,95 @@ export const buildApp = async () => {
       });
       throw error;
     }
+  };
+
+  const AUTO_CYCLE_CLOSE_INTERVAL_MS = 30_000;
+  const AUTO_CYCLE_CLOSE_SKIP_PATHS = new Set(["/v2/admin/cycles/close"]);
+  const cycleDurationMs = config.cycleDurationHours * 3_600_000;
+  let autoCycleCloseInFlight: Promise<void> | null = null;
+
+  const isCycleDueForAutoClose = (cycle: Cycle): boolean => {
+    if (cycle.status !== "OPEN") {
+      return false;
+    }
+    const startedAtMs = Date.parse(cycle.startedAt);
+    if (!Number.isFinite(startedAtMs)) {
+      return false;
+    }
+    return Date.now() >= startedAtMs + cycleDurationMs;
+  };
+
+  const closeDueCycleOnce = async (): Promise<CloseCycleResult | null> => {
+    if (!stateRepository) {
+      return enqueueMutation(async () => {
+        const activeCycle = inMemoryEngine.getActiveCycle();
+        if (!isCycleDueForAutoClose(activeCycle)) {
+          return null;
+        }
+        const close = inMemoryEngine.closeCurrentCycle();
+        app.engine = inMemoryEngine;
+        return close;
+      });
+    }
+
+    const close = await enqueueMutation(async () => {
+      const result = await stateRepository.closeCurrentCycleIfDueDirect(config);
+      if (!result) {
+        return null;
+      }
+      inMemoryEngineDirty = true;
+      runtimeRevision = null;
+      return result;
+    });
+    return close;
+  };
+
+  const settleDueCycles = async (
+    trigger: "startup" | "request" | "timer"
+  ): Promise<void> => {
+    if (autoCycleCloseInFlight) {
+      return autoCycleCloseInFlight;
+    }
+
+    autoCycleCloseInFlight = (async () => {
+      let closedCount = 0;
+      let lastClosedCycleId: string | null = null;
+      let lastOpenedCycleId: string | null = null;
+      while (true) {
+        const closed = await closeDueCycleOnce();
+        if (!closed) {
+          break;
+        }
+        closedCount += 1;
+        lastClosedCycleId = closed.closedCycleId;
+        lastOpenedCycleId = closed.openedCycleId;
+      }
+      if (closedCount > 0) {
+        app.log.info(
+          {
+            trigger,
+            closedCount,
+            lastClosedCycleId,
+            lastOpenedCycleId
+          },
+          "auto cycle close settled due cycle(s)"
+        );
+      }
+    })()
+      .catch((error) => {
+        app.log.warn(
+          {
+            trigger,
+            code: errorCode(error)
+          },
+          "auto cycle close failed"
+        );
+      })
+      .finally(() => {
+        autoCycleCloseInFlight = null;
+      });
+
+    return autoCycleCloseInFlight;
   };
 
   const defaultAgentProfile = (address: Address): AgentProfile => {
@@ -410,6 +500,13 @@ export const buildApp = async () => {
     requestStartTimes.set(request, process.hrtime.bigint());
   });
   app.addHook("onRequest", applyRateLimit(limiter));
+  app.addHook("onRequest", async (request) => {
+    const path = getRequestPathname(request.raw.url ?? request.url);
+    if (AUTO_CYCLE_CLOSE_SKIP_PATHS.has(path)) {
+      return;
+    }
+    await settleDueCycles("request");
+  });
   app.addHook("onSend", async (request, reply, payload) => {
     reply.header("x-request-id", request.id);
     return payload;
@@ -439,7 +536,16 @@ export const buildApp = async () => {
   });
   await app.register(cors, { origin: corsOrigin });
 
+  await settleDueCycles("startup");
+  const autoCycleCloseTimer = setInterval(() => {
+    void settleDueCycles("timer");
+  }, AUTO_CYCLE_CLOSE_INTERVAL_MS);
+  if (typeof autoCycleCloseTimer.unref === "function") {
+    autoCycleCloseTimer.unref();
+  }
+
   app.addHook("onClose", async () => {
+    clearInterval(autoCycleCloseTimer);
     if (limiter.close) {
       await limiter.close();
     }

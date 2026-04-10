@@ -189,7 +189,7 @@ Layered templates:
 2. Add `.env.local` or `.env.cloud` as mode override.
 3. Set security secrets in `.env` (`JWT_SECRET`, `ADMIN_SERVICE_KEY`).
 4. Tune deployment routing in mode file (`LOCAL_*` for local or `CLOUD_*` for cloud).
-5. Validate advanced guardrails only when necessary (`TASK_*`, `DISPUTE_*`, `TAX_*`, `INITIAL_AGENT_BALANCE`, `REPUTATION_WEIGHT_*_BPS`, `SCORE_WEIGHT_*_BPS`).
+5. Validate advanced guardrails only when necessary (`TASK_*`, `DISPUTE_*`, `TAX_*`, `INITIAL_AGENT_BALANCE`, `MINT_PER_CYCLE`, `CYCLE_DURATION_HOURS`, `REPUTATION_WEIGHT_*_BPS`, `SCORE_WEIGHT_*_BPS`).
 
 Full variable reference (server/web/cli/deploy/release/smoke):
 

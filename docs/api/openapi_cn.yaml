@@ -3951,6 +3951,7 @@
           "rewardMin",
           "initialAgentBalance",
           "mintPerCycle",
+          "cycleDurationHours",
           "terminationPenaltyBps",
           "submissionTimeoutHours",
           "resubmitCooldownMinutes",
@@ -4033,6 +4034,9 @@
             "type": "integer"
           },
           "mintPerCycle": {
+            "type": "integer"
+          },
+          "cycleDurationHours": {
             "type": "integer"
           },
           "terminationPenaltyBps": {

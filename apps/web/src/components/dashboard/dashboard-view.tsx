@@ -44,6 +44,7 @@ interface DashboardViewProps {
   cyclesData: PaginatedResponse<Cycle>;
   disputesData: PaginatedResponse<Dispute>;
   economy: PublicEconomyParams | null;
+  cycleDurationHours: number | null;
   health: HealthStatus | null;
   loadingTasks: boolean;
   loadingAgents: boolean;
@@ -83,6 +84,7 @@ interface DashboardViewProps {
   searchDraft: string;
   setSearchDraft: Dispatch<SetStateAction<string>>;
   cycleUptime: string;
+  cycleRemaining: string;
   taskStatusCounts: Record<string, number>;
   disputeStatusCounts: Record<string, number>;
   hasTaskFilters: boolean;
@@ -120,6 +122,7 @@ export const DashboardView = ({
   cyclesData,
   disputesData,
   economy,
+  cycleDurationHours,
   health,
   loadingTasks,
   loadingAgents,
@@ -159,6 +162,7 @@ export const DashboardView = ({
   searchDraft,
   setSearchDraft,
   cycleUptime,
+  cycleRemaining,
   taskStatusCounts,
   disputeStatusCounts,
   hasTaskFilters,
@@ -456,6 +460,7 @@ export const DashboardView = ({
                 summary={summary}
                 activeCycle={activeCycle}
                 cycleUptime={cycleUptime}
+                cycleRemaining={cycleRemaining}
                 health={health}
                 economy={economy}
                 onOpenCycleDetail={openCycleDetail}
@@ -608,6 +613,7 @@ export const DashboardView = ({
                   <CycleListPanel
                     locale={locale}
                     timeZone={timeZone}
+                    cycleDurationHours={cycleDurationHours}
                     cycles={cyclesData.items}
                     loadingCycles={loadingCycles}
                     loadingMoreCycles={loadingMoreCycles}

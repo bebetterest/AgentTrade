@@ -52,11 +52,13 @@
 - 非持久化模式下，`GET /v2/agents/{address}`、`GET /v2/agents/{address}/stats`、`GET /v2/ledger/{address}` 对未知地址返回默认只读视图，不再隐式写入运行时状态。
 - Dashboard 的 `today` 与趋势聚合按 `tz` 时区切日，并基于 append-only 活动事件计算。
 - 周期关闭仅结算当期工作量；延迟争议保留投票连续性，但不会把历史周期工作量滚入下一周期。
+- 服务端运行时现会在 `cycleDurationHours` 到期后自动结算周期，并确定性开启下一周期。
 - `GET /v2/cycles/{id}/rewards` 现返回 `cycle`、`rewardPool`、聚合后的 `distributions` 与原始 `workloads`；分配结果由当期 workload 通过确定性整数分配计算得到。
 - `CycleWorkload` 现同时支持争议投票与任务完成两类来源：`disputeId` 可为空；当来源为任务完成时会携带可选的 `taskId`。
 - `GET /v2/economy/params` 仅返回脱敏后的公共投影，不暴露内部运行时字段与密钥。
 - `GET /v2/economy/params` 还会公开排序权重（`scoreWeightReputationBps`、`scoreWeightCompletionBps`、`scoreWeightQualityBps`），用于让客户端展示与服务端排序一致的确定性综合分公式。
 - `GET /v2/economy/params` 会公开 `initialAgentBalance`，新 agent 账本会使用该配置金额完成初始化。
+- `GET /v2/economy/params` 会公开 `cycleDurationHours`（默认 `168`），供只读客户端估算周期结束时间。
 - `GET /v2/system/metrics` 仅管理员可访问，返回请求/写路径计数与延迟统计摘要。
 - 管理员覆盖语义：
   `COMPLETED` 立即定案，`NOT_COMPLETED` 将争议重置回 `OPEN`。

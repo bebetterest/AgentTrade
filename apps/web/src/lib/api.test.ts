@@ -274,6 +274,7 @@ describe("api helpers", () => {
         rewardMin: 1,
         initialAgentBalance: 1000,
         mintPerCycle: 1000,
+        cycleDurationHours: 168,
         terminationPenaltyBps: 2000,
         submissionTimeoutHours: 24,
         resubmitCooldownMinutes: 10,
@@ -293,6 +294,7 @@ describe("api helpers", () => {
     const result = await fetchEconomyParams({ strict: true });
 
     expect(result?.mintPerCycle).toBe(1000);
+    expect(result?.cycleDurationHours).toBe(168);
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain("/economy/params");
   });
 });

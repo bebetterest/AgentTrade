@@ -4,7 +4,13 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { CycleRewardsResponse, Dispute } from "@agentrade/types";
 import type { SupportedLocale } from "@agentrade/i18n";
-import { formatDateTime, shortAddress } from "../../lib/dashboard-format";
+import {
+  computeCycleRemainingMs,
+  computeExpectedCycleCloseAt,
+  formatDateTime,
+  formatRemainingDuration,
+  shortAddress
+} from "../../lib/dashboard-format";
 import { renderSafeMarkdown } from "../../lib/markdown";
 import { getCycleStatusLabel, getDashboardCopy, getDisputeStatusLabel } from "./i18n";
 import { buildStateChipClass } from "./shared";
@@ -14,6 +20,7 @@ interface CycleDetailContentProps {
   timeZone: string;
   rewards: CycleRewardsResponse;
   disputes: Dispute[];
+  cycleDurationHours?: number | null;
   onOpenAgentDetail?: (address: string) => void;
   getAgentHref?: (address: string) => string;
   showHeading?: boolean;
@@ -47,6 +54,7 @@ export const CycleDetailContent = ({
   timeZone,
   rewards,
   disputes,
+  cycleDurationHours,
   onOpenAgentDetail,
   getAgentHref,
   showHeading = true
@@ -67,6 +75,8 @@ export const CycleDetailContent = ({
   const visibleDistributionItems = distributions.slice(0, visibleDistributions);
   const visibleDisputeItems = disputes.slice(0, visibleDisputes);
   const visibleWorkloadItems = workloads.slice(0, visibleWorkloads);
+  const expectedCloseAt = computeExpectedCycleCloseAt(cycle.startedAt, cycleDurationHours);
+  const remainingMs = computeCycleRemainingMs(cycle.startedAt, cycleDurationHours);
   const hasMoreDistributions = visibleDistributionItems.length < distributions.length;
   const hasMoreDisputes = visibleDisputeItems.length < disputes.length;
   const hasMoreWorkloads = visibleWorkloadItems.length < workloads.length;
@@ -87,7 +97,16 @@ export const CycleDetailContent = ({
           <h4>{copy.cycleDetail.cycleOverview}</h4>
           <div className="metric-line"><span>{copy.cycleDetail.status}</span><strong>{getCycleStatusLabel(locale, cycle.status)}</strong></div>
           <div className="metric-line"><span>{copy.cycleDetail.startedAt}</span><strong>{formatDateTime(cycle.startedAt, locale, timeZone)}</strong></div>
-          <div className="metric-line"><span>{copy.cycleDetail.closedAt}</span><strong>{cycle.closedAt ? formatDateTime(cycle.closedAt, locale, timeZone) : "-"}</strong></div>
+          <div className="metric-line">
+            <span>{cycle.closedAt ? copy.cycleDetail.closedAt : copy.cycleDetail.expectedCloseAt}</span>
+            <strong>{formatDateTime(cycle.closedAt ?? expectedCloseAt ?? "", locale, timeZone)}</strong>
+          </div>
+          {cycle.status === "OPEN" ? (
+            <div className="metric-line">
+              <span>{copy.cycleDetail.remaining}</span>
+              <strong>{formatRemainingDuration(remainingMs, locale)}</strong>
+            </div>
+          ) : null}
           <div className="metric-line"><span>{copy.cycleDetail.mint}</span><strong>{cycle.mintedAmount} AGC</strong></div>
           <div className="metric-line"><span>{copy.cycleDetail.taxPool}</span><strong>{cycle.taxPool} AGC</strong></div>
           <div className="metric-line"><span>{copy.cycleDetail.penaltyPool}</span><strong>{cycle.penaltyPool} AGC</strong></div>

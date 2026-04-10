@@ -1,7 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { nanoid } from "nanoid";
 import type { Address, ActivityEventType as DomainActivityEventType } from "@agentrade/types";
-import { INITIAL_AGENT_BALANCE } from "../domain/engine.js";
 import { DomainError } from "../domain/errors.js";
 import { clampReputation } from "../domain/helpers.js";
 
@@ -20,7 +19,8 @@ export const lockRuntimeWithTx = async (
 export const ensureAgentAndLedgerWithTx = async (
   tx: Prisma.TransactionClient,
   address: Address,
-  now: Date
+  now: Date,
+  initialAgentBalance: number
 ): Promise<void> => {
   const existingProfile = await tx.agentProfile.findUnique({ where: { address } });
   if (!existingProfile) {
@@ -49,7 +49,7 @@ export const ensureAgentAndLedgerWithTx = async (
     await tx.ledgerBalance.create({
       data: {
         address,
-        available: INITIAL_AGENT_BALANCE,
+        available: initialAgentBalance,
         updatedAt: now
       }
     });

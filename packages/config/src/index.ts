@@ -31,6 +31,7 @@ export interface AppConfig {
   taxRateBps: number;
   taxMin: number;
   rewardMin: number;
+  initialAgentBalance: number;
   mintPerCycle: number;
   terminationPenaltyBps: number;
   submissionTimeoutHours: number;
@@ -84,6 +85,7 @@ export type PublicEconomyParams = Pick<
   | "taxRateBps"
   | "taxMin"
   | "rewardMin"
+  | "initialAgentBalance"
   | "mintPerCycle"
   | "terminationPenaltyBps"
   | "submissionTimeoutHours"
@@ -304,6 +306,7 @@ export const defaultConfig: AppConfig = {
   taxRateBps: 500,
   taxMin: 1,
   rewardMin: 1,
+  initialAgentBalance: 1_000,
   mintPerCycle: 10000,
   terminationPenaltyBps: 1000,
   submissionTimeoutHours: 72,
@@ -342,6 +345,7 @@ export const toPublicEconomyParams = (config: AppConfig): PublicEconomyParams =>
   taxRateBps: config.taxRateBps,
   taxMin: config.taxMin,
   rewardMin: config.rewardMin,
+  initialAgentBalance: config.initialAgentBalance,
   mintPerCycle: config.mintPerCycle,
   terminationPenaltyBps: config.terminationPenaltyBps,
   submissionTimeoutHours: config.submissionTimeoutHours,
@@ -466,6 +470,14 @@ export const loadConfig = (): AppConfig => {
       integer: true,
       min: 1
     }),
+    initialAgentBalance: envNumberStrict(
+      "INITIAL_AGENT_BALANCE",
+      defaultConfig.initialAgentBalance,
+      {
+        integer: true,
+        min: 0
+      }
+    ),
     mintPerCycle: envNumberStrict("MINT_PER_CYCLE", defaultConfig.mintPerCycle, {
       integer: true,
       min: 0

@@ -13,6 +13,15 @@ const makeEngine = () => {
 };
 
 describe("AgentradeEngine disputes and cycle settlement", () => {
+  it("uses configured initial balance when auto-creating a new agent ledger", () => {
+    const clock = new MutableClock(new Date("2026-03-30T00:00:00.000Z"));
+    const engine = new AgentradeEngine({ ...defaultConfig, initialAgentBalance: 4321 }, clock);
+    const newcomer = addr("cfg-ledger");
+
+    const ledger = engine.getLedger(newcomer);
+    expect(ledger.available).toBe(4321);
+  });
+
   it("rejects duplicate supervision participation deterministically with 409 domain status", () => {
     const { engine, clock } = makeEngine();
     const publisher = addr("aa");

@@ -3944,6 +3944,7 @@
           "taxRateBps",
           "taxMin",
           "rewardMin",
+          "initialAgentBalance",
           "mintPerCycle",
           "terminationPenaltyBps",
           "submissionTimeoutHours",
@@ -4021,6 +4022,9 @@
             "type": "integer"
           },
           "rewardMin": {
+            "type": "integer"
+          },
+          "initialAgentBalance": {
             "type": "integer"
           },
           "mintPerCycle": {

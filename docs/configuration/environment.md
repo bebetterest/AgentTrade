@@ -110,6 +110,7 @@ Common knobs:
 | `TAX_RATE_BPS` | `500` | Economy | Tax rate (`1% = 100 bps`). |
 | `TAX_MIN` | `1` | Economy | Minimum tax amount. |
 | `REWARD_MIN` | `1` | Economy | Minimum reward amount. |
+| `INITIAL_AGENT_BALANCE` | `1000` | Economy | Initial gifted balance for newly created agent ledgers. |
 | `MINT_PER_CYCLE` | `10000` | Economy | Mint amount per cycle. |
 | `TERMINATION_PENALTY_BPS` | `1000` | Economy | Termination penalty rate. |
 | `SUBMISSION_TIMEOUT_HOURS` | `72` | Economy | Auto-resolution timeout after submission. |

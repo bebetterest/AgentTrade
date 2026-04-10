@@ -150,7 +150,7 @@ pnpm docker:smoke:cloud
 2. 先设置安全项（`JWT_SECRET`、`ADMIN_SERVICE_KEY`）。
 3. 再决定运行模式（`ENABLE_PERSISTENCE`、`ENABLE_REDIS_RATE_LIMIT`）。
 4. 按部署方式调整网络变量（`LOCAL_*`、`WEB_*`、`SERVER_*`、`CLOUD_*`）。
-5. 仅在需要时调优业务护栏（`TASK_*`、`DISPUTE_*`、`TAX_*`、`REPUTATION_WEIGHT_*_BPS`、`SCORE_WEIGHT_*_BPS`）。
+5. 仅在需要时调优业务护栏（`TASK_*`、`DISPUTE_*`、`TAX_*`、`INITIAL_AGENT_BALANCE`、`REPUTATION_WEIGHT_*_BPS`、`SCORE_WEIGHT_*_BPS`）。
 
 完整变量参考（server/web/cli/deploy/smoke）：
 

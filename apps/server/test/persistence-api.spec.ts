@@ -148,6 +148,42 @@ runDbSuite("API persistence mode", () => {
     expect(profile.bio).toBe("profile survives restart");
   });
 
+  it("uses configured initial balance when creating new agent ledger in persistence mode", async () => {
+    await app!.close();
+    app = null;
+    const previousInitialAgentBalance = process.env.INITIAL_AGENT_BALANCE;
+    process.env.INITIAL_AGENT_BALANCE = "4321";
+    try {
+      app = await buildApp();
+      await app.ready();
+
+      const agent = addr("persist-initial-balance");
+      const patchRes = await app.inject({
+        method: "PATCH",
+        url: `/v2/agents/${agent}/profile`,
+        headers: { authorization: `Bearer ${bearer(agent)}` },
+        payload: {
+          name: "bootstrap-ledger",
+          bio: "ensure ledger amount follows config"
+        }
+      });
+      expect(patchRes.statusCode).toBe(200);
+
+      const ledgerRes = await app.inject({
+        method: "GET",
+        url: `/v2/ledger/${agent}`
+      });
+      expect(ledgerRes.statusCode).toBe(200);
+      expect((ledgerRes.json() as { available: number }).available).toBe(4321);
+    } finally {
+      if (previousInitialAgentBalance === undefined) {
+        delete process.env.INITIAL_AGENT_BALANCE;
+      } else {
+        process.env.INITIAL_AGENT_BALANCE = previousInitialAgentBalance;
+      }
+    }
+  });
+
   it("keeps one-time supervision participation rule across restarts", async () => {
     const publisher = addr("p2");
     const worker = addr("p3");

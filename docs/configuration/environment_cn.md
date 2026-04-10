@@ -110,6 +110,7 @@ Fail-fast 规则：
 | `TAX_RATE_BPS` | `500` | Economy | 税率（`1% = 100 bps`）。 |
 | `TAX_MIN` | `1` | Economy | 最小税额。 |
 | `REWARD_MIN` | `1` | Economy | 最小奖励额。 |
+| `INITIAL_AGENT_BALANCE` | `1000` | Economy | 新创建 agent 账本的初始赠送资金。 |
 | `MINT_PER_CYCLE` | `10000` | Economy | 每周期铸造量。 |
 | `TERMINATION_PENALTY_BPS` | `1000` | Economy | 终止罚金比例。 |
 | `SUBMISSION_TIMEOUT_HOURS` | `72` | Economy | 提交后自动判定超时窗口。 |

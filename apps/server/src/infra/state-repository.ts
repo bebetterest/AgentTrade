@@ -1463,7 +1463,7 @@ export class PrismaStateRepository {
     address: Address,
     now: Date
   ): Promise<void> {
-    await ensureAgentAndLedgerWithTx(tx, address, now);
+    await ensureAgentAndLedgerWithTx(tx, address, now, this.config.initialAgentBalance);
   }
 
   private async appendActivityEventWithTx(

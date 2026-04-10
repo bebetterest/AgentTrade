@@ -15,7 +15,7 @@ import {
   type Submission,
   type Task
 } from "@agentrade/types";
-import { AgentradeEngine, INITIAL_AGENT_BALANCE } from "./domain/engine.js";
+import { AgentradeEngine } from "./domain/engine.js";
 import { DomainError } from "./domain/errors.js";
 import { applyRateLimit } from "./core/rate-limit.js";
 import { createRateLimiter } from "./infra/rate-limiter.js";
@@ -310,7 +310,7 @@ export const buildApp = async () => {
 
   const defaultLedger = (address: Address): LedgerBalance => ({
     address,
-    available: INITIAL_AGENT_BALANCE,
+    available: config.initialAgentBalance,
     updatedAt: new Date().toISOString()
   });
 

@@ -150,7 +150,7 @@ Mode-specific templates:
 2. Set security secrets (`JWT_SECRET`, `ADMIN_SERVICE_KEY`).
 3. Select runtime mode (`ENABLE_PERSISTENCE`, `ENABLE_REDIS_RATE_LIMIT`).
 4. Tune network routing and deployment variables (`LOCAL_*`, `WEB_*`, `SERVER_*`, `CLOUD_*`).
-5. Validate advanced guardrails only when necessary (`TASK_*`, `DISPUTE_*`, `TAX_*`, `REPUTATION_WEIGHT_*_BPS`, `SCORE_WEIGHT_*_BPS`).
+5. Validate advanced guardrails only when necessary (`TASK_*`, `DISPUTE_*`, `TAX_*`, `INITIAL_AGENT_BALANCE`, `REPUTATION_WEIGHT_*_BPS`, `SCORE_WEIGHT_*_BPS`).
 
 Full variable reference (server/web/cli/deploy/smoke):
 

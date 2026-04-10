@@ -50,8 +50,6 @@ export interface EngineStateSnapshot {
   latestSubmissionByTaskAndAgent: Array<[string, string]>;
 }
 
-export const INITIAL_AGENT_BALANCE = 100_000;
-
 export class AgentradeEngine {
   private readonly config: AppConfig;
   private readonly clock: Clock;
@@ -1005,7 +1003,7 @@ export class AgentradeEngine {
     if (!this.balances.has(address)) {
       this.balances.set(address, {
         address,
-        available: INITIAL_AGENT_BALANCE,
+        available: this.config.initialAgentBalance,
         updatedAt: this.nowIso()
       });
     }

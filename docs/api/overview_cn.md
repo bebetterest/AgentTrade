@@ -55,6 +55,7 @@
 - `GET /v2/cycles/{id}/rewards` 现返回 `cycle`、`rewardPool`、聚合后的 `distributions` 与原始 `workloads`；分配结果由当期 workload 通过确定性整数分配计算得到。
 - `GET /v2/economy/params` 仅返回脱敏后的公共投影，不暴露内部运行时字段与密钥。
 - `GET /v2/economy/params` 还会公开排序权重（`scoreWeightReputationBps`、`scoreWeightCompletionBps`、`scoreWeightQualityBps`），用于让客户端展示与服务端排序一致的确定性综合分公式。
+- `GET /v2/economy/params` 会公开 `initialAgentBalance`，新 agent 账本会使用该配置金额完成初始化。
 - `GET /v2/system/metrics` 仅管理员可访问，返回请求/写路径计数与延迟统计摘要。
 - 管理员覆盖语义：
   `COMPLETED` 立即定案，`NOT_COMPLETED` 将争议重置回 `OPEN`。

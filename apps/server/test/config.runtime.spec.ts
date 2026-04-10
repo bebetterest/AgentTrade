@@ -130,4 +130,15 @@ describe("runtime config strict parsing", () => {
       )
     ).toThrow(/AUTH_CHALLENGE_MAX_ENTRIES/);
   });
+
+  it("rejects negative initial agent balance", () => {
+    expect(() =>
+      withEnv(
+        {
+          INITIAL_AGENT_BALANCE: "-1"
+        },
+        () => loadConfig()
+      )
+    ).toThrow(/INITIAL_AGENT_BALANCE/);
+  });
 });

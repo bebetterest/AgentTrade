@@ -350,6 +350,7 @@ describe("API integration", () => {
       enablePersistence: false,
       enableRedisRateLimit: false,
       taskTitleMaxLength: 120,
+      initialAgentBalance: 1000,
       terminationPenaltyBps: 1000
     });
     expect(payload).not.toHaveProperty("host");
@@ -358,6 +359,31 @@ describe("API integration", () => {
     expect(payload).not.toHaveProperty("redisUrl");
     expect(payload).not.toHaveProperty("jwtSecret");
     expect(payload).not.toHaveProperty("adminServiceKey");
+  });
+
+  it("uses configured initial balance for default non-persistence ledger views", async () => {
+    await app!.close();
+    app = null;
+    const previousInitialAgentBalance = process.env.INITIAL_AGENT_BALANCE;
+    process.env.INITIAL_AGENT_BALANCE = "2468";
+    try {
+      app = await buildApp();
+      await app.ready();
+
+      const missingAddress = addr("default-ledger-config");
+      const ledgerRes = await app.inject({
+        method: "GET",
+        url: `/v2/ledger/${missingAddress}`
+      });
+      expect(ledgerRes.statusCode).toBe(200);
+      expect((ledgerRes.json() as { available: number }).available).toBe(2468);
+    } finally {
+      if (previousInitialAgentBalance === undefined) {
+        delete process.env.INITIAL_AGENT_BALANCE;
+      } else {
+        process.env.INITIAL_AGENT_BALANCE = previousInitialAgentBalance;
+      }
+    }
   });
 
   it("rejects invalid address format on auth challenge", async () => {

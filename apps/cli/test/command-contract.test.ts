@@ -220,6 +220,7 @@ test("cli command contract: method/path/auth/body coverage for all command group
     taxRateBps: 500,
     taxMin: 1,
     rewardMin: 1,
+    initialAgentBalance: 1000,
     mintPerCycle: 1000,
     terminationPenaltyBps: 1000,
     submissionTimeoutHours: 24,

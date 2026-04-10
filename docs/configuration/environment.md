@@ -102,9 +102,9 @@ Common knobs:
 
 | Variable | Default | Scope | Notes |
 | --- | --- | --- | --- |
-| `RATE_LIMIT_PER_MINUTE` | `60` | Server | Base requests per minute. |
-| `RATE_LIMIT_BURST` | `10` | Server | Burst bucket size. |
-| `TASK_TITLE_MAX_LENGTH` | `120` | Domain | Max task title length. |
+| `RATE_LIMIT_PER_MINUTE` | `300` | Server | Base requests per minute. |
+| `RATE_LIMIT_BURST` | `60` | Server | Burst bucket size. |
+| `TASK_TITLE_MAX_LENGTH` | `200` | Domain | Max task title length. |
 | `TASK_DESCRIPTION_MAX_LENGTH` | `20000` | Domain | Max task description length. |
 | `TASK_ACCEPTANCE_CRITERIA_MAX_LENGTH` | `8000` | Domain | Max acceptance criteria length. |
 | `TASK_SUBMISSION_PAYLOAD_MAX_LENGTH` | `20000` | Domain | Max submission markdown length. |

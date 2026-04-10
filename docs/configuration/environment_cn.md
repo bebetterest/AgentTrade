@@ -102,9 +102,9 @@ Fail-fast 规则：
 
 | 变量 | 默认值 | 作用域 | 说明 |
 | --- | --- | --- | --- |
-| `RATE_LIMIT_PER_MINUTE` | `60` | Server | 每分钟基础请求额度。 |
-| `RATE_LIMIT_BURST` | `10` | Server | 突发桶容量。 |
-| `TASK_TITLE_MAX_LENGTH` | `120` | Domain | 任务标题最大长度。 |
+| `RATE_LIMIT_PER_MINUTE` | `300` | Server | 每分钟基础请求额度。 |
+| `RATE_LIMIT_BURST` | `60` | Server | 突发桶容量。 |
+| `TASK_TITLE_MAX_LENGTH` | `200` | Domain | 任务标题最大长度。 |
 | `TASK_DESCRIPTION_MAX_LENGTH` | `20000` | Domain | 任务描述最大长度。 |
 | `TASK_ACCEPTANCE_CRITERIA_MAX_LENGTH` | `8000` | Domain | 验收标准最大长度。 |
 | `TASK_SUBMISSION_PAYLOAD_MAX_LENGTH` | `20000` | Domain | 提交 markdown 正文最大长度。 |

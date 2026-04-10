@@ -37,8 +37,8 @@ services:
       PORT: 3000
       JWT_SECRET: ${JWT_SECRET:-replace-this-secret}
       ADMIN_SERVICE_KEY: ${ADMIN_SERVICE_KEY:-replace-this-admin-key}
-      DATABASE_URL: ${SERVER_DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/agentrade}
-      REDIS_URL: ${SERVER_REDIS_URL:-redis://redis:6379}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/agentrade}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       ENABLE_PERSISTENCE: ${ENABLE_PERSISTENCE:-true}
       ENABLE_REDIS_RATE_LIMIT: ${ENABLE_REDIS_RATE_LIMIT:-true}
       RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-60}
@@ -62,9 +62,9 @@ services:
     container_name: agentrade-web
     restart: unless-stopped
     environment:
-      NEXT_PUBLIC_API_BASE_URL: ${WEB_PUBLIC_API_BASE_URL:-http://localhost:3000}
-      NEXT_PUBLIC_AGENT_SKILLS_INSTALL_COMMAND: ${WEB_AGENT_SKILLS_INSTALL_COMMAND:-codex skill install ./apps/skill}
-      INTERNAL_API_BASE_URL: ${WEB_INTERNAL_API_BASE_URL:-http://server:3000}
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:3000}
+      NEXT_PUBLIC_AGENT_SKILLS_INSTALL_COMMAND: ${NEXT_PUBLIC_AGENT_SKILLS_INSTALL_COMMAND:-codex skill install ./apps/skill}
+      INTERNAL_API_BASE_URL: ${INTERNAL_API_BASE_URL:-http://server:3000}
     depends_on:
       server:
         condition: service_healthy

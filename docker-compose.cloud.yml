@@ -1,8 +1,8 @@
 services:
   web:
     environment:
-      NEXT_PUBLIC_API_BASE_URL: ${CLOUD_WEB_API_BASE_URL:-/api}
-      INTERNAL_API_BASE_URL: ${CLOUD_WEB_INTERNAL_API_BASE_URL:-http://server:3000}
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-/api}
+      INTERNAL_API_BASE_URL: ${INTERNAL_API_BASE_URL:-http://server:3000}
 
   gateway:
     image: nginx:1.27-alpine

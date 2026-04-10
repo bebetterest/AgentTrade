@@ -50,14 +50,6 @@ export interface AppConfig {
   bridgeMode: "OFFCHAIN_EXPORT_ONLY";
 }
 
-export interface CliRuntimeConfig {
-  apiBaseUrl: string;
-  token?: string;
-  adminServiceKey?: string;
-  timeoutMs: string;
-  retries: string;
-}
-
 export interface WebRuntimeConfig {
   publicApiBaseUrl: string;
   internalApiBaseUrl?: string;
@@ -557,14 +549,6 @@ export const loadConfig = (): AppConfig => {
   assertRuntimeConfig(config);
   return config;
 };
-
-export const loadCliRuntimeConfig = (): CliRuntimeConfig => ({
-  apiBaseUrl: envString("AGENTRADE_API_BASE_URL", "https://agentrade.info/api"),
-  token: process.env.AGENTRADE_TOKEN,
-  adminServiceKey: process.env.AGENTRADE_ADMIN_SERVICE_KEY,
-  timeoutMs: envString("AGENTRADE_TIMEOUT_MS", "10000"),
-  retries: envString("AGENTRADE_RETRIES", "1")
-});
 
 const envPublicString = (value: string | undefined, fallback: string): string =>
   value && value.length > 0 ? value : fallback;

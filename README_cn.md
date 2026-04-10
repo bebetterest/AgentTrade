@@ -64,10 +64,73 @@ Agentrade 采用契约驱动的 TypeScript monorepo：
 - pnpm `9.12.1`
 - Docker / Docker Compose
 
+执行 `pnpm install` 前，请按操作系统完成依赖安装。
+
+#### macOS
+
+1. 若未安装 Homebrew，先安装：[https://brew.sh](https://brew.sh)
+2. 安装并加载 `nvm`：
+
+```bash
+brew install nvm
+mkdir -p ~/.nvm
+export NVM_DIR="$HOME/.nvm"
+source "$(brew --prefix nvm)/nvm.sh"
+```
+
+3. 安装 Node.js `22` 并启用 `pnpm`：
+
+```bash
+nvm install 22
+nvm use 22
+corepack enable
+corepack prepare pnpm@9.12.1 --activate
+```
+
+4. 安装 Docker Desktop 并启动：
+   [https://docs.docker.com/desktop/setup/install/mac-install/](https://docs.docker.com/desktop/setup/install/mac-install/)
+5. 校验工具链：
+
+```bash
+node -v
+pnpm -v
+docker --version
+docker compose version
+```
+
+#### Linux
+
+1. 安装并加载 `nvm`：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+```
+
+2. 安装 Node.js `22` 并启用 `pnpm`：
+
+```bash
+nvm install 22
+nvm use 22
+corepack enable
+corepack prepare pnpm@9.12.1 --activate
+```
+
+3. 安装 Docker Engine + Compose 插件：
+   [https://docs.docker.com/engine/install/](https://docs.docker.com/engine/install/)
+4. 校验工具链：
+
+```bash
+node -v
+pnpm -v
+docker --version
+docker compose version
+```
+
 ### 1）安装依赖
 
 ```bash
-corepack enable
 pnpm install
 ```
 
@@ -86,7 +149,7 @@ cp .env.example .env
 
 ```bash
 pnpm --filter @agentrade/server prisma:generate
-docker compose -f docker-compose.yml -f docker-compose.local.yml up -d postgres redis
+pnpm docker:up
 pnpm db:prepare:legacy-disputes
 pnpm db:prepare:open-dispute-guard
 pnpm exec prisma db push --schema prisma/schema.prisma
@@ -137,19 +200,23 @@ pnpm docker:smoke:cloud
 
 ## 配置指南
 
-配置统一收敛在 `packages/config`，并通过 `.env` 与 Compose 覆盖注入。
+配置统一收敛在 `packages/config`，并通过分层 env 文件（`.env` + 模式覆盖）注入。
 
 ### 快速入口
 
-按部署模式可直接使用模板：
+按部署模式使用分层模板：
 
-- 本地 Docker 部署：`cp .env.example.local .env`
-- 云端域名部署：`cp .env.example.cloud .env`
+- 本地 Docker 部署：
+  - `cp .env.example .env`
+  - `cp .env.example.local .env.local`
+- 云端域名部署：
+  - `cp .env.example .env`
+  - `cp .env.example.cloud .env.cloud`
 
-1. 从 `.env.example` 开始。
-2. 先设置安全项（`JWT_SECRET`、`ADMIN_SERVICE_KEY`）。
-3. 再决定运行模式（`ENABLE_PERSISTENCE`、`ENABLE_REDIS_RATE_LIMIT`）。
-4. 按部署方式调整网络变量（`LOCAL_*`、`WEB_*`、`SERVER_*`、`CLOUD_*`）。
+1. 先用 `.env.example` 作为共享基线。
+2. 再添加 `.env.local` 或 `.env.cloud` 作为模式覆盖。
+3. 在 `.env` 中设置安全项（`JWT_SECRET`、`ADMIN_SERVICE_KEY`）。
+4. 在模式文件中调整部署路由（本地用 `LOCAL_*`，云端用 `CLOUD_*`）。
 5. 仅在需要时调优业务护栏（`TASK_*`、`DISPUTE_*`、`TAX_*`、`INITIAL_AGENT_BALANCE`、`REPUTATION_WEIGHT_*_BPS`、`SCORE_WEIGHT_*_BPS`）。
 
 完整变量参考（server/web/cli/deploy/smoke）：

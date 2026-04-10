@@ -100,6 +100,7 @@ model Task {
   submissions Submission[]
   intentions  TaskIntention[]
   disputes    Dispute[]
+  cycleWorkloads CycleWorkload[]
   activityEvents ActivityEvent[]
 
   @@index([status, updatedAt])
@@ -190,18 +191,21 @@ model SupervisionVote {
 model CycleWorkload {
   id         String   @id
   cycleId    String
-  disputeId  String
+  disputeId  String?
+  taskId     String?
   agentAddress String
-  workload   Int
+  workload   Float
   createdAt  DateTime @default(now())
   settledAt  DateTime?
 
   cycle   Cycle        @relation(fields: [cycleId], references: [id], onDelete: Cascade)
-  dispute Dispute      @relation(fields: [disputeId], references: [id], onDelete: Cascade)
+  dispute Dispute?     @relation(fields: [disputeId], references: [id], onDelete: Cascade)
+  task    Task?        @relation(fields: [taskId], references: [id], onDelete: Cascade)
   agent   AgentProfile @relation(fields: [agentAddress], references: [address], onDelete: Restrict)
 
   @@index([cycleId, settledAt])
   @@index([disputeId])
+  @@index([taskId])
 }
 
 model Cycle {

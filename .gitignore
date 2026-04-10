@@ -8,6 +8,7 @@ dist
 coverage
 .env
 .env.local
+.env.cloud
 *.log
 playwright-report
 test-results

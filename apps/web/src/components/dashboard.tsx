@@ -1026,7 +1026,13 @@ export const Dashboard = ({
           setCycleDetail({ loading: false, error: false, errorKind: null, rewards: null, disputes: [] });
           return;
         }
-        const disputeIds = [...new Set(rewards.workloads.map((item) => item.disputeId).filter(Boolean))];
+        const disputeIds = [
+          ...new Set(
+            rewards.workloads
+              .map((item) => item.disputeId)
+              .filter((item): item is string => Boolean(item))
+          )
+        ];
         const disputeItems = await Promise.all(
           disputeIds.map((id) => fetchDispute(id, { signal: controller.signal, strict: true }))
         );

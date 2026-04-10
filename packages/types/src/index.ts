@@ -146,7 +146,8 @@ export interface SupervisionVote {
 export interface CycleWorkload {
   id: string;
   cycleId: string;
-  disputeId: string;
+  disputeId: string | null;
+  taskId?: string | null;
   agent: Address;
   workload: number;
   createdAt: IsoDateString;

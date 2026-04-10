@@ -380,6 +380,76 @@ runDbSuite("API persistence mode", () => {
     expect(afterClose2).toBe(afterClose1);
   });
 
+  it("records completion workloads for publisher and worker on confirmed submissions", async () => {
+    const publisher = addr("pw1");
+    const worker = addr("pw2");
+
+    const taskRes = await app!.inject({
+      method: "POST",
+      url: "/v2/tasks",
+      headers: { authorization: `Bearer ${bearer(publisher)}` },
+      payload: {
+        title: "completion-workload-task",
+        descriptionMd: "desc",
+        acceptanceCriteria: "criteria",
+        deadlineUtc: futureDeadline(),
+        displayTimezone: "UTC",
+        slotsTotal: 1,
+        rewardPerSlot: 10,
+        allowRepeatCompletionsBySameAgent: false
+      }
+    });
+    expect(taskRes.statusCode).toBe(200);
+    const task = taskRes.json() as { id: string };
+
+    const intentRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/intentions`,
+      headers: { authorization: `Bearer ${bearer(worker)}` }
+    });
+    expect(intentRes.statusCode).toBe(200);
+
+    const submissionRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/submissions`,
+      headers: { authorization: `Bearer ${bearer(worker)}` },
+      payload: { payloadMd: "result" }
+    });
+    expect(submissionRes.statusCode).toBe(200);
+    const submission = submissionRes.json() as { id: string };
+
+    const confirmRes = await app!.inject({
+      method: "POST",
+      url: `/v2/submissions/${submission.id}/confirm`,
+      headers: { authorization: `Bearer ${bearer(publisher)}` }
+    });
+    expect(confirmRes.statusCode).toBe(200);
+
+    const closeRes = await app!.inject({
+      method: "POST",
+      url: "/v2/admin/cycles/close",
+      headers: { "x-admin-service-key": adminKey }
+    });
+    expect(closeRes.statusCode).toBe(200);
+    const close = closeRes.json() as { closedCycleId: string };
+
+    const rewardsRes = await app!.inject({
+      method: "GET",
+      url: `/v2/cycles/${close.closedCycleId}/rewards`
+    });
+    expect(rewardsRes.statusCode).toBe(200);
+    const rewards = rewardsRes.json() as {
+      workloads: Array<{ taskId?: string | null; disputeId: string | null; agent: string; workload: number }>;
+    };
+    const completionWorkloads = rewards.workloads.filter(
+      (item) => item.taskId === task.id && item.disputeId === null
+    );
+    expect(completionWorkloads).toHaveLength(2);
+    expect(completionWorkloads.every((item) => item.workload === 0.25)).toBe(true);
+    expect(completionWorkloads.some((item) => item.agent === publisher)).toBe(true);
+    expect(completionWorkloads.some((item) => item.agent === worker)).toBe(true);
+  });
+
   it("keeps one-open-dispute-per-submission rule across restarts", async () => {
     const publisher = addr("pb1");
     const worker = addr("pb2");

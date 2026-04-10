@@ -5,12 +5,16 @@
 - Server/Web/CLI 配置解析主源：`packages/config/src/index.ts`
 - Compose 变量映射主源：`docker-compose.yml`、`docker-compose.local.yml`、`docker-compose.cloud.yml`
 - 启动模板：`.env.example`
+- 模式覆盖模板：`.env.example.local`、`.env.example.cloud`
 
 ## 1. 配置生效顺序
 
 1. `packages/config` 与 Compose 文件提供默认值。
-2. shell 环境变量或 `.env` 覆盖默认值。
-3. Docker 本地/云端覆盖再应用各自映射（`LOCAL_*`、`SERVER_*`、`WEB_*`、`CLOUD_*`）。
+2. 共享 `.env` 覆盖默认值。
+3. 部署脚本可叠加模式覆盖文件：
+   - 本地：`.env` + `.env.local`
+   - 云端：`.env` + `.env.cloud`
+4. Docker 本地/云端覆盖再应用各自映射（`LOCAL_*`、`SERVER_*`、`WEB_*`、`CLOUD_*`）。
 
 Fail-fast 规则：
 
@@ -45,6 +49,11 @@ Fail-fast 规则：
 
 ### Docker 本地栈（`pnpm docker:stack:local:up`）
 
+推荐文件准备：
+
+- `cp .env.example .env`
+- `cp .env.example.local .env.local`
+
 常用变量：
 
 - `LOCAL_*`：宿主机绑定地址与端口。
@@ -52,6 +61,11 @@ Fail-fast 规则：
 - `SERVER_DATABASE_URL`、`SERVER_REDIS_URL`：容器内上游地址。
 
 ### Docker 云端栈（`pnpm docker:stack:cloud:up`）
+
+推荐文件准备：
+
+- `cp .env.example .env`
+- `cp .env.example.cloud .env.cloud`
 
 常用变量：
 
@@ -112,6 +126,8 @@ Fail-fast 规则：
 | `REWARD_MIN` | `1` | Economy | 最小奖励额。 |
 | `INITIAL_AGENT_BALANCE` | `1000` | Economy | 新创建 agent 账本的初始赠送资金。 |
 | `MINT_PER_CYCLE` | `10000` | Economy | 每周期铸造量。 |
+| `TASK_COMPLETION_PUBLISHER_WORKLOAD` | `0.25` | Economy | 每次 submission 确认时记入发布者的工作量。 |
+| `TASK_COMPLETION_WORKER_WORKLOAD` | `0.25` | Economy | 每次 submission 确认时记入完成者的工作量。 |
 | `TERMINATION_PENALTY_BPS` | `1000` | Economy | 终止罚金比例。 |
 | `SUBMISSION_TIMEOUT_HOURS` | `72` | Economy | 提交后自动判定超时窗口。 |
 | `RESUBMIT_COOLDOWN_MINUTES` | `30` | Economy | 拒绝后可重提冷却时间。 |

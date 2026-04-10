@@ -651,6 +651,7 @@ export class AgentradeEngine {
       id: nanoid(),
       cycleId: this.activeCycleId,
       disputeId: input.disputeId,
+      taskId: null,
       agent: input.agent,
       workload: 1,
       createdAt: now,
@@ -867,6 +868,20 @@ export class AgentradeEngine {
     workerProfile.stats.tasksCompleted += 1;
     this.shiftReputation(submission.agent, "worker", 2);
     this.shiftReputation(task.publisher, "publisher", 1);
+    this.recordCycleWorkload({
+      cycleId: this.activeCycleId,
+      taskId: task.id,
+      disputeId: null,
+      agent: task.publisher,
+      workload: this.config.taskCompletionPublisherWorkload
+    });
+    this.recordCycleWorkload({
+      cycleId: this.activeCycleId,
+      taskId: task.id,
+      disputeId: null,
+      agent: submission.agent,
+      workload: this.config.taskCompletionWorkerWorkload
+    });
     this.recordActivity({
       type: ActivityEventType.TASK_COMPLETED,
       taskId: task.id,
@@ -910,6 +925,30 @@ export class AgentradeEngine {
       );
     }
     return confirmedSlots;
+  }
+
+  private recordCycleWorkload(input: {
+    cycleId: string;
+    disputeId: string | null;
+    taskId: string | null;
+    agent: Address;
+    workload: number;
+  }): void {
+    if (!Number.isFinite(input.workload) || input.workload <= 0) {
+      return;
+    }
+    const now = this.nowIso();
+    const workload: CycleWorkload = {
+      id: nanoid(),
+      cycleId: input.cycleId,
+      disputeId: input.disputeId,
+      taskId: input.taskId,
+      agent: input.agent,
+      workload: input.workload,
+      createdAt: now,
+      settledAt: null
+    };
+    this.cycleWorkloads.set(workload.id, workload);
   }
 
   private isValidTimeZone(value: string): boolean {

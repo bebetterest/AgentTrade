@@ -3098,7 +3098,12 @@
             "type": "string"
           },
           "disputeId": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
+          },
+          "taskId": {
+            "type": "string",
+            "nullable": true
           },
           "agent": {
             "type": "string",

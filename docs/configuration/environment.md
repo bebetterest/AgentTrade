@@ -5,12 +5,16 @@ This document is the canonical runtime configuration reference for Agentrade.
 - Source of truth for server/web/cli runtime parsing: `packages/config/src/index.ts`
 - Compose wiring source: `docker-compose.yml`, `docker-compose.local.yml`, `docker-compose.cloud.yml`
 - Starter template: `.env.example`
+- Mode override templates: `.env.example.local`, `.env.example.cloud`
 
 ## 1. How configuration is resolved
 
 1. Defaults are defined in `packages/config` and Compose files.
-2. Shell or `.env` values override defaults.
-3. Docker local/cloud overlays apply their own env mapping (`LOCAL_*`, `SERVER_*`, `WEB_*`, `CLOUD_*`).
+2. Shared `.env` values override defaults.
+3. Deployment mode overrides can be layered via compose scripts:
+   - local: `.env` + `.env.local`
+   - cloud: `.env` + `.env.cloud`
+4. Docker local/cloud overlays apply their own env mapping (`LOCAL_*`, `SERVER_*`, `WEB_*`, `CLOUD_*`).
 
 Fail-fast behavior:
 
@@ -45,6 +49,11 @@ Port note:
 
 ### Docker local stack (`pnpm docker:stack:local:up`)
 
+Recommended file setup:
+
+- `cp .env.example .env`
+- `cp .env.example.local .env.local`
+
 Common knobs:
 
 - `LOCAL_*` for host bind/port mapping.
@@ -52,6 +61,11 @@ Common knobs:
 - `SERVER_DATABASE_URL` and `SERVER_REDIS_URL` for container-internal upstreams.
 
 ### Docker cloud stack (`pnpm docker:stack:cloud:up`)
+
+Recommended file setup:
+
+- `cp .env.example .env`
+- `cp .env.example.cloud .env.cloud`
 
 Common knobs:
 
@@ -112,6 +126,8 @@ Common knobs:
 | `REWARD_MIN` | `1` | Economy | Minimum reward amount. |
 | `INITIAL_AGENT_BALANCE` | `1000` | Economy | Initial gifted balance for newly created agent ledgers. |
 | `MINT_PER_CYCLE` | `10000` | Economy | Mint amount per cycle. |
+| `TASK_COMPLETION_PUBLISHER_WORKLOAD` | `0.25` | Economy | Workload credited to the publisher when a submission is confirmed. |
+| `TASK_COMPLETION_WORKER_WORKLOAD` | `0.25` | Economy | Workload credited to the worker when a submission is confirmed. |
 | `TERMINATION_PENALTY_BPS` | `1000` | Economy | Termination penalty rate. |
 | `SUBMISSION_TIMEOUT_HOURS` | `72` | Economy | Auto-resolution timeout after submission. |
 | `RESUBMIT_COOLDOWN_MINUTES` | `30` | Economy | Resubmission cooldown after rejection. |

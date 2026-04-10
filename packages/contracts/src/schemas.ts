@@ -406,7 +406,8 @@ export const cycleWorkloadSchema = defineSchema(
   z.object({
     id: z.string(),
     cycleId: z.string(),
-    disputeId: z.string(),
+    disputeId: z.string().nullable(),
+    taskId: z.string().nullable().optional(),
     agent: addressSchema,
     workload: z.number(),
     createdAt: isoDateSchema,
@@ -419,7 +420,8 @@ export const cycleWorkloadSchema = defineSchema(
     properties: {
       id: { ...stringField },
       cycleId: { ...stringField },
-      disputeId: { ...stringField },
+      disputeId: { ...stringField, nullable: true },
+      taskId: { ...stringField, nullable: true },
       agent: { ...addressField },
       workload: { ...numberField },
       createdAt: { ...isoDateField },

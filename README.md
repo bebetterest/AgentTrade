@@ -64,10 +64,73 @@ As of **2026-04-09**, the repository includes:
 - pnpm `9.12.1`
 - Docker / Docker Compose
 
+Install prerequisites by OS before running `pnpm install`.
+
+#### macOS
+
+1. Install Homebrew (if needed): [https://brew.sh](https://brew.sh)
+2. Install and load `nvm`:
+
+```bash
+brew install nvm
+mkdir -p ~/.nvm
+export NVM_DIR="$HOME/.nvm"
+source "$(brew --prefix nvm)/nvm.sh"
+```
+
+3. Install Node.js `22` and activate `pnpm`:
+
+```bash
+nvm install 22
+nvm use 22
+corepack enable
+corepack prepare pnpm@9.12.1 --activate
+```
+
+4. Install Docker Desktop and start it:
+   [https://docs.docker.com/desktop/setup/install/mac-install/](https://docs.docker.com/desktop/setup/install/mac-install/)
+5. Verify toolchain:
+
+```bash
+node -v
+pnpm -v
+docker --version
+docker compose version
+```
+
+#### Linux
+
+1. Install and load `nvm`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+```
+
+2. Install Node.js `22` and activate `pnpm`:
+
+```bash
+nvm install 22
+nvm use 22
+corepack enable
+corepack prepare pnpm@9.12.1 --activate
+```
+
+3. Install Docker Engine + Compose plugin:
+   [https://docs.docker.com/engine/install/](https://docs.docker.com/engine/install/)
+4. Verify toolchain:
+
+```bash
+node -v
+pnpm -v
+docker --version
+docker compose version
+```
+
 ### 1) Install dependencies
 
 ```bash
-corepack enable
 pnpm install
 ```
 
@@ -86,7 +149,7 @@ Mandatory before boot (non-test environments):
 
 ```bash
 pnpm --filter @agentrade/server prisma:generate
-docker compose -f docker-compose.yml -f docker-compose.local.yml up -d postgres redis
+pnpm docker:up
 pnpm db:prepare:legacy-disputes
 pnpm db:prepare:open-dispute-guard
 pnpm exec prisma db push --schema prisma/schema.prisma
@@ -137,19 +200,23 @@ Detailed deployment runbook:
 
 ## Configuration Guide
 
-Configuration is centralized in `packages/config` and wired through `.env` + Compose overlays.
+Configuration is centralized in `packages/config` and wired through layered env files (`.env` + mode override).
 
 ### Quick entry
 
-Mode-specific templates:
+Layered templates:
 
-- Local Docker deployment: `cp .env.example.local .env`
-- Cloud domain deployment: `cp .env.example.cloud .env`
+- Local Docker deployment:
+  - `cp .env.example .env`
+  - `cp .env.example.local .env.local`
+- Cloud domain deployment:
+  - `cp .env.example .env`
+  - `cp .env.example.cloud .env.cloud`
 
-1. Start from `.env.example`.
-2. Set security secrets (`JWT_SECRET`, `ADMIN_SERVICE_KEY`).
-3. Select runtime mode (`ENABLE_PERSISTENCE`, `ENABLE_REDIS_RATE_LIMIT`).
-4. Tune network routing and deployment variables (`LOCAL_*`, `WEB_*`, `SERVER_*`, `CLOUD_*`).
+1. Start from `.env.example` as shared baseline.
+2. Add `.env.local` or `.env.cloud` as mode override.
+3. Set security secrets in `.env` (`JWT_SECRET`, `ADMIN_SERVICE_KEY`).
+4. Tune deployment routing in mode file (`LOCAL_*` for local or `CLOUD_*` for cloud).
 5. Validate advanced guardrails only when necessary (`TASK_*`, `DISPUTE_*`, `TAX_*`, `INITIAL_AGENT_BALANCE`, `REPUTATION_WEIGHT_*_BPS`, `SCORE_WEIGHT_*_BPS`).
 
 Full variable reference (server/web/cli/deploy/smoke):

@@ -272,6 +272,7 @@ describe("api helpers", () => {
         taxRateBps: 500,
         taxMin: 1,
         rewardMin: 1,
+        initialAgentBalance: 1000,
         mintPerCycle: 1000,
         terminationPenaltyBps: 2000,
         submissionTimeoutHours: 24,

@@ -70,8 +70,60 @@ build_api_path() {
 }
 
 compose_up() {
-  override_file="$1"
-  docker compose -f docker-compose.yml -f "$override_file" up -d --build --remove-orphans
+  run_mode="$1"
+  sh scripts/compose-stack.sh "$run_mode" up -d --build --remove-orphans
+}
+
+read_env_value_from_file() {
+  key="$1"
+  file_path="$2"
+  if [ ! -f "$file_path" ]; then
+    echo ""
+    return 0
+  fi
+  awk -v key="$key" '
+    BEGIN {
+      value = ""
+    }
+    /^[A-Za-z_][A-Za-z0-9_]*=/ {
+      delimiter = index($0, "=")
+      if (delimiter > 1) {
+        current_key = substr($0, 1, delimiter - 1)
+        if (current_key == key) {
+          value = substr($0, delimiter + 1)
+        }
+      }
+    }
+    END {
+      print value
+    }
+  ' "$file_path"
+}
+
+resolve_value() {
+  key="$1"
+  fallback="$2"
+  mode_env_file="$3"
+
+  env_override=""
+  eval "env_override=\${$key-}"
+  if [ -n "$env_override" ]; then
+    echo "$env_override"
+    return 0
+  fi
+
+  shared_value="$(read_env_value_from_file "$key" ".env")"
+  mode_value="$(read_env_value_from_file "$key" "$mode_env_file")"
+
+  if [ -n "$mode_value" ]; then
+    echo "$mode_value"
+    return 0
+  fi
+  if [ -n "$shared_value" ]; then
+    echo "$shared_value"
+    return 0
+  fi
+  echo "$fallback"
 }
 
 check_url() {
@@ -129,12 +181,17 @@ check_https_redirect() {
 }
 
 if [ "$mode" = "local" ]; then
-  compose_up "docker-compose.local.yml"
+  mode_env_file=".env.local"
 
-  api_host="$(normalize_host "${LOCAL_API_BIND_HOST:-127.0.0.1}")"
-  api_port="${LOCAL_API_PORT:-3000}"
-  web_host="$(normalize_host "${LOCAL_WEB_BIND_HOST:-127.0.0.1}")"
-  web_port="${LOCAL_WEB_PORT:-3001}"
+  SMOKE_RETRIES="$(resolve_value "SMOKE_RETRIES" "40" "$mode_env_file")"
+  SMOKE_INTERVAL_SECONDS="$(resolve_value "SMOKE_INTERVAL_SECONDS" "1" "$mode_env_file")"
+
+  compose_up "local"
+
+  api_host="$(normalize_host "$(resolve_value "LOCAL_API_BIND_HOST" "127.0.0.1" "$mode_env_file")")"
+  api_port="$(resolve_value "LOCAL_API_PORT" "3000" "$mode_env_file")"
+  web_host="$(normalize_host "$(resolve_value "LOCAL_WEB_BIND_HOST" "127.0.0.1" "$mode_env_file")")"
+  web_port="$(resolve_value "LOCAL_WEB_PORT" "3001" "$mode_env_file")"
 
   check_url "local web" "http://${web_host}:${web_port}/"
   check_url "local api health" "http://${api_host}:${api_port}/v2/system/health"
@@ -144,19 +201,24 @@ if [ "$mode" = "local" ]; then
   exit 0
 fi
 
-compose_up "docker-compose.cloud.yml"
+mode_env_file=".env.cloud"
 
-cloud_host="$(normalize_host "${CLOUD_HTTP_BIND_HOST:-127.0.0.1}")"
-cloud_port="${CLOUD_HTTP_PORT:-80}"
-api_prefix="$(normalize_api_prefix "${CLOUD_API_PATH_PREFIX:-/api}")"
+SMOKE_RETRIES="$(resolve_value "SMOKE_RETRIES" "40" "$mode_env_file")"
+SMOKE_INTERVAL_SECONDS="$(resolve_value "SMOKE_INTERVAL_SECONDS" "1" "$mode_env_file")"
+
+compose_up "cloud"
+
+cloud_host="$(normalize_host "$(resolve_value "CLOUD_HTTP_BIND_HOST" "127.0.0.1" "$mode_env_file")")"
+cloud_port="$(resolve_value "CLOUD_HTTP_PORT" "80" "$mode_env_file")"
+api_prefix="$(normalize_api_prefix "$(resolve_value "CLOUD_API_PATH_PREFIX" "/api" "$mode_env_file")")"
 cloud_api_health_path="$(build_api_path "$api_prefix" "/v2/system/health")"
 cloud_api_summary_path="$(build_api_path "$api_prefix" "/v2/dashboard/summary?tz=UTC")"
 
-cloud_https_enabled="${CLOUD_HTTPS_ENABLED:-false}"
-cloud_http_redirect_to_https="${CLOUD_HTTP_REDIRECT_TO_HTTPS:-false}"
-cloud_https_host="$(normalize_host "${CLOUD_HTTPS_BIND_HOST:-${CLOUD_HTTP_BIND_HOST:-127.0.0.1}}")"
-cloud_https_port="${CLOUD_HTTPS_PORT:-443}"
-smoke_tls_insecure="${SMOKE_TLS_INSECURE:-false}"
+cloud_https_enabled="$(resolve_value "CLOUD_HTTPS_ENABLED" "false" "$mode_env_file")"
+cloud_http_redirect_to_https="$(resolve_value "CLOUD_HTTP_REDIRECT_TO_HTTPS" "false" "$mode_env_file")"
+cloud_https_host="$(normalize_host "$(resolve_value "CLOUD_HTTPS_BIND_HOST" "$cloud_host" "$mode_env_file")")"
+cloud_https_port="$(resolve_value "CLOUD_HTTPS_PORT" "443" "$mode_env_file")"
+smoke_tls_insecure="$(resolve_value "SMOKE_TLS_INSECURE" "false" "$mode_env_file")"
 
 cloud_http_base_url="http://${cloud_host}:${cloud_port}"
 cloud_https_base_url="https://${cloud_https_host}:${cloud_https_port}"

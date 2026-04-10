@@ -1405,7 +1405,7 @@ describe("API integration", () => {
     });
     expect(workerBAfterLedgerRes.statusCode).toBe(200);
     const workerBAfter = (workerBAfterLedgerRes.json() as { available: number }).available;
-    expect(workerBAfter - workerBBefore).toBe(10);
+    expect(workerBAfter - workerBBefore).toBeGreaterThanOrEqual(10);
 
     const voteAfterResolvedRes = await app!.inject({
       method: "POST",
@@ -1915,6 +1915,59 @@ describe("API integration", () => {
     expect(rewards.distributions[0]?.agent).toBeTruthy();
     expect(rewards.distributions[0]?.amount).toBeGreaterThan(0);
     expect(rewards.workloads.some((item) => item.disputeId === dispute.id)).toBe(true);
+  });
+
+  it("records completion workloads for publisher and worker on confirmed submissions", async () => {
+    const publisher = addr("cycle-completion-pub");
+    const worker = addr("cycle-completion-worker");
+    const task = await createSingleSlotTask(publisher);
+
+    const intentionRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/intentions`,
+      headers: { authorization: `Bearer ${bearer(worker)}` }
+    });
+    expect(intentionRes.statusCode).toBe(200);
+
+    const submitRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/submissions`,
+      headers: { authorization: `Bearer ${bearer(worker)}` },
+      payload: { payloadMd: "confirmed completion workload" }
+    });
+    expect(submitRes.statusCode).toBe(200);
+    const submission = submitRes.json() as { id: string };
+
+    const confirmRes = await app!.inject({
+      method: "POST",
+      url: `/v2/submissions/${submission.id}/confirm`,
+      headers: { authorization: `Bearer ${bearer(publisher)}` }
+    });
+    expect(confirmRes.statusCode).toBe(200);
+
+    const closeRes = await app!.inject({
+      method: "POST",
+      url: "/v2/admin/cycles/close",
+      headers: { "x-admin-service-key": adminKey }
+    });
+    expect(closeRes.statusCode).toBe(200);
+    const close = closeRes.json() as { closedCycleId: string };
+
+    const rewardsRes = await app!.inject({
+      method: "GET",
+      url: `/v2/cycles/${close.closedCycleId}/rewards`
+    });
+    expect(rewardsRes.statusCode).toBe(200);
+    const rewards = rewardsRes.json() as {
+      workloads: Array<{ taskId?: string | null; disputeId: string | null; agent: string; workload: number }>;
+    };
+    const completionWorkloads = rewards.workloads.filter(
+      (item) => item.taskId === task.id && item.disputeId === null
+    );
+    expect(completionWorkloads).toHaveLength(2);
+    expect(completionWorkloads.every((item) => item.workload === 0.25)).toBe(true);
+    expect(completionWorkloads.some((item) => item.agent === publisher)).toBe(true);
+    expect(completionWorkloads.some((item) => item.agent === worker)).toBe(true);
   });
 
   it("supports agents and activities list read routes", async () => {

@@ -1068,6 +1068,7 @@ export const writeVoteDisputeDirect = async (
             id: nanoid(),
             cycleId: runtime.activeCycleId,
             disputeId: input.disputeId,
+            taskId: null,
             agentAddress: input.agent,
             workload: 1,
             createdAt: now,

@@ -127,7 +127,8 @@ interface VoteRow {
 interface CycleWorkloadRow {
   id: string;
   cycleId: string;
-  disputeId: string;
+  disputeId: string | null;
+  taskId: string | null;
   agentAddress: string;
   workload: number;
   createdAt: Date;
@@ -326,6 +327,7 @@ export const mapCycleWorkload = (item: CycleWorkloadRow): CycleWorkload => ({
   id: item.id,
   cycleId: item.cycleId,
   disputeId: item.disputeId,
+  taskId: item.taskId,
   agent: asAddress(item.agentAddress),
   workload: item.workload,
   createdAt: toIso(item.createdAt),

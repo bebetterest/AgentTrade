@@ -33,6 +33,8 @@ export interface AppConfig {
   rewardMin: number;
   initialAgentBalance: number;
   mintPerCycle: number;
+  taskCompletionPublisherWorkload: number;
+  taskCompletionWorkerWorkload: number;
   terminationPenaltyBps: number;
   submissionTimeoutHours: number;
   resubmitCooldownMinutes: number;
@@ -308,6 +310,8 @@ export const defaultConfig: AppConfig = {
   rewardMin: 1,
   initialAgentBalance: 1_000,
   mintPerCycle: 10000,
+  taskCompletionPublisherWorkload: 0.25,
+  taskCompletionWorkerWorkload: 0.25,
   terminationPenaltyBps: 1000,
   submissionTimeoutHours: 72,
   resubmitCooldownMinutes: 30,
@@ -482,6 +486,16 @@ export const loadConfig = (): AppConfig => {
       integer: true,
       min: 0
     }),
+    taskCompletionPublisherWorkload: envNumberStrict(
+      "TASK_COMPLETION_PUBLISHER_WORKLOAD",
+      defaultConfig.taskCompletionPublisherWorkload,
+      { min: 0 }
+    ),
+    taskCompletionWorkerWorkload: envNumberStrict(
+      "TASK_COMPLETION_WORKER_WORKLOAD",
+      defaultConfig.taskCompletionWorkerWorkload,
+      { min: 0 }
+    ),
     terminationPenaltyBps: envNumberStrict(
       "TERMINATION_PENALTY_BPS",
       defaultConfig.terminationPenaltyBps,

@@ -69,7 +69,13 @@ export default async function CycleDetailPage({ params }: CycleDetailPageProps) 
   try {
     rewards = await fetchCycleRewards(id, { strict: true });
     if (rewards) {
-      const disputeIds = [...new Set(rewards.workloads.map((item) => item.disputeId).filter(Boolean))];
+      const disputeIds = [
+        ...new Set(
+          rewards.workloads
+            .map((item) => item.disputeId)
+            .filter((item): item is string => Boolean(item))
+        )
+      ];
       const disputeResults = await Promise.allSettled(
         disputeIds.map((disputeId) => fetchDispute(disputeId, { strict: true }))
       );

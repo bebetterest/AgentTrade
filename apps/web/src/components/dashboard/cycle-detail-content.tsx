@@ -183,7 +183,7 @@ export const CycleDetailContent = ({
                 {visibleWorkloadItems.map((item) => (
                   <tr key={item.id}>
                     <td>{renderAddress(item.agent, onOpenAgentDetail, getAgentHref)}</td>
-                    <td>{item.disputeId}</td>
+                    <td>{item.disputeId ?? "-"}</td>
                     <td className="table-col--number">{item.workload}</td>
                     <td className="table-col--time">{formatDateTime(item.createdAt, locale, timeZone)}</td>
                     <td className="table-col--time">{item.settledAt ? formatDateTime(item.settledAt, locale, timeZone) : "-"}</td>

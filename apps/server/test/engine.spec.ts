@@ -340,6 +340,39 @@ describe("AgentradeEngine disputes and cycle settlement", () => {
     expect(() => engine.addTaskIntention(task.id, worker)).toThrowError(/not open for intentions/i);
   });
 
+  it("adds publisher and worker cycle workloads on each confirmed task completion", () => {
+    const { engine, clock } = makeEngine();
+    const publisher = addr("wc1");
+    const worker = addr("wc2");
+    const task = engine.publishTask({
+      publisher,
+      title: "Task workload completion",
+      descriptionMd: "desc",
+      acceptanceCriteria: "accept",
+      deadlineUtc: "2026-04-05T00:00:00.000Z",
+      displayTimezone: "UTC",
+      slotsTotal: 2,
+      rewardPerSlot: 10,
+      allowRepeatCompletionsBySameAgent: true
+    });
+    engine.addTaskIntention(task.id, worker);
+    const firstSubmission = engine.submitTask(task.id, worker, "first");
+    engine.confirmSubmission(firstSubmission.id, publisher);
+    clock.advanceMinutes(31);
+    const secondSubmission = engine.submitTask(task.id, worker, "second");
+    engine.confirmSubmission(secondSubmission.id, publisher);
+
+    const close = engine.closeCurrentCycle();
+    const rewards = engine.getCycleRewards(close.closedCycleId);
+    const completionWorkloads = rewards.workloads.filter(
+      (item) => item.taskId === task.id && item.disputeId === null
+    );
+    expect(completionWorkloads).toHaveLength(4);
+    expect(completionWorkloads.every((item) => item.workload === 0.25)).toBe(true);
+    expect(completionWorkloads.filter((item) => item.agent === publisher)).toHaveLength(2);
+    expect(completionWorkloads.filter((item) => item.agent === worker)).toHaveLength(2);
+  });
+
   it("requires submission to be rejected before dispute can be opened", () => {
     const { engine, clock } = makeEngine();
     const publisher = addr("dsp1");

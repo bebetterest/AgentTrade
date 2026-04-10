@@ -1,5 +1,6 @@
 import { Prisma, PrismaClient } from "@prisma/client";
 import { defaultConfig, type AppConfig } from "@agentrade/config";
+import { nanoid } from "nanoid";
 import type { EngineStateSnapshot } from "../domain/engine.js";
 import {
   type ActivityEvent,
@@ -1001,6 +1002,22 @@ export class PrismaStateRepository {
     await this.applyProfileDeltaWithTx(tx, asAddress(task.publisherAddress), now, {
       publisherReputationDelta: 1
     });
+    await this.recordCycleWorkloadWithTx(tx, {
+      cycleId,
+      disputeId: null,
+      taskId: task.id,
+      agent: asAddress(task.publisherAddress),
+      workload: this.config.taskCompletionPublisherWorkload,
+      createdAt: now
+    });
+    await this.recordCycleWorkloadWithTx(tx, {
+      cycleId,
+      disputeId: null,
+      taskId: task.id,
+      agent: submissionAgent,
+      workload: this.config.taskCompletionWorkerWorkload,
+      createdAt: now
+    });
     await this.appendActivityEventWithTx(tx, {
       type: DomainActivityEventType.TASK_COMPLETED,
       cycleId,
@@ -1008,6 +1025,34 @@ export class PrismaStateRepository {
       disputeId: null,
       actor,
       createdAt: now
+    });
+  }
+
+  private async recordCycleWorkloadWithTx(
+    tx: Prisma.TransactionClient,
+    input: {
+      cycleId: string;
+      disputeId: string | null;
+      taskId: string | null;
+      agent: Address;
+      workload: number;
+      createdAt: Date;
+    }
+  ): Promise<void> {
+    if (!Number.isFinite(input.workload) || input.workload <= 0) {
+      return;
+    }
+    await tx.cycleWorkload.create({
+      data: {
+        id: nanoid(),
+        cycleId: input.cycleId,
+        disputeId: input.disputeId,
+        taskId: input.taskId,
+        agentAddress: input.agent,
+        workload: input.workload,
+        createdAt: input.createdAt,
+        settledAt: null
+      }
     });
   }
 
@@ -1384,6 +1429,7 @@ export class PrismaStateRepository {
           id: item.id,
           cycleId: item.cycleId,
           disputeId: item.disputeId,
+          taskId: item.taskId ?? null,
           agentAddress: item.agent,
           workload: item.workload,
           createdAt: toDate(item.createdAt),
@@ -1392,6 +1438,7 @@ export class PrismaStateRepository {
         update: {
           cycleId: item.cycleId,
           disputeId: item.disputeId,
+          taskId: item.taskId ?? null,
           agentAddress: item.agent,
           workload: item.workload,
           createdAt: toDate(item.createdAt),
@@ -1721,6 +1768,7 @@ export class PrismaStateRepository {
       id: item.id,
       cycleId: item.cycleId,
       disputeId: item.disputeId,
+      taskId: item.taskId,
       agent: asAddress(item.agentAddress),
       workload: item.workload,
       createdAt: toIso(item.createdAt),

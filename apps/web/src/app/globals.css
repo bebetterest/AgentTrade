@@ -2210,42 +2210,42 @@ button.inline-link {
   }
 
   .site-header--with-sections .site-header__inner {
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-areas:
-      "brand actions"
-      "nav nav";
-    row-gap: 10px;
-    column-gap: 10px;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: 8px;
+    row-gap: 0;
   }
 
   .site-header--with-sections .site-brand {
-    grid-area: brand;
+    grid-column: 1;
   }
 
   .site-header--with-sections .site-header__actions {
-    grid-area: actions;
+    grid-column: 3;
     justify-self: end;
-    gap: 8px;
+    gap: 6px;
   }
 
   .site-header--with-sections .site-nav--sections.site-nav--desktop {
-    grid-area: nav;
+    grid-column: 2;
     display: flex;
-    width: 100%;
+    width: auto;
+    min-width: 0;
     max-width: none;
     justify-content: flex-start;
     flex-wrap: nowrap;
     gap: 6px;
     overflow-x: auto;
-    padding: 2px 1px;
+    padding: 2px 0;
     scrollbar-width: thin;
     -webkit-overflow-scrolling: touch;
   }
 
   .site-header--with-sections .site-nav__section-tab {
     flex: 0 0 auto;
-    min-height: 38px;
-    padding: 7px 12px;
+    min-height: 36px;
+    padding: 6px 10px;
+    font-size: 0.88rem;
   }
 
   .hero-panel__stats,
@@ -2299,18 +2299,20 @@ button.inline-link {
   }
 
   .site-header--with-sections .site-header__actions {
-    gap: 6px;
+    gap: 4px;
   }
 
   .site-header--with-sections .site-nav--sections.site-nav--desktop {
-    gap: 5px;
-    padding-bottom: 1px;
+    gap: 4px;
+    padding: 1px 0;
   }
 
   .site-header--with-sections .site-nav__section-tab {
-    min-height: 34px;
-    padding: 6px 10px;
-    font-size: 0.9rem;
+    min-height: 32px;
+    padding: 5px 8px;
+    font-size: 0.82rem;
+    border-width: 2px !important;
+    box-shadow: 2px 2px 0 var(--border-primary) !important;
   }
 
   .site-brand {
@@ -2330,6 +2332,28 @@ button.inline-link {
   .site-header__actions {
     min-width: 0;
     gap: 6px;
+  }
+
+  .site-header--with-sections .site-refresh-btn {
+    min-width: 36px;
+    min-height: 36px;
+    padding: 0 8px;
+    border-width: 2px !important;
+    box-shadow: 2px 2px 0 var(--border-primary) !important;
+  }
+
+  .site-header--with-sections .locale-wrap {
+    gap: 4px;
+    flex-wrap: nowrap;
+  }
+
+  .site-header--with-sections .locale-btn {
+    min-width: 34px;
+    min-height: 36px;
+    padding: 0 8px;
+    font-size: 0.82rem;
+    border-width: 2px !important;
+    box-shadow: 2px 2px 0 var(--border-primary) !important;
   }
 
   .site-refresh-btn span,

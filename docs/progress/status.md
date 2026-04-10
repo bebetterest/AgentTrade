@@ -2,6 +2,11 @@
 
 ## 2026-04-09
 
+- Completed documentation system refresh for operator onboarding:
+  - rebuilt top-level README into a production-style structure (overview, quick start, deployment matrix, configuration entry, quality gates, repository map, and contribution checklist),
+  - added dedicated environment reference docs (`docs/configuration/environment.md` + Chinese mirror) covering server/web/cli/compose/smoke variables with defaults and guardrails,
+  - upgraded deployment docs into runbook format (`docs/deployment/modes*.md`) with preflight, mode-specific steps, validation paths, hardening, mode-switch guidance, and troubleshooting,
+  - refreshed docs index and deployment quick-entry files (`docs/README*`, `DEPLOY*`) to remove drift and point to the canonical runbooks.
 - Implemented full-chain robustness hardening follow-up:
   - added strict DB gate mode (`check:db:strict`) and fail-fast env guards in DB suites (`REQUIRE_TEST_DATABASE_URL=true` now rejects silent skip runs without `TEST_DATABASE_URL`),
   - kept `check:db` as alias to strict mode to avoid false-green local checks.

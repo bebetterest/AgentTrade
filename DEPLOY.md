@@ -1,109 +1,53 @@
-# Docker Deployment Guide
+# Docker Deployment Quick Entry
 
-## Quick Start
+This file is a quick entry. For the full runbook, use:
 
-### 1. Local Deployment
+- [docs/deployment/modes.md](./docs/deployment/modes.md)
+- [docs/configuration/environment.md](./docs/configuration/environment.md)
+
+## 1. Quick start
 
 ```bash
-# Start full stack (PostgreSQL + Redis + Server + Web)
+cp .env.example .env
+# Replace JWT_SECRET and ADMIN_SERVICE_KEY before boot
 pnpm docker:stack:local:up
+```
 
-# Stop
+Stop local stack:
+
+```bash
 pnpm docker:stack:local:down
 ```
 
-Access:
-- Web UI: http://localhost:3001
-- API Server: http://localhost:3000
-
-### 2. Cloud Deployment
+## 2. Cloud mode
 
 ```bash
-# Start cloud stack
+cp .env.example .env
+# Configure CLOUD_* variables as needed
 pnpm docker:stack:cloud:up
+```
 
-# Stop
+Stop cloud stack:
+
+```bash
 pnpm docker:stack:cloud:down
 ```
 
-### 3. Cloud HTTPS (Config Toggles)
-
-The cloud gateway runs in HTTP mode by default. To enable HTTPS, configure `.env` as follows:
+## 3. Smoke checks
 
 ```bash
-# HTTPS toggles
-CLOUD_HTTPS_ENABLED=true
-# Force HTTP -> HTTPS redirect (/healthz remains HTTP 200)
-CLOUD_HTTP_REDIRECT_TO_HTTPS=true
-
-# HTTPS bind
-CLOUD_HTTPS_BIND_HOST=0.0.0.0
-CLOUD_HTTPS_PORT=443
-
-# Certificate mount and in-container paths
-CLOUD_HTTPS_CERTS_DIR=./deploy/nginx/certs
-CLOUD_HTTPS_CERT_FILE=/etc/nginx/certs/fullchain.pem
-CLOUD_HTTPS_KEY_FILE=/etc/nginx/certs/privkey.pem
+pnpm docker:smoke:local
+pnpm docker:smoke:cloud
 ```
 
-Notes:
-- When `CLOUD_HTTPS_ENABLED=true` and cert/key files are missing, gateway startup fails fast and does not downgrade to HTTP.
-- For self-signed cert smoke checks, set `SMOKE_TLS_INSECURE=true`.
-
-## Environment Variables
-
-Create a `.env` file:
+For self-signed HTTPS smoke checks only:
 
 ```bash
-# Database
-POSTGRES_DB=agentrade
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=your_secure_password
-
-# Server
-JWT_SECRET=your_jwt_secret_key
-ADMIN_SERVICE_KEY=your_admin_key
-DATABASE_URL=postgresql://postgres:your_secure_password@postgres:5432/agentrade
-REDIS_URL=redis://redis:6379
-ENABLE_PERSISTENCE=true
-ENABLE_REDIS_RATE_LIMIT=true
-
-# Web
-WEB_PUBLIC_API_BASE_URL=http://localhost:3000
-WEB_INTERNAL_API_BASE_URL=http://server:3000
-
-# Cloud HTTPS (optional)
-CLOUD_HTTPS_ENABLED=false
-CLOUD_HTTP_REDIRECT_TO_HTTPS=false
-CLOUD_HTTPS_BIND_HOST=0.0.0.0
-CLOUD_HTTPS_PORT=443
-CLOUD_HTTPS_CERTS_DIR=./deploy/nginx/certs
-CLOUD_HTTPS_CERT_FILE=/etc/nginx/certs/fullchain.pem
-CLOUD_HTTPS_KEY_FILE=/etc/nginx/certs/privkey.pem
+SMOKE_TLS_INSECURE=true pnpm docker:smoke:cloud
 ```
 
-## Services
+## 4. Common notes
 
-- **postgres**: PostgreSQL 16 database
-- **redis**: Redis 7 cache
-- **server**: API server (port 3000)
-- **web**: Next.js Web UI (port 3001)
-
-## Health Checks
-
-```bash
-# Check service status
-docker compose ps
-
-# Stream logs
-docker compose logs -f web
-docker compose logs -f server
-```
-
-## Production Recommendations
-
-1. Replace default passwords and keys.
-2. Enable HTTPS (built-in gateway HTTPS toggles or external Nginx/Caddy).
-3. Configure persistent volume backups.
-4. Set resource limits.
-5. Enable log collection.
+- `JWT_SECRET` and `ADMIN_SERVICE_KEY` must not use placeholder defaults outside `NODE_ENV=test`.
+- Cloud HTTPS mode fails fast when certificate or key files are missing.
+- Localhost checks in proxy-enabled shells should use `curl --noproxy '*' ...`.

@@ -1,83 +1,214 @@
-# 部署模式
+# 部署模式运行手册
 
-本仓库支持两种 Docker 部署模式，并可配置端口、监听地址与域名路由策略。
+Agentrade 支持两种 Docker 部署模式：
 
-## 1. 本地模式
+- **本地模式**：web/api/db/redis 直接映射宿主机端口。
+- **云端模式**：单一 Nginx 网关入口（`/` 给 web，默认 `/api` 给 API）。
 
-- 命令：
-  - `docker compose -f docker-compose.yml -f docker-compose.local.yml up --build -d`
-- 行为：
-  - Web 暴露在 `LOCAL_WEB_PORT`（默认 `3001`）。
-  - API 暴露在 `LOCAL_API_PORT`（默认 `3000`）。
-  - PostgreSQL/Redis 默认仅绑定本机回环地址（`127.0.0.1`）。
-- CLI 常用 base URL：
-  - `http://localhost:3000`
+本手册用于从零配置到可验证上线。
 
-## 2. 云端模式
+## 1. 部署前检查
 
-- 命令：
-  - `docker compose -f docker-compose.yml -f docker-compose.cloud.yml up --build -d`
-- 行为：
-  - 网关始终暴露 `CLOUD_HTTP_PORT`（默认 `80`）。
-  - 网关同时暴露 `CLOUD_HTTPS_PORT`（默认 `443`），是否启用 HTTPS 由 `CLOUD_HTTPS_ENABLED` 控制。
-  - 网关将 `/` 转发到 web，将 API 路径前缀请求（默认 `/api`）转发到 server。
-  - 网关会透传 `X-Forwarded-Prefix`，确保无版本 API 重定向仍保留外部 API 前缀。
-  - 当 `CLOUD_HTTPS_ENABLED=true` 时，必须提供有效证书/私钥文件，否则网关启动会失败（fail fast）。
-  - 当 `CLOUD_HTTPS_ENABLED=true` 且 `CLOUD_HTTP_REDIRECT_TO_HTTPS=true` 时，HTTP 请求会跳转到 HTTPS（若 `CLOUD_HTTPS_PORT` 非 `443`，会带上该端口）；但 `HTTP /healthz` 仍保持 `200` 供健康检查使用。
-  - 网站入口：`http(s)://<domain-or-ip>/`。
-  - API 入口：`http(s)://<domain-or-ip>/api`（或自定义 `CLOUD_API_PATH_PREFIX`）。
-  - 该模式下 server/web/db/redis 容器端口不会直接暴露到宿主机。
-- CLI 常用 base URL：
-  - `https://example.com/api`
+1. 复制环境变量模板：
 
-## 3. 关键环境变量
+```bash
+cp .env.example .env
+```
 
-- 本地暴露参数：
-  - `LOCAL_POSTGRES_BIND_HOST`、`LOCAL_POSTGRES_PORT`
-  - `LOCAL_REDIS_BIND_HOST`、`LOCAL_REDIS_PORT`
-  - `LOCAL_API_BIND_HOST`、`LOCAL_API_PORT`
-  - `LOCAL_WEB_BIND_HOST`、`LOCAL_WEB_PORT`
-- Web API 路由参数：
-  - `WEB_PUBLIC_API_BASE_URL`（浏览器可见 base URL）
-  - `WEB_INTERNAL_API_BASE_URL`（Web 容器内服务端渲染 fetch 使用的 base URL）
-- Server 运行时联动参数：
-  - `SERVER_DATABASE_URL`（容器内数据库地址，默认指向 `postgres` 服务）
-  - `SERVER_REDIS_URL`（容器内 Redis 地址，默认指向 `redis` 服务）
-- 云端路由/代理参数：
-  - `CLOUD_HTTP_BIND_HOST`、`CLOUD_HTTP_PORT`
-  - `CLOUD_HTTPS_BIND_HOST`、`CLOUD_HTTPS_PORT`
-  - `CLOUD_SERVER_NAME`
-  - `CLOUD_HTTPS_ENABLED`（默认 `false`）
-  - `CLOUD_HTTP_REDIRECT_TO_HTTPS`（默认 `false`）
-  - `CLOUD_HTTPS_CERTS_DIR`（宿主机证书目录，只读挂载到网关容器）
-  - `CLOUD_HTTPS_CERT_FILE`、`CLOUD_HTTPS_KEY_FILE`（容器内证书/私钥路径）
+2. 替换必填密钥：
+
+- `JWT_SECRET`
+- `ADMIN_SERVICE_KEY`
+
+3. 确认工具链：
+
+```bash
+corepack enable
+pnpm install
+```
+
+4. 确认 Docker daemon 正常：
+
+```bash
+docker info
+```
+
+## 2. 模式概览
+
+| 模式 | Compose 文件 | 入口地址 | 典型用途 |
+| --- | --- | --- | --- |
+| 本地模式 | `docker-compose.yml` + `docker-compose.local.yml` | Web: `http://localhost:${LOCAL_WEB_PORT:-3001}` API: `http://localhost:${LOCAL_API_PORT:-3000}` | 开发、联调、本地集成 |
+| 云端模式 | `docker-compose.yml` + `docker-compose.cloud.yml` | Web: `http(s)://<host>/` API: `http(s)://<host>${CLOUD_API_PATH_PREFIX:-/api}` | 单机网关入口部署 |
+
+## 3. 本地模式
+
+### 3.1 可选调优项
+
+常用变量：
+
+- 暴露参数：`LOCAL_POSTGRES_*`、`LOCAL_REDIS_*`、`LOCAL_API_*`、`LOCAL_WEB_*`
+- Web 路由：`WEB_PUBLIC_API_BASE_URL`、`WEB_INTERNAL_API_BASE_URL`
+- Server 上游：`SERVER_DATABASE_URL`、`SERVER_REDIS_URL`
+
+### 3.2 启动
+
+```bash
+pnpm docker:stack:local:up
+```
+
+等价命令：
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.local.yml up --build -d --remove-orphans
+```
+
+### 3.3 验证
+
+```bash
+pnpm docker:smoke:local
+```
+
+手动验证：
+
+- Web 根路径：`http://127.0.0.1:${LOCAL_WEB_PORT:-3001}/`
+- API 健康检查：`http://127.0.0.1:${LOCAL_API_PORT:-3000}/v2/system/health`
+- API 汇总：`http://127.0.0.1:${LOCAL_API_PORT:-3000}/v2/dashboard/summary?tz=UTC`
+
+### 3.4 停止
+
+```bash
+pnpm docker:stack:local:down
+```
+
+## 4. 云端模式
+
+### 4.1 必要/常用变量
+
+- 网关监听与域名：
+  - `CLOUD_HTTP_BIND_HOST`、`CLOUD_HTTP_PORT`、`CLOUD_SERVER_NAME`
+- API 前缀与 web API 基址：
   - `CLOUD_API_PATH_PREFIX`（默认 `/api`）
   - `CLOUD_WEB_API_BASE_URL`（默认 `/api`）
   - `CLOUD_WEB_INTERNAL_API_BASE_URL`（默认 `http://server:3000`）
-  - `CLOUD_API_UPSTREAM`（默认 `http://server:3000`）
-  - `CLOUD_WEB_UPSTREAM`（默认 `http://web:3000`）
+- 非默认拓扑上游：
+  - `CLOUD_API_UPSTREAM`、`CLOUD_WEB_UPSTREAM`
 
-## 4. 运维说明
+### 4.2 HTTPS 开关
 
-- Server 启动时会先执行争议旧状态回填（`prisma db execute --file prisma/pre_migrations/20260408_dispute_status_backfill.sql`），再执行 `prisma db push`，最后启动 API。
-- 已为 `postgres`、`redis`、`server`、`web` 与云端 `gateway` 配置健康检查。
-- 运行时服务统一开启 `restart: unless-stopped`。
-- 本地/云端模式切换时，建议在 `up` 中使用 `--remove-orphans`（或先执行 `down`），避免旧模式容器残留。
+- `CLOUD_HTTPS_ENABLED=false`（默认）：仅 HTTP。
+- `CLOUD_HTTPS_ENABLED=true`：网关要求证书/私钥可读，缺失即 fail-fast。
+- `CLOUD_HTTP_REDIRECT_TO_HTTPS=true`：除 `/healthz` 外，HTTP 跳转到 HTTPS。
 
-## 5. 代理排障
+开启 HTTPS 时需要配置：
 
-- 如果你的 shell 导出了 `http_proxy`/`https_proxy`，访问 `localhost` 或 `127.0.0.1` 的本地探测请求可能会被转发到代理并返回 `502`。
-- 建议本机联调时使用 `curl --noproxy '*' http://127.0.0.1/...` 进行本地/云端冒烟验证。
-- 建议在 shell 配置中设置 `NO_PROXY=localhost,127.0.0.1,.local`，让 CLI 与 curl 对回环/本地域名直连。
-- 可通过以下命令核对 Docker daemon 的代理与镜像源配置：
-  - `docker info | rg -i "HTTP Proxy|HTTPS Proxy|No Proxy|Registry Mirrors"`
+- `CLOUD_HTTPS_BIND_HOST`、`CLOUD_HTTPS_PORT`
+- `CLOUD_HTTPS_CERTS_DIR`（宿主机证书目录挂载）
+- `CLOUD_HTTPS_CERT_FILE`、`CLOUD_HTTPS_KEY_FILE`（容器内路径）
 
-## 6. 一键冒烟验证
+### 4.3 启动
 
-- 本地模式：
-  - `pnpm docker:smoke:local`
-- 云端模式：
-  - `pnpm docker:smoke:cloud`
-- 实现位置：
-  - `deploy/smoke.sh`（内部自动使用 `curl --noproxy '*'`，并通过 `--remove-orphans` 切换部署模式；若启用 HTTPS 会自动校验 HTTPS/跳转行为）
-  - 若仅用于自签证书冒烟联调，可设置 `SMOKE_TLS_INSECURE=true`。
+```bash
+pnpm docker:stack:cloud:up
+```
+
+等价命令：
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.cloud.yml up --build -d --remove-orphans
+```
+
+### 4.4 验证
+
+```bash
+pnpm docker:smoke:cloud
+```
+
+冒烟脚本会：
+
+- 校验 web 根路径、`/healthz`、API health、API summary（带路径前缀）。
+- HTTPS 开启时校验 HTTPS 端点可用。
+- 开启重定向时校验 HTTP -> HTTPS 行为。
+
+仅用于自签证书联调时：
+
+```bash
+SMOKE_TLS_INSECURE=true pnpm docker:smoke:cloud
+```
+
+### 4.5 停止
+
+```bash
+pnpm docker:stack:cloud:down
+```
+
+## 5. 一次性数据库防线加固（推荐）
+
+为了在数据库层强制“单 submission 仅一个 OPEN dispute”，建议部署后执行一次：
+
+本地模式：
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.local.yml exec server node_modules/.bin/prisma db execute --schema prisma/schema.prisma --file prisma/pre_migrations/20260409_dispute_open_unique_guard.sql
+```
+
+云端模式：
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.cloud.yml exec server node_modules/.bin/prisma db execute --schema prisma/schema.prisma --file prisma/pre_migrations/20260409_dispute_open_unique_guard.sql
+```
+
+## 6. 安全切换部署模式
+
+- 推荐先显式下线再切模式：
+
+```bash
+pnpm docker:stack:local:down
+pnpm docker:stack:cloud:up
+```
+
+- 也可依赖启动命令中的 `--remove-orphans`（脚本已内置）。
+- 注意数据卷生命周期：`pgdata` 默认持久化，不会随容器停止自动删除。
+
+## 7. 运行时行为说明
+
+- Server 容器启动顺序：
+  1. `prisma db execute`（争议旧状态回填）
+  2. `prisma db push`
+  3. 启动 API 进程
+- `postgres`、`redis`、`server`、`web`、`gateway` 均配置了健康检查。
+- 运行时服务统一使用 `restart: unless-stopped`。
+
+## 8. 排障
+
+### 代理干扰（localhost 出现 `502`）
+
+如果 shell 设置了 `http_proxy`/`https_proxy`，本地 curl 探测可能被错误代理。
+
+建议：
+
+```bash
+curl --noproxy '*' http://127.0.0.1:3000/v2/system/health
+```
+
+推荐 shell 配置：
+
+```bash
+export NO_PROXY=localhost,127.0.0.1,.local
+```
+
+### 网关 HTTPS 启动失败
+
+若 `CLOUD_HTTPS_ENABLED=true` 但网关启动失败，检查：
+
+- 证书/私钥文件存在且可读
+- `CLOUD_HTTPS_CERT_FILE`、`CLOUD_HTTPS_KEY_FILE` 是否是容器内路径
+- `CLOUD_HTTPS_CERTS_DIR` 是否正确映射到宿主机目录
+
+### 服务级诊断命令
+
+```bash
+docker compose ps
+docker compose logs -f server
+docker compose logs -f web
+docker compose logs -f gateway
+```

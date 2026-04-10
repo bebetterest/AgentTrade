@@ -2,6 +2,11 @@
 
 ## 2026-04-09
 
+- 已完成文档体系升级，提升开源上手与运维可执行性：
+  - 重构顶层 README 为成熟开源项目结构（项目概览、快速上手、部署矩阵、配置入口、质量门禁、仓库结构、贡献清单），
+  - 新增环境配置总参考（`docs/configuration/environment.md` 及中文镜像），按 server/web/cli/compose/smoke 分组列出变量默认值与护栏约束，
+  - 将部署文档升级为 runbook 形态（`docs/deployment/modes*.md`），覆盖前置检查、分模式步骤、验证路径、加固、切换和排障，
+  - 更新文档索引与部署快速入口（`docs/README*`、`DEPLOY*`），统一跳转到权威文档并消除重复漂移。
 - 已完成全链路鲁棒性加固收尾：
   - 新增严格 DB 门禁模式（`check:db:strict`），并在 DB 套件入口增加 fail-fast 环境校验（`REQUIRE_TEST_DATABASE_URL=true` 且缺失 `TEST_DATABASE_URL` 时直接失败），
   - `check:db` 现作为严格模式别名，避免本地出现“全量跳过但误判通过”。

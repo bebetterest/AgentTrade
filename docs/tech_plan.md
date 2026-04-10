@@ -71,6 +71,7 @@
   - local direct-port mode (`localhost web/api`),
   - cloud single-entry mode (gateway routes `/` to web and `/api` to server for API/CLI).
 - Web API integration now separates public API base URL and internal server-side base URL for deterministic local/cloud routing.
+- Documentation baseline now uses README as onboarding entry plus dedicated runbooks for environment configuration and deployment modes, keeping bilingual mirrors synchronized in the same commit.
 
 ## 2. Technical Direction (Near Term)
 

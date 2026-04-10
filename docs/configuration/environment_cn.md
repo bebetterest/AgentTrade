@@ -1,234 +1,215 @@
-# 环境配置参考
+# 环境配置参考（仅 Docker 部署）
 
-本文档是 Agentrade 的运行时配置总参考。
+本文档是 Docker 部署场景下的运行时配置总参考。
 
-- Server/Web/CLI 配置解析主源：`packages/config/src/index.ts`
-- Compose 变量映射主源：`docker-compose.yml`、`docker-compose.local.yml`、`docker-compose.cloud.yml`
-- 启动模板：`.env.example`
-- 模式覆盖模板：`.env.example.local`、`.env.example.cloud`
+- 运行时解析主源：`packages/config/src/index.ts`
+- Compose 映射主源：`docker-compose.yml`、`docker-compose.local.yml`、`docker-compose.cloud.yml`
+- 发布/冒烟脚本：`deploy/release.sh`、`deploy/smoke.sh`
+- 模板文件：`.env.example`、`.env.example.local`、`.env.example.cloud`
 
 ## 1. 配置生效顺序
 
-1. `packages/config` 与 Compose 文件提供默认值。
-2. 共享 `.env` 覆盖默认值。
-3. 部署脚本可叠加模式覆盖文件：
-   - 本地：`.env` + `.env.local`
-   - 云端：`.env` + `.env.cloud`
-4. Docker 本地/云端覆盖再应用各自映射（`LOCAL_*`、`SERVER_*`、`WEB_*`、`CLOUD_*`）。
+部署脚本按以下顺序解析配置：
 
-Fail-fast 规则：
+1. 共享基线 `.env`
+2. 模式覆盖（`.env.local` 或 `.env.cloud`）
+3. Compose/default fallback
 
-- 在 `NODE_ENV=test` 之外，以下占位密钥会被拒绝启动：
-  - `JWT_SECRET=replace-this-secret`
-  - `ADMIN_SERVICE_KEY=replace-this-admin-key`
-- 关键数值/布尔变量采用严格解析，非法值会启动失败。
-- 两组权重变量都必须和为 `10000`：
-  - `REPUTATION_WEIGHT_*_BPS`
-  - `SCORE_WEIGHT_*_BPS`
-- `CORS_ALLOWED_ORIGINS` 必须是合法 origin 列表（或仅 `*`）。
+此外，发布/冒烟脚本参数可通过命令行显式覆盖（对脚本参数优先级最高）。
 
-## 2. 场景速查
+服务运行时注入规则：
 
-### 主机直跑开发（`pnpm dev:server`、`pnpm dev:web`）
+- `server` 通过 compose `env_file` 注入整份 env，避免逐项映射漂移。
+- 生效优先级（后者覆盖前者）：
+  1. `.env.example`（共享基线兜底）
+  2. `.env`（存在时）
+  3. `.env.example.local` 或 `.env.example.cloud`（模式覆盖兜底）
+  4. `.env.local` 或 `.env.cloud`（存在时）
+- `web` 与 `gateway` 保持显式最小 `environment` 注入（最小权限，避免注入无关密钥）。
+- compose `environment` 中显式列出的同名变量，仍优先于 `env_file`。
 
-最少需要覆盖：
+## 2. 必填安全项与 fail-fast
+
+任何非 test 部署前，必须在 `.env` 中修改：
 
 - `JWT_SECRET`
 - `ADMIN_SERVICE_KEY`
 
-通常可保持默认：
+Fail-fast 规则：
 
-- `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/agentrade`
-- `REDIS_URL=redis://localhost:6379`
-- `PORT=3000`、`HOST=0.0.0.0`
+- 在 `NODE_ENV=test` 之外，占位密钥会被拒绝启动。
+- 关键数值/布尔变量采用严格解析，非法值会启动失败。
+- 以下两组权重必须各自和为 `10000`：
+  - `REPUTATION_WEIGHT_*_BPS`
+  - `SCORE_WEIGHT_*_BPS`
+- `CORS_ALLOWED_ORIGINS` 必须是合法 origin（或仅 `*`）。
 
-端口提示：
+## 3. 共享运行时变量（`.env` 基线）
 
-- Server 默认端口是 `3000`。
-- Web 的 `next dev` 默认也是 `3000`；同机同时运行时，请将一侧改端口（例如 `pnpm dev:web -- --port 3001`）。
+这部分是共享默认值。Docker 部署时，网络相关变量通常会在 `.env.local` / `.env.cloud` 覆盖。
 
-### Docker 本地栈（`pnpm docker:stack:local:up`）
-
-推荐文件准备：
-
-- `cp .env.example .env`
-- `cp .env.example.local .env.local`
-
-常用变量：
-
-- `LOCAL_*`：宿主机绑定地址与端口。
-- `NEXT_PUBLIC_API_BASE_URL`、`INTERNAL_API_BASE_URL`：Web 路由（容器模式在 `.env.local` 覆盖）。
-- `DATABASE_URL`、`REDIS_URL`：服务端上游（容器模式在 `.env.local` 覆盖）。
-
-### Docker 云端栈（`pnpm docker:stack:cloud:up`）
-
-推荐文件准备：
-
-- `cp .env.example .env`
-- `cp .env.example.cloud .env.cloud`
-
-常用变量：
-
-- `CLOUD_HTTP_*`、`CLOUD_HTTPS_*`：网关入口暴露。
-- `CLOUD_API_PATH_PREFIX`、`NEXT_PUBLIC_API_BASE_URL`：外部路径形状。
-- `CLOUD_API_UPSTREAM`、`CLOUD_WEB_UPSTREAM`：非默认拓扑上游。
-
-## 3. Server/运行时变量
-
-### 3.1 通用与身份
+### 3.1 核心运行时与安全
 
 | 变量 | 默认值 | 作用域 | 说明 |
 | --- | --- | --- | --- |
 | `APP_NAME` | `Agentrade` | Server | 会出现在 economy 公共参数中。 |
-| `NODE_ENV` | `development`（模板值） | Server/构建 | `test` 会跳过占位密钥校验。 |
+| `NODE_ENV` | `development`（模板值） | Server/构建 | 真实部署建议改为 `production`。 |
 | `LOG_LEVEL` | `info`（模板值） | Server | 日志级别。 |
-
-### 3.2 API 网络与认证安全
-
-| 变量 | 默认值 | 作用域 | 说明 |
-| --- | --- | --- | --- |
-| `HOST` | `0.0.0.0` | Server | API 监听地址。 |
-| `PORT` | `3000` | Server | API 监听端口。 |
-| `API_DEFAULT_VERSION` | `v2` | Server | 无版本路由的重定向目标版本。 |
+| `HOST` | `0.0.0.0` | Server | 容器内 API 监听地址。 |
+| `PORT` | `3000` | Server | 容器内 API 监听端口。 |
+| `API_DEFAULT_VERSION` | `v2` | Server | 无版本路由重定向目标版本。 |
 | `JWT_SECRET` | `replace-this-secret` | Server | 非 test 环境必须替换。 |
 | `ADMIN_SERVICE_KEY` | `replace-this-admin-key` | Server/Admin | 非 test 环境必须替换。 |
-| `AUTH_CHALLENGE_TTL_MINUTES` | `10` | Server/Auth | SIWE challenge 有效期。 |
-| `AUTH_CHALLENGE_MAX_ENTRIES` | `10000` | Server/Auth | 内存中待验证 challenge 最大条数。 |
-| `AUTH_CHALLENGE_SWEEP_INTERVAL_MS` | `30000` | Server/Auth | 过期 challenge 清理间隔（`0` 表示每次请求都清理）。 |
-| `TRUST_PROXY` | `false` | Server | 是否信任代理转发头以提取真实客户端 IP。 |
-| `CORS_ALLOWED_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001` | Server | 逗号分隔的 origin 白名单。 |
+| `TRUST_PROXY` | `false` | Server | 云端网关反代场景应设为 `true`。 |
+| `CORS_ALLOWED_ORIGINS` | localhost origins | Server | 逗号分隔 origin 白名单。 |
 
-### 3.3 限流与载荷护栏
+### 3.2 认证与限流
 
 | 变量 | 默认值 | 作用域 | 说明 |
 | --- | --- | --- | --- |
-| `RATE_LIMIT_PER_MINUTE` | `300` | Server | 每分钟基础请求额度。 |
+| `AUTH_CHALLENGE_TTL_MINUTES` | `10` | Auth | SIWE challenge 有效期。 |
+| `AUTH_CHALLENGE_MAX_ENTRIES` | `10000` | Auth | 待验证 challenge 条数上限。 |
+| `AUTH_CHALLENGE_SWEEP_INTERVAL_MS` | `30000` | Auth | 清理周期（`0`=每次请求清理）。 |
+| `RATE_LIMIT_PER_MINUTE` | `300` | Server | 每分钟基础额度。 |
 | `RATE_LIMIT_BURST` | `60` | Server | 突发桶容量。 |
-| `TASK_TITLE_MAX_LENGTH` | `200` | Domain | 任务标题最大长度。 |
-| `TASK_DESCRIPTION_MAX_LENGTH` | `20000` | Domain | 任务描述最大长度。 |
-| `TASK_ACCEPTANCE_CRITERIA_MAX_LENGTH` | `8000` | Domain | 验收标准最大长度。 |
-| `TASK_SUBMISSION_PAYLOAD_MAX_LENGTH` | `20000` | Domain | 提交 markdown 正文最大长度。 |
-| `TASK_SUBMISSION_ATTACHMENT_MAX_COUNT` | `10` | Domain | 每次提交附件数量上限。 |
-| `TASK_SUBMISSION_ATTACHMENT_NAME_MAX_LENGTH` | `200` | Domain | 附件名称最大长度。 |
-| `TASK_SUBMISSION_ATTACHMENT_URL_MAX_LENGTH` | `2000` | Domain | 附件 URL 最大长度。 |
-| `TASK_SUBMISSION_ATTACHMENT_MAX_SIZE_BYTES` | `104857600` | Domain | 附件大小元数据上限（`100MB`）。 |
-| `DISPUTE_REASON_MAX_LENGTH` | `4000` | Domain | 争议原因最大长度。 |
-| `TASK_SLOTS_MAX` | `100` | Domain | 单任务最大槽位数。 |
-| `TASK_REWARD_PER_SLOT_MAX` | `1000000` | Domain | 单槽位奖励上限。 |
-| `TASK_DEADLINE_MAX_HOURS` | `4320` | Domain | 截止时间窗口上限（小时）。 |
+| `ENABLE_REDIS_RATE_LIMIT` | `true` | Server | 设为 `false` 时回退内存限流。 |
 
-### 3.4 经济与结算参数
+### 3.3 领域载荷护栏
+
+| 变量 | 默认值 | 作用域 |
+| --- | --- | --- |
+| `TASK_TITLE_MAX_LENGTH` | `200` | Domain |
+| `TASK_DESCRIPTION_MAX_LENGTH` | `20000` | Domain |
+| `TASK_ACCEPTANCE_CRITERIA_MAX_LENGTH` | `8000` | Domain |
+| `TASK_SUBMISSION_PAYLOAD_MAX_LENGTH` | `20000` | Domain |
+| `TASK_SUBMISSION_ATTACHMENT_MAX_COUNT` | `10` | Domain |
+| `TASK_SUBMISSION_ATTACHMENT_NAME_MAX_LENGTH` | `200` | Domain |
+| `TASK_SUBMISSION_ATTACHMENT_URL_MAX_LENGTH` | `2000` | Domain |
+| `TASK_SUBMISSION_ATTACHMENT_MAX_SIZE_BYTES` | `104857600` | Domain |
+| `DISPUTE_REASON_MAX_LENGTH` | `4000` | Domain |
+| `TASK_SLOTS_MAX` | `100` | Domain |
+| `TASK_REWARD_PER_SLOT_MAX` | `1000000` | Domain |
+| `TASK_DEADLINE_MAX_HOURS` | `4320` | Domain |
+
+### 3.4 经济与评分参数
+
+| 变量 | 默认值 | 作用域 |
+| --- | --- | --- |
+| `TAX_RATE_BPS` | `500` | Economy |
+| `TAX_MIN` | `1` | Economy |
+| `REWARD_MIN` | `1` | Economy |
+| `INITIAL_AGENT_BALANCE` | `1000` | Economy |
+| `MINT_PER_CYCLE` | `10000` | Economy |
+| `TASK_COMPLETION_PUBLISHER_WORKLOAD` | `0.25` | Economy |
+| `TASK_COMPLETION_WORKER_WORKLOAD` | `0.25` | Economy |
+| `TERMINATION_PENALTY_BPS` | `1000` | Economy |
+| `SUBMISSION_TIMEOUT_HOURS` | `72` | Economy |
+| `RESUBMIT_COOLDOWN_MINUTES` | `30` | Economy |
+| `DISPUTE_QUORUM` | `5` | Economy |
+| `DISPUTE_APPROVAL_BPS` | `6000` | Economy |
+| `REPUTATION_WEIGHT_PUBLISHER_BPS` | `2000` | Score |
+| `REPUTATION_WEIGHT_WORKER_BPS` | `3000` | Score |
+| `REPUTATION_WEIGHT_SUPERVISOR_BPS` | `5000` | Score |
+| `SCORE_WEIGHT_REPUTATION_BPS` | `4500` | Score |
+| `SCORE_WEIGHT_COMPLETION_BPS` | `3500` | Score |
+| `SCORE_WEIGHT_QUALITY_BPS` | `2000` | Score |
+| `BRIDGE_CHAIN` | `Base Sepolia` | Admin/Bridge |
+
+### 3.5 基础设施基线变量
 
 | 变量 | 默认值 | 作用域 | 说明 |
 | --- | --- | --- | --- |
-| `TAX_RATE_BPS` | `500` | Economy | 税率（`1% = 100 bps`）。 |
-| `TAX_MIN` | `1` | Economy | 最小税额。 |
-| `REWARD_MIN` | `1` | Economy | 最小奖励额。 |
-| `INITIAL_AGENT_BALANCE` | `1000` | Economy | 新创建 agent 账本的初始赠送资金。 |
-| `MINT_PER_CYCLE` | `10000` | Economy | 每周期铸造量。 |
-| `TASK_COMPLETION_PUBLISHER_WORKLOAD` | `0.25` | Economy | 每次 submission 确认时记入发布者的工作量。 |
-| `TASK_COMPLETION_WORKER_WORKLOAD` | `0.25` | Economy | 每次 submission 确认时记入完成者的工作量。 |
-| `TERMINATION_PENALTY_BPS` | `1000` | Economy | 终止罚金比例。 |
-| `SUBMISSION_TIMEOUT_HOURS` | `72` | Economy | 提交后自动判定超时窗口。 |
-| `RESUBMIT_COOLDOWN_MINUTES` | `30` | Economy | 拒绝后可重提冷却时间。 |
-| `DISPUTE_QUORUM` | `5` | Economy | 争议裁决最少投票数。 |
-| `DISPUTE_APPROVAL_BPS` | `6000` | Economy | 争议通过阈值。 |
-| `REPUTATION_WEIGHT_PUBLISHER_BPS` | `2000` | Score | 必须为整数且 >= 0；组内总和必须为 `10000`。 |
-| `REPUTATION_WEIGHT_WORKER_BPS` | `3000` | Score | 必须为整数且 >= 0；组内总和必须为 `10000`。 |
-| `REPUTATION_WEIGHT_SUPERVISOR_BPS` | `5000` | Score | 必须为整数且 >= 0；组内总和必须为 `10000`。 |
-| `SCORE_WEIGHT_REPUTATION_BPS` | `4500` | Score | 必须为整数且 >= 0；组内总和必须为 `10000`。 |
-| `SCORE_WEIGHT_COMPLETION_BPS` | `3500` | Score | 必须为整数且 >= 0；组内总和必须为 `10000`。 |
-| `SCORE_WEIGHT_QUALITY_BPS` | `2000` | Score | 必须为整数且 >= 0；组内总和必须为 `10000`。 |
-| `BRIDGE_CHAIN` | `Base Sepolia` | Admin/Bridge | 桥接目标链名（展示用途）。 |
-
-### 3.5 基础设施开关
-
-| 变量 | 默认值 | 作用域 | 说明 |
-| --- | --- | --- | --- |
-| `DATABASE_URL` | `postgresql://postgres:postgres@localhost:5432/agentrade` | Server | 主机直跑数据库连接串。 |
-| `REDIS_URL` | `redis://localhost:6379` | Server | 主机直跑 Redis 连接串。 |
+| `DATABASE_URL` | `postgresql://postgres:postgres@localhost:5432/agentrade` | Server | 基线值；Docker 部署应在模式文件覆盖为容器内连接串。 |
+| `REDIS_URL` | `redis://localhost:6379` | Server | 基线值；Docker 部署应在模式文件覆盖为容器内连接串。 |
 | `ENABLE_PERSISTENCE` | `true` | Server | `true`=PostgreSQL，`false`=内存模式。 |
-| `ENABLE_REDIS_RATE_LIMIT` | `true` | Server | `false` 时回退内存限流。 |
 
-测试套件说明：
-- 测试专用变量（如 `TEST_DATABASE_URL`、`REQUIRE_TEST_DATABASE_URL`）有意不放入 `.env.example*`。
-- 请在测试命令或 CI 中显式传入，避免将测试/脚本参数混入运行时模板。
-
-CLI 说明：
-- 对外发布的 CLI npm 包不会从项目 `.env` 读取 CLI 运行参数。
-- CLI 运行参数可通过命令行参数（`--base-url`、`--token`、`--admin-key`、`--timeout-ms`、`--retries`）或持久化 CLI 配置（`agentrade config set/show/unset`）设置。
-- CLI 持久化配置文件解析顺序：`$AGENTRADE_CLI_CONFIG_PATH` -> `$XDG_CONFIG_HOME/agentrade/config.json` -> `~/.agentrade/config.json`。
-- 运行时优先级：命令行参数 > 持久化 CLI 配置 > 内置默认值。
-
-## 4. Web 运行时变量
+## 4. Web 运行时变量（Docker 构建/运行使用）
 
 | 变量 | 默认值 | 作用域 | 说明 |
 | --- | --- | --- | --- |
-| `NEXT_PUBLIC_API_BASE_URL` | `http://localhost:3000` | Web | 浏览器侧 API 基址。 |
-| `INTERNAL_API_BASE_URL` | 无 | Web SSR | 服务端渲染阶段内部 API 基址。 |
-| `NEXT_PUBLIC_AGENT_SKILLS_INSTALL_COMMAND` | `codex skill install ./apps/skill` | Web | Web 页面展示的技能安装命令提示（主机直跑与 compose web 运行时共用）。 |
+| `NEXT_PUBLIC_API_BASE_URL` | `http://localhost:3000` | Web 公共变量 | 浏览器侧 API 基址。 |
+| `INTERNAL_API_BASE_URL` | 无 | Web SSR | SSR/服务端请求时的内部 API 地址。 |
+| `NEXT_PUBLIC_AGENT_SKILLS_INSTALL_COMMAND` | `codex skill install ./apps/skill` | Web 公共变量 | Web UI 展示的技能安装命令提示。 |
 
-## 5. Docker 本地栈变量
+构建期注入说明：
 
-| 变量 | 默认值 | 作用域 | 说明 |
-| --- | --- | --- | --- |
-| `LOCAL_POSTGRES_BIND_HOST` | `127.0.0.1` | Compose local | Postgres 宿主机绑定地址。 |
-| `LOCAL_POSTGRES_PORT` | `5432` | Compose local | Postgres 宿主机端口。 |
-| `LOCAL_REDIS_BIND_HOST` | `127.0.0.1` | Compose local | Redis 宿主机绑定地址。 |
-| `LOCAL_REDIS_PORT` | `6379` | Compose local | Redis 宿主机端口。 |
-| `LOCAL_API_BIND_HOST` | `0.0.0.0` | Compose local | API 宿主机绑定地址。 |
-| `LOCAL_API_PORT` | `3000` | Compose local | API 宿主机端口。 |
-| `LOCAL_WEB_BIND_HOST` | `0.0.0.0` | Compose local | Web 宿主机绑定地址。 |
-| `LOCAL_WEB_PORT` | `3001` | Compose local | Web 宿主机端口。 |
-| `NEXT_PUBLIC_API_BASE_URL` | `http://localhost:3000` | Compose local 覆盖 | 本地容器模式下浏览器侧 API 基址。 |
-| `INTERNAL_API_BASE_URL` | `http://server:3000` | Compose local 覆盖 | 本地容器模式下 Web SSR 内部 API 基址。 |
-| `DATABASE_URL` | `postgresql://postgres:postgres@postgres:5432/agentrade` | Compose local 覆盖 | 本地容器模式下 server 数据库连接串。 |
-| `REDIS_URL` | `redis://redis:6379` | Compose local 覆盖 | 本地容器模式下 server Redis 连接串。 |
+- `web` 镜像会通过 build args 注入以上变量。
+- 发布流程会强制重建 `web` 镜像，避免旧前端包复用。
 
-## 6. Docker 云端栈变量
+## 5. Docker 本地模式覆盖（`.env.local`）
 
-| 变量 | 默认值 | 作用域 | 说明 |
-| --- | --- | --- | --- |
-| `CLOUD_HTTP_BIND_HOST` | `0.0.0.0` | Compose cloud | 网关 HTTP 绑定地址。 |
-| `CLOUD_HTTP_PORT` | `80` | Compose cloud | 网关 HTTP 端口。 |
-| `CLOUD_HTTPS_ENABLED` | `false` | Compose cloud | 是否启用 TLS 网关配置。 |
-| `CLOUD_HTTP_REDIRECT_TO_HTTPS` | `false` | Compose cloud | 是否将 HTTP 重定向到 HTTPS（`/healthz` 例外）。 |
-| `CLOUD_HTTPS_BIND_HOST` | `0.0.0.0` | Compose cloud | 网关 HTTPS 绑定地址。 |
-| `CLOUD_HTTPS_PORT` | `443` | Compose cloud | 网关 HTTPS 端口。 |
-| `CLOUD_SERVER_NAME` | `_` | Compose cloud | Nginx `server_name`。 |
-| `CLOUD_API_PATH_PREFIX` | `/api` | Compose cloud | 外部 API 路径前缀。 |
-| `NEXT_PUBLIC_API_BASE_URL` | `/api` | Compose cloud 覆盖 | 云端模式下 web 浏览器侧 API 基址。 |
-| `INTERNAL_API_BASE_URL` | `http://server:3000` | Compose cloud 覆盖 | 云端模式下 Web SSR 内部 API 基址。 |
-| `CLOUD_HTTPS_CERTS_DIR` | `./deploy/nginx/certs` | Compose cloud | 宿主机证书目录，只读挂载到网关。 |
-| `CLOUD_HTTPS_CERT_FILE` | `/etc/nginx/certs/fullchain.pem` | Compose cloud | 容器内证书文件路径。 |
-| `CLOUD_HTTPS_KEY_FILE` | `/etc/nginx/certs/privkey.pem` | Compose cloud | 容器内私钥文件路径。 |
-| `CLOUD_API_UPSTREAM` | `http://server:3000` | Compose cloud | 网关 API 上游地址。 |
-| `CLOUD_WEB_UPSTREAM` | `http://web:3000` | Compose cloud | 网关 web 上游地址。 |
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `LOCAL_POSTGRES_BIND_HOST` | `127.0.0.1` | Postgres 端口映射的宿主机绑定地址。 |
+| `LOCAL_POSTGRES_PORT` | `5432` | 宿主机 Postgres 端口。 |
+| `LOCAL_REDIS_BIND_HOST` | `127.0.0.1` | Redis 端口映射的宿主机绑定地址。 |
+| `LOCAL_REDIS_PORT` | `6379` | 宿主机 Redis 端口。 |
+| `LOCAL_API_BIND_HOST` | `0.0.0.0` | API 端口映射的宿主机绑定地址。 |
+| `LOCAL_API_PORT` | `3000` | 宿主机 API 端口。 |
+| `LOCAL_WEB_BIND_HOST` | `0.0.0.0` | Web 端口映射的宿主机绑定地址。 |
+| `LOCAL_WEB_PORT` | `3001` | 宿主机 Web 端口。 |
+| `NEXT_PUBLIC_API_BASE_URL` | `http://localhost:3000` | 应与 `LOCAL_API_PORT` 对齐。 |
+| `INTERNAL_API_BASE_URL` | `http://server:3000` | Compose 网络内 Web SSR 上游。 |
+| `DATABASE_URL` | `postgresql://postgres:postgres@postgres:5432/agentrade` | Compose 网络内 Server DB 连接串。 |
+| `REDIS_URL` | `redis://redis:6379` | Compose 网络内 Server Redis 连接串。 |
+
+## 6. Docker 云端模式覆盖（`.env.cloud`）
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `CLOUD_HTTP_BIND_HOST` | `0.0.0.0` | 网关 HTTP 绑定地址。 |
+| `CLOUD_HTTP_PORT` | `80` | 网关 HTTP 端口。 |
+| `CLOUD_HTTPS_ENABLED` | `false` | 是否启用 TLS 网关逻辑。 |
+| `CLOUD_HTTP_REDIRECT_TO_HTTPS` | `false` | 是否将 HTTP 跳转 HTTPS（`/healthz` 例外）。 |
+| `CLOUD_HTTPS_BIND_HOST` | `0.0.0.0` | 网关 HTTPS 绑定地址。 |
+| `CLOUD_HTTPS_PORT` | `443` | 网关 HTTPS 端口。 |
+| `CLOUD_SERVER_NAME` | `_` | Nginx `server_name`。 |
+| `CLOUD_API_PATH_PREFIX` | `/api` | 对外 API 路径前缀。 |
+| `NEXT_PUBLIC_API_BASE_URL` | `/api` | 同域部署下浏览器 API 基址。 |
+| `INTERNAL_API_BASE_URL` | `http://server:3000` | Compose 网络内 SSR 上游。 |
+| `CLOUD_HTTPS_CERTS_DIR` | `./deploy/nginx/certs` | 宿主机证书目录（只读挂载）。 |
+| `CLOUD_HTTPS_CERT_FILE` | `/etc/nginx/certs/fullchain.pem` | 容器内证书路径。 |
+| `CLOUD_HTTPS_KEY_FILE` | `/etc/nginx/certs/privkey.pem` | 容器内私钥路径。 |
+| `CLOUD_API_UPSTREAM` | `http://server:3000` | 网关 API 上游地址。 |
+| `CLOUD_WEB_UPSTREAM` | `http://web:3000` | 网关 Web 上游地址。 |
+| `DATABASE_URL` | `postgresql://postgres:postgres@postgres:5432/agentrade` | Compose 网络内 Server DB 连接串。 |
+| `REDIS_URL` | `redis://redis:6379` | Compose 网络内 Server Redis 连接串。 |
 
 ## 7. Compose 辅助变量
 
-| 变量 | 默认值 | 作用域 | 说明 |
-| --- | --- | --- | --- |
-| `POSTGRES_DB` | `agentrade` | Compose base | postgres 服务数据库名。 |
-| `POSTGRES_USER` | `postgres` | Compose base | postgres 服务用户名。 |
-| `POSTGRES_PASSWORD` | `postgres` | Compose base | postgres 服务密码。 |
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `POSTGRES_DB` | `agentrade` | Postgres 初始化库名。 |
+| `POSTGRES_USER` | `postgres` | Postgres 初始化用户名。 |
+| `POSTGRES_PASSWORD` | `postgres` | Postgres 初始化密码。 |
 
-冒烟脚本说明：
-- `deploy/smoke.sh` 改为显式参数，不再从 `.env*` 读取冒烟参数：
-  - `--retries <count>`
-  - `--interval <seconds>`
-  - `--tls-insecure`
+## 8. 脚本参数参考
 
-## 8. 推荐变更流程
+### 8.1 `deploy/release.sh`
 
-当你修改配置行为时：
+- `--web-url <url>`
+- `--retries <count>`
+- `--interval <seconds>`
+- `--tls-insecure`
+- `--skip-smoke`
+- `--skip-verify`
 
-1. 先改 `packages/config`（或 compose 文件）。
-2. 如果是运维需要显式配置的变量，同步更新 `.env.example`。
+### 8.2 `deploy/smoke.sh`
+
+- `--retries <count>`
+- `--interval <seconds>`
+- `--tls-insecure`
+- `--skip-up`
+
+## 9. 变更同步清单
+
+当配置行为发生变化时：
+
+1. 先改 `packages/config` 和/或 compose 映射。
+2. 同步更新 `.env.example*` 模板。
 3. 同提交更新文档：
    - `README.md` / `README_cn.md`
+   - `DEPLOY.md` / `DEPLOY_cn.md`
    - `docs/configuration/environment.md` / `environment_cn.md`
-   - `docs/deployment/modes.md` / `modes_cn.md`（若部署行为变化）
-4. 若涉及 API 可见行为，额外同步：
-   - `docs/api/overview.md` 及中文镜像
-   - `docs/api/openapi.yaml` 及中文镜像
+   - `docs/deployment/modes.md` / `modes_cn.md`
+4. 若涉及 API 可见行为，同步 API 文档与 OpenAPI 中英文镜像。

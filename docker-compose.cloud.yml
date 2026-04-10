@@ -1,4 +1,16 @@
 services:
+  server:
+    # Inject full shared + mode env to prevent per-variable drift in compose mapping.
+    env_file:
+      - path: ./.env.example
+        required: false
+      - path: ./.env
+        required: false
+      - path: ./.env.example.cloud
+        required: false
+      - path: ./.env.cloud
+        required: false
+
   web:
     environment:
       NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-/api}

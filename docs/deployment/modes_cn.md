@@ -1,93 +1,91 @@
-# 部署模式运行手册
+# Docker 部署运行手册
 
-Agentrade 支持两种 Docker 部署模式，并有一个共享的全量配置基线：
+Agentrade 的部署路径仅维护 Docker。
+
+支持两种部署模式：
 
 - 本地模式：`docker-compose.yml` + `docker-compose.local.yml`
 - 云端模式：`docker-compose.yml` + `docker-compose.cloud.yml`
-- 全量配置基线：`.env.example`
 
-本文档是完整部署手册，覆盖前置条件、必改配置、启动、验证、运维与排障。
+本文档是权威的端到端部署手册。
 
-## 1. 事实来源与文件职责
+## 1. 事实来源
 
-- Compose 拓扑与连线：
+- Compose 拓扑与变量映射：
   - `docker-compose.yml`
   - `docker-compose.local.yml`
   - `docker-compose.cloud.yml`
-- 网关模板与 HTTPS fail-fast 逻辑：
+- Compose 包装脚本：
+  - `scripts/compose-stack.sh`
+- 发布与冒烟脚本：
+  - `deploy/release.sh`
+  - `deploy/smoke.sh`
+- 网关模板与入口脚本：
   - `deploy/nginx/gateway-entrypoint.sh`
-  - `deploy/nginx/cloud.http-only.conf.template`
-  - `deploy/nginx/cloud.https.no-redirect.conf.template`
-  - `deploy/nginx/cloud.https.redirect.conf.template`
-- 运行时配置解析与校验：
+  - `deploy/nginx/*.template`
+- 运行时配置解析与 fail-fast 校验：
   - `packages/config/src/index.ts`
 - 环境变量模板：
-  - `.env.example`（全量参考）
-  - `.env.example.local`（本地部署画像）
-  - `.env.example.cloud`（云端部署画像）
-- 冒烟脚本：
-  - `deploy/smoke.sh`
-- Compose 模式包装脚本：
-  - `scripts/compose-stack.sh`
+  - `.env.example`
+  - `.env.example.local`
+  - `.env.example.cloud`
 
 ## 2. 部署前检查清单
 
-1. 主机要求
+1. Docker 运行时
 
-- 已安装 Docker Engine + Docker Compose 插件（`docker compose version` 可执行）。
-- 磁盘容量足够保存镜像和 PostgreSQL 数据卷。
-- 端口未被占用：
-  - 本地模式：`LOCAL_API_PORT`、`LOCAL_WEB_PORT`，可选 `LOCAL_POSTGRES_PORT`、`LOCAL_REDIS_PORT`。
-  - 云端模式：`CLOUD_HTTP_PORT`，若启用 HTTPS 还需 `CLOUD_HTTPS_PORT`。
+- `docker info` 可执行成功。
+- `docker compose version` 可执行成功。
 
-2. 可选 Node 工具链（仅当你使用 `pnpm` 脚本时需要）
+2. 端口可用性
+
+- 本地模式：`LOCAL_API_PORT`、`LOCAL_WEB_PORT`（可选 `LOCAL_POSTGRES_PORT`、`LOCAL_REDIS_PORT`）。
+- 云端模式：`CLOUD_HTTP_PORT`，启用 HTTPS 时还需 `CLOUD_HTTPS_PORT`。
+
+3. 可选 Node/pnpm（仅 helper 脚本需要）
 
 - Node `>=22 <26`
 - pnpm `9.12.1`
-- 验证：
 
-```bash
-corepack enable
-pnpm --version
-```
+4. 云端模式额外前置
 
-3. Docker 健康检查
+- 域名 A 记录指向服务器 IP。
+- 防火墙/安全组放行 `80/tcp`，HTTPS 场景放行 `443/tcp`。
+- HTTPS 场景下证书和私钥文件已放到宿主机。
 
-```bash
-docker info
-```
+## 3. 环境变量分层策略
 
-4. 确认部署目标
-
-- 本地模式：本机开发/联调/测试。
-- 云端模式：通过 Nginx 网关单入口部署。
-
-## 3. 环境变量策略
-
-采用分层 env 文件：
-
-- 本地部署：
+本地部署文件：
 
 ```bash
 cp .env.example .env
 cp .env.example.local .env.local
 ```
 
-- 云端部署：
+云端部署文件：
 
 ```bash
 cp .env.example .env
 cp .env.example.cloud .env.cloud
 ```
 
-docker 脚本加载顺序：
+部署脚本加载顺序：
 
 1. `.env`（共享基线）
 2. `.env.local` 或 `.env.cloud`（模式覆盖）
 
-## 4. 非 test 环境启动前的必改项
+`server` 运行时通过 compose `env_file` 注入完整 env，并带可选兜底，避免逐项映射遗漏：
 
-`.env` 中以下值必须替换占位值：
+1. `.env.example`
+2. `.env`
+3. 模式示例兜底（`.env.example.local` / `.env.example.cloud`）
+4. 模式文件（`.env.local` / `.env.cloud`）
+
+`web` 与 `gateway` 保持显式最小环境变量映射（最小权限）。
+
+## 4. 非 test 环境启动前必改项
+
+必须替换 `.env` 占位密钥：
 
 - `JWT_SECRET`
 - `ADMIN_SERVICE_KEY`
@@ -98,31 +96,22 @@ docker 脚本加载顺序：
 openssl rand -hex 32
 ```
 
-Fail-fast 说明：在 `NODE_ENV=test` 之外，若仍为占位值会直接启动失败。
+Fail-fast：在 `NODE_ENV=test` 之外，占位值会被拒绝启动。
 
-## 5. 本地模式部署（完整流程）
+## 5. 本地模式发布流程
 
-### 5.1 本地模式关键配置
+### 5.1 本地关键配置
 
-至少核对 `.env` + `.env.local` 中以下项：
+在 `.env` + `.env.local` 中至少核对：
 
-- 安全：
-  - `JWT_SECRET`
-  - `ADMIN_SERVICE_KEY`
-- API/Web 对外暴露：
-  - `LOCAL_API_BIND_HOST`、`LOCAL_API_PORT`
-  - `LOCAL_WEB_BIND_HOST`、`LOCAL_WEB_PORT`
-- 数据库与 Redis 暴露：
-  - `LOCAL_POSTGRES_BIND_HOST`、`LOCAL_POSTGRES_PORT`
-  - `LOCAL_REDIS_BIND_HOST`、`LOCAL_REDIS_PORT`
-- 容器运行时上游（本地模式覆盖值）：
-  - `DATABASE_URL`
-  - `REDIS_URL`
-- Web API 路由：
-  - `NEXT_PUBLIC_API_BASE_URL`
-  - `INTERNAL_API_BASE_URL`
+- `LOCAL_API_BIND_HOST`、`LOCAL_API_PORT`
+- `LOCAL_WEB_BIND_HOST`、`LOCAL_WEB_PORT`
+- `NEXT_PUBLIC_API_BASE_URL`
+- `INTERNAL_API_BASE_URL`
+- `DATABASE_URL`
+- `REDIS_URL`
 
-推荐本地默认值：
+推荐默认值：
 
 - `LOCAL_POSTGRES_BIND_HOST=127.0.0.1`
 - `LOCAL_REDIS_BIND_HOST=127.0.0.1`
@@ -131,29 +120,28 @@ Fail-fast 说明：在 `NODE_ENV=test` 之外，若仍为占位值会直接启�
 - `NEXT_PUBLIC_API_BASE_URL=http://localhost:${LOCAL_API_PORT}`
 - `INTERNAL_API_BASE_URL=http://server:3000`
 
-### 5.2 启动本地栈
+### 5.2 发布命令
 
-使用脚本：
-
-```bash
-pnpm docker:stack:local:up
-```
-
-等价 compose 命令：
+推荐：
 
 ```bash
-docker compose --env-file .env --env-file .env.local -f docker-compose.yml -f docker-compose.local.yml up --build -d --remove-orphans
+pnpm docker:release:local
 ```
 
-### 5.3 验证本地部署
-
-冒烟验证：
+不使用 pnpm 时等价命令：
 
 ```bash
-pnpm docker:smoke:local
+sh deploy/release.sh local
 ```
 
-手工检查：
+### 5.3 发布后验证
+
+发布脚本已自动执行：
+
+- 冒烟
+- `NEXT_PUBLIC_API_BASE_URL` 的 web chunk 校验
+
+可选手工验证：
 
 ```bash
 curl --noproxy '*' -f "http://127.0.0.1:${LOCAL_API_PORT:-3000}/v2/system/health"
@@ -161,7 +149,7 @@ curl --noproxy '*' -f "http://127.0.0.1:${LOCAL_API_PORT:-3000}/v2/dashboard/sum
 curl --noproxy '*' -f "http://127.0.0.1:${LOCAL_WEB_PORT:-3001}/"
 ```
 
-查看容器与日志：
+查看状态与日志：
 
 ```bash
 docker compose --env-file .env --env-file .env.local -f docker-compose.yml -f docker-compose.local.yml ps
@@ -175,119 +163,62 @@ docker compose --env-file .env --env-file .env.local -f docker-compose.yml -f do
 pnpm docker:stack:local:down
 ```
 
-等价 compose 命令：
+等价命令：
 
 ```bash
 docker compose --env-file .env --env-file .env.local -f docker-compose.yml -f docker-compose.local.yml down
 ```
 
-## 6. 云端模式部署（完整流程）
+## 6. 云端模式发布流程
 
-### 6.1 云端部署前置条件
+### 6.1 云端关键配置
 
-1. DNS
+在 `.env` + `.env.cloud` 中至少核对：
 
-- 域名 A 记录指向服务器 IP。
-- 示例：`agentrade.info -> 43.156.161.81`。
-
-2. 网络与安全组/防火墙
-
-- 放行入站 `80/tcp`。
-- 若启用 HTTPS，放行入站 `443/tcp`。
-
-3. 证书材料（HTTPS 模式）
-
-- 在宿主机准备证书和私钥文件。
-- `CLOUD_HTTPS_CERTS_DIR` 必须指向该宿主机目录。
-- `CLOUD_HTTPS_CERT_FILE` 与 `CLOUD_HTTPS_KEY_FILE` 必须是容器内路径（位于 `/etc/nginx/certs/...`）。
-
-### 6.2 云端模式关键配置
-
-至少核对 `.env` + `.env.cloud` 中以下项：
-
-- 安全：
-  - `JWT_SECRET`
-  - `ADMIN_SERVICE_KEY`
-- 代理感知：
-  - `TRUST_PROXY=true`
-- CORS：
-  - `CORS_ALLOWED_ORIGINS` 包含你的 HTTPS 域名 origin
-- 网关基础路由：
-  - `CLOUD_SERVER_NAME`
-  - `CLOUD_HTTP_BIND_HOST`、`CLOUD_HTTP_PORT`
-  - `CLOUD_API_PATH_PREFIX`
-  - `NEXT_PUBLIC_API_BASE_URL`
-  - `INTERNAL_API_BASE_URL`
-- 网关上游：
-  - `CLOUD_API_UPSTREAM`
-  - `CLOUD_WEB_UPSTREAM`
+- 安全：`JWT_SECRET`、`ADMIN_SERVICE_KEY`
+- 代理/CORS：`TRUST_PROXY=true`、`CORS_ALLOWED_ORIGINS`
+- 路由：`CLOUD_SERVER_NAME`、`CLOUD_API_PATH_PREFIX`、`NEXT_PUBLIC_API_BASE_URL`、`INTERNAL_API_BASE_URL`
+- 网关上游：`CLOUD_API_UPSTREAM`、`CLOUD_WEB_UPSTREAM`
 - HTTPS（启用时）：
   - `CLOUD_HTTPS_ENABLED`
   - `CLOUD_HTTP_REDIRECT_TO_HTTPS`
   - `CLOUD_HTTPS_BIND_HOST`、`CLOUD_HTTPS_PORT`
-  - `CLOUD_HTTPS_CERTS_DIR`
-  - `CLOUD_HTTPS_CERT_FILE`
-  - `CLOUD_HTTPS_KEY_FILE`
+  - `CLOUD_HTTPS_CERTS_DIR`、`CLOUD_HTTPS_CERT_FILE`、`CLOUD_HTTPS_KEY_FILE`
 
-云端默认路径形状（单机同域）为：
+推荐同域路径形状：
 
-- API 对外路径：`${CLOUD_API_PATH_PREFIX}`（默认 `/api`）
-- Web 对外路径：`/`
-- Web 浏览器 API 基址：通常 `/api`
+- web：`/`
+- api：`${CLOUD_API_PATH_PREFIX}`（通常 `/api`）
+- `NEXT_PUBLIC_API_BASE_URL=/api`
 
-### 6.3 TLS 行为与 fail-fast
+### 6.2 发布命令
 
-当 `CLOUD_HTTPS_ENABLED=true` 时，只要以下任一文件不存在或不可读，网关会立即启动失败：
-
-- `CLOUD_HTTPS_CERT_FILE`
-- `CLOUD_HTTPS_KEY_FILE`
-
-当 `CLOUD_HTTP_REDIRECT_TO_HTTPS=true` 时：
-
-- 普通 HTTP 请求会跳转到 HTTPS。
-- `/healthz` 在 HTTP 下仍保持 200（用于健康探针）。
-
-### 6.4 启动云端栈
-
-使用脚本：
+推荐：
 
 ```bash
-pnpm docker:stack:cloud:up
+pnpm docker:release:cloud -- --web-url https://<your-domain>
 ```
 
-等价 compose 命令：
+不使用 pnpm 时等价命令：
 
 ```bash
-docker compose --env-file .env --env-file .env.cloud -f docker-compose.yml -f docker-compose.cloud.yml up --build -d --remove-orphans
+sh deploy/release.sh cloud --web-url https://<your-domain>
 ```
 
-建议先查看渲染后的配置：
+仅自签证书场景：
 
 ```bash
-docker compose --env-file .env --env-file .env.cloud -f docker-compose.yml -f docker-compose.cloud.yml config
+pnpm docker:release:cloud -- --tls-insecure --web-url https://<your-domain>
 ```
 
-### 6.5 验证云端部署
+### 6.3 云端验证
 
-冒烟验证：
+发布脚本已自动执行：
 
-```bash
-pnpm docker:smoke:cloud
-```
+- 冒烟
+- 线上 web chunk 公共 API 基址校验
 
-仅自签证书联调时：
-
-```bash
-pnpm docker:smoke:cloud -- --tls-insecure
-```
-
-自定义重试参数：
-
-```bash
-pnpm docker:smoke:cloud -- --retries 60 --interval 2
-```
-
-手工检查（按你的域名/IP替换）：
+可选手工验证：
 
 ```bash
 curl --noproxy '*' -f "http://<domain-or-ip>/healthz"
@@ -295,7 +226,7 @@ curl --noproxy '*' -f "https://<domain-or-ip>/healthz"
 curl --noproxy '*' -f "https://<domain-or-ip>${CLOUD_API_PATH_PREFIX:-/api}/v2/system/health"
 ```
 
-查看容器与日志：
+查看状态与日志：
 
 ```bash
 docker compose --env-file .env --env-file .env.cloud -f docker-compose.yml -f docker-compose.cloud.yml ps
@@ -304,82 +235,68 @@ docker compose --env-file .env --env-file .env.cloud -f docker-compose.yml -f do
 docker compose --env-file .env --env-file .env.cloud -f docker-compose.yml -f docker-compose.cloud.yml logs -f web
 ```
 
-### 6.6 停止云端栈
+### 6.4 停止云端栈
 
 ```bash
 pnpm docker:stack:cloud:down
 ```
 
-等价 compose 命令：
+等价命令：
 
 ```bash
 docker compose --env-file .env --env-file .env.cloud -f docker-compose.yml -f docker-compose.cloud.yml down
 ```
 
-## 7. 数据库与启动行为说明
+## 7. 发布脚本行为（重点）
 
-Server 容器启动顺序：
+`deploy/release.sh` 会强制执行防旧包发布策略：
 
-1. 执行争议旧状态回填 SQL。
-2. 执行 `prisma db push`。
-3. 启动 API 进程。
+1. `web` 使用 `--pull --no-cache` 重建。
+2. 使用 `up -d --build --force-recreate --remove-orphans` 重建栈。
+3. 执行 `deploy/smoke.sh --skip-up ...`。
+4. 校验线上 web chunk 已包含期望 `NEXT_PUBLIC_API_BASE_URL`，且不依赖运行时占位回退。
 
-运维含义：
+支持参数：
 
-- 每次启动会自动尝试应用 schema。
-- PostgreSQL 数据持久化在 `pgdata` volume。
-- 重建容器不会清空数据库，除非你显式删除 volume。
+- `--web-url <url>`
+- `--retries <count>`
+- `--interval <seconds>`
+- `--tls-insecure`（cloud）
+- `--skip-smoke`
+- `--skip-verify`
 
-可选一次性数据库加固（针对已有库）：
-
-本地模式：
-
-```bash
-docker compose --env-file .env --env-file .env.local -f docker-compose.yml -f docker-compose.local.yml exec server node_modules/.bin/prisma db execute --schema prisma/schema.prisma --file prisma/pre_migrations/20260409_dispute_open_unique_guard.sql
-```
-
-云端模式：
-
-```bash
-docker compose --env-file .env --env-file .env.cloud -f docker-compose.yml -f docker-compose.cloud.yml exec server node_modules/.bin/prisma db execute --schema prisma/schema.prisma --file prisma/pre_migrations/20260409_dispute_open_unique_guard.sql
-```
+若云端实际访问地址与 env 推断不一致，请显式传入 `--web-url`。
 
 ## 8. 日常运维（Day-2）
 
-### 8.1 更新代码并重部署
+### 8.1 更新并重发
 
 ```bash
 git pull
-pnpm docker:stack:local:up
+pnpm docker:release:local
 # 或
-pnpm docker:stack:cloud:up
+pnpm docker:release:cloud -- --web-url https://<your-domain>
 ```
-
-由于使用 `up --build -d --remove-orphans`，镜像会重建并按需重建容器。
 
 ### 8.2 重启指定服务
 
-本地模式：
+本地：
 
 ```bash
 docker compose --env-file .env --env-file .env.local -f docker-compose.yml -f docker-compose.local.yml restart server web
 ```
 
-云端模式：
+云端：
 
 ```bash
 docker compose --env-file .env --env-file .env.cloud -f docker-compose.yml -f docker-compose.cloud.yml restart gateway server web
 ```
 
-### 8.3 备份/恢复提醒
+### 8.3 数据状态与重置
 
-- 数据库状态在 PostgreSQL `pgdata` volume 中。
-- 云端生产建议定期做逻辑备份（dump）。
-- 若修改了 `POSTGRES_USER` 或 `POSTGRES_PASSWORD`，需更新 `DATABASE_URL`（若你拆分了共享与模式覆盖文件，两处都要改）。
-
-### 8.4 全量重置（破坏性）
-
-仅在确认要清空数据库时使用：
+- PostgreSQL 数据持久化在 `pgdata` volume。
+- 重建容器不会删除数据。
+- 破坏性重置（会丢数据）：
 
 ```bash
 docker compose --env-file .env --env-file .env.local -f docker-compose.yml -f docker-compose.local.yml down -v
@@ -387,63 +304,45 @@ docker compose --env-file .env --env-file .env.local -f docker-compose.yml -f do
 docker compose --env-file .env --env-file .env.cloud -f docker-compose.yml -f docker-compose.cloud.yml down -v
 ```
 
-## 9. 上线验收矩阵
+## 9. 排障手册
 
-本地模式：
-
-- `docker compose ps` 中 `postgres`、`redis`、`server`、`web` 为 running/healthy。
-- 本地 smoke 全通过。
-- 宿主机可访问 Web 根路径和 API health。
-
-云端模式：
-
-- `docker compose ps` 中 `postgres`、`redis`、`server`、`web`、`gateway` 为 running/healthy。
-- 云端 smoke 全通过。
-- 域名 DNS 解析到目标服务器 IP。
-- HTTP/HTTPS 行为与 `CLOUD_HTTP_REDIRECT_TO_HTTPS` 设定一致。
-- API 在 `${CLOUD_API_PATH_PREFIX}` 可用，Web 在 `/` 可用。
-
-## 10. 排障手册
-
-### 10.1 占位密钥导致启动失败
+### 9.1 占位密钥导致启动失败
 
 现象：
 
-- Server 报 `JWT_SECRET` 或 `ADMIN_SERVICE_KEY` 配置错误并退出。
+- Server 因 `JWT_SECRET` / `ADMIN_SERVICE_KEY` 非法退出。
 
 处理：
 
-- 替换 `.env` 中两个占位值后重启部署。
+- 替换 `.env` 占位值并重发。
 
-### 10.2 浏览器 CORS 拒绝
+### 9.2 浏览器 CORS 失败
 
 现象：
 
-- 浏览器调用 API 出现 CORS 错误。
+- 浏览器 API 请求报 CORS 错误。
 
 处理：
 
-- 将前端真实 origin 加入 `CORS_ALLOWED_ORIGINS`。
-- 必须是完整 origin，如 `https://example.com`。
+- 将前端真实 origin 精确加入 `CORS_ALLOWED_ORIGINS`。
 
-### 10.3 HTTPS 模式网关启动失败
-
-现象：
-
-- `gateway` 容器在 HTTPS 模式下直接退出。
-
-处理清单：
-
-- 仅在证书就绪时设置 `CLOUD_HTTPS_ENABLED=true`。
-- `CLOUD_HTTPS_CERTS_DIR` 指向正确宿主机目录。
-- `CLOUD_HTTPS_CERT_FILE` 与 `CLOUD_HTTPS_KEY_FILE` 对应挂载后的容器内文件路径。
-- 文件权限允许容器读取。
-
-### 10.4 本地 curl 被代理干扰或返回 `502`
+### 9.3 HTTPS 网关启动失败
 
 现象：
 
-- 本地检查请求被 shell 代理劫持。
+- `gateway` 在 HTTPS 模式下退出。
+
+处理：
+
+- 确认 `CLOUD_HTTPS_CERTS_DIR` 指向正确宿主机目录。
+- 确认挂载后路径匹配 `CLOUD_HTTPS_CERT_FILE` 和 `CLOUD_HTTPS_KEY_FILE`。
+- 确认容器有读取证书文件权限。
+
+### 9.4 本地探活受代理干扰
+
+现象：
+
+- `curl` 校验被系统/终端代理影响。
 
 处理：
 
@@ -452,7 +351,7 @@ curl --noproxy '*' http://127.0.0.1:3000/v2/system/health
 export NO_PROXY=localhost,127.0.0.1,.local
 ```
 
-### 10.5 端口冲突
+### 9.5 端口冲突
 
 现象：
 
@@ -460,24 +359,27 @@ export NO_PROXY=localhost,127.0.0.1,.local
 
 处理：
 
-- 修改 `.env` 对应端口：
-  - 本地模式：`LOCAL_*_PORT`
-  - 云端模式：`CLOUD_HTTP_PORT`、`CLOUD_HTTPS_PORT`
+- 调整 env 端口变量：
+  - 本地：`LOCAL_*_PORT`
+  - 云端：`CLOUD_HTTP_PORT`、`CLOUD_HTTPS_PORT`
 
-### 10.6 数据库连接或认证失败
+## 10. 发布验收清单
 
-现象：
+本地发布成功标准：
 
-- Server 无法连接 PostgreSQL。
+- `postgres`、`redis`、`server`、`web` 为 healthy/running。
+- 本地 release 命令成功退出。
+- Web 根路径和 API health 可访问。
 
-处理清单：
+云端发布成功标准：
 
-- 检查 `POSTGRES_DB`、`POSTGRES_USER`、`POSTGRES_PASSWORD`。
-- 检查 `DATABASE_URL` 是否与上述凭据一致。
-- 查看 postgres 容器健康状态与日志。
+- `postgres`、`redis`、`server`、`web`、`gateway` 为 healthy/running。
+- 云端 release 命令成功退出。
+- 域名解析正确，HTTP/HTTPS 行为符合配置。
+- Web 与 API 按配置路径可访问。
 
 ## 11. 相关文档
 
-- 环境变量总表：`docs/configuration/environment_cn.md`
-- 快速入口：`DEPLOY_cn.md`
-- API 总览：`docs/api/overview_cn.md`
+- 快速入口：[DEPLOY_cn.md](../../DEPLOY_cn.md)
+- 环境变量总表：[docs/configuration/environment_cn.md](../configuration/environment_cn.md)
+- API 总览：[docs/api/overview_cn.md](../api/overview_cn.md)

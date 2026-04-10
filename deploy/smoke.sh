@@ -4,7 +4,7 @@ set -eu
 mode="${1:-}"
 
 if [ "$mode" != "local" ] && [ "$mode" != "cloud" ]; then
-  echo "Usage: sh deploy/smoke.sh <local|cloud> [--retries <count>] [--interval <seconds>] [--tls-insecure]" >&2
+  echo "Usage: sh deploy/smoke.sh <local|cloud> [--retries <count>] [--interval <seconds>] [--tls-insecure] [--skip-up]" >&2
   exit 2
 fi
 shift
@@ -12,6 +12,7 @@ shift
 smoke_retries="40"
 smoke_interval_seconds="1"
 smoke_tls_insecure="false"
+smoke_skip_up="false"
 
 is_positive_integer() {
   value="${1:-}"
@@ -59,9 +60,13 @@ while [ "$#" -gt 0 ]; do
       smoke_tls_insecure="true"
       shift
       ;;
+    --skip-up)
+      smoke_skip_up="true"
+      shift
+      ;;
     *)
       echo "Unknown argument: $1" >&2
-      echo "Usage: sh deploy/smoke.sh <local|cloud> [--retries <count>] [--interval <seconds>] [--tls-insecure]" >&2
+      echo "Usage: sh deploy/smoke.sh <local|cloud> [--retries <count>] [--interval <seconds>] [--tls-insecure] [--skip-up]" >&2
       exit 2
       ;;
   esac
@@ -242,7 +247,9 @@ check_https_redirect() {
 if [ "$mode" = "local" ]; then
   mode_env_file=".env.local"
 
-  compose_up "local"
+  if ! is_true "$smoke_skip_up"; then
+    compose_up "local"
+  fi
 
   api_host="$(normalize_host "$(resolve_value "LOCAL_API_BIND_HOST" "127.0.0.1" "$mode_env_file")")"
   api_port="$(resolve_value "LOCAL_API_PORT" "3000" "$mode_env_file")"
@@ -267,7 +274,9 @@ fi
 
 mode_env_file=".env.cloud"
 
-compose_up "cloud"
+if ! is_true "$smoke_skip_up"; then
+  compose_up "cloud"
+fi
 
 cloud_host="$(normalize_host "$(resolve_value "CLOUD_HTTP_BIND_HOST" "127.0.0.1" "$mode_env_file")")"
 cloud_port="$(resolve_value "CLOUD_HTTP_PORT" "80" "$mode_env_file")"

@@ -29,6 +29,8 @@
     "docker:stack:cloud:down": "sh scripts/compose-stack.sh cloud down",
     "docker:smoke:local": "sh deploy/smoke.sh local",
     "docker:smoke:cloud": "sh deploy/smoke.sh cloud",
+    "docker:release:local": "sh deploy/release.sh local",
+    "docker:release:cloud": "sh deploy/release.sh cloud",
     "db:test:schema:push:local": "DATABASE_URL='postgresql://postgres:postgres@localhost:5432/agentrade?schema=test' pnpm exec prisma db push --schema prisma/schema.prisma",
     "db:test:prepare:open-dispute-guard:local": "DATABASE_URL='postgresql://postgres:postgres@localhost:5432/agentrade?schema=test' pnpm exec prisma db execute --schema prisma/schema.prisma --file prisma/pre_migrations/20260409_dispute_open_unique_guard.sql",
     "docker:test:db": "pnpm docker:up && pnpm db:test:schema:push:local && pnpm db:test:prepare:open-dispute-guard:local && DATABASE_URL=postgresql://postgres:postgres@localhost:5432/agentrade TEST_DATABASE_URL='postgresql://postgres:postgres@localhost:5432/agentrade?schema=test' ENABLE_PERSISTENCE=true ENABLE_REDIS_RATE_LIMIT=false pnpm --filter @agentrade/server test:db",

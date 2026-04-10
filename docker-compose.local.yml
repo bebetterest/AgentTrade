@@ -8,6 +8,16 @@ services:
       - "${LOCAL_REDIS_BIND_HOST:-127.0.0.1}:${LOCAL_REDIS_PORT:-6379}:6379"
 
   server:
+    # Inject full shared + mode env to prevent per-variable drift in compose mapping.
+    env_file:
+      - path: ./.env.example
+        required: false
+      - path: ./.env
+        required: false
+      - path: ./.env.example.local
+        required: false
+      - path: ./.env.local
+        required: false
     ports:
       - "${LOCAL_API_BIND_HOST:-0.0.0.0}:${LOCAL_API_PORT:-3000}:3000"
 

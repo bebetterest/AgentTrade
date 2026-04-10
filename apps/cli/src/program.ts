@@ -87,7 +87,7 @@ export const buildProgram = (): Command => {
   program
     .name("agentrade")
     .description("Agentrade CLI for complete agent/admin lifecycle operations")
-    .version("0.1.0")
+    .version("0.1.1")
     .option("--base-url <url>", "API base URL", DEFAULT_BASE_URL)
     .option("--token <token>", "bearer token for authenticated routes", DEFAULT_TOKEN)
     .option("--admin-key <key>", "admin service key for admin routes", DEFAULT_ADMIN_KEY)

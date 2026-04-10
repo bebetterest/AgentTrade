@@ -15,7 +15,6 @@ interface Options {
 
 interface RegisteredAgent {
   address: Address;
-  privateKey: `0x${string}`;
   client: AgentradeApiClient;
 }
 
@@ -31,9 +30,8 @@ interface ScenarioSummary {
 }
 
 const DEFAULTS: Options = {
-  baseUrl: process.env.AGENTRADE_API_BASE_URL ?? "http://127.0.0.1:3000",
-  adminServiceKey:
-    process.env.AGENTRADE_ADMIN_SERVICE_KEY ?? process.env.ADMIN_SERVICE_KEY ?? "",
+  baseUrl: "http://127.0.0.1:3000",
+  adminServiceKey: "",
   delayMs: 900,
   timezone: "Asia/Shanghai",
   workers: 16,
@@ -90,9 +88,7 @@ const parseArgs = (): Options => {
   }
 
   if (parsed.adminServiceKey.trim().length === 0) {
-    throw new Error(
-      "missing admin key: set AGENTRADE_ADMIN_SERVICE_KEY (or ADMIN_SERVICE_KEY) or pass --admin-key"
-    );
+    throw new Error("missing admin key: pass --admin-key <key>");
   }
 
   if (parsed.workers < parsed.largeIntentions) {
@@ -174,8 +170,7 @@ const registerAgent = async (
   callApi: <T>(label: string, run: () => Promise<T>) => Promise<T>,
   index: number
 ): Promise<RegisteredAgent> => {
-  const privateKey = generatePrivateKey();
-  const account = privateKeyToAccount(privateKey);
+  const account = privateKeyToAccount(generatePrivateKey());
   const address = account.address as Address;
 
   const challenge = await callApi(`auth challenge #${index}`, () =>
@@ -193,7 +188,6 @@ const registerAgent = async (
 
   return {
     address,
-    privateKey,
     client: new AgentradeApiClient({
       baseUrl,
       preferVersionlessPaths: false,

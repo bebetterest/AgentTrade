@@ -115,12 +115,12 @@ Fail-fast 说明：在 `NODE_ENV=test` 之外，若仍为占位值会直接启�
 - 数据库与 Redis 暴露：
   - `LOCAL_POSTGRES_BIND_HOST`、`LOCAL_POSTGRES_PORT`
   - `LOCAL_REDIS_BIND_HOST`、`LOCAL_REDIS_PORT`
-- 容器内上游地址：
-  - `SERVER_DATABASE_URL`
-  - `SERVER_REDIS_URL`
+- 容器运行时上游（本地模式覆盖值）：
+  - `DATABASE_URL`
+  - `REDIS_URL`
 - Web API 路由：
-  - `WEB_PUBLIC_API_BASE_URL`
-  - `WEB_INTERNAL_API_BASE_URL`
+  - `NEXT_PUBLIC_API_BASE_URL`
+  - `INTERNAL_API_BASE_URL`
 
 推荐本地默认值：
 
@@ -128,8 +128,8 @@ Fail-fast 说明：在 `NODE_ENV=test` 之外，若仍为占位值会直接启�
 - `LOCAL_REDIS_BIND_HOST=127.0.0.1`
 - `LOCAL_API_BIND_HOST=0.0.0.0`
 - `LOCAL_WEB_BIND_HOST=0.0.0.0`
-- `WEB_PUBLIC_API_BASE_URL=http://localhost:${LOCAL_API_PORT}`
-- `WEB_INTERNAL_API_BASE_URL=http://server:3000`
+- `NEXT_PUBLIC_API_BASE_URL=http://localhost:${LOCAL_API_PORT}`
+- `INTERNAL_API_BASE_URL=http://server:3000`
 
 ### 5.2 启动本地栈
 
@@ -216,8 +216,8 @@ docker compose --env-file .env --env-file .env.local -f docker-compose.yml -f do
   - `CLOUD_SERVER_NAME`
   - `CLOUD_HTTP_BIND_HOST`、`CLOUD_HTTP_PORT`
   - `CLOUD_API_PATH_PREFIX`
-  - `CLOUD_WEB_API_BASE_URL`
-  - `CLOUD_WEB_INTERNAL_API_BASE_URL`
+  - `NEXT_PUBLIC_API_BASE_URL`
+  - `INTERNAL_API_BASE_URL`
 - 网关上游：
   - `CLOUD_API_UPSTREAM`
   - `CLOUD_WEB_UPSTREAM`
@@ -278,7 +278,13 @@ pnpm docker:smoke:cloud
 仅自签证书联调时：
 
 ```bash
-SMOKE_TLS_INSECURE=true pnpm docker:smoke:cloud
+pnpm docker:smoke:cloud -- --tls-insecure
+```
+
+自定义重试参数：
+
+```bash
+pnpm docker:smoke:cloud -- --retries 60 --interval 2
 ```
 
 手工检查（按你的域名/IP替换）：
@@ -369,9 +375,7 @@ docker compose --env-file .env --env-file .env.cloud -f docker-compose.yml -f do
 
 - 数据库状态在 PostgreSQL `pgdata` volume 中。
 - 云端生产建议定期做逻辑备份（dump）。
-- 若修改了 `POSTGRES_USER` 或 `POSTGRES_PASSWORD`，需同步更新：
-  - `SERVER_DATABASE_URL`
-  - `DATABASE_URL`（若你还在宿主机工具里使用）
+- 若修改了 `POSTGRES_USER` 或 `POSTGRES_PASSWORD`，需更新 `DATABASE_URL`（若你拆分了共享与模式覆盖文件，两处都要改）。
 
 ### 8.4 全量重置（破坏性）
 
@@ -469,7 +473,7 @@ export NO_PROXY=localhost,127.0.0.1,.local
 处理清单：
 
 - 检查 `POSTGRES_DB`、`POSTGRES_USER`、`POSTGRES_PASSWORD`。
-- 检查 `SERVER_DATABASE_URL` 是否与上述凭据一致。
+- 检查 `DATABASE_URL` 是否与上述凭据一致。
 - 查看 postgres 容器健康状态与日志。
 
 ## 11. 相关文档

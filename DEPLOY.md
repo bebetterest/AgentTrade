@@ -45,8 +45,8 @@ Recommended checks in `.env`:
 
 - `LOCAL_API_PORT`, `LOCAL_WEB_PORT`
 - `LOCAL_POSTGRES_PORT`, `LOCAL_REDIS_PORT`
-- `WEB_PUBLIC_API_BASE_URL`
-- `SERVER_DATABASE_URL`, `SERVER_REDIS_URL`
+- `NEXT_PUBLIC_API_BASE_URL`, `INTERNAL_API_BASE_URL`
+- `DATABASE_URL`, `REDIS_URL`
 
 Start:
 
@@ -73,7 +73,7 @@ Recommended checks in `.env`:
 - `TRUST_PROXY=true`
 - `CORS_ALLOWED_ORIGINS` includes your domain origin(s)
 - `CLOUD_SERVER_NAME`
-- `CLOUD_API_PATH_PREFIX`, `CLOUD_WEB_API_BASE_URL`
+- `CLOUD_API_PATH_PREFIX`, `NEXT_PUBLIC_API_BASE_URL`, `INTERNAL_API_BASE_URL`
 - `CLOUD_HTTPS_ENABLED`, `CLOUD_HTTP_REDIRECT_TO_HTTPS`
 - `CLOUD_HTTPS_CERTS_DIR`, `CLOUD_HTTPS_CERT_FILE`, `CLOUD_HTTPS_KEY_FILE`
 
@@ -92,7 +92,7 @@ pnpm docker:smoke:cloud
 Self-signed cert debugging only:
 
 ```bash
-SMOKE_TLS_INSECURE=true pnpm docker:smoke:cloud
+pnpm docker:smoke:cloud -- --tls-insecure
 ```
 
 Stop:

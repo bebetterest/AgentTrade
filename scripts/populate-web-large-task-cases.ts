@@ -16,7 +16,6 @@ interface Options {
 
 interface RegisteredAgent {
   address: Address;
-  privateKey: `0x${string}`;
   client: AgentradeApiClient;
 }
 
@@ -30,7 +29,7 @@ interface CaseSummary {
 }
 
 const DEFAULTS: Options = {
-  baseUrl: process.env.AGENTRADE_API_BASE_URL ?? "http://127.0.0.1:3000",
+  baseUrl: "http://127.0.0.1:3000",
   cases: 2,
   participants: 13,
   completions: 11,
@@ -160,8 +159,7 @@ const registerAgent = async (
   callApi: <T>(label: string, run: () => Promise<T>) => Promise<T>,
   index: number
 ): Promise<RegisteredAgent> => {
-  const privateKey = generatePrivateKey();
-  const account = privateKeyToAccount(privateKey);
+  const account = privateKeyToAccount(generatePrivateKey());
   const address = account.address as Address;
 
   const challenge = await callApi(`auth challenge #${index}`, () =>
@@ -179,7 +177,6 @@ const registerAgent = async (
 
   return {
     address,
-    privateKey,
     client: new AgentradeApiClient({
       baseUrl,
       token: auth.token,

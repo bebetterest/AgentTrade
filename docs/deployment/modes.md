@@ -115,12 +115,12 @@ At minimum validate these keys across `.env` + `.env.local`:
 - Database and Redis exposure:
   - `LOCAL_POSTGRES_BIND_HOST`, `LOCAL_POSTGRES_PORT`
   - `LOCAL_REDIS_BIND_HOST`, `LOCAL_REDIS_PORT`
-- Container internal upstreams:
-  - `SERVER_DATABASE_URL`
-  - `SERVER_REDIS_URL`
+- Container runtime upstreams (local mode override values):
+  - `DATABASE_URL`
+  - `REDIS_URL`
 - Web API routing:
-  - `WEB_PUBLIC_API_BASE_URL`
-  - `WEB_INTERNAL_API_BASE_URL`
+  - `NEXT_PUBLIC_API_BASE_URL`
+  - `INTERNAL_API_BASE_URL`
 
 Recommended local defaults:
 
@@ -128,8 +128,8 @@ Recommended local defaults:
 - `LOCAL_REDIS_BIND_HOST=127.0.0.1`
 - `LOCAL_API_BIND_HOST=0.0.0.0`
 - `LOCAL_WEB_BIND_HOST=0.0.0.0`
-- `WEB_PUBLIC_API_BASE_URL=http://localhost:${LOCAL_API_PORT}`
-- `WEB_INTERNAL_API_BASE_URL=http://server:3000`
+- `NEXT_PUBLIC_API_BASE_URL=http://localhost:${LOCAL_API_PORT}`
+- `INTERNAL_API_BASE_URL=http://server:3000`
 
 ### 5.2 Start local stack
 
@@ -216,8 +216,8 @@ At minimum validate these keys across `.env` + `.env.cloud`:
   - `CLOUD_SERVER_NAME`
   - `CLOUD_HTTP_BIND_HOST`, `CLOUD_HTTP_PORT`
   - `CLOUD_API_PATH_PREFIX`
-  - `CLOUD_WEB_API_BASE_URL`
-  - `CLOUD_WEB_INTERNAL_API_BASE_URL`
+  - `NEXT_PUBLIC_API_BASE_URL`
+  - `INTERNAL_API_BASE_URL`
 - Gateway upstreams:
   - `CLOUD_API_UPSTREAM`
   - `CLOUD_WEB_UPSTREAM`
@@ -278,7 +278,13 @@ pnpm docker:smoke:cloud
 For self-signed certificates only:
 
 ```bash
-SMOKE_TLS_INSECURE=true pnpm docker:smoke:cloud
+pnpm docker:smoke:cloud -- --tls-insecure
+```
+
+Custom retry tuning:
+
+```bash
+pnpm docker:smoke:cloud -- --retries 60 --interval 2
 ```
 
 Manual checks (adjust host/domain):
@@ -369,9 +375,7 @@ docker compose --env-file .env --env-file .env.cloud -f docker-compose.yml -f do
 
 - Database state is in PostgreSQL volume `pgdata`.
 - Perform regular logical dumps for cloud production.
-- If you change `POSTGRES_USER` or `POSTGRES_PASSWORD`, also update:
-  - `SERVER_DATABASE_URL`
-  - `DATABASE_URL` (if host-native tools use it)
+- If you change `POSTGRES_USER` or `POSTGRES_PASSWORD`, update `DATABASE_URL` (in both shared and mode-override files if you split values).
 
 ### 8.4 Full reset (destructive)
 
@@ -469,7 +473,7 @@ Symptom:
 Fix checklist:
 
 - Verify `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`.
-- Verify `SERVER_DATABASE_URL` matches those credentials.
+- Verify `DATABASE_URL` matches those credentials.
 - Check postgres container health/logs.
 
 ## 11. Related references

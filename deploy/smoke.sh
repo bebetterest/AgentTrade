@@ -4,9 +4,68 @@ set -eu
 mode="${1:-}"
 
 if [ "$mode" != "local" ] && [ "$mode" != "cloud" ]; then
-  echo "Usage: sh deploy/smoke.sh <local|cloud>" >&2
+  echo "Usage: sh deploy/smoke.sh <local|cloud> [--retries <count>] [--interval <seconds>] [--tls-insecure]" >&2
   exit 2
 fi
+shift
+
+smoke_retries="40"
+smoke_interval_seconds="1"
+smoke_tls_insecure="false"
+
+is_positive_integer() {
+  value="${1:-}"
+  case "$value" in
+    "" | *[!0-9]*)
+      return 1
+      ;;
+    *)
+      [ "$value" -gt 0 ] 2>/dev/null
+      ;;
+  esac
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --)
+      shift
+      continue
+      ;;
+    --retries)
+      if [ "$#" -lt 2 ]; then
+        echo "Missing value for --retries" >&2
+        exit 2
+      fi
+      if ! is_positive_integer "$2"; then
+        echo "--retries must be a positive integer" >&2
+        exit 2
+      fi
+      smoke_retries="$2"
+      shift 2
+      ;;
+    --interval)
+      if [ "$#" -lt 2 ]; then
+        echo "Missing value for --interval" >&2
+        exit 2
+      fi
+      if ! is_positive_integer "$2"; then
+        echo "--interval must be a positive integer (seconds)" >&2
+        exit 2
+      fi
+      smoke_interval_seconds="$2"
+      shift 2
+      ;;
+    --tls-insecure)
+      smoke_tls_insecure="true"
+      shift
+      ;;
+    *)
+      echo "Unknown argument: $1" >&2
+      echo "Usage: sh deploy/smoke.sh <local|cloud> [--retries <count>] [--interval <seconds>] [--tls-insecure]" >&2
+      exit 2
+      ;;
+  esac
+done
 
 # Keep smoke self-contained in CI/local while still allowing explicit overrides.
 : "${JWT_SECRET:=smoke-jwt-secret}"
@@ -129,9 +188,9 @@ resolve_value() {
 check_url() {
   label="$1"
   url="$2"
-  tls_insecure="${3:-false}"
-  retries="${SMOKE_RETRIES:-40}"
-  interval="${SMOKE_INTERVAL_SECONDS:-1}"
+  retries="$3"
+  interval="$4"
+  tls_insecure="${5:-false}"
   attempt=1
   while [ "$attempt" -le "$retries" ]; do
     if is_true "$tls_insecure"; then
@@ -154,8 +213,8 @@ check_https_redirect() {
   label="$1"
   url="$2"
   expected_prefix="$3"
-  retries="${SMOKE_RETRIES:-40}"
-  interval="${SMOKE_INTERVAL_SECONDS:-1}"
+  retries="$4"
+  interval="$5"
   attempt=1
   while [ "$attempt" -le "$retries" ]; do
     result="$(curl --noproxy '*' --silent --output /dev/null --write-out '%{http_code} %{redirect_url}' "$url")"
@@ -183,9 +242,6 @@ check_https_redirect() {
 if [ "$mode" = "local" ]; then
   mode_env_file=".env.local"
 
-  SMOKE_RETRIES="$(resolve_value "SMOKE_RETRIES" "40" "$mode_env_file")"
-  SMOKE_INTERVAL_SECONDS="$(resolve_value "SMOKE_INTERVAL_SECONDS" "1" "$mode_env_file")"
-
   compose_up "local"
 
   api_host="$(normalize_host "$(resolve_value "LOCAL_API_BIND_HOST" "127.0.0.1" "$mode_env_file")")"
@@ -193,18 +249,23 @@ if [ "$mode" = "local" ]; then
   web_host="$(normalize_host "$(resolve_value "LOCAL_WEB_BIND_HOST" "127.0.0.1" "$mode_env_file")")"
   web_port="$(resolve_value "LOCAL_WEB_PORT" "3001" "$mode_env_file")"
 
-  check_url "local web" "http://${web_host}:${web_port}/"
-  check_url "local api health" "http://${api_host}:${api_port}/v2/system/health"
-  check_url "local api summary" "http://${api_host}:${api_port}/v2/dashboard/summary?tz=UTC"
+  check_url "local web" "http://${web_host}:${web_port}/" "$smoke_retries" "$smoke_interval_seconds"
+  check_url \
+    "local api health" \
+    "http://${api_host}:${api_port}/v2/system/health" \
+    "$smoke_retries" \
+    "$smoke_interval_seconds"
+  check_url \
+    "local api summary" \
+    "http://${api_host}:${api_port}/v2/dashboard/summary?tz=UTC" \
+    "$smoke_retries" \
+    "$smoke_interval_seconds"
 
   echo "Local smoke checks passed."
   exit 0
 fi
 
 mode_env_file=".env.cloud"
-
-SMOKE_RETRIES="$(resolve_value "SMOKE_RETRIES" "40" "$mode_env_file")"
-SMOKE_INTERVAL_SECONDS="$(resolve_value "SMOKE_INTERVAL_SECONDS" "1" "$mode_env_file")"
 
 compose_up "cloud"
 
@@ -218,7 +279,6 @@ cloud_https_enabled="$(resolve_value "CLOUD_HTTPS_ENABLED" "false" "$mode_env_fi
 cloud_http_redirect_to_https="$(resolve_value "CLOUD_HTTP_REDIRECT_TO_HTTPS" "false" "$mode_env_file")"
 cloud_https_host="$(normalize_host "$(resolve_value "CLOUD_HTTPS_BIND_HOST" "$cloud_host" "$mode_env_file")")"
 cloud_https_port="$(resolve_value "CLOUD_HTTPS_PORT" "443" "$mode_env_file")"
-smoke_tls_insecure="$(resolve_value "SMOKE_TLS_INSECURE" "false" "$mode_env_file")"
 
 cloud_http_base_url="http://${cloud_host}:${cloud_port}"
 cloud_https_base_url="https://${cloud_https_host}:${cloud_https_port}"
@@ -229,26 +289,84 @@ else
 fi
 
 if is_true "$cloud_https_enabled"; then
-  check_url "cloud https web root" "${cloud_https_base_url}/" "$smoke_tls_insecure"
-  check_url "cloud https gateway health" "${cloud_https_base_url}/healthz" "$smoke_tls_insecure"
-  check_url "cloud https api health" "${cloud_https_base_url}${cloud_api_health_path}" "$smoke_tls_insecure"
-  check_url "cloud https api summary" "${cloud_https_base_url}${cloud_api_summary_path}" "$smoke_tls_insecure"
+  check_url \
+    "cloud https web root" \
+    "${cloud_https_base_url}/" \
+    "$smoke_retries" \
+    "$smoke_interval_seconds" \
+    "$smoke_tls_insecure"
+  check_url \
+    "cloud https gateway health" \
+    "${cloud_https_base_url}/healthz" \
+    "$smoke_retries" \
+    "$smoke_interval_seconds" \
+    "$smoke_tls_insecure"
+  check_url \
+    "cloud https api health" \
+    "${cloud_https_base_url}${cloud_api_health_path}" \
+    "$smoke_retries" \
+    "$smoke_interval_seconds" \
+    "$smoke_tls_insecure"
+  check_url \
+    "cloud https api summary" \
+    "${cloud_https_base_url}${cloud_api_summary_path}" \
+    "$smoke_retries" \
+    "$smoke_interval_seconds" \
+    "$smoke_tls_insecure"
 
   if is_true "$cloud_http_redirect_to_https"; then
-    check_url "cloud http gateway health" "${cloud_http_base_url}/healthz"
-    check_https_redirect "cloud http web redirect" "${cloud_http_base_url}/" "$expected_https_redirect_prefix"
-    check_https_redirect "cloud http api redirect" "${cloud_http_base_url}${cloud_api_health_path}" "$expected_https_redirect_prefix"
+    check_url \
+      "cloud http gateway health" \
+      "${cloud_http_base_url}/healthz" \
+      "$smoke_retries" \
+      "$smoke_interval_seconds"
+    check_https_redirect \
+      "cloud http web redirect" \
+      "${cloud_http_base_url}/" \
+      "$expected_https_redirect_prefix" \
+      "$smoke_retries" \
+      "$smoke_interval_seconds"
+    check_https_redirect \
+      "cloud http api redirect" \
+      "${cloud_http_base_url}${cloud_api_health_path}" \
+      "$expected_https_redirect_prefix" \
+      "$smoke_retries" \
+      "$smoke_interval_seconds"
   else
-    check_url "cloud http web root" "${cloud_http_base_url}/"
-    check_url "cloud http gateway health" "${cloud_http_base_url}/healthz"
-    check_url "cloud http api health" "${cloud_http_base_url}${cloud_api_health_path}"
-    check_url "cloud http api summary" "${cloud_http_base_url}${cloud_api_summary_path}"
+    check_url "cloud http web root" "${cloud_http_base_url}/" "$smoke_retries" "$smoke_interval_seconds"
+    check_url \
+      "cloud http gateway health" \
+      "${cloud_http_base_url}/healthz" \
+      "$smoke_retries" \
+      "$smoke_interval_seconds"
+    check_url \
+      "cloud http api health" \
+      "${cloud_http_base_url}${cloud_api_health_path}" \
+      "$smoke_retries" \
+      "$smoke_interval_seconds"
+    check_url \
+      "cloud http api summary" \
+      "${cloud_http_base_url}${cloud_api_summary_path}" \
+      "$smoke_retries" \
+      "$smoke_interval_seconds"
   fi
 else
-  check_url "cloud web root" "${cloud_http_base_url}/"
-  check_url "cloud gateway health" "${cloud_http_base_url}/healthz"
-  check_url "cloud api health" "${cloud_http_base_url}${cloud_api_health_path}"
-  check_url "cloud api summary" "${cloud_http_base_url}${cloud_api_summary_path}"
+  check_url "cloud web root" "${cloud_http_base_url}/" "$smoke_retries" "$smoke_interval_seconds"
+  check_url \
+    "cloud gateway health" \
+    "${cloud_http_base_url}/healthz" \
+    "$smoke_retries" \
+    "$smoke_interval_seconds"
+  check_url \
+    "cloud api health" \
+    "${cloud_http_base_url}${cloud_api_health_path}" \
+    "$smoke_retries" \
+    "$smoke_interval_seconds"
+  check_url \
+    "cloud api summary" \
+    "${cloud_http_base_url}${cloud_api_summary_path}" \
+    "$smoke_retries" \
+    "$smoke_interval_seconds"
 fi
 
 echo "Cloud smoke checks passed."

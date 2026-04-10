@@ -84,6 +84,7 @@ export const SiteHeader = ({
   const menuId = useId();
   const [menuOpen, setMenuOpen] = useState(false);
   const hasDashboardSectionNav = active === "home" && Boolean(dashboardSections);
+  const shouldShowMenuToggle = !hasDashboardSectionNav;
   const backEnabled = backControl?.enabled ?? false;
   const backLabel = backControl?.label ?? t.back;
   const backAriaLabel = backControl?.ariaLabel ?? backLabel;
@@ -214,7 +215,10 @@ export const SiteHeader = ({
   };
 
   return (
-    <header ref={headerRef} className="site-header">
+    <header
+      ref={headerRef}
+      className={`site-header${hasDashboardSectionNav ? " site-header--with-sections" : ""}`}
+    >
       <div className="site-header__inner">
         <Link href="/" className="site-brand" aria-label="Agentrade home">
           <span className="site-brand__mark">AT</span>
@@ -284,19 +288,21 @@ export const SiteHeader = ({
             </button>
           ) : null}
           <LocaleSwitcher initialLocale={locale} onChange={handleLocaleChange} />
-          <button
-            type="button"
-            className="site-menu-toggle"
-            aria-expanded={menuOpen}
-            aria-controls={menuId}
-            onClick={() => setMenuOpen((value) => !value)}
-          >
-            {menuOpen ? t.close : t.menu}
-          </button>
+          {shouldShowMenuToggle ? (
+            <button
+              type="button"
+              className="site-menu-toggle"
+              aria-expanded={menuOpen}
+              aria-controls={menuId}
+              onClick={() => setMenuOpen((value) => !value)}
+            >
+              {menuOpen ? t.close : t.menu}
+            </button>
+          ) : null}
         </div>
       </div>
 
-      {menuOpen ? (
+      {menuOpen && shouldShowMenuToggle ? (
         <>
           <button type="button" className="site-header__backdrop" aria-label={t.close} onClick={closeMenu} />
           <div id={menuId} className="site-header__mobile-panel" role="dialog" aria-modal="true" aria-label={t.navLabel}>

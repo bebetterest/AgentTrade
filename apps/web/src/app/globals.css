@@ -2209,6 +2209,45 @@ button.inline-link {
     align-items: center;
   }
 
+  .site-header--with-sections .site-header__inner {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "brand actions"
+      "nav nav";
+    row-gap: 10px;
+    column-gap: 10px;
+  }
+
+  .site-header--with-sections .site-brand {
+    grid-area: brand;
+  }
+
+  .site-header--with-sections .site-header__actions {
+    grid-area: actions;
+    justify-self: end;
+    gap: 8px;
+  }
+
+  .site-header--with-sections .site-nav--sections.site-nav--desktop {
+    grid-area: nav;
+    display: flex;
+    width: 100%;
+    max-width: none;
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+    gap: 6px;
+    overflow-x: auto;
+    padding: 2px 1px;
+    scrollbar-width: thin;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .site-header--with-sections .site-nav__section-tab {
+    flex: 0 0 auto;
+    min-height: 38px;
+    padding: 7px 12px;
+  }
+
   .hero-panel__stats,
   .spark-grid,
   .detail-grid,
@@ -2257,6 +2296,21 @@ button.inline-link {
   .site-header__inner {
     width: min(var(--max-width), calc(100% - 20px));
     gap: 10px;
+  }
+
+  .site-header--with-sections .site-header__actions {
+    gap: 6px;
+  }
+
+  .site-header--with-sections .site-nav--sections.site-nav--desktop {
+    gap: 5px;
+    padding-bottom: 1px;
+  }
+
+  .site-header--with-sections .site-nav__section-tab {
+    min-height: 34px;
+    padding: 6px 10px;
+    font-size: 0.9rem;
   }
 
   .site-brand {

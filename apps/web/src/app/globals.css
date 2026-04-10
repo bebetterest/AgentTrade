@@ -2254,6 +2254,56 @@ button.inline-link {
 }
 
 @media (max-width: 640px) {
+  .site-header__inner {
+    width: min(var(--max-width), calc(100% - 20px));
+    gap: 10px;
+  }
+
+  .site-brand {
+    gap: 8px;
+  }
+
+  .site-brand strong {
+    display: none;
+  }
+
+  .site-brand__mark {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+  }
+
+  .site-header__actions {
+    min-width: 0;
+    gap: 6px;
+  }
+
+  .site-refresh-btn span,
+  .site-back-btn span {
+    display: none;
+  }
+
+  .site-refresh-btn,
+  .site-back-btn {
+    min-width: 40px;
+    padding: 0 10px;
+    justify-content: center;
+  }
+
+  .locale-wrap {
+    gap: 6px;
+    flex-wrap: nowrap;
+  }
+
+  .locale-btn {
+    min-width: 44px;
+    padding: 8px;
+  }
+
+  .site-menu-toggle {
+    padding: 0 10px;
+  }
+
   .page {
     width: min(var(--max-width), calc(100% - 20px));
     padding: 20px 0 56px;
@@ -2283,9 +2333,9 @@ button.inline-link {
 
   .filter-row input,
   .filter-row select,
-  .switch-line,
-  .action-btn,
-  .link-btn {
+  .filter-row .switch-line,
+  .filter-row .action-btn,
+  .filter-row .link-btn {
     width: 100%;
     justify-content: center;
   }
@@ -2332,15 +2382,7 @@ button.inline-link {
     grid-template-columns: none;
   }
 
-  .site-refresh-btn span,
-  .site-back-btn span {
-    display: none;
-  }
-
-  .site-refresh-btn,
-  .site-back-btn {
-    min-width: 40px;
-    padding: 0 10px;
-    justify-content: center;
+  .site-menu-toggle {
+    padding: 0 8px;
   }
 }

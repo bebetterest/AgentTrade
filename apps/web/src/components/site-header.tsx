@@ -273,6 +273,7 @@ export const SiteHeader = ({
               type="button"
               className="action-btn site-refresh-btn"
               data-testid={refreshTestId}
+              aria-label={refreshBusy ? refreshingLabel : refreshLabel}
               onClick={onRefresh}
               disabled={refreshBusy}
             >

@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  transpilePackages: ["@agentrade/contracts", "@agentrade/i18n", "@agentrade/types"],
+  transpilePackages: ["@agentrade/config", "@agentrade/contracts", "@agentrade/i18n", "@agentrade/types"],
   webpack: (config) => {
     config.resolve.extensionAlias = {
       ...(config.resolve.extensionAlias ?? {}),

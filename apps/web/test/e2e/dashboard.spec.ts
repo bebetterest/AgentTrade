@@ -763,7 +763,7 @@ const expandAdvancedFilters = async (page: Page) => {
 
 test("information hub renders and supports stream shortcuts", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "AgentHire for AI agent collaboration" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Agentrade for AI agent collaboration" })).toBeVisible();
   await expect(page.getByTestId("section-tab-overview")).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("heading", { name: "Marketplace Entities" })).toHaveCount(0);
 
@@ -813,10 +813,10 @@ test("legacy stream links still recover streams state", async ({ page }) => {
 
 test("locale switch persists across hub and direct detail routes", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "AgentHire for AI agent collaboration" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Agentrade for AI agent collaboration" })).toBeVisible();
 
   await page.getByRole("button", { name: "Switch language to Chinese" }).click();
-  await expect(page.getByRole("heading", { name: "AgentHire：面向Agent的雇佣与协作平台" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Agentrade：面向Agent的雇佣与协作平台" })).toBeVisible();
   await expect(page.getByRole("button", { name: "进入市场" })).toBeVisible();
   await expect.poll(() => page.evaluate(() => window.localStorage.getItem("agentrade.locale"))).toBe("zh");
   await expect.poll(() => page.evaluate(() => document.cookie)).toContain("agentrade.locale=zh");
@@ -830,13 +830,13 @@ test("locale switch persists across hub and direct detail routes", async ({ page
 
   await page.goto("/tasks/task-beta");
   await expect(page.getByText("任务档案")).toBeVisible();
-  await expect(page.getByTestId("header-back-button")).toHaveAttribute("aria-label", "返回 AgentHire 平台");
+  await expect(page.getByTestId("header-back-button")).toHaveAttribute("aria-label", "返回 Agentrade 平台");
   await expect(page.getByTestId("header-back-button")).toContainText("返回");
   await expect(page.getByText("进行中")).toBeVisible();
 
   await page.getByRole("button", { name: "切换语言到英文" }).click();
   await expect(page.getByText("Task Dossier")).toBeVisible();
-  await expect(page.getByTestId("header-back-button")).toHaveAttribute("aria-label", "Back to AgentHire");
+  await expect(page.getByTestId("header-back-button")).toHaveAttribute("aria-label", "Back to Agentrade");
   await expect(page.getByTestId("header-back-button")).toContainText("Back");
   await expect.poll(() => page.evaluate(() => window.localStorage.getItem("agentrade.locale"))).toBe("en");
   await expect.poll(() => page.evaluate(() => document.cookie)).toContain("agentrade.locale=en");
@@ -966,7 +966,7 @@ test("direct task and agent detail pages use the unified detail shell", async ({
   await expect(page.getByRole("heading", { name: "Beta Dataset Labeling" })).toBeVisible();
   await expect(page.locator(".detail-summary-card__label", { hasText: "Escrow Remaining" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Related disputes", level: 4 })).toBeVisible();
-  await expect(page.getByTestId("header-back-button")).toHaveAttribute("aria-label", "Back to AgentHire");
+  await expect(page.getByTestId("header-back-button")).toHaveAttribute("aria-label", "Back to Agentrade");
   await expect(page.getByTestId("header-back-button")).toContainText("Back");
 
   await page.goto("/agents/0x3333333333333333333333333333333333333333");
@@ -1026,11 +1026,11 @@ test("direct cycle and dispute detail pages expose summary-first layouts", async
 test("direct detail pages show not-found state cards", async ({ page }) => {
   await page.goto("/tasks/task-missing");
   await expect(page.getByRole("heading", { name: "Task Not Found", level: 1 })).toBeVisible();
-  await expect(page.getByText("There is no public record for this task id. Return to AgentHire and choose another entity.")).toBeVisible();
+  await expect(page.getByText("There is no public record for this task id. Return to Agentrade and choose another entity.")).toBeVisible();
 
   await page.goto("/disputes/dispute-missing");
   await expect(page.getByRole("heading", { name: "Dispute Not Found", level: 1 })).toBeVisible();
-  await expect(page.getByText("There is no public record for this dispute id. Return to AgentHire and choose another dispute.")).toBeVisible();
+  await expect(page.getByText("There is no public record for this dispute id. Return to Agentrade and choose another dispute.")).toBeVisible();
 });
 
 test("direct detail pages show load-failed state cards on API errors", async ({ page }) => {
@@ -1041,11 +1041,11 @@ test("direct detail pages show load-failed state cards on API errors", async ({ 
 
   await page.goto("/tasks/task-beta");
   await expect(page.getByRole("heading", { name: "Task Detail Load Failed", level: 1 })).toBeVisible();
-  await expect(page.getByText("The task detail service is unavailable right now. Return to AgentHire and inspect another entity.")).toBeVisible();
+  await expect(page.getByText("The task detail service is unavailable right now. Return to Agentrade and inspect another entity.")).toBeVisible();
 
   await page.goto("/agents/0x3333333333333333333333333333333333333333");
   await expect(page.getByRole("heading", { name: "Agent Detail Load Failed", level: 1 })).toBeVisible();
-  await expect(page.getByText("The agent detail service is unavailable right now. Return to AgentHire and inspect another public entity.")).toBeVisible();
+  await expect(page.getByText("The agent detail service is unavailable right now. Return to Agentrade and inspect another public entity.")).toBeVisible();
 });
 
 test("invalid query params are sanitized and still return usable results", async ({ page }) => {

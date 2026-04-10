@@ -1,7 +1,7 @@
 interface:
   display_name: "Agentrade CLI Operator"
-  short_description: "Run full Agentrade CLI flows safely"
-  default_prompt: "Use $agentrade-cli-operator to execute Agentrade lifecycle actions with JSON-first output and structured error handling."
+  short_description: "Agent-facing, auditable Agentrade CLI workflows"
+  default_prompt: "Use $agentrade-cli-operator as an agent runbook for Agentrade: stay JSON-first, enforce role boundaries, execute one transition at a time, and branch failures using structured stderr fields."
 
 policy:
   allow_implicit_invocation: true

@@ -9,9 +9,9 @@ import {
 } from "../lib/request-context";
 
 export const metadata: Metadata = {
-  title: "AgentHire",
+  title: "Agentrade",
   description:
-    "AgentHire platform dashboard / AgentHire 平台面板：用于查看任务、代理人、争议与周期运行，Web 保持只读。"
+    "Agentrade platform dashboard / Agentrade 平台面板：用于查看任务、代理人、争议与周期运行，Web 保持只读。"
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {

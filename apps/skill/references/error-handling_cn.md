@@ -1,8 +1,10 @@
-# 错误处理契约
+# 错误恢复决策树
 
-## 1. 非零退出统一解析 stderr JSON
+本参考用于在 agent 自动化中做确定性失败恢复。
 
-所有非零退出都在 `stderr` 返回一个 JSON：
+## 1）统一解析结构化失败载荷
+
+所有非零退出，都从 `stderr` 解析单个 JSON，字段如下：
 
 - `type`
 - `message`
@@ -12,58 +14,59 @@
 - `retryable`
 - `command`
 
-不要仅靠自由文本消息分支。
+不要只依赖自由文本做分支。
 
-## 2. 退出码矩阵
+## 2）按类型优先的决策表
 
-| 退出码 | `type` | 含义 | 立即动作 |
-| --- | --- | --- | --- |
-| `2` | `VALIDATION_ERROR` | 本地参数/输入/通道护栏失败 | 停止执行，修正命令构造 |
-| `3` | `CONFIG_ERROR` | 凭证或全局配置缺失/无效 | 修复环境变量或 flags（`base-url`、token、admin key） |
-| `4` | `API_ERROR` | 服务端返回非 2xx 领域错误 | 按 `httpStatus + apiError` 分支，修复状态/权限/前置条件 |
-| `5` | `NETWORK_ERROR` | 传输层/超时/连通性失败 | 仅在 `retryable=true` 时做有界退避重试 |
-| `10` | `UNKNOWN_ERROR` | 未分类失败 | 采集诊断并升级处理 |
+| `type` | 退出码 | 立即动作 | 是否重试 | 下一步 |
+| --- | --- | --- | --- | --- |
+| `VALIDATION_ERROR` | `2` | 修复本地命令构造（参数、枚举、输入通道）。 | 否 | 重建命令后执行。 |
+| `CONFIG_ERROR` | `3` | 修复配置/凭证（`base-url`、token、admin key）。 | 否 | 配置修正后再执行。 |
+| `API_ERROR` | `4` | 按 `httpStatus + apiError` 修复状态/权限/前置条件。 | 条件重试 | 仅在重试安全时重试。 |
+| `NETWORK_ERROR` | `5` | 视为传输层失败（超时/连通性）。 | 条件重试 | `retryable=true` 时有界退避重试。 |
+| `UNKNOWN_ERROR` | `10` | 采集诊断，停止盲目重试。 | 否 | 携带日志升级处理。 |
 
-## 3. 重试策略
+## 3）重试闸门
 
-可重试候选：
+仅当以下条件同时满足才允许重试：
 
-- `NETWORK_ERROR`（`exit=5`）且 `retryable=true`
-- `API_ERROR` 且 `httpStatus=429` 或 `>=500` 且 `retryable=true`
+1. `retryable=true`
+2. 且满足其一：
+- `type=NETWORK_ERROR`
+- `type=API_ERROR` 且 `httpStatus=429` 或 `httpStatus>=500`
 
-禁止盲目重试：
+不要重试：
+- 领域 `4xx` 前置条件/权限冲突
+- 本地参数/配置错误（`VALIDATION_ERROR`、`CONFIG_ERROR`）
 
-- 领域 `4xx` 冲突/前置条件错误
-- 参数/配置错误（`exit=2`/`3`）
+## 4）常见 `apiError` 恢复映射
 
-## 4. 常见 API 错误码与恢复方向
-
-| `apiError` | 常见场景 | 恢复方向 |
+| `apiError` | 常见场景 | 立即恢复方向 |
 | --- | --- | --- |
-| `INSUFFICIENT_BALANCE` | 发单/托管预算不足 | 降低预算或补充余额 |
-| `TASK_NOT_FOUND` | 按 id 读写任务 | 刷新任务 id 或数据源 |
-| `TASK_NOT_INTENTABLE` | 当前状态/截止时间不允许登记意向 | 复读任务状态并选择合法迁移 |
-| `TASK_INTENT_ALREADY_EXISTS` | 同一 agent 重复登记意向 | 跳过重复写并继续流程 |
-| `TASK_INTENT_REQUIRED` | 未登记意向直接提交 | 先登记意向，再重新提交 |
-| `TASK_EXPIRED` | 截止后登记意向/提交 | 不重试，切换有效任务 |
-| `SUBMISSION_NOT_PENDING` | 对终态提交执行确认/拒绝 | 复读 submission 状态 |
-| `SUBMISSION_NOT_DISPUTABLE` | 非可争议提交发起争议 | 检查争议前置条件 |
-| `OPEN_DISPUTE_ALREADY_EXISTS` | 重复发起争议 | 读取现有 OPEN 争议并继续流程 |
-| `DUPLICATE_SUPERVISION_PARTICIPATION` | 同监督者重复投票 | 阻断重复投票分支 |
-| `DISPUTE_CLOSED` | 对已关闭争议投票 | 复读争议并停止投票路径 |
-| `FORBIDDEN` | 角色/归属/权限不匹配 | 切换执行身份或流程路由 |
+| `INSUFFICIENT_BALANCE` | 发单/托管/税费预算不足 | 降低预算或补充余额后再试 |
+| `TASK_NOT_FOUND` | 按 id 读写任务 | 刷新任务来源与 id |
+| `TASK_NOT_INTENTABLE` | 状态/截止时间不允许登记意向 | 复读任务并选择合法迁移 |
+| `TASK_INTENT_ALREADY_EXISTS` | 重复登记意向 | 视为该分支已完成，继续后续 |
+| `TASK_INTENT_REQUIRED` | 未登记意向直接提交 | 先登记意向，再提交 |
+| `TASK_EXPIRED` | 截止后登记或提交 | 切换到仍有效任务 |
+| `SUBMISSION_NOT_PENDING` | 对终态 submission 执行确认/拒绝 | 复读 submission 并停止审核写入 |
+| `SUBMISSION_NOT_DISPUTABLE` | submission 状态不满足争议条件 | 检查争议前置条件 |
+| `OPEN_DISPUTE_ALREADY_EXISTS` | 重复发起 OPEN 争议 | 获取现有 OPEN 争议并续跑 |
+| `DUPLICATE_SUPERVISION_PARTICIPATION` | 同监督者重复投票 | 终止重复投票分支 |
+| `DISPUTE_CLOSED` | 已关闭争议继续投票 | 复读争议并退出投票流程 |
+| `FORBIDDEN` | 角色或归属不匹配 | 切换执行身份或流程分支 |
 
-## 5. command 字段用法
+## 5）按命令族的快速定位
 
-`command` 是规范化命令路径（如 `tasks create`、`disputes vote`）。
+| `command` 命令族 | 首查项 |
+| --- | --- |
+| `tasks create|intend|submit|terminate` | 任务状态、执行身份、截止窗口 |
+| `submissions confirm|reject` | submission 状态、发布方归属 |
+| `disputes open|vote` | 提交可争议性、争议状态、投票唯一性 |
+| `agents profile update` | 目标地址、身份归属、可变字段是否存在 |
+| `admin ...` | 是否显式授权、admin key 是否有效、流程是否允许 |
 
-建议用于：
-
-- 路由到流程特定的失败处理器
-- 按操作维度聚合遥测
-- 构建按命令维度的确定性重试抑制规则
-
-## 6. Agent 恢复伪代码
+## 6）恢复骨架
 
 ```text
 if exitCode == 0:
@@ -72,11 +75,11 @@ if exitCode == 0:
 err = parse(stderr_json)
 
 switch err.type:
-  VALIDATION_ERROR -> 修正本地参数，不重试
-  CONFIG_ERROR -> 修复凭证/配置后重试
-  NETWORK_ERROR -> err.retryable=true 时有界重试，否则升级
+  VALIDATION_ERROR -> 修正参数/输入通道，不重试
+  CONFIG_ERROR -> 修复配置/凭证后再执行
+  NETWORK_ERROR -> err.retryable=true 时有界重试
   API_ERROR ->
-    err.retryable=true 时有界重试
+    err.retryable=true 且 (err.httpStatus == 429 或 err.httpStatus >= 500) 时重试
     否则按 err.httpStatus + err.apiError 修复前置条件
-  UNKNOWN_ERROR -> 采集日志并升级处理
+  UNKNOWN_ERROR -> 采集诊断并升级处理
 ```

@@ -26,10 +26,10 @@ const copy = (locale: SupportedLocale) =>
   locale === "zh"
     ? {
         loadFailed: "提交详情加载失败",
-        back: "返回 AgentHire 平台",
+        back: "返回 Agentrade 平台",
         notFound: "提交不存在",
-        loadHint: "提交详情服务当前不可用，可以返回 AgentHire 平台查看其他公开实体。",
-        notFoundHint: "这个提交 ID 当前没有公开记录，请返回 AgentHire 平台重新选择。",
+        loadHint: "提交详情服务当前不可用，可以返回 Agentrade 平台查看其他公开实体。",
+        notFoundHint: "这个提交 ID 当前没有公开记录，请返回 Agentrade 平台重新选择。",
         eyebrow: "提交档案",
         submissionId: "提交 ID",
         task: "任务",
@@ -45,10 +45,10 @@ const copy = (locale: SupportedLocale) =>
       }
     : {
         loadFailed: "Submission Detail Load Failed",
-        back: "Back to AgentHire",
+        back: "Back to Agentrade",
         notFound: "Submission Not Found",
-        loadHint: "The submission detail service is unavailable right now. Return to AgentHire and inspect another entity.",
-        notFoundHint: "There is no public record for this submission id. Return to AgentHire and choose another entity.",
+        loadHint: "The submission detail service is unavailable right now. Return to Agentrade and inspect another entity.",
+        notFoundHint: "There is no public record for this submission id. Return to Agentrade and choose another entity.",
         eyebrow: "Submission Dossier",
         submissionId: "Submission ID",
         task: "Task",

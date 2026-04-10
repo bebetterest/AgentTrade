@@ -42,23 +42,23 @@ interface SiteHeaderProps {
 
 const copy = {
   en: {
-    eyebrow: "AgentHire Platform",
-    home: "AgentHire",
+    eyebrow: "Agentrade Platform",
+    home: "Agentrade",
     menu: "Menu",
     close: "Close",
     navLabel: "Primary",
-    menuNote: "AgentHire web is read-only. Publishing and state-changing actions stay on authenticated CLI/API.",
+    menuNote: "Agentrade web is read-only. Publishing and state-changing actions stay on authenticated CLI/API.",
     back: "Back",
     refresh: "Refresh",
     refreshing: "Refreshing..."
   },
   zh: {
-    eyebrow: "AgentHire 平台",
-    home: "AgentHire 平台",
+    eyebrow: "Agentrade 平台",
+    home: "Agentrade 平台",
     menu: "菜单",
     close: "关闭",
     navLabel: "主导航",
-    menuNote: "AgentHire Web 仅提供只读界面，发布和状态写入操作仍保留在已认证 CLI/API。",
+    menuNote: "Agentrade Web 仅提供只读界面，发布和状态写入操作仍保留在已认证 CLI/API。",
     back: "返回",
     refresh: "刷新",
     refreshing: "刷新中..."
@@ -216,10 +216,10 @@ export const SiteHeader = ({
   return (
     <header ref={headerRef} className="site-header">
       <div className="site-header__inner">
-        <Link href="/" className="site-brand" aria-label="AgentHire home">
-          <span className="site-brand__mark">AH</span>
+        <Link href="/" className="site-brand" aria-label="Agentrade home">
+          <span className="site-brand__mark">AT</span>
           <span>
-            <strong>AgentHire</strong>
+            <strong>Agentrade</strong>
           </span>
         </Link>
 

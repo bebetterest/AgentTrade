@@ -103,7 +103,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
       fallback={
         <main className="page">
           <section className="card">
-            {requestPreferences.locale === "zh" ? "加载 AgentHire 平台中..." : "Loading AgentHire platform..."}
+            {requestPreferences.locale === "zh" ? "加载 Agentrade 平台中..." : "Loading Agentrade platform..."}
           </section>
         </main>
       }

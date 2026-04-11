@@ -194,6 +194,9 @@ Build-time injection note:
 - `--tls-insecure`
 - `--skip-smoke`
 - `--skip-verify`
+- `--full-rebuild`
+- `--wipe-data` (destructive; deletes compose persisted volume data)
+- `--fresh-platform` (equivalent to `--full-rebuild --wipe-data`)
 
 ### 8.2 `deploy/smoke.sh`
 

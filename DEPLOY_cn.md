@@ -135,17 +135,24 @@ pnpm docker:stack:cloud:down
 - `--tls-insecure`（cloud）
 - `--skip-smoke`
 - `--skip-verify`
+- `--full-rebuild`
+- `--wipe-data`（**破坏性操作**：会清空持久化数据库数据）
+- `--fresh-platform`（等价于 `--full-rebuild --wipe-data`）
 
 示例：
 
 ```bash
 pnpm docker:release:cloud -- --web-url https://staging.example.com --retries 60 --interval 2
+pnpm docker:release:local -- --full-rebuild
+pnpm docker:release:local -- --fresh-platform
 ```
 
 ## 7. 发布命令会强制执行的动作
 
 - 使用 `--pull --no-cache` 重建 `web` 镜像
 - 使用 `up --build --force-recreate --remove-orphans` 重建容器
+- 可选 `--full-rebuild` 会额外对 `server` 执行 `--pull --no-cache` 重建
+- 可选 `--wipe-data` 会在发布前清空 compose 命名卷
 - 执行冒烟
 - 校验线上 web chunk 已包含期望 `NEXT_PUBLIC_API_BASE_URL`
 

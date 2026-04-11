@@ -253,8 +253,11 @@ docker compose --env-file .env --env-file .env.cloud -f docker-compose.yml -f do
 
 1. Build `web` with `--pull --no-cache`.
 2. Recreate stack with `up -d --build --force-recreate --remove-orphans`.
-3. Run smoke checks (`deploy/smoke.sh --skip-up ...`).
-4. Verify deployed web chunks include expected `NEXT_PUBLIC_API_BASE_URL` and do not rely on runtime placeholder fallback.
+3. Optionally rebuild `server` and `web` together when `--full-rebuild` is set.
+4. Optionally wipe compose named volumes when `--wipe-data` is set (destructive; persisted DB data is deleted).
+5. `--fresh-platform` combines `--full-rebuild --wipe-data` for a brand-new platform state.
+6. Run smoke checks (`deploy/smoke.sh --skip-up ...`).
+7. Verify deployed web chunks include expected `NEXT_PUBLIC_API_BASE_URL` and do not rely on runtime placeholder fallback.
 
 Supported release flags:
 
@@ -264,6 +267,9 @@ Supported release flags:
 - `--tls-insecure` (cloud)
 - `--skip-smoke`
 - `--skip-verify`
+- `--full-rebuild`
+- `--wipe-data`
+- `--fresh-platform`
 
 If the externally reachable cloud URL differs from inferred env values, pass explicit `--web-url`.
 
@@ -276,6 +282,10 @@ git pull
 pnpm docker:release:local
 # or
 pnpm docker:release:cloud -- --web-url https://<your-domain>
+# full rebuild while keeping data
+pnpm docker:release:local -- --full-rebuild
+# brand-new platform (destructive: wipe persisted data)
+pnpm docker:release:local -- --fresh-platform
 ```
 
 ### 8.2 Restart selected services

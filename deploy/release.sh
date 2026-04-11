@@ -4,7 +4,7 @@ set -eu
 mode="${1:-}"
 
 if [ "$mode" != "local" ] && [ "$mode" != "cloud" ]; then
-  echo "Usage: sh deploy/release.sh <local|cloud> [--web-url <url>] [--retries <count>] [--interval <seconds>] [--tls-insecure] [--skip-smoke] [--skip-verify]" >&2
+  echo "Usage: sh deploy/release.sh <local|cloud> [--web-url <url>] [--retries <count>] [--interval <seconds>] [--tls-insecure] [--skip-smoke] [--skip-verify] [--full-rebuild] [--wipe-data] [--fresh-platform]" >&2
   exit 2
 fi
 shift
@@ -15,6 +15,8 @@ release_interval_seconds="1"
 release_tls_insecure="false"
 release_skip_smoke="false"
 release_skip_verify="false"
+release_full_rebuild="false"
+release_wipe_data="false"
 
 is_positive_integer() {
   value="${1:-}"
@@ -256,13 +258,26 @@ while [ "$#" -gt 0 ]; do
       release_skip_verify="true"
       shift
       ;;
+    --full-rebuild)
+      release_full_rebuild="true"
+      shift
+      ;;
+    --wipe-data)
+      release_wipe_data="true"
+      shift
+      ;;
+    --fresh-platform)
+      release_full_rebuild="true"
+      release_wipe_data="true"
+      shift
+      ;;
     --)
       shift
       continue
       ;;
     *)
       echo "Unknown argument: $1" >&2
-      echo "Usage: sh deploy/release.sh <local|cloud> [--web-url <url>] [--retries <count>] [--interval <seconds>] [--tls-insecure] [--skip-smoke] [--skip-verify]" >&2
+      echo "Usage: sh deploy/release.sh <local|cloud> [--web-url <url>] [--retries <count>] [--interval <seconds>] [--tls-insecure] [--skip-smoke] [--skip-verify] [--full-rebuild] [--wipe-data] [--fresh-platform]" >&2
       exit 2
       ;;
   esac
@@ -308,8 +323,18 @@ if [ -z "$target_web_url" ]; then
   target_web_url="$default_web_url"
 fi
 
-echo "[release] force rebuilding web image with --no-cache --pull"
-compose build --pull --no-cache web
+if is_true "$release_wipe_data"; then
+  echo "[release] wipe-data enabled: removing stack and named volumes (existing PostgreSQL data will be deleted)"
+  compose down --remove-orphans --volumes
+fi
+
+if is_true "$release_full_rebuild"; then
+  echo "[release] full-rebuild enabled: rebuilding server and web images with --no-cache --pull"
+  compose build --pull --no-cache server web
+else
+  echo "[release] force rebuilding web image with --no-cache --pull"
+  compose build --pull --no-cache web
+fi
 
 echo "[release] recreating stack with --build --force-recreate --remove-orphans"
 compose up -d --build --force-recreate --remove-orphans

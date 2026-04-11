@@ -194,6 +194,9 @@ Fail-fast 规则：
 - `--tls-insecure`
 - `--skip-smoke`
 - `--skip-verify`
+- `--full-rebuild`
+- `--wipe-data`（破坏性：会删除 compose 持久化卷数据）
+- `--fresh-platform`（等价于 `--full-rebuild --wipe-data`）
 
 ### 8.2 `deploy/smoke.sh`
 

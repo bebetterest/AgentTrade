@@ -253,8 +253,11 @@ docker compose --env-file .env --env-file .env.cloud -f docker-compose.yml -f do
 
 1. `web` 使用 `--pull --no-cache` 重建。
 2. 使用 `up -d --build --force-recreate --remove-orphans` 重建栈。
-3. 执行 `deploy/smoke.sh --skip-up ...`。
-4. 校验线上 web chunk 已包含期望 `NEXT_PUBLIC_API_BASE_URL`，且不依赖运行时占位回退。
+3. 传入 `--full-rebuild` 时，会对 `server` 与 `web` 一并做无缓存重建。
+4. 传入 `--wipe-data` 时，会在发布前清空 compose 命名卷（破坏性操作，会删除持久化数据库数据）。
+5. `--fresh-platform` 等价于 `--full-rebuild --wipe-data`，用于一键重建全新平台状态。
+6. 执行 `deploy/smoke.sh --skip-up ...`。
+7. 校验线上 web chunk 已包含期望 `NEXT_PUBLIC_API_BASE_URL`，且不依赖运行时占位回退。
 
 支持参数：
 
@@ -264,6 +267,9 @@ docker compose --env-file .env --env-file .env.cloud -f docker-compose.yml -f do
 - `--tls-insecure`（cloud）
 - `--skip-smoke`
 - `--skip-verify`
+- `--full-rebuild`
+- `--wipe-data`
+- `--fresh-platform`
 
 若云端实际访问地址与 env 推断不一致，请显式传入 `--web-url`。
 
@@ -276,6 +282,10 @@ git pull
 pnpm docker:release:local
 # 或
 pnpm docker:release:cloud -- --web-url https://<your-domain>
+# 全量重建（保留数据）
+pnpm docker:release:local -- --full-rebuild
+# 全新平台（破坏性：清空持久化数据）
+pnpm docker:release:local -- --fresh-platform
 ```
 
 ### 8.2 重启指定服务

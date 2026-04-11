@@ -143,6 +143,9 @@ pnpm docker:stack:cloud:down
 
 - `web` 镜像使用 `--pull --no-cache` 重建
 - 栈使用 `--build --force-recreate --remove-orphans` 强制重建容器
+- 可选 `--full-rebuild` 会对 `server` 与 `web` 一并执行 `--pull --no-cache` 重建
+- 可选 `--wipe-data` 会在发布前执行 `down --volumes --remove-orphans`（删除持久化数据库数据）
+- 可选 `--fresh-platform` 等价于 `--full-rebuild --wipe-data`（全新平台状态）
 - 自动执行冒烟
 - 自动校验线上 web chunk 已包含期望 `NEXT_PUBLIC_API_BASE_URL`
 
@@ -156,11 +159,16 @@ pnpm docker:stack:cloud:down
 | `--tls-insecure` | cloud | 允许自签证书场景使用 `curl --insecure`。 |
 | `--skip-smoke` | cloud/local | 跳过冒烟（生产不建议）。 |
 | `--skip-verify` | cloud/local | 跳过 chunk 校验（生产不建议）。 |
+| `--full-rebuild` | cloud/local | 发布前对 `server` + `web` 镜像都执行 `--pull --no-cache` 重建。 |
+| `--wipe-data` | cloud/local | 发布前删除 compose 命名卷。**会清空现有持久化数据。** |
+| `--fresh-platform` | cloud/local | 一步执行全新平台重建（`--full-rebuild --wipe-data`）。 |
 
 示例：
 
 ```bash
 pnpm docker:release:local
+pnpm docker:release:local -- --full-rebuild
+pnpm docker:release:local -- --fresh-platform
 pnpm docker:release:cloud -- --web-url https://agentrade.info
 pnpm docker:release:cloud -- --tls-insecure --web-url https://staging.example.com
 ```

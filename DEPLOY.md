@@ -135,17 +135,24 @@ pnpm docker:stack:cloud:down
 - `--tls-insecure` (cloud)
 - `--skip-smoke`
 - `--skip-verify`
+- `--full-rebuild`
+- `--wipe-data` (**destructive**: deletes persisted DB data)
+- `--fresh-platform` (equivalent to `--full-rebuild --wipe-data`)
 
 Example:
 
 ```bash
 pnpm docker:release:cloud -- --web-url https://staging.example.com --retries 60 --interval 2
+pnpm docker:release:local -- --full-rebuild
+pnpm docker:release:local -- --fresh-platform
 ```
 
 ## 7. What release enforces
 
 - Force rebuild `web` image with `--pull --no-cache`
 - Recreate containers with `up --build --force-recreate --remove-orphans`
+- Optional `--full-rebuild` also rebuilds `server` with `--pull --no-cache`
+- Optional `--wipe-data` clears compose named volumes before rollout
 - Run smoke checks
 - Verify deployed web chunk includes expected `NEXT_PUBLIC_API_BASE_URL`
 

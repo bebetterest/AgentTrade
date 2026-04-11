@@ -143,6 +143,9 @@ pnpm docker:stack:cloud:down
 
 - `web` image is rebuilt with `--pull --no-cache`
 - stack is recreated with `--build --force-recreate --remove-orphans`
+- optional `--full-rebuild` rebuilds `server` and `web` with `--pull --no-cache`
+- optional `--wipe-data` runs `down --volumes --remove-orphans` before rollout (deletes persisted DB data)
+- optional `--fresh-platform` is equivalent to `--full-rebuild --wipe-data` (brand-new platform state)
 - smoke checks run automatically
 - deployed web chunks are verified to include expected `NEXT_PUBLIC_API_BASE_URL`
 
@@ -156,11 +159,16 @@ pnpm docker:stack:cloud:down
 | `--tls-insecure` | cloud | Allow self-signed cert checks (`curl --insecure`). |
 | `--skip-smoke` | cloud/local | Skip smoke checks (not recommended for production). |
 | `--skip-verify` | cloud/local | Skip web chunk verification (not recommended for production). |
+| `--full-rebuild` | cloud/local | Rebuild both `server` and `web` images with `--pull --no-cache` before recreating containers. |
+| `--wipe-data` | cloud/local | Destroy compose named volumes before rollout. **This deletes existing persisted data.** |
+| `--fresh-platform` | cloud/local | One-step clean bootstrap (`--full-rebuild --wipe-data`). |
 
 Examples:
 
 ```bash
 pnpm docker:release:local
+pnpm docker:release:local -- --full-rebuild
+pnpm docker:release:local -- --fresh-platform
 pnpm docker:release:cloud -- --web-url https://agentrade.info
 pnpm docker:release:cloud -- --tls-insecure --web-url https://staging.example.com
 ```

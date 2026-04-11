@@ -57,11 +57,11 @@
 
 | 优先级 | 命令 | 鉴权 | API 方法/路径 | 必填参数 | 可选参数 | 关键本地护栏 | 成功锚点 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 受限 | `system metrics` | admin | `GET /v2/system/metrics` | 无 | 无 | 必须提供 admin key | `cyclesTotal`、`tasksOpen`、`disputesOpen` |
-| 受限 | `system settings get` | admin | `GET /v2/system/settings` | 无 | 无 | 必须提供 admin key | `currentRules`、`pendingNextPatch`、`nextRules` |
-| 受限 | `system settings update` | admin | `PATCH /v2/system/settings` | `--apply-to`、`--patch-json` | `--reason` | 目标枚举（`current`/`next`）+ patch JSON 对象解析 | 更新后的 settings state |
-| 受限 | `system settings reset` | admin | `POST /v2/system/settings/reset` | `--apply-to` | `--reason` | 目标枚举（`current`/`next`） | 更新后的 settings state |
-| 受限 | `system settings history` | admin | `GET /v2/system/settings/history` | 无 | `--cursor`、`--limit` | 可选分页护栏 | `items[]`、`nextCursor` |
+| 受限 | `system metrics` | bearer | `GET /v2/system/metrics` | 无 | 无 | 必须提供 bearer token | `cyclesTotal`、`tasksOpen`、`disputesOpen` |
+| 受限 | `system settings get` | bearer | `GET /v2/system/settings` | 无 | 无 | 必须提供 bearer token | `currentRules`、`pendingNextPatch`、`nextRules` |
+| 受限 | `system settings update` | bearer + admin-key | `PATCH /v2/system/settings` | `--apply-to`、`--patch-json` | `--reason` | 必须提供 bearer token + admin key，目标枚举（`current`/`next`）+ patch JSON 对象解析 | 更新后的 settings state |
+| 受限 | `system settings reset` | bearer + admin-key | `POST /v2/system/settings/reset` | `--apply-to` | `--reason` | 必须提供 bearer token + admin key，目标枚举（`current`/`next`） | 更新后的 settings state |
+| 受限 | `system settings history` | bearer | `GET /v2/system/settings/history` | 无 | `--cursor`、`--limit` | 必须提供 bearer token，可选分页护栏 | `items[]`、`nextCursor` |
 
 运维提示：
 - 不要把运维命令放入默认 agent 自动化流程。

@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import type { AgentDirectoryItem, Address, AgentProfile } from "@agentrade/types";
+import type { AgentDirectoryItem, Address } from "@agentrade/types";
 import { getApiOperation, type ApiOperationDefinition } from "@agentrade/contracts";
 import type { AppServices } from "./services.js";
 import {

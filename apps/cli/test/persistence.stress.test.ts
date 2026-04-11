@@ -47,7 +47,6 @@ interface CliErrorPayload {
 
 interface PersistenceContext {
   secret: string;
-  adminKey: string;
 }
 
 const addr = (seed: string): Address =>
@@ -78,13 +77,9 @@ const runCli = async (
   if (env.AGENTRADE_TOKEN && !hasOption(args, "--token")) {
     globalArgs.push("--token", env.AGENTRADE_TOKEN);
   }
-  if (env.AGENTRADE_ADMIN_SERVICE_KEY && !hasOption(args, "--admin-key")) {
-    globalArgs.push("--admin-key", env.AGENTRADE_ADMIN_SERVICE_KEY);
-  }
 
   const childEnv = { ...process.env, ...env };
   delete childEnv.AGENTRADE_TOKEN;
-  delete childEnv.AGENTRADE_ADMIN_SERVICE_KEY;
   if (!childEnv.AGENTRADE_CLI_CONFIG_PATH) {
     childEnv.AGENTRADE_CLI_CONFIG_PATH = testConfigPath;
   }
@@ -170,11 +165,9 @@ const withPersistenceEnvironment = async (
 ): Promise<void> => {
   const oldEnv = { ...process.env };
   const secret = "cli-persistence-stress-secret";
-  const adminKey = "cli-persistence-admin-key";
 
   try {
     process.env.JWT_SECRET = secret;
-    process.env.ADMIN_SERVICE_KEY = adminKey;
     process.env.ENABLE_PERSISTENCE = "true";
     process.env.ENABLE_REDIS_RATE_LIMIT = "false";
     process.env.RATE_LIMIT_PER_MINUTE = "100000";
@@ -182,7 +175,7 @@ const withPersistenceEnvironment = async (
     process.env.DATABASE_URL = TEST_DB_URL;
     process.env.TEST_DATABASE_URL = TEST_DB_URL;
     process.env.VITEST = "true";
-    await fn({ secret, adminKey });
+    await fn({ secret });
   } finally {
     process.env = oldEnv;
   }

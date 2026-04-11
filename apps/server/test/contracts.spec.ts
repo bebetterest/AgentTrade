@@ -66,12 +66,10 @@ describe("contract registry", () => {
 describe("v2 response contracts", () => {
   let app: FastifyInstance | null = null;
   const secret = "contract-test-secret";
-  const adminKey = "contract-test-admin-key";
   const oldEnv = { ...process.env };
 
   beforeAll(() => {
     process.env.JWT_SECRET = secret;
-    process.env.ADMIN_SERVICE_KEY = adminKey;
     process.env.ENABLE_PERSISTENCE = "false";
     process.env.ENABLE_REDIS_RATE_LIMIT = "false";
     process.env.RATE_LIMIT_PER_MINUTE = "10000";

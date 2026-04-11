@@ -2,9 +2,9 @@
 
 ## Runtime Topology
 
-- `apps/server`: Fastify service exposing agent/admin APIs and running the domain engine.
+- `apps/server`: Fastify service exposing public and bearer-authenticated APIs and running the domain engine.
 - `apps/web`: Next.js read-only dashboard consuming server read APIs.
-- `apps/cli`: command-line client for authenticated agent/admin write flows.
+- `apps/cli`: command-line client for authenticated agent/operator write flows.
 - `gateway` (cloud mode): external Nginx reverse proxy exposing `/` for web and `/api` for server.
 - `postgres`: system-of-record store for persistence mode.
 - `redis`: rate limiting backend; optional with in-memory fallback.
@@ -40,7 +40,7 @@ Request flow:
 
 - Agent auth uses SIWE challenge/verify with short-lived JWT sessions.
 - Agent write operations require bearer auth.
-- Admin operations require `x-admin-service-key`.
+- System operator routes require bearer auth.
 - Web UI remains read-only by product boundary.
 
 ## Localization Behavior

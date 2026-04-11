@@ -26,12 +26,13 @@ const errorCode = (payload: unknown): string | null => {
 describe("API integration", () => {
   let app: FastifyInstance | null = null;
   const secret = "test-jwt-secret";
-  const adminKey = "test-admin-key";
+  const adminServiceKey = "test-admin-service-key";
+  const systemOperator = addr("system-operator-1");
   const oldEnv = { ...process.env };
 
   beforeAll(() => {
     process.env.JWT_SECRET = secret;
-    process.env.ADMIN_SERVICE_KEY = adminKey;
+    process.env.ADMIN_SERVICE_KEY = adminServiceKey;
     process.env.ENABLE_PERSISTENCE = "false";
     process.env.ENABLE_REDIS_RATE_LIMIT = "false";
     process.env.TASK_TITLE_MAX_LENGTH = "120";
@@ -63,6 +64,10 @@ describe("API integration", () => {
   });
 
   const bearer = (address: Address): string => jwt.sign({ sub: address }, secret, { expiresIn: "1h" });
+  const bearerAndAdmin = (address: Address): Record<string, string> => ({
+    authorization: `Bearer ${bearer(address)}`,
+    "x-admin-service-key": adminServiceKey
+  });
 
   const createSingleSlotTask = async (publisher: Address) => {
     const taskRes = await app!.inject({
@@ -187,7 +192,7 @@ describe("API integration", () => {
     }
   });
 
-  it("exposes system metrics only to admin channel with v2 envelope", async () => {
+  it("exposes system metrics only to authenticated channel with v2 envelope", async () => {
     const forbidden = await app!.inject({
       method: "GET",
       url: "/v2/system/metrics"
@@ -199,7 +204,7 @@ describe("API integration", () => {
       method: "GET",
       url: "/v2/system/metrics",
       headers: {
-        "x-admin-service-key": adminKey
+        authorization: `Bearer ${bearer(systemOperator)}`
       }
     });
     expect(response.statusCode).toBe(200);
@@ -1619,11 +1624,67 @@ describe("API integration", () => {
     expect(cycle.penaltyPool).toBe(penalty);
   });
 
-  it("rejects runtime settings access when admin key is invalid", async () => {
+  it("rejects runtime settings access without bearer token", async () => {
     const response = await app!.inject({
       method: "GET",
+      url: "/v2/system/settings"
+    });
+    expect(response.statusCode).toBe(401);
+  });
+
+  it("rejects runtime settings mutation without admin service key", async () => {
+    const response = await app!.inject({
+      method: "PATCH",
       url: "/v2/system/settings",
-      headers: { "x-admin-service-key": "wrong-key" }
+      headers: { authorization: `Bearer ${bearer(systemOperator)}` },
+      payload: {
+        applyTo: "next",
+        patch: { taxRateBps: 600 }
+      }
+    });
+    expect(response.statusCode).toBe(401);
+  });
+
+  it("rejects runtime settings reset without admin service key", async () => {
+    const response = await app!.inject({
+      method: "POST",
+      url: "/v2/system/settings/reset",
+      headers: { authorization: `Bearer ${bearer(systemOperator)}` },
+      payload: {
+        applyTo: "next"
+      }
+    });
+    expect(response.statusCode).toBe(401);
+  });
+
+  it("rejects runtime settings mutation with invalid admin service key", async () => {
+    const response = await app!.inject({
+      method: "PATCH",
+      url: "/v2/system/settings",
+      headers: {
+        authorization: `Bearer ${bearer(systemOperator)}`,
+        "x-admin-service-key": "invalid-admin-key"
+      },
+      payload: {
+        applyTo: "next",
+        patch: { taxRateBps: 600 }
+      }
+    });
+    expect(response.statusCode).toBe(401);
+  });
+
+  it("rejects runtime settings mutation when admin service key header is duplicated", async () => {
+    const response = await app!.inject({
+      method: "PATCH",
+      url: "/v2/system/settings",
+      headers: {
+        authorization: `Bearer ${bearer(systemOperator)}`,
+        "x-admin-service-key": [adminServiceKey, "extra-key"] as unknown as string
+      },
+      payload: {
+        applyTo: "next",
+        patch: { taxRateBps: 600 }
+      }
     });
     expect(response.statusCode).toBe(401);
   });
@@ -1715,7 +1776,7 @@ describe("API integration", () => {
     const settingsBefore = await app!.inject({
       method: "GET",
       url: "/v2/system/settings",
-      headers: { "x-admin-service-key": adminKey }
+      headers: { authorization: `Bearer ${bearer(systemOperator)}` }
     });
     expect(settingsBefore.statusCode).toBe(200);
     const before = settingsBefore.json() as {
@@ -1727,7 +1788,7 @@ describe("API integration", () => {
     const updateRes = await app!.inject({
       method: "PATCH",
       url: "/v2/system/settings",
-      headers: { "x-admin-service-key": adminKey },
+      headers: bearerAndAdmin(systemOperator),
       payload: {
         applyTo: "next",
         patch: { taxRateBps: before.currentRules.taxRateBps + 100 }
@@ -1787,7 +1848,7 @@ describe("API integration", () => {
     const settingsRes = await app!.inject({
       method: "GET",
       url: "/v2/system/settings",
-      headers: { "x-admin-service-key": adminKey }
+      headers: { authorization: `Bearer ${bearer(systemOperator)}` }
     });
     expect(settingsRes.statusCode).toBe(200);
     const settings = settingsRes.json() as { currentRules: { taxRateBps: number } };
@@ -1795,7 +1856,7 @@ describe("API integration", () => {
     const updateRes = await app!.inject({
       method: "PATCH",
       url: "/v2/system/settings",
-      headers: { "x-admin-service-key": adminKey },
+      headers: bearerAndAdmin(systemOperator),
       payload: {
         applyTo: "current",
         patch: { taxRateBps: settings.currentRules.taxRateBps + 100 }

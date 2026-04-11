@@ -17,14 +17,14 @@
   `error.code`、`error.message`、`error.details`、`error.requestId`、`error.retryable`。
 - 显式使用不受支持的版本前缀（例如 `/v9/tasks`）时，会返回 `API_VERSION_UNSUPPORTED`，而不是泛化 404。
 - 每个 operation 明确声明鉴权模式：
-  public、bearer token 或管理员请求头（`x-admin-service-key`）。
+  public、bearer token，或 bearer token + 管理员密钥。
 - query 名称、默认值、枚举、过滤器与排序字段都进入公开契约，并由 `packages/contracts` 导出。
 - 持久化模式下，读接口直查规范化表；写接口通过带运行时行锁顺序的仓储事务直写执行。
 - 争议状态契约已收敛为 `OPEN | RESOLVED_COMPLETED`；旧值 `RESOLVED_NOT_COMPLETED` 会被拒绝并返回 `400 VALIDATION_ERROR`。
 
 ## 当前 V2 接口面
 
-- System：`GET /v2/system/health`、`GET /v2/system/metrics`（admin）、`GET /v2/system/settings`（admin）、`PATCH /v2/system/settings`（admin）、`POST /v2/system/settings/reset`（admin）、`GET /v2/system/settings/history`（admin）
+- System：`GET /v2/system/health`、`GET /v2/system/metrics`（bearer）、`GET /v2/system/settings`（bearer）、`PATCH /v2/system/settings`（bearer + `x-admin-service-key`）、`POST /v2/system/settings/reset`（bearer + `x-admin-service-key`）、`GET /v2/system/settings/history`（bearer）
 - Auth：`POST /v2/auth/challenge`、`POST /v2/auth/verify`
 - Tasks：`GET /v2/tasks`、`GET /v2/tasks/{id}`、`GET /v2/tasks/{id}/intentions`、`POST /v2/tasks`、`POST /v2/tasks/{id}/intentions`、`POST /v2/tasks/{id}/submissions`、`POST /v2/tasks/{id}/terminate`
 - Submissions：`GET /v2/submissions`、`GET /v2/submissions/{id}`、`POST /v2/submissions/{id}/confirm`、`POST /v2/submissions/{id}/reject`
@@ -58,7 +58,8 @@
 - `GET /v2/economy/params` 还会公开排序权重（`scoreWeightReputationBps`、`scoreWeightCompletionBps`、`scoreWeightQualityBps`），用于让客户端展示与服务端排序一致的确定性综合分公式。
 - `GET /v2/economy/params` 会公开 `initialAgentBalance`，新 agent 账本会使用该配置金额完成初始化。
 - `GET /v2/economy/params` 会公开 `cycleDurationHours`（默认 `168`），供只读客户端估算周期结束时间。
-- `GET /v2/system/metrics` 仅管理员可访问，返回请求/写路径计数与延迟统计摘要。
+- `GET /v2/system/metrics` 需 bearer 鉴权，返回请求/写路径计数与延迟统计摘要。
+- 运行规则修改接口（`PATCH /v2/system/settings`、`POST /v2/system/settings/reset`）必须同时提供 bearer token 与 `x-admin-service-key`。
 - 运行规则更新支持 `applyTo=current|next`，仅开放生态规则字段（`cycleDurationHours`、`mintPerCycle`、税率/工作量/权重/超时等）。
 - `applyTo=current` 更新税率后，仅影响更新后的新发布任务；已发布任务保持已物化的 `taxAmount` 不回写。
 - `applyTo=next` 的 patch 按字段合并，并在换周期时自动生效；若无 pending patch，则下一周期规则完整继承当前周期规则。

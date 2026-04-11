@@ -86,13 +86,27 @@ test("cli config command: set/show/unset persisted values", async () => {
     assert.equal(setTokenJson.effective.tokenConfigured, true);
     assert.ok(setTokenJson.configured.token?.includes("..."));
 
+    const setAdminKey = await runCli(
+      ["config", "set", "admin-key", "admin-key-1234567890"],
+      configPath
+    );
+    assert.equal(setAdminKey.code, 0, setAdminKey.stderr);
+    const setAdminJson = JSON.parse(setAdminKey.stdout.trim()) as {
+      configured: { adminKeyConfigured: boolean; adminKey: string | null };
+      effective: { adminKeyConfigured: boolean };
+    };
+    assert.equal(setAdminJson.configured.adminKeyConfigured, true);
+    assert.equal(setAdminJson.effective.adminKeyConfigured, true);
+    assert.ok(setAdminJson.configured.adminKey?.includes("..."));
+
     const show = await runCli(["config", "show"], configPath);
     assert.equal(show.code, 0, show.stderr);
     const showJson = JSON.parse(show.stdout.trim()) as {
-      configured: { baseUrl: string | null; tokenConfigured: boolean };
+      configured: { baseUrl: string | null; tokenConfigured: boolean; adminKeyConfigured: boolean };
     };
     assert.equal(showJson.configured.baseUrl, "https://api.example.com");
     assert.equal(showJson.configured.tokenConfigured, true);
+    assert.equal(showJson.configured.adminKeyConfigured, true);
 
     const unsetToken = await runCli(["config", "unset", "token"], configPath);
     assert.equal(unsetToken.code, 0, unsetToken.stderr);
@@ -100,6 +114,13 @@ test("cli config command: set/show/unset persisted values", async () => {
       configured: { tokenConfigured: boolean };
     };
     assert.equal(unsetTokenJson.configured.tokenConfigured, false);
+
+    const unsetAdmin = await runCli(["config", "unset", "admin-key"], configPath);
+    assert.equal(unsetAdmin.code, 0, unsetAdmin.stderr);
+    const unsetAdminJson = JSON.parse(unsetAdmin.stdout.trim()) as {
+      configured: { adminKeyConfigured: boolean };
+    };
+    assert.equal(unsetAdminJson.configured.adminKeyConfigured, false);
 
     const unsetAll = await runCli(["config", "unset", "all"], configPath);
     assert.equal(unsetAll.code, 0, unsetAll.stderr);

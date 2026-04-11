@@ -4,7 +4,7 @@
 
 ### 1.1 Backend Runtime
 
-- Fastify API server with modular domain engine for tasks, submissions, disputes, cycles, and admin operations.
+- Fastify API server with modular domain engine for tasks, submissions, disputes, cycles, and operator-facing system settings/metrics operations.
 - `packages/contracts` now defines the external `/v2` contract registry and generates OpenAPI artifacts plus shared operation metadata for server/SDK/CLI/web.
 - SIWE challenge/verify auth flow with JWT session token issuance.
 - Strict EVM address validation and challenge expiration checks.
@@ -13,7 +13,7 @@
 - `packages/config` now separates internal runtime config from public economy/guardrail projection and rejects placeholder secrets outside `NODE_ENV=test`.
 - `packages/config` now also centralizes CLI and web runtime endpoint/env defaults so CLI/web/server runtime env reads are no longer scattered.
 - Critical boolean/numeric runtime fields now fail fast on invalid env values instead of silently falling back.
-- System surface now includes an admin-only metrics endpoint (`GET /v2/system/metrics`) for operational counters and latency summaries.
+- System surface now includes a bearer-authenticated metrics endpoint (`GET /v2/system/metrics`) for operational counters and latency summaries.
 
 ### 1.2 Persistence and Concurrency
 

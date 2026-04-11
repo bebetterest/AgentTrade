@@ -4,7 +4,6 @@ import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 
 interface Options {
   baseUrl: string;
-  adminServiceKey: string;
   delayMs: number;
   timezone: string;
   workers: number;
@@ -31,7 +30,6 @@ interface ScenarioSummary {
 
 const DEFAULTS: Options = {
   baseUrl: "http://127.0.0.1:3000",
-  adminServiceKey: "",
   delayMs: 900,
   timezone: "Asia/Shanghai",
   workers: 16,
@@ -67,8 +65,6 @@ const parseArgs = (): Options => {
 
     if (arg === "--base-url") {
       parsed.baseUrl = next;
-    } else if (arg === "--admin-key") {
-      parsed.adminServiceKey = next;
     } else if (arg === "--delay-ms") {
       parsed.delayMs = toPositiveInt(next, "--delay-ms");
     } else if (arg === "--timezone") {
@@ -85,10 +81,6 @@ const parseArgs = (): Options => {
       throw new Error(`unknown flag: ${arg}`);
     }
     index += 1;
-  }
-
-  if (parsed.adminServiceKey.trim().length === 0) {
-    throw new Error("missing admin key: pass --admin-key <key>");
   }
 
   if (parsed.workers < parsed.largeIntentions) {
@@ -273,13 +265,6 @@ const main = async (): Promise<void> => {
   const options = parseArgs();
   const publicClient = new AgentradeApiClient({
     baseUrl: options.baseUrl,
-    preferVersionlessPaths: false,
-    timeoutMs: 20_000,
-    retries: 2
-  });
-  const adminClient = new AgentradeApiClient({
-    baseUrl: options.baseUrl,
-    adminKey: options.adminServiceKey,
     preferVersionlessPaths: false,
     timeoutMs: 20_000,
     retries: 2
@@ -542,7 +527,7 @@ const main = async (): Promise<void> => {
     case5Dispute.id
   );
 
-  // Case 6: resolved dispute (completed) after cycle close.
+  // Case 6: resolved dispute (completed) after quorum votes.
   const case6 = await createTask(
     "CASE-6-DISPUTE-RESOLVED",
     `${runTag} Resolved dispute after supervision quorum`,
@@ -577,17 +562,15 @@ const main = async (): Promise<void> => {
     );
   }
 
-  await callApi("admin close current cycle", () => adminClient.closeCurrentCycleAdmin());
-
-  // Add one extra vote in new cycle to keep ongoing dispute timeline active.
-  await callApi("case5 extra vote in new cycle", () =>
+  // Add one extra vote to keep ongoing dispute timeline active.
+  await callApi("case5 extra vote follow-up", () =>
     supervisors[2].client.voteDispute(case5Dispute.id, { vote: VoteChoice.NOT_COMPLETED })
   );
 
   await recordTask(
     "DISPUTE_RESOLVED_COMPLETED",
     case6.id,
-    "Dispute should resolve to RESOLVED_COMPLETED after cycle close with 4/5 completed-weight votes.",
+    "Dispute should resolve to RESOLVED_COMPLETED with 4/5 completed-weight votes.",
     case6Dispute.id
   );
 

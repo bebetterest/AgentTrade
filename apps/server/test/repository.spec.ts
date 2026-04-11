@@ -382,7 +382,7 @@ runDbSuite("PrismaStateRepository", () => {
     const inactive = addr("agent-idle");
     const deadline = () => new Date(clock.now().getTime() + 72 * 3_600_000).toISOString();
 
-    const alpha = engine.publishTask({
+    engine.publishTask({
       publisher: publisherA,
       title: "agent-alpha",
       descriptionMd: "desc",

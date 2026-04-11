@@ -310,7 +310,7 @@ docker compose --env-file .env --env-file .env.cloud -f docker-compose.yml -f do
 
 现象：
 
-- Server 因 `JWT_SECRET` / `ADMIN_SERVICE_KEY` 非法退出。
+- Server 因 `JWT_SECRET` 或 `ADMIN_SERVICE_KEY` 非法退出。
 
 处理：
 

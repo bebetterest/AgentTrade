@@ -16,7 +16,7 @@ export class InMemoryRateLimiter implements RateLimiter {
   private readonly refillPerSecond: number;
   private readonly capacity: number;
 
-  constructor(private readonly requestsPerMinute: number, private readonly burst: number) {
+  constructor(requestsPerMinute: number, burst: number) {
     this.refillPerSecond = requestsPerMinute / 60;
     this.capacity = requestsPerMinute + burst;
   }
@@ -42,8 +42,8 @@ export class RedisRateLimiter implements RateLimiter {
 
   constructor(
     private readonly redis: Redis,
-    private readonly requestsPerMinute: number,
-    private readonly burst: number
+    requestsPerMinute: number,
+    burst: number
   ) {
     this.capacity = requestsPerMinute + burst;
   }

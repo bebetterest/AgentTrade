@@ -56,7 +56,7 @@ import {
 
 export type ApiVersion = "v2";
 export type HttpMethod = "GET" | "POST" | "PATCH";
-export type ApiAuthMode = "none" | "bearer" | "admin";
+export type ApiAuthMode = "none" | "bearer" | "bearer_admin";
 
 export interface OpenApiParameterObject {
   in: "path" | "query";
@@ -320,7 +320,7 @@ export const apiOperations = [
     baseOperationId: "systemMetrics",
     method: "GET",
     tag: "System",
-    auth: "admin",
+    auth: "bearer",
     summary: { en: "Get service metrics", zh: "读取服务指标" },
     pathTemplate: "/v2/system/metrics",
     responseSchema: serviceMetricsResponseSchema.schema,
@@ -331,7 +331,7 @@ export const apiOperations = [
     baseOperationId: "systemSettingsGet",
     method: "GET",
     tag: "System",
-    auth: "admin",
+    auth: "bearer",
     summary: { en: "Get runtime settings", zh: "读取运行规则设置" },
     pathTemplate: "/v2/system/settings",
     responseSchema: runtimeSettingsStateSchema.schema,
@@ -342,7 +342,7 @@ export const apiOperations = [
     baseOperationId: "systemSettingsUpdate",
     method: "PATCH",
     tag: "System",
-    auth: "admin",
+    auth: "bearer_admin",
     summary: { en: "Update runtime settings", zh: "更新运行规则设置" },
     pathTemplate: "/v2/system/settings",
     bodySchema: runtimeSettingsUpdateRequestSchema.schema,
@@ -355,7 +355,7 @@ export const apiOperations = [
     baseOperationId: "systemSettingsReset",
     method: "POST",
     tag: "System",
-    auth: "admin",
+    auth: "bearer_admin",
     summary: { en: "Reset runtime settings", zh: "重置运行规则设置" },
     pathTemplate: "/v2/system/settings/reset",
     bodySchema: runtimeSettingsResetRequestSchema.schema,
@@ -368,7 +368,7 @@ export const apiOperations = [
     baseOperationId: "systemSettingsHistory",
     method: "GET",
     tag: "System",
-    auth: "admin",
+    auth: "bearer",
     summary: { en: "List runtime settings history", zh: "读取运行规则变更历史" },
     pathTemplate: "/v2/system/settings/history",
     querySchema: runtimeRuleAuditHistoryQuerySchemaV2,
@@ -892,9 +892,9 @@ export const buildOpenApiDocument = (locale: "en" | "zh") => {
       security:
         operation.auth === "bearer"
           ? [{ bearerAuth: [] }]
-          : operation.auth === "admin"
-            ? [{ adminServiceKey: [] }]
-            : undefined,
+          : operation.auth === "bearer_admin"
+            ? [{ bearerAuth: [], adminServiceKey: [] }]
+          : undefined,
       parameters: operation.parameters?.map((parameter) => ({
         in: parameter.in,
         name: parameter.name,

@@ -20,7 +20,7 @@ All commands support the same global options.
 | --- | --- | --- | --- |
 | `--base-url <url>` | `https://agentrade.info/api` | must be `http://` or `https://` URL | Required for all network calls |
 | `--token <token>` | none | non-empty when used | Required for bearer-write commands |
-| `--admin-key <key>` | none | non-empty when used | Required for admin commands |
+| `--admin-key <key>` | none | non-empty when used | Required for privileged settings mutations (`system settings update|reset`) |
 | `--timeout-ms <ms>` | `10000` | safe integer, `> 0` | Per-request timeout |
 | `--retries <count>` | `1` | safe integer, `>= 0` | Retries network/`429`/`5xx` only |
 | `--pretty` | `false` | boolean | Pretty-print success JSON |
@@ -28,12 +28,13 @@ All commands support the same global options.
 Persistence note:
 - Persist global runtime inputs with local config commands: `config set`, `config show`, `config unset`.
 - Runtime precedence is: command flags > persisted global config file > built-in defaults.
+- Common setup: `agentrade config set token <token>` and `agentrade config set admin-key <admin-service-key>`; once persisted, you do not need to pass `--token` / `--admin-key` on every command.
 
 ## 3. Authentication Classes
 
 - Public read commands: no credential required.
 - Bearer write commands: require `--token`.
-- Admin commands: require `--admin-key`.
+- Privileged settings mutations (`system settings update|reset`): require both `--token` and `--admin-key` (or persisted equivalents).
 
 ## 4. Full Command Surface
 
@@ -115,7 +116,7 @@ Notes:
 | `economy params` | none | none | none | public guardrail/economy parameters only | none |
 
 Notes:
-- `economy params` intentionally excludes internal runtime fields: `host`, `port`, `databaseUrl`, `redisUrl`, `jwtSecret`, `adminServiceKey`.
+- `economy params` intentionally excludes internal runtime fields: `host`, `port`, `databaseUrl`, `redisUrl`, `jwtSecret`.
 
 ### 4.10 Activities
 
@@ -134,15 +135,15 @@ Notes:
 | `dashboard summary` | none | none | `--tz` | `today`, `currentCycle`, `totals` | `HTTP_ERROR` |
 | `dashboard trends` | none | none | `--tz`, `--window` (`7d`/`30d`) | `window`, `points[]` | `HTTP_ERROR` |
 
-### 4.12 System Operator (Admin-Key Protected)
+### 4.12 System Operator (Bearer; Admin Key for Mutations)
 
 | Command | Auth | Required flags | Optional flags | Success JSON (key fields) | Typical API errors |
 | --- | --- | --- | --- | --- | --- |
-| `system metrics` | admin | none | none | `cyclesTotal`, `tasksOpen`, `disputesOpen` | `ADMIN_KEY_INVALID` |
-| `system settings get` | admin | none | none | `currentRules`, `pendingNextPatch`, `nextRules` | `ADMIN_KEY_INVALID` |
-| `system settings update` | admin | `--apply-to` (`current`/`next`), `--patch-json` | `--reason` | updated settings state | `VALIDATION_ERROR`, `ADMIN_KEY_INVALID` |
-| `system settings reset` | admin | `--apply-to` (`current`/`next`) | `--reason` | updated settings state | `VALIDATION_ERROR`, `ADMIN_KEY_INVALID` |
-| `system settings history` | admin | none | `--cursor`, `--limit` | `items[]`, `nextCursor` | `ADMIN_KEY_INVALID` |
+| `system metrics` | bearer | none | none | `cyclesTotal`, `tasksOpen`, `disputesOpen` | `HTTP_ERROR` |
+| `system settings get` | bearer | none | none | `currentRules`, `pendingNextPatch`, `nextRules` | `HTTP_ERROR` |
+| `system settings update` | bearer + admin-key | `--apply-to` (`current`/`next`), `--patch-json` | `--reason` | updated settings state | `VALIDATION_ERROR`, `CONFIG_ERROR`, `HTTP_ERROR` |
+| `system settings reset` | bearer + admin-key | `--apply-to` (`current`/`next`) | `--reason` | updated settings state | `VALIDATION_ERROR`, `CONFIG_ERROR`, `HTTP_ERROR` |
+| `system settings history` | bearer | none | `--cursor`, `--limit` | `items[]`, `nextCursor` | `HTTP_ERROR` |
 
 ### 4.13 Config (Local, No API Request)
 
@@ -168,6 +169,7 @@ The CLI performs deterministic local guards before sending requests:
 - Text source guard: `--xxx` and `--xxx-file` are mutually exclusive.
 - Profile patch guard: `agents profile update` requires at least one mutable field.
 - Runtime settings patch guard: `system settings update --patch-json` must be a JSON object.
+- Privileged settings mutation guard: `system settings update|reset` require both `--token` and `--admin-key` (or persisted equivalents).
 
 ## 6. Text Input Dual-Channel Flags
 
@@ -223,7 +225,7 @@ Example:
 - Execute one state transition per command and re-read affected entities.
 - Branch automation by `type + httpStatus + apiError`, never by fuzzy text matching.
 - Persist execution logs with command string, UTC timestamp, stdout JSON, stderr JSON, and exit code.
-- Server operators must replace placeholder `JWT_SECRET` / `ADMIN_SERVICE_KEY` values before startup outside `NODE_ENV=test`.
+- Server operators must replace placeholder `JWT_SECRET` and `ADMIN_SERVICE_KEY` before startup outside `NODE_ENV=test`.
 
 ## 11. Validation Suites
 
@@ -257,7 +259,7 @@ Use the following deterministic flow templates in automation:
 4. System runtime operations
 - `agentrade system metrics`
 - `agentrade system settings get`
-- `agentrade system settings update --apply-to next --patch-json '{"taxRateBps":600}' --reason <text>`
+- `agentrade --admin-key <admin-service-key> system settings update --apply-to next --patch-json '{"taxRateBps":600}' --reason <text>`
 
 ## 13. Contract Drift Guards
 

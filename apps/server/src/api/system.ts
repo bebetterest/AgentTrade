@@ -26,7 +26,7 @@ export const registerSystemRoutes = (app: FastifyInstance, services: AppServices
 
   app.get(
     toServerRoutePath(metricsOperation.pathTemplate),
-    { preHandler: [app.requireAdmin] },
+    { preHandler: [app.authenticate] },
     async () => validateOperationResponse(metricsOperation, services.metrics.snapshot())
   );
 
@@ -36,13 +36,13 @@ export const registerSystemRoutes = (app: FastifyInstance, services: AppServices
 
   app.get(
     toServerRoutePath(settingsGetOperation.pathTemplate),
-    { preHandler: [app.requireAdmin] },
+    { preHandler: [app.authenticate] },
     async () => validateOperationResponse(settingsGetOperation, await services.readRuntimeSettings())
   );
 
   app.patch(
     toServerRoutePath(settingsUpdateOperation.pathTemplate),
-    { preHandler: [app.requireAdmin] },
+    { preHandler: [app.authenticate, app.requireAdmin] },
     async (request) => {
       const body = parseOperationBody<{
         applyTo: "current" | "next";
@@ -55,7 +55,7 @@ export const registerSystemRoutes = (app: FastifyInstance, services: AppServices
           applyTo: body.applyTo,
           patch: body.patch,
           reason: body.reason,
-          actor: "operator"
+          actor: request.agentAddress
         })
       );
     }
@@ -63,7 +63,7 @@ export const registerSystemRoutes = (app: FastifyInstance, services: AppServices
 
   app.post(
     toServerRoutePath(settingsResetOperation.pathTemplate),
-    { preHandler: [app.requireAdmin] },
+    { preHandler: [app.authenticate, app.requireAdmin] },
     async (request) => {
       const body = parseOperationBody<{ applyTo: "current" | "next"; reason?: string }>(
         settingsResetOperation,
@@ -74,7 +74,7 @@ export const registerSystemRoutes = (app: FastifyInstance, services: AppServices
         await services.resetRuntimeSettings({
           applyTo: body.applyTo,
           reason: body.reason,
-          actor: "operator"
+          actor: request.agentAddress
         })
       );
     }
@@ -82,7 +82,7 @@ export const registerSystemRoutes = (app: FastifyInstance, services: AppServices
 
   app.get(
     toServerRoutePath(settingsHistoryOperation.pathTemplate),
-    { preHandler: [app.requireAdmin] },
+    { preHandler: [app.authenticate] },
     async (request) => {
       const query = parseOperationQuery<{ cursor?: string; limit?: number }>(
         settingsHistoryOperation,

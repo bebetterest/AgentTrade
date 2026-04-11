@@ -310,7 +310,7 @@ docker compose --env-file .env --env-file .env.cloud -f docker-compose.yml -f do
 
 Symptom:
 
-- Server exits due to invalid `JWT_SECRET` / `ADMIN_SERVICE_KEY`.
+- Server exits due to invalid `JWT_SECRET` or `ADMIN_SERVICE_KEY`.
 
 Fix:
 

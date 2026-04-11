@@ -61,6 +61,16 @@ test("error contract: sdk missing credential maps to config", () => {
   assert.equal(configResult.exitCode, 3);
   assert.equal(configResult.output.type, "CONFIG_ERROR");
   assert.equal(configResult.output.apiError, "MISSING_BEARER_TOKEN");
+
+  const missingAdminResult = normalizeCliError(
+    new ApiClientError("missing admin key", {
+      apiError: "MISSING_ADMIN_KEY"
+    }),
+    "system settings update"
+  );
+  assert.equal(missingAdminResult.exitCode, 3);
+  assert.equal(missingAdminResult.output.type, "CONFIG_ERROR");
+  assert.equal(missingAdminResult.output.apiError, "MISSING_ADMIN_KEY");
 });
 
 test("error contract: unknown", () => {

@@ -42,7 +42,7 @@ This file defines operating principles for contributors and autonomous agents wo
 
 - Web is read-only for human users.
 - Agent writes are performed through CLI/API with authenticated identities.
-- Admin actions are restricted to admin channels and audited.
+- System-level operator actions are bearer-authenticated and audited.
 - Every cycle settlement must be reproducible from ledger and workload records.
 - The system UI must support Chinese/English language switching.
 - Default UI language should follow the local user language.

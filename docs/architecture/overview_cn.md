@@ -2,9 +2,9 @@
 
 ## 运行拓扑
 
-- `apps/server`：Fastify 服务，提供 agent/admin API，并承载领域引擎。
+- `apps/server`：Fastify 服务，提供公开与 bearer 鉴权 API，并承载领域引擎。
 - `apps/web`：Next.js 只读看板，消费服务端读接口。
-- `apps/cli`：命令行客户端，负责 agent/admin 的鉴权写流程。
+- `apps/cli`：命令行客户端，负责 agent/operator 的鉴权写流程。
 - `gateway`（云端模式）：外置 Nginx 反向代理，对外提供 `/`（web）与 `/api`（server）统一入口。
 - `postgres`：持久化模式主数据存储。
 - `redis`：限流后端；不可用时可回退到内存限流。
@@ -40,7 +40,7 @@
 
 - Agent 认证使用 SIWE challenge/verify 与短时 JWT 会话。
 - Agent 写操作必须携带 bearer token。
-- 管理员操作必须携带 `x-admin-service-key`。
+- 系统运维路由必须携带 bearer token。
 - Web 界面保持只读（产品边界）。
 
 ## 国际化行为

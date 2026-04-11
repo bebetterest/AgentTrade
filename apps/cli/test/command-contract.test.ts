@@ -9,7 +9,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { stripApiVersionPrefix } from "@agentrade/contracts";
 
-type AuthMode = "none" | "bearer" | "admin";
+type AuthMode = "none" | "bearer" | "bearer_admin";
 
 interface CliResult {
   code: number | null;
@@ -49,13 +49,13 @@ const runCli = async (args: string[], env: NodeJS.ProcessEnv): Promise<CliResult
   if (env.AGENTRADE_TOKEN && !hasOption(args, "--token")) {
     globalArgs.push("--token", env.AGENTRADE_TOKEN);
   }
-  if (env.AGENTRADE_ADMIN_SERVICE_KEY && !hasOption(args, "--admin-key")) {
-    globalArgs.push("--admin-key", env.AGENTRADE_ADMIN_SERVICE_KEY);
+  if (env.AGENTRADE_ADMIN_KEY && !hasOption(args, "--admin-key")) {
+    globalArgs.push("--admin-key", env.AGENTRADE_ADMIN_KEY);
   }
 
   const childEnv = { ...process.env, ...env };
   delete childEnv.AGENTRADE_TOKEN;
-  delete childEnv.AGENTRADE_ADMIN_SERVICE_KEY;
+  delete childEnv.AGENTRADE_ADMIN_KEY;
   if (!childEnv.AGENTRADE_CLI_CONFIG_PATH) {
     childEnv.AGENTRADE_CLI_CONFIG_PATH = testConfigPath;
   }
@@ -95,7 +95,7 @@ const readRequestBody = async (request: import("node:http").IncomingMessage): Pr
 
 test("cli command contract: method/path/auth/body coverage for all command groups", async () => {
   const token = "cli-contract-token";
-  const adminKey = "cli-contract-admin";
+  const adminKey = "cli-contract-admin-key";
   const addressA = "0x1111111111111111111111111111111111111111";
   const addressB = "0x2222222222222222222222222222222222222222";
   const deadline = "2027-01-01T00:00:00.000Z";
@@ -491,7 +491,7 @@ test("cli command contract: method/path/auth/body coverage for all command group
 
   const baseEnv = {
     AGENTRADE_TOKEN: token,
-    AGENTRADE_ADMIN_SERVICE_KEY: adminKey
+    AGENTRADE_ADMIN_KEY: adminKey
   };
 
   const assertAuth = (headers: IncomingHttpHeaders, mode: AuthMode): void => {
@@ -505,8 +505,8 @@ test("cli command contract: method/path/auth/body coverage for all command group
       assert.equal(headers["x-admin-service-key"], undefined);
       return;
     }
+    assert.equal(headers.authorization, `Bearer ${token}`);
     assert.equal(headers["x-admin-service-key"], adminKey);
-    assert.equal(headers.authorization, undefined);
   };
 
   const runAndAssert = async (
@@ -936,12 +936,12 @@ test("cli command contract: method/path/auth/body coverage for all command group
     await runAndAssert(["system", "metrics"], {
       method: "GET",
       url: "/v2/system/metrics",
-      auth: "admin"
+      auth: "bearer"
     });
     await runAndAssert(["system", "settings", "get"], {
       method: "GET",
       url: "/v2/system/settings",
-      auth: "admin"
+      auth: "bearer"
     });
     await runAndAssert(
       [
@@ -958,7 +958,7 @@ test("cli command contract: method/path/auth/body coverage for all command group
       {
         method: "PATCH",
         url: "/v2/system/settings",
-        auth: "admin",
+        auth: "bearer_admin",
         body: {
           applyTo: "next",
           patch: { taxRateBps: 600, mintPerCycle: 1200 },
@@ -969,13 +969,13 @@ test("cli command contract: method/path/auth/body coverage for all command group
     await runAndAssert(["system", "settings", "reset", "--apply-to", "current"], {
       method: "POST",
       url: "/v2/system/settings/reset",
-      auth: "admin",
+      auth: "bearer_admin",
       body: { applyTo: "current" }
     });
     await runAndAssert(["system", "settings", "history", "--cursor", "7", "--limit", "9"], {
       method: "GET",
       url: "/v2/system/settings/history?cursor=7&limit=9",
-      auth: "admin"
+      auth: "bearer"
     });
   } finally {
     await new Promise<void>((resolvePromise, rejectPromise) => {

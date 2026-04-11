@@ -198,13 +198,21 @@ export class AgentradeApiClient {
       }
       return { authorization: `Bearer ${this.token}` };
     }
-    if (auth === "admin") {
+    if (auth === "bearer_admin") {
+      if (!this.token) {
+        throw new ApiClientError("missing bearer token for authenticated request", {
+          apiError: "MISSING_BEARER_TOKEN"
+        });
+      }
       if (!this.adminKey) {
-        throw new ApiClientError("missing admin service key for admin request", {
+        throw new ApiClientError("missing admin service key for admin-authenticated request", {
           apiError: "MISSING_ADMIN_KEY"
         });
       }
-      return { "x-admin-service-key": this.adminKey };
+      return {
+        authorization: `Bearer ${this.token}`,
+        "x-admin-service-key": this.adminKey
+      };
     }
     return {};
   }

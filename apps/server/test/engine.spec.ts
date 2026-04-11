@@ -738,7 +738,7 @@ describe("AgentradeEngine disputes and cycle settlement", () => {
     });
     engine.addTaskIntention(task.id, worker);
     clock.advanceMinutes(31);
-    const submission = engine.submitTask(task.id, worker, "done");
+    engine.submitTask(task.id, worker, "done");
     const before = engine.getLedger(worker).available;
 
     clock.advanceHours(73);

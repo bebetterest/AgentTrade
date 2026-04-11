@@ -40,7 +40,6 @@ const errorCode = (payload: unknown): string | null => {
 
 runDbSuite("Persistence Stress", () => {
   const secret = "persist-stress-secret";
-  const adminKey = "persist-stress-admin-key";
   const oldEnv = { ...process.env };
   let app: FastifyInstance | null = null;
   let repo: PrismaStateRepository;
@@ -107,7 +106,6 @@ runDbSuite("Persistence Stress", () => {
 
   beforeAll(async () => {
     process.env.JWT_SECRET = secret;
-    process.env.ADMIN_SERVICE_KEY = adminKey;
     process.env.ENABLE_PERSISTENCE = "true";
     process.env.ENABLE_REDIS_RATE_LIMIT = "false";
     process.env.INITIAL_AGENT_BALANCE = "200000";

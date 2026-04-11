@@ -2,13 +2,20 @@
 
 ## 2026-04-11
 
+- 已恢复“管理员密钥”门槛，明确系统规则修改边界：
+  - `PATCH /v2/system/settings` 与 `POST /v2/system/settings/reset` 现要求 bearer token + `x-admin-service-key`，
+  - 运行时配置解析/校验与 Docker compose 映射恢复 `ADMIN_SERVICE_KEY`（test 之外必填且不可占位），
+  - CLI 恢复 `--admin-key` 与本地 `config admin-key` 持久化路径，仅用于特权修改命令。
+- 已同步契约与客户端，完成双鉴权模型收敛：
+  - 更新 `packages/contracts` 鉴权模式与 OpenAPI 安全方案（`adminServiceKey`），
+  - 同步 SDK/CLI 鉴权头解析与命令/测试契约（含 `MISSING_ADMIN_KEY` 错误分流）。
 - 已完成服务端“默认自动周期推进”能力：
   - 新增 `CYCLE_DURATION_HOURS` 配置（默认 `168`），并通过公开 economy params 对外暴露，
   - 增加“请求路径补偿 + 后台定时器”双通道自动关周期流程，到期后无需人工即可完成结算并开启下一周期，
   - 在持久化路径新增事务内到期校验命令（`closeCurrentCycleIfDueDirect`），确保自动结算在 `RuntimeState` 锁序下安全执行。
 - 已补齐回归验证：
   - 新增 API 集成用例，断言到期周期会在请求触发时自动关闭并推进 active cycle，
-  - 保持现有管理员手动关周期接口行为不变，便于运维介入。
+  - 周期推进完全由系统自动执行，不再依赖管理员手动关周期入口。
 - 已同步读面契约与文档：
   - Web 周期列表/详情对 `OPEN` 周期展示预计关闭时间（`startedAt + cycleDurationHours`），
   - 已同步更新中英文文档（`README*`、`docs/configuration/environment*`、`docs/api/overview*`、`docs/tech_plan*`）并重新生成 OpenAPI 产物。
@@ -160,7 +167,7 @@
 - 已将 SDK 请求组装、CLI operation 绑定与 Web 读客户端迁移到 `/v2`，同时把 `/v1` 保持为冻结兼容面。
 - 新增 CLI operation 绑定漂移校验，以及服务端侧的契约完整性、OpenAPI 产物同步、在线 `/v2` 响应 schema 校验测试。
 - 已将 `GET /v1/economy/params` 收敛为脱敏后的 `PublicEconomyParams` 响应，并新增 server/CLI 回归测试，明确断言公开接口不泄露密钥或基础设施连接信息。
-- 已新增启动期配置校验：`NODE_ENV=test` 之外拒绝占位 `JWT_SECRET` / `ADMIN_SERVICE_KEY`，并同步更新 `.env.example` 与 Node `>=22 <26`（推荐 22）+ pnpm 9 + `corepack enable` 的本地工具链说明。
+- 已新增启动期配置校验：`NODE_ENV=test` 之外拒绝占位 `JWT_SECRET`，并同步更新 `.env.example` 与 Node `>=22 <26`（推荐 22）+ pnpm 9 + `corepack enable` 的本地工具链说明。
 - 已扩展持久化模式读路径：tasks/disputes/activities/agents/dashboard 在不改变外部 query/cursor 契约的前提下，直接在数据库侧完成过滤、排序、分页与聚合。
 - 已更新 Web SSR 偏好处理：`<html lang>` 会反映真实 locale，locale/timezone cookie 驱动初始状态，`LocaleSwitcher` 会同时持久化 cookie 与 localStorage。
 - 已完成本地复验：`config/types/sdk/server/web/cli` workspace build、web/server 快速测试、CLI docs-sync、DB 环境下 `repository + persistence-api`、`stress.persistence` 以及 CLI 持久化/并发/重启回归全部通过。

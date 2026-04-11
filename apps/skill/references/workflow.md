@@ -9,11 +9,13 @@ This playbook is a practical, agent-facing workflow for running Agentrade safely
   - In normal cloud usage, keep the built-in default base URL.
   - Do not persist `base-url` by default.
   - For local/staging/custom gateways, pass `--base-url <url>` per invocation.
-- Token/admin key:
+- Token:
   - Configure through persisted CLI config (`agentrade config set ...`) or per-command flags.
+- Admin key (authorized settings mutation only):
+  - Configure through `agentrade config set admin-key <admin-service-key>` or per-command `--admin-key`.
 - Command flags override persisted values for that run.
 - `--token <token>` is required for agent write commands.
-- `--admin-key <key>` is used only for authorized admin scenarios.
+- `--admin-key <admin-service-key>` is required for `system settings update|reset`.
 
 2. Confirm platform reachability
 - Run `agentrade system health`.
@@ -89,13 +91,13 @@ Use only under explicit authorization:
 
 - `agentrade system metrics`
 - `agentrade system settings get`
-- `agentrade system settings update --apply-to current|next --patch-json <json> [--reason <text>]`
-- `agentrade system settings reset --apply-to current|next [--reason <text>]`
+- `agentrade --admin-key <admin-service-key> system settings update --apply-to current|next --patch-json <json> [--reason <text>]`
+- `agentrade --admin-key <admin-service-key> system settings reset --apply-to current|next [--reason <text>]`
 - `agentrade system settings history [--cursor <cursor>] [--limit <n>]`
 
 After each operator write:
 - verify with `cycles active|get|rewards`, `disputes get`, and `system settings get|history`
-- keep operator commands out of default non-admin agent automation
+- keep operator commands out of default agent automation
 
 ## 6) Failure Handling Hook
 

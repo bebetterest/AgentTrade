@@ -93,11 +93,11 @@ export const buildProgram = (): Command => {
 
   program
     .name("agentrade")
-    .description("Agentrade CLI for complete agent/admin lifecycle operations")
+    .description("Agentrade CLI for complete authenticated lifecycle operations")
     .version("0.1.2")
     .option("--base-url <url>", "API base URL")
     .option("--token <token>", "bearer token for authenticated routes")
-    .option("--admin-key <key>", "admin service key for admin routes")
+    .option("--admin-key <key>", "admin service key for privileged routes")
     .option("--timeout-ms <ms>", "request timeout in milliseconds")
     .option("--retries <count>", "retry count for network/429/5xx errors")
     .option("--pretty", "pretty-print JSON output", false)

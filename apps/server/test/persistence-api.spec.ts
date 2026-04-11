@@ -38,12 +38,17 @@ const errorCode = (payload: unknown): string | null => {
 
 runDbSuite("API persistence mode", () => {
   const secret = "persist-secret";
-  const adminKey = "persist-admin-key";
+  const adminServiceKey = "persist-admin-service-key";
+  const systemOperator = addr("persist-system-operator");
   const oldEnv = { ...process.env };
   let app: FastifyInstance | null = null;
   let repo: PrismaStateRepository;
 
   const bearer = (address: Address): string => jwt.sign({ sub: address }, secret, { expiresIn: "1h" });
+  const bearerAndAdmin = (address: Address): Record<string, string> => ({
+    authorization: `Bearer ${bearer(address)}`,
+    "x-admin-service-key": adminServiceKey
+  });
   const rejectSubmission = async (submissionId: string, publisher: Address) => {
     const rejectRes = await app!.inject({
       method: "POST",
@@ -87,7 +92,7 @@ runDbSuite("API persistence mode", () => {
 
   beforeAll(async () => {
     process.env.JWT_SECRET = secret;
-    process.env.ADMIN_SERVICE_KEY = adminKey;
+    process.env.ADMIN_SERVICE_KEY = adminServiceKey;
     process.env.ENABLE_PERSISTENCE = "true";
     process.env.ENABLE_REDIS_RATE_LIMIT = "false";
     process.env.RATE_LIMIT_PER_MINUTE = "10000";
@@ -187,7 +192,7 @@ runDbSuite("API persistence mode", () => {
       const beforeRes = await app!.inject({
         method: "GET",
         url: "/v2/system/settings",
-        headers: { "x-admin-service-key": adminKey }
+        headers: { authorization: `Bearer ${bearer(systemOperator)}` }
       });
       expect(beforeRes.statusCode).toBe(200);
       const before = beforeRes.json() as {
@@ -200,7 +205,7 @@ runDbSuite("API persistence mode", () => {
       const currentUpdateRes = await app!.inject({
         method: "PATCH",
         url: "/v2/system/settings",
-        headers: { "x-admin-service-key": adminKey },
+        headers: bearerAndAdmin(systemOperator),
         payload: {
           applyTo: "current",
           patch: { taxRateBps: before.currentRules.taxRateBps + 100 },
@@ -212,7 +217,7 @@ runDbSuite("API persistence mode", () => {
       const nextUpdateRes = await app!.inject({
         method: "PATCH",
         url: "/v2/system/settings",
-        headers: { "x-admin-service-key": adminKey },
+        headers: bearerAndAdmin(systemOperator),
         payload: {
           applyTo: "next",
           patch: { mintPerCycle: before.currentRules.mintPerCycle + 50 },
@@ -239,7 +244,7 @@ runDbSuite("API persistence mode", () => {
       const afterRestartRes = await app!.inject({
         method: "GET",
         url: "/v2/system/settings",
-        headers: { "x-admin-service-key": adminKey }
+        headers: { authorization: `Bearer ${bearer(systemOperator)}` }
       });
       expect(afterRestartRes.statusCode).toBe(200);
       const afterRestart = afterRestartRes.json() as {
@@ -902,7 +907,7 @@ runDbSuite("API persistence mode", () => {
     const updateRulesRes = await app!.inject({
       method: "PATCH",
       url: "/v2/system/settings",
-      headers: { "x-admin-service-key": adminKey },
+      headers: bearerAndAdmin(systemOperator),
       payload: {
         applyTo: "current",
         patch: { resubmitCooldownMinutes: 0 },

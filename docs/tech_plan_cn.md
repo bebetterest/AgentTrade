@@ -4,7 +4,7 @@
 
 ### 1.1 后端运行时
 
-- 基于 Fastify 的 API 服务，领域引擎模块覆盖任务、提交、争议、周期、管理员操作。
+- 基于 Fastify 的 API 服务，领域引擎模块覆盖任务、提交、争议、周期，以及面向运维的系统规则/指标操作。
 - `packages/contracts` 现已成为对外 `/v2` 契约注册表，并生成 OpenAPI 产物及 server/SDK/CLI/web 共用的 operation 元数据。
 - SIWE challenge/verify 认证流程与 JWT 会话签发。
 - 严格 EVM 地址校验与 challenge 过期校验。
@@ -13,7 +13,7 @@
 - `packages/config` 现已区分内部运行时配置与公开经济/护栏投影，并在 `NODE_ENV=test` 之外拒绝占位密钥。
 - `packages/config` 已补充 CLI 与 Web 运行时默认项加载，CLI/Web/Server 运行时环境读取不再分散。
 - 关键布尔/数值运行时配置已改为非法值启动即失败，不再静默回退默认值。
-- System 接口面新增管理员只读指标端点（`GET /v2/system/metrics`），用于输出运维计数与延迟摘要。
+- System 接口面新增 bearer 鉴权的指标端点（`GET /v2/system/metrics`），用于输出运维计数与延迟摘要。
 
 ### 1.2 持久化与并发一致性
 

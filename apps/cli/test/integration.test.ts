@@ -42,13 +42,13 @@ const runCli = async (
   if (env.AGENTRADE_TOKEN && !hasOption(args, "--token")) {
     globalArgs.push("--token", env.AGENTRADE_TOKEN);
   }
-  if (env.AGENTRADE_ADMIN_SERVICE_KEY && !hasOption(args, "--admin-key")) {
-    globalArgs.push("--admin-key", env.AGENTRADE_ADMIN_SERVICE_KEY);
+  if (env.AGENTRADE_ADMIN_KEY && !hasOption(args, "--admin-key")) {
+    globalArgs.push("--admin-key", env.AGENTRADE_ADMIN_KEY);
   }
 
   const childEnv = { ...process.env, ...env };
   delete childEnv.AGENTRADE_TOKEN;
-  delete childEnv.AGENTRADE_ADMIN_SERVICE_KEY;
+  delete childEnv.AGENTRADE_ADMIN_KEY;
   if (!childEnv.AGENTRADE_CLI_CONFIG_PATH) {
     childEnv.AGENTRADE_CLI_CONFIG_PATH = testConfigPath;
   }
@@ -89,10 +89,10 @@ const runCliJson = async (
 test("cli integration: covers lifecycle/read/system-operator command groups", async () => {
   const oldEnv = { ...process.env };
   const jwtSecret = "cli-test-secret";
-  const adminKey = "cli-test-admin-key";
+  const adminServiceKey = "cli-test-admin-key";
 
   process.env.JWT_SECRET = jwtSecret;
-  process.env.ADMIN_SERVICE_KEY = adminKey;
+  process.env.ADMIN_SERVICE_KEY = adminServiceKey;
   process.env.ENABLE_PERSISTENCE = "false";
   process.env.ENABLE_REDIS_RATE_LIMIT = "false";
   process.env.RATE_LIMIT_PER_MINUTE = "10000";
@@ -315,7 +315,6 @@ test("cli integration: covers lifecycle/read/system-operator command groups", as
       taxRateBps: number;
       terminationPenaltyBps: number;
       jwtSecret?: string;
-      adminServiceKey?: string;
       databaseUrl?: string;
       redisUrl?: string;
       host?: string;
@@ -324,7 +323,6 @@ test("cli integration: covers lifecycle/read/system-operator command groups", as
     assert.equal(typeof economy.taxRateBps, "number");
     assert.equal(typeof economy.terminationPenaltyBps, "number");
     assert.equal("jwtSecret" in economy, false);
-    assert.equal("adminServiceKey" in economy, false);
     assert.equal("databaseUrl" in economy, false);
     assert.equal("redisUrl" in economy, false);
     assert.equal("host" in economy, false);
@@ -349,7 +347,7 @@ test("cli integration: covers lifecycle/read/system-operator command groups", as
     assert.ok(Array.isArray(rewards.workloads));
 
     const metrics = (await runCliJson(baseUrl, ["system", "metrics"], {
-      AGENTRADE_ADMIN_SERVICE_KEY: adminKey
+      AGENTRADE_TOKEN: publisherToken
     })) as {
       generatedAt: string;
       counters: {
@@ -366,7 +364,7 @@ test("cli integration: covers lifecycle/read/system-operator command groups", as
     assert.equal(typeof metrics.latencies.requests.count, "number");
 
     const settingsBefore = (await runCliJson(baseUrl, ["system", "settings", "get"], {
-      AGENTRADE_ADMIN_SERVICE_KEY: adminKey
+      AGENTRADE_TOKEN: publisherToken
     })) as {
       currentRules: { taxRateBps: number };
       pendingNextPatch: Record<string, unknown> | null;
@@ -386,7 +384,7 @@ test("cli integration: covers lifecycle/read/system-operator command groups", as
         "--reason",
         "integration-test"
       ],
-      { AGENTRADE_ADMIN_SERVICE_KEY: adminKey }
+      { AGENTRADE_TOKEN: publisherToken, AGENTRADE_ADMIN_KEY: adminServiceKey }
     )) as {
       pendingNextPatch: { taxRateBps: number } | null;
       nextRules: { taxRateBps: number };
@@ -397,7 +395,7 @@ test("cli integration: covers lifecycle/read/system-operator command groups", as
     const settingsHistory = (await runCliJson(
       baseUrl,
       ["system", "settings", "history", "--limit", "5"],
-      { AGENTRADE_ADMIN_SERVICE_KEY: adminKey }
+      { AGENTRADE_TOKEN: publisherToken }
     )) as {
       items: Array<{ eventType: string }>;
     };
@@ -407,11 +405,81 @@ test("cli integration: covers lifecycle/read/system-operator command groups", as
     const settingsAfterReset = (await runCliJson(
       baseUrl,
       ["system", "settings", "reset", "--apply-to", "next", "--reason", "cleanup"],
-      { AGENTRADE_ADMIN_SERVICE_KEY: adminKey }
+      { AGENTRADE_TOKEN: publisherToken, AGENTRADE_ADMIN_KEY: adminServiceKey }
     )) as {
       pendingNextPatch: Record<string, unknown> | null;
     };
     assert.equal(settingsAfterReset.pendingNextPatch, null);
+  } finally {
+    if (app) {
+      await app.close();
+    }
+    process.env = oldEnv;
+  }
+});
+
+test("cli integration: persisted admin-key enables privileged settings update without per-command flags", async () => {
+  const oldEnv = { ...process.env };
+  const jwtSecret = "cli-test-secret-persisted-admin";
+  const adminServiceKey = "cli-test-admin-key-persisted";
+  const persistedConfigPath = join(
+    tmpdir(),
+    `agentrade-cli-integration-persisted-${process.pid}-${Date.now()}.json`
+  );
+
+  process.env.JWT_SECRET = jwtSecret;
+  process.env.ADMIN_SERVICE_KEY = adminServiceKey;
+  process.env.ENABLE_PERSISTENCE = "false";
+  process.env.ENABLE_REDIS_RATE_LIMIT = "false";
+  process.env.RATE_LIMIT_PER_MINUTE = "10000";
+  process.env.RATE_LIMIT_BURST = "10000";
+  process.env.VITEST = "true";
+
+  let app: FastifyInstance | null = null;
+
+  try {
+    app = await buildApp();
+    await app.listen({ host: "127.0.0.1", port: 0 });
+    const serverAddress = app.server.address() as AddressInfo;
+    const baseUrl = `http://127.0.0.1:${serverAddress.port}`;
+
+    const operator = addr("cli-persisted-admin-operator");
+    const operatorToken = signToken(operator, jwtSecret);
+
+    await runCliJson(baseUrl, ["config", "set", "token", operatorToken], {
+      AGENTRADE_CLI_CONFIG_PATH: persistedConfigPath
+    });
+    await runCliJson(baseUrl, ["config", "set", "admin-key", adminServiceKey], {
+      AGENTRADE_CLI_CONFIG_PATH: persistedConfigPath
+    });
+
+    const settingsBefore = (await runCliJson(baseUrl, ["system", "settings", "get"], {
+      AGENTRADE_CLI_CONFIG_PATH: persistedConfigPath
+    })) as {
+      currentRules: { taxRateBps: number };
+    };
+
+    const settingsAfter = (await runCliJson(
+      baseUrl,
+      [
+        "system",
+        "settings",
+        "update",
+        "--apply-to",
+        "next",
+        "--patch-json",
+        JSON.stringify({ taxRateBps: settingsBefore.currentRules.taxRateBps + 100 }),
+        "--reason",
+        "persisted-admin-key-check"
+      ],
+      {
+        AGENTRADE_CLI_CONFIG_PATH: persistedConfigPath
+      }
+    )) as {
+      pendingNextPatch: { taxRateBps: number } | null;
+    };
+
+    assert.equal(settingsAfter.pendingNextPatch?.taxRateBps, settingsBefore.currentRules.taxRateBps + 100);
   } finally {
     if (app) {
       await app.close();
@@ -425,7 +493,6 @@ test("cli integration: structured error output", async () => {
   const jwtSecret = "cli-test-secret-2";
 
   process.env.JWT_SECRET = jwtSecret;
-  process.env.ADMIN_SERVICE_KEY = "cli-admin-key-2";
   process.env.ENABLE_PERSISTENCE = "false";
   process.env.ENABLE_REDIS_RATE_LIMIT = "false";
   process.env.RATE_LIMIT_PER_MINUTE = "10000";
@@ -454,6 +521,37 @@ test("cli integration: structured error output", async () => {
     assert.equal(missingTokenErr.command, "tasks intend");
     assert.equal(missingTokenErr.httpStatus, null);
     assert.equal(missingTokenErr.apiError, null);
+
+    const operator = addr("missing-admin-operator");
+    const operatorToken = signToken(operator, jwtSecret);
+    const missingAdminKey = await runCli(
+      baseUrl,
+      [
+        "system",
+        "settings",
+        "update",
+        "--apply-to",
+        "next",
+        "--patch-json",
+        JSON.stringify({ taxRateBps: 600 })
+      ],
+      { AGENTRADE_TOKEN: operatorToken }
+    );
+    assert.equal(missingAdminKey.code, 3);
+    const missingAdminKeyErr = JSON.parse(missingAdminKey.stderr.trim()) as {
+      type: string;
+      message: string;
+      command: string;
+      httpStatus: number | null;
+      apiError: string | null;
+      retryable: boolean;
+    };
+    assert.equal(missingAdminKeyErr.type, "CONFIG_ERROR");
+    assert.equal(missingAdminKeyErr.command, "system settings update");
+    assert.equal(missingAdminKeyErr.httpStatus, null);
+    assert.equal(missingAdminKeyErr.apiError, null);
+    assert.equal(missingAdminKeyErr.retryable, false);
+    assert.match(missingAdminKeyErr.message, /missing admin key/i);
 
     const badVoteToken = signToken(addr("bad-voter"), jwtSecret);
     const badVote = await runCli(baseUrl, ["disputes", "vote", "--dispute", "x", "--vote", "BAD"], {

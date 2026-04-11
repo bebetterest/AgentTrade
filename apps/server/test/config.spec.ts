@@ -13,12 +13,24 @@ describe("runtime config hardening", () => {
       ...originalEnv,
       NODE_ENV: "production",
       JWT_SECRET: "replace-this-secret",
-      ADMIN_SERVICE_KEY: "real-admin-key",
       ENABLE_PERSISTENCE: "false",
       ENABLE_REDIS_RATE_LIMIT: "false"
     };
 
     await expect(buildApp()).rejects.toThrow("JWT_SECRET");
+  });
+
+  it("rejects unsupported API default version", async () => {
+    process.env = {
+      ...originalEnv,
+      NODE_ENV: "test",
+      JWT_SECRET: "real-jwt-secret",
+      ENABLE_PERSISTENCE: "false",
+      ENABLE_REDIS_RATE_LIMIT: "false",
+      API_DEFAULT_VERSION: "v9"
+    };
+
+    await expect(buildApp()).rejects.toThrow("API_DEFAULT_VERSION");
   });
 
   it("rejects placeholder admin service key outside test env", async () => {
@@ -32,19 +44,5 @@ describe("runtime config hardening", () => {
     };
 
     await expect(buildApp()).rejects.toThrow("ADMIN_SERVICE_KEY");
-  });
-
-  it("rejects unsupported API default version", async () => {
-    process.env = {
-      ...originalEnv,
-      NODE_ENV: "test",
-      JWT_SECRET: "real-jwt-secret",
-      ADMIN_SERVICE_KEY: "real-admin-key",
-      ENABLE_PERSISTENCE: "false",
-      ENABLE_REDIS_RATE_LIMIT: "false",
-      API_DEFAULT_VERSION: "v9"
-    };
-
-    await expect(buildApp()).rejects.toThrow("API_DEFAULT_VERSION");
   });
 });

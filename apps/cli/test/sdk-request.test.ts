@@ -62,6 +62,104 @@ test("sdk request assembly: headers/body/auth", async () => {
   assert.equal((calls[0].init?.headers as Record<string, string>).authorization, "Bearer token-123");
 });
 
+test("sdk request assembly: privileged settings mutation adds admin header", async () => {
+  const calls: RecordedCall[] = [];
+  const runtimeSettingsFixture = {
+    currentRules: {
+      cycleDurationHours: 168,
+      mintPerCycle: 1000,
+      taxRateBps: 500,
+      taskCompletionPublisherWorkload: 1,
+      taskCompletionWorkerWorkload: 1,
+      disputeQuorum: 3,
+      disputeApprovalBps: 5000,
+      terminationPenaltyBps: 1000,
+      submissionTimeoutHours: 24,
+      resubmitCooldownMinutes: 30,
+      reputationWeightPublisherBps: 3334,
+      reputationWeightWorkerBps: 3333,
+      reputationWeightSupervisorBps: 3333,
+      scoreWeightReputationBps: 4500,
+      scoreWeightCompletionBps: 3500,
+      scoreWeightQualityBps: 2000
+    },
+    pendingNextPatch: null,
+    nextRules: {
+      cycleDurationHours: 168,
+      mintPerCycle: 1000,
+      taxRateBps: 500,
+      taskCompletionPublisherWorkload: 1,
+      taskCompletionWorkerWorkload: 1,
+      disputeQuorum: 3,
+      disputeApprovalBps: 5000,
+      terminationPenaltyBps: 1000,
+      submissionTimeoutHours: 24,
+      resubmitCooldownMinutes: 30,
+      reputationWeightPublisherBps: 3334,
+      reputationWeightWorkerBps: 3333,
+      reputationWeightSupervisorBps: 3333,
+      scoreWeightReputationBps: 4500,
+      scoreWeightCompletionBps: 3500,
+      scoreWeightQualityBps: 2000
+    },
+    updatedAt: "2026-01-01T00:00:00.000Z"
+  };
+  const fetchImpl: typeof fetch = async (input, init) => {
+    calls.push({ input: String(input), init });
+    return new Response(JSON.stringify(runtimeSettingsFixture), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    });
+  };
+
+  const client = new AgentradeApiClient({
+    baseUrl: "http://localhost:3000/",
+    token: "token-123",
+    adminKey: "admin-key-123",
+    fetchImpl,
+    retries: 0,
+    timeoutMs: 5000
+  });
+
+  await client.updateRuntimeSettings({
+    applyTo: "next",
+    patch: { taxRateBps: 600 }
+  });
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].input, "http://localhost:3000/system/settings");
+  assert.equal(calls[0].init?.method, "PATCH");
+  assert.equal((calls[0].init?.headers as Record<string, string>).authorization, "Bearer token-123");
+  assert.equal(
+    (calls[0].init?.headers as Record<string, string>)["x-admin-service-key"],
+    "admin-key-123"
+  );
+});
+
+test("sdk privileged settings mutation requires admin key", async () => {
+  const client = new AgentradeApiClient({
+    baseUrl: "http://localhost:3000",
+    token: "token-123",
+    fetchImpl: async () =>
+      new Response(JSON.stringify({}), { status: 200, headers: { "content-type": "application/json" } }),
+    retries: 0,
+    timeoutMs: 1000
+  });
+
+  await assert.rejects(
+    async () =>
+      client.updateRuntimeSettings({
+        applyTo: "current",
+        patch: { taxRateBps: 500 }
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof ApiClientError);
+      assert.equal(error.apiError, "MISSING_ADMIN_KEY");
+      return true;
+    }
+  );
+});
+
 test("sdk can opt into explicit versioned contract paths", async () => {
   const calls: RecordedCall[] = [];
   const fetchImpl: typeof fetch = async (input) => {

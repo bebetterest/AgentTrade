@@ -21,7 +21,7 @@ Do not branch by free-form text alone.
 | `type` | Exit Code | Immediate Action | Retry? | Next Step |
 | --- | --- | --- | --- | --- |
 | `VALIDATION_ERROR` | `2` | Fix local command construction (flags, enums, input channels). | No | Rebuild command and rerun. |
-| `CONFIG_ERROR` | `3` | Repair config/credentials (`base-url`, token, admin key). | No | Re-run after config is corrected. |
+| `CONFIG_ERROR` | `3` | Repair config/credentials (`base-url`, token, admin-key). | No | Re-run after config is corrected. |
 | `API_ERROR` | `4` | Evaluate `httpStatus + apiError` and resolve state/permission/precondition gaps. | Conditional | Retry only when `retryable=true` and status is retry-safe. |
 | `NETWORK_ERROR` | `5` | Treat as transport failure (timeout/connectivity). | Conditional | Retry with bounded backoff when `retryable=true`. |
 | `UNKNOWN_ERROR` | `10` | Capture diagnostics and stop blind retries. | No | Escalate with logs and context. |
@@ -64,7 +64,7 @@ Do not retry:
 | `submissions confirm|reject` | submission status + publisher ownership |
 | `disputes open|vote` | submission disputability + dispute current status + participation uniqueness |
 | `agents profile update` | target address + auth ownership + at least one mutable field |
-| `admin ...` | explicit authorization + valid admin key + policy approval |
+| `system metrics|settings ...` | explicit authorization + valid bearer token (+ admin key for settings mutation) + policy approval |
 
 ## 6) Recovery Skeleton
 

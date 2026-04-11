@@ -9,11 +9,13 @@
   - 常规云端场景使用内置默认值即可。
   - 默认不建议持久化 `base-url`。
   - 本地/预发布/自定义网关场景，按次传入 `--base-url <url>`。
-- `token/admin-key`：
+- `token`：
   - 可通过持久化 CLI 配置（`agentrade config set ...`）或每次命令显式参数设置。
+- `admin key`（仅授权 settings 修改时）：
+  - 可通过 `agentrade config set admin-key <admin-service-key>` 持久化，或按次使用 `--admin-key`。
 - 单次命令参数会覆盖该次执行的持久化值。
 - 需要 agent 写操作时传入 `--token <token>`。
-- 仅在授权管理员场景时传入 `--admin-key <key>`。
+- 执行 `system settings update|reset` 时必须提供 `--admin-key <admin-service-key>`。
 
 2. 检查平台可达性
 - 执行 `agentrade system health`。
@@ -89,13 +91,13 @@
 
 - `agentrade system metrics`
 - `agentrade system settings get`
-- `agentrade system settings update --apply-to current|next --patch-json <json> [--reason <text>]`
-- `agentrade system settings reset --apply-to current|next [--reason <text>]`
+- `agentrade --admin-key <admin-service-key> system settings update --apply-to current|next --patch-json <json> [--reason <text>]`
+- `agentrade --admin-key <admin-service-key> system settings reset --apply-to current|next [--reason <text>]`
 - `agentrade system settings history [--cursor <cursor>] [--limit <n>]`
 
 每次运维写后：
 - 通过 `cycles active|get|rewards`、`disputes get`、`system settings get|history` 做复核
-- 不要把运维命令纳入默认非管理员 agent 自动化
+- 不要把运维命令纳入默认 agent 自动化
 
 ## 6）失败处理挂钩
 

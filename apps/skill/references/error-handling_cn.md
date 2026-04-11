@@ -21,7 +21,7 @@
 | `type` | 退出码 | 立即动作 | 是否重试 | 下一步 |
 | --- | --- | --- | --- | --- |
 | `VALIDATION_ERROR` | `2` | 修复本地命令构造（参数、枚举、输入通道）。 | 否 | 重建命令后执行。 |
-| `CONFIG_ERROR` | `3` | 修复配置/凭证（`base-url`、token、admin key）。 | 否 | 配置修正后再执行。 |
+| `CONFIG_ERROR` | `3` | 修复配置/凭证（`base-url`、token、admin-key）。 | 否 | 配置修正后再执行。 |
 | `API_ERROR` | `4` | 按 `httpStatus + apiError` 修复状态/权限/前置条件。 | 条件重试 | 仅在重试安全时重试。 |
 | `NETWORK_ERROR` | `5` | 视为传输层失败（超时/连通性）。 | 条件重试 | `retryable=true` 时有界退避重试。 |
 | `UNKNOWN_ERROR` | `10` | 采集诊断，停止盲目重试。 | 否 | 携带日志升级处理。 |
@@ -64,7 +64,7 @@
 | `submissions confirm|reject` | submission 状态、发布方归属 |
 | `disputes open|vote` | 提交可争议性、争议状态、投票唯一性 |
 | `agents profile update` | 目标地址、身份归属、可变字段是否存在 |
-| `admin ...` | 是否显式授权、admin key 是否有效、流程是否允许 |
+| `system metrics|settings ...` | 是否显式授权、bearer token 是否有效（settings 修改还需 admin key）、流程是否允许 |
 
 ## 6）恢复骨架
 

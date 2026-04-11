@@ -55,7 +55,7 @@ test("context: merge persisted config with CLI overrides", () => {
   const persisted = {
     baseUrl: "https://persisted.example.com",
     token: "persisted-token",
-    adminKey: "persisted-admin",
+    adminKey: "persisted-admin-key",
     timeoutMs: 4000,
     retries: 4
   };
@@ -71,6 +71,7 @@ test("context: merge persisted config with CLI overrides", () => {
     mockCommand({
       baseUrl: "https://cli.example.com",
       token: "cli-token",
+      adminKey: "cli-admin-key",
       timeoutMs: "7000",
       retries: "2"
     }),
@@ -78,7 +79,7 @@ test("context: merge persisted config with CLI overrides", () => {
   );
   assert.equal(overridden.baseUrl, "https://cli.example.com");
   assert.equal(overridden.token, "cli-token");
-  assert.equal(overridden.adminKey, persisted.adminKey);
+  assert.equal(overridden.adminKey, "cli-admin-key");
   assert.equal(overridden.timeoutMs, 7000);
   assert.equal(overridden.retries, 2);
 });

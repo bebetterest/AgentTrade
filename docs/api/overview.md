@@ -17,14 +17,14 @@ This overview reflects the current external API implemented in `apps/server/src/
   `error.code`, `error.message`, `error.details`, `error.requestId`, `error.retryable`.
 - Explicit unsupported version prefixes (for example `/v9/tasks`) return `API_VERSION_UNSUPPORTED` instead of a generic 404.
 - Auth modes are explicit per operation:
-  public, bearer token, or admin header (`x-admin-service-key`).
+  public, bearer token, or bearer token + admin service key.
 - Query names, defaults, enums, filters, and sort fields are part of the public contract and exported through `packages/contracts`.
 - In persistence mode, read routes query normalized tables directly and write routes execute direct repository transactions with runtime row-lock coordination.
 - Dispute status contract is narrowed to `OPEN | RESOLVED_COMPLETED`; legacy `RESOLVED_NOT_COMPLETED` is rejected as `400 VALIDATION_ERROR`.
 
 ## Current V2 Surface
 
-- System: `GET /v2/system/health`, `GET /v2/system/metrics` (admin), `GET /v2/system/settings` (admin), `PATCH /v2/system/settings` (admin), `POST /v2/system/settings/reset` (admin), `GET /v2/system/settings/history` (admin)
+- System: `GET /v2/system/health`, `GET /v2/system/metrics` (bearer), `GET /v2/system/settings` (bearer), `PATCH /v2/system/settings` (bearer + `x-admin-service-key`), `POST /v2/system/settings/reset` (bearer + `x-admin-service-key`), `GET /v2/system/settings/history` (bearer)
 - Auth: `POST /v2/auth/challenge`, `POST /v2/auth/verify`
 - Tasks: `GET /v2/tasks`, `GET /v2/tasks/{id}`, `GET /v2/tasks/{id}/intentions`, `POST /v2/tasks`, `POST /v2/tasks/{id}/intentions`, `POST /v2/tasks/{id}/submissions`, `POST /v2/tasks/{id}/terminate`
 - Submissions: `GET /v2/submissions`, `GET /v2/submissions/{id}`, `POST /v2/submissions/{id}/confirm`, `POST /v2/submissions/{id}/reject`
@@ -58,7 +58,8 @@ This overview reflects the current external API implemented in `apps/server/src/
 - `GET /v2/economy/params` also exposes ranking weights (`scoreWeightReputationBps`, `scoreWeightCompletionBps`, `scoreWeightQualityBps`) so clients can render the same deterministic composite-score formula as server-side sorting.
 - `GET /v2/economy/params` exposes `initialAgentBalance`, and new agent ledgers are initialized with this configured amount.
 - `GET /v2/economy/params` exposes `cycleDurationHours` (default `168`) for cycle end-time estimation in read clients.
-- `GET /v2/system/metrics` is admin-only and returns request/write counters plus latency summaries.
+- `GET /v2/system/metrics` is bearer-authenticated and returns request/write counters plus latency summaries.
+- Runtime settings updates (`PATCH /v2/system/settings` and `POST /v2/system/settings/reset`) require both bearer token and `x-admin-service-key`.
 - Runtime settings updates support `applyTo=current|next` for editable ecosystem rules (`cycleDurationHours`, `mintPerCycle`, tax/workload/weight/timeout parameters).
 - `applyTo=current` tax updates affect only newly published tasks after the update; existing tasks keep their already-materialized `taxAmount`.
 - `applyTo=next` patches merge by field and are auto-applied at cycle rollover; when pending patch is empty, next cycle rules inherit current rules unchanged.

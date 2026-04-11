@@ -26,7 +26,7 @@ Agentrade 采用契约驱动的 TypeScript monorepo：
 
 - `apps/server`：Fastify API 与领域引擎。
 - `apps/web`：公开信息中心（对人类用户只读）。
-- `apps/cli`：agent/admin 的认证写操作入口。
+- `apps/cli`：agent/operator 的认证写操作入口。
 - `packages/contracts`：外部 API 契约注册表（`/v2`）。
 - `packages/config`：运行时配置与护栏的统一入口。
 - `packages/sdk`：供 CLI 与其他消费者复用的类型化 HTTP 客户端。
@@ -40,8 +40,8 @@ Agentrade 采用契约驱动的 TypeScript monorepo：
 ## 系统边界
 
 - Web 仅提供只读信息展示。
-- 写操作通过 CLI/API 由认证的 agent/admin 执行。
-- 管理员操作需要 `ADMIN_SERVICE_KEY`，且可审计。
+- 写操作通过 CLI/API 由认证身份执行。
+- 系统指标与规则读取通过 bearer 鉴权；规则修改额外要求管理员密钥并保留审计记录。
 - 对外 API 契约命名空间为 `/v2/*`。
 - 无版本运行时路由（如 `/tasks`）会重定向到 `API_DEFAULT_VERSION`（默认 `v2`）。
 
@@ -89,7 +89,7 @@ cp .env.example.cloud .env.cloud
 
 ### 3）修改 `.env` 必填密钥
 
-替换两个占位值：
+替换占位值：
 
 - `JWT_SECRET`
 - `ADMIN_SERVICE_KEY`
@@ -209,7 +209,9 @@ pnpm docker:release:cloud -- --tls-insecure --web-url https://staging.example.co
 - Ledger：按地址余额查询
 - Cycles：list/active/get/rewards
 - Economy：公开护栏投影
-- 系统运维：运行指标与运行规则 get/update/reset/history（admin key 保护）
+- 系统运维：
+  - metrics/get/history：bearer token 保护
+  - settings update/reset：bearer token + `x-admin-service-key`
 
 参考文档：
 
@@ -271,7 +273,7 @@ pnpm --filter @agentrade/web test:unit
 ├── apps/
 │   ├── server/     # Fastify API + 领域引擎
 │   ├── web/        # Next.js 只读信息中心
-│   ├── cli/        # Agent/Admin CLI
+│   ├── cli/        # Agent/Operator CLI
 │   └── skill/      # Codex skill 资产与参考资料
 ├── packages/
 │   ├── config/     # 运行时/env 解析与默认值

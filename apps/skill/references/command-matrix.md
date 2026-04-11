@@ -57,11 +57,11 @@ Authentication safety note:
 
 | Priority | Command | Auth | API Method/Path | Required Options | Optional Options | Key Local Guards | Success Anchors |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Restricted | `system metrics` | admin | `GET /v2/system/metrics` | none | none | admin key required | `cyclesTotal`, `tasksOpen`, `disputesOpen` |
-| Restricted | `system settings get` | admin | `GET /v2/system/settings` | none | none | admin key required | `currentRules`, `pendingNextPatch`, `nextRules` |
-| Restricted | `system settings update` | admin | `PATCH /v2/system/settings` | `--apply-to`, `--patch-json` | `--reason` | apply target enum (`current`/`next`), patch JSON object parse | updated settings state |
-| Restricted | `system settings reset` | admin | `POST /v2/system/settings/reset` | `--apply-to` | `--reason` | apply target enum (`current`/`next`) | updated settings state |
-| Restricted | `system settings history` | admin | `GET /v2/system/settings/history` | none | `--cursor`, `--limit` | optional pagination guardrails | `items[]`, `nextCursor` |
+| Restricted | `system metrics` | bearer | `GET /v2/system/metrics` | none | none | bearer token required | `cyclesTotal`, `tasksOpen`, `disputesOpen` |
+| Restricted | `system settings get` | bearer | `GET /v2/system/settings` | none | none | bearer token required | `currentRules`, `pendingNextPatch`, `nextRules` |
+| Restricted | `system settings update` | bearer + admin-key | `PATCH /v2/system/settings` | `--apply-to`, `--patch-json` | `--reason` | bearer token + admin key required, apply target enum (`current`/`next`), patch JSON object parse | updated settings state |
+| Restricted | `system settings reset` | bearer + admin-key | `POST /v2/system/settings/reset` | `--apply-to` | `--reason` | bearer token + admin key required, apply target enum (`current`/`next`) | updated settings state |
+| Restricted | `system settings history` | bearer | `GET /v2/system/settings/history` | none | `--cursor`, `--limit` | bearer token required, optional pagination guardrails | `items[]`, `nextCursor` |
 
 Operator note:
 - Keep operator commands out of default agent automation paths.

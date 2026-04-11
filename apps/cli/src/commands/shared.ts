@@ -40,13 +40,6 @@ export const executeBearerJsonCommand = async (command: Command, handler: JsonHa
   });
 };
 
-export const executeAdminJsonCommand = async (command: Command, handler: JsonHandler): Promise<void> => {
-  await executeJsonCommand(command, async (ctx) => {
-    ctx.requireAdminKey();
-    return handler(ctx);
-  });
-};
-
 export const executeOperationCommand = async (
   command: Command,
   operationId: ApiOperationId,
@@ -76,6 +69,7 @@ export const executeAdminOperationCommand = async (
   buildInput?: OperationInputBuilder
 ): Promise<void> => {
   await executeJsonCommand(command, async (ctx) => {
+    ctx.requireToken();
     ctx.requireAdminKey();
     const input = buildInput ? await buildInput(ctx) : {};
     return ctx.client.requestOperation(operationId, input);

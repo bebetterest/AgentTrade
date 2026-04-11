@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
@@ -76,6 +77,14 @@ export const buildApp = async () => {
   const stateRepository = config.enablePersistence
     ? new PrismaStateRepository(config.databaseUrl, config)
     : null;
+  const safeSecretEqual = (expected: string, received: string): boolean => {
+    const expectedBuffer = Buffer.from(expected);
+    const receivedBuffer = Buffer.from(received);
+    if (expectedBuffer.length !== receivedBuffer.length) {
+      return false;
+    }
+    return timingSafeEqual(expectedBuffer, receivedBuffer);
+  };
   const runtimeRulesSeed = pickRuntimeEditableRules(config);
   let runtimeSettingsState: RuntimeSettingsState = {
     currentRules: runtimeRulesSeed,
@@ -653,7 +662,6 @@ export const buildApp = async () => {
     }
 
     const beforeRules = runtimeSettingsState.currentRules;
-    const beforePending = runtimeSettingsState.pendingNextPatch;
     const nextCurrentRules =
       input.applyTo === "current" ? runtimeRulesSeed : beforeRules;
     if (input.applyTo === "current" && nextCurrentRules.mintPerCycle !== beforeRules.mintPerCycle) {
@@ -745,8 +753,11 @@ export const buildApp = async () => {
     }
   });
   app.decorate("requireAdmin", async (request) => {
-    const adminKey = request.headers["x-admin-service-key"];
-    if (adminKey !== config.adminServiceKey) {
+    const adminHeader = request.headers["x-admin-service-key"];
+    if (Array.isArray(adminHeader)) {
+      throw new HttpError(401, "invalid admin service key");
+    }
+    if (!adminHeader || !safeSecretEqual(config.adminServiceKey, adminHeader)) {
       throw new HttpError(401, "invalid admin service key");
     }
   });

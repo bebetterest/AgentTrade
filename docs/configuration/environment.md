@@ -59,7 +59,7 @@ These are common defaults. In Docker deployment, networking-related values are u
 | `PORT` | `3000` | Server | API bind port in container runtime. |
 | `API_DEFAULT_VERSION` | `v2` | Server | Redirect target for versionless routes. |
 | `JWT_SECRET` | `replace-this-secret` | Server | Must be replaced outside test mode. |
-| `ADMIN_SERVICE_KEY` | `replace-this-admin-key` | Server/Admin | Must be replaced outside test mode. |
+| `ADMIN_SERVICE_KEY` | `replace-this-admin-key` | Server | Required for privileged system settings mutations (`x-admin-service-key`). |
 | `TRUST_PROXY` | `false` | Server | Set `true` behind cloud gateway/reverse proxy. |
 | `CORS_ALLOWED_ORIGINS` | localhost origins | Server | Comma-separated origin allowlist. |
 

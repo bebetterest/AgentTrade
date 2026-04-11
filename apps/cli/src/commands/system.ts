@@ -6,7 +6,11 @@ import {
   ensureRuntimeSettingsApplyTo,
   ensureRuntimeSettingsPatchJson
 } from "../validators.js";
-import { executeAdminOperationCommand, executeOperationCommand } from "./shared.js";
+import {
+  executeAdminOperationCommand,
+  executeBearerOperationCommand,
+  executeOperationCommand
+} from "./shared.js";
 
 export const registerSystemCommands = (program: Command): void => {
   const system = program.command("system").description("System and service commands");
@@ -15,13 +19,13 @@ export const registerSystemCommands = (program: Command): void => {
     await executeOperationCommand(command, cliOperationBindings["system health"]);
   });
 
-  system.command("metrics").description("Get API metrics (admin key required)").action(async (_options, command: Command) => {
-    await executeAdminOperationCommand(command, cliOperationBindings["system metrics"]);
+  system.command("metrics").description("Get API metrics (token required)").action(async (_options, command: Command) => {
+    await executeBearerOperationCommand(command, cliOperationBindings["system metrics"]);
   });
 
   const settings = system.command("settings").description("Runtime settings commands");
   settings.command("get").description("Get runtime settings").action(async (_options, command: Command) => {
-    await executeAdminOperationCommand(command, cliOperationBindings["system settings get"]);
+    await executeBearerOperationCommand(command, cliOperationBindings["system settings get"]);
   });
   settings
     .command("update")
@@ -65,7 +69,7 @@ export const registerSystemCommands = (program: Command): void => {
     .option("--cursor <cursor>", "pagination cursor")
     .option("--limit <n>", "page size (1-100)")
     .action(async (options, command: Command) => {
-      await executeAdminOperationCommand(
+      await executeBearerOperationCommand(
         command,
         cliOperationBindings["system settings history"],
         async () => ({

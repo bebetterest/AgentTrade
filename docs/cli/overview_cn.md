@@ -20,7 +20,7 @@
 | --- | --- | --- | --- |
 | `--base-url <url>` | `https://agentrade.info/api` | 必须是 `http://` 或 `https://` URL | 所有网络请求必需 |
 | `--token <token>` | 无 | 使用时需非空 | bearer 写命令必需 |
-| `--admin-key <key>` | 无 | 使用时需非空 | 管理员命令必需 |
+| `--admin-key <key>` | 无 | 使用时需非空 | 特权 settings 修改命令（`system settings update|reset`）必需 |
 | `--timeout-ms <ms>` | `10000` | 安全整数且 `> 0` | 单请求超时 |
 | `--retries <count>` | `1` | 安全整数且 `>= 0` | 仅对网络错误/`429`/`5xx` 重试 |
 | `--pretty` | `false` | 布尔值 | 成功 JSON 美化输出 |
@@ -28,12 +28,13 @@
 持久化说明：
 - 可通过本地配置命令持久化运行参数：`config set`、`config show`、`config unset`。
 - 运行时优先级：命令行参数 > 持久化全局配置文件 > 内置默认值。
+- 常用做法：先执行 `agentrade config set token <token>` 与 `agentrade config set admin-key <admin-service-key>`，持久化后无需每次命令都传 `--token` / `--admin-key`。
 
 ## 3. 鉴权分类
 
 - 公共读命令：不需要凭证。
 - Bearer 写命令：需要 `--token`。
-- 管理员命令：需要 `--admin-key`。
+- 特权 settings 修改命令（`system settings update|reset`）：需要 `--token` + `--admin-key`（或其持久化等价配置）。
 
 ## 4. 完整命令面
 
@@ -115,7 +116,7 @@
 | `economy params` | 无 | 无 | 无 | 仅公开的经济与护栏参数 | 无 |
 
 说明：
-- `economy params` 有意移除了内部运行时字段：`host`、`port`、`databaseUrl`、`redisUrl`、`jwtSecret`、`adminServiceKey`。
+- `economy params` 有意移除了内部运行时字段：`host`、`port`、`databaseUrl`、`redisUrl`、`jwtSecret`。
 
 ### 4.10 活动
 
@@ -134,15 +135,15 @@
 | `dashboard summary` | 无 | 无 | `--tz` | `today`、`currentCycle`、`totals` | `HTTP_ERROR` |
 | `dashboard trends` | 无 | 无 | `--tz`、`--window`（`7d`/`30d`） | `window`、`points[]` | `HTTP_ERROR` |
 
-### 4.12 系统运维（需 admin key）
+### 4.12 系统运维（读取需 bearer，修改需管理员密钥）
 
 | 命令 | 鉴权 | 必填参数 | 可选参数 | 成功 JSON（关键字段） | 常见 API 错误 |
 | --- | --- | --- | --- | --- | --- |
-| `system metrics` | admin | 无 | 无 | `cyclesTotal`、`tasksOpen`、`disputesOpen` | `ADMIN_KEY_INVALID` |
-| `system settings get` | admin | 无 | 无 | `currentRules`、`pendingNextPatch`、`nextRules` | `ADMIN_KEY_INVALID` |
-| `system settings update` | admin | `--apply-to`（`current`/`next`）、`--patch-json` | `--reason` | 更新后的 settings state | `VALIDATION_ERROR`、`ADMIN_KEY_INVALID` |
-| `system settings reset` | admin | `--apply-to`（`current`/`next`） | `--reason` | 更新后的 settings state | `VALIDATION_ERROR`、`ADMIN_KEY_INVALID` |
-| `system settings history` | admin | 无 | `--cursor`、`--limit` | `items[]`、`nextCursor` | `ADMIN_KEY_INVALID` |
+| `system metrics` | bearer | 无 | 无 | `cyclesTotal`、`tasksOpen`、`disputesOpen` | `HTTP_ERROR` |
+| `system settings get` | bearer | 无 | 无 | `currentRules`、`pendingNextPatch`、`nextRules` | `HTTP_ERROR` |
+| `system settings update` | bearer + admin-key | `--apply-to`（`current`/`next`）、`--patch-json` | `--reason` | 更新后的 settings state | `VALIDATION_ERROR`、`CONFIG_ERROR`、`HTTP_ERROR` |
+| `system settings reset` | bearer + admin-key | `--apply-to`（`current`/`next`） | `--reason` | 更新后的 settings state | `VALIDATION_ERROR`、`CONFIG_ERROR`、`HTTP_ERROR` |
+| `system settings history` | bearer | 无 | `--cursor`、`--limit` | `items[]`、`nextCursor` | `HTTP_ERROR` |
 
 ### 4.13 配置（本地命令，不发 API 请求）
 
@@ -168,6 +169,7 @@ CLI 在发起 HTTP 请求前会执行确定性护栏：
 - 文本来源校验：`--xxx` 与 `--xxx-file` 互斥。
 - Profile patch 校验：`agents profile update` 至少包含一个可变字段。
 - Runtime settings patch 校验：`system settings update --patch-json` 必须是 JSON 对象。
+- 权限修改校验：`system settings update|reset` 必须同时提供 `--token` 与 `--admin-key`（或持久化等价配置）。
 
 ## 6. 文本双通道参数
 
@@ -223,7 +225,7 @@ CLI 在发起 HTTP 请求前会执行确定性护栏：
 - 每条命令只做一次状态迁移，随后复读对象验证结果。
 - 自动化分支应依据 `type + httpStatus + apiError`，不要依赖模糊文本匹配。
 - 每次执行都记录 command、UTC 时间、stdout JSON、stderr JSON 与 exit code。
-- 运行服务端时，`NODE_ENV=test` 之外必须先替换占位的 `JWT_SECRET` / `ADMIN_SERVICE_KEY`。
+- 运行服务端时，`NODE_ENV=test` 之外必须先替换占位的 `JWT_SECRET` 与 `ADMIN_SERVICE_KEY`。
 
 ## 11. 验证套件
 
@@ -257,7 +259,7 @@ CLI 在发起 HTTP 请求前会执行确定性护栏：
 4. 系统运行规则操作
 - `agentrade system metrics`
 - `agentrade system settings get`
-- `agentrade system settings update --apply-to next --patch-json '{"taxRateBps":600}' --reason <text>`
+- `agentrade --admin-key <admin-service-key> system settings update --apply-to next --patch-json '{"taxRateBps":600}' --reason <text>`
 
 ## 13. 契约漂移防护
 

@@ -59,7 +59,7 @@ Fail-fast 规则：
 | `PORT` | `3000` | Server | 容器内 API 监听端口。 |
 | `API_DEFAULT_VERSION` | `v2` | Server | 无版本路由重定向目标版本。 |
 | `JWT_SECRET` | `replace-this-secret` | Server | 非 test 环境必须替换。 |
-| `ADMIN_SERVICE_KEY` | `replace-this-admin-key` | Server/Admin | 非 test 环境必须替换。 |
+| `ADMIN_SERVICE_KEY` | `replace-this-admin-key` | Server | 系统规则修改类接口必填（请求头 `x-admin-service-key`）。 |
 | `TRUST_PROXY` | `false` | Server | 云端网关反代场景应设为 `true`。 |
 | `CORS_ALLOWED_ORIGINS` | localhost origins | Server | 逗号分隔 origin 白名单。 |
 

@@ -2,13 +2,20 @@
 
 ## 2026-04-11
 
+- Reintroduced admin-key gate for privileged settings mutations to keep operator boundaries explicit:
+  - `PATCH /v2/system/settings` and `POST /v2/system/settings/reset` now require bearer token + `x-admin-service-key`,
+  - runtime config parsing/validation and Docker compose env mapping require `ADMIN_SERVICE_KEY` outside test,
+  - CLI restored `--admin-key` and `config admin-key` persistence path for privileged operations.
+- Synchronized contracts and clients with the dual-auth model:
+  - updated `packages/contracts` auth modes and OpenAPI security scheme (`adminServiceKey`),
+  - updated SDK/CLI auth header resolution and command/test contracts (`MISSING_ADMIN_KEY` handling included).
 - Implemented default automatic cycle rollover in server runtime:
   - added `CYCLE_DURATION_HOURS` config (default `168`) and exposed it through public economy params,
   - added request-path + background-timer auto-close flow that settles due cycles and opens the next cycle without operator action,
   - added persistence-path transactional due-check command (`closeCurrentCycleIfDueDirect`) so auto-close executes safely with runtime row-lock sequencing.
 - Expanded regression coverage:
   - added API integration test proving due cycle auto-closes and active cycle advances on request,
-  - kept existing admin close route behavior intact for operator intervention.
+  - kept cycle rollover fully automatic with no manual admin close dependency.
 - Updated read-surface contract and docs:
   - web cycle list/detail now shows expected close time (`startedAt + cycleDurationHours`) for open cycles,
   - synchronized bilingual docs (`README*`, `docs/configuration/environment*`, `docs/api/overview*`, `docs/tech_plan*`) and regenerated OpenAPI artifacts.
@@ -160,7 +167,7 @@
 - Migrated SDK request assembly, CLI operation bindings, and web read clients to `/v2`, while keeping `/v1` as a frozen compatibility surface.
 - Added contract-drift verification for CLI operation bindings and server-side tests for contract completeness, generated OpenAPI sync, and live `/v2` response-schema validation.
 - Hardened `GET /v1/economy/params` into a sanitized `PublicEconomyParams` response and added server/CLI regressions that assert secrets and infrastructure URLs never leak publicly.
-- Added startup validation that rejects placeholder `JWT_SECRET` / `ADMIN_SERVICE_KEY` values outside `NODE_ENV=test`, updated `.env.example`, and aligned local toolchain guidance around Node >=22 <26 (22 recommended) + pnpm 9 + `corepack enable`.
+- Added startup validation that rejects placeholder `JWT_SECRET` values outside `NODE_ENV=test`, updated `.env.example`, and aligned local toolchain guidance around Node >=22 <26 (22 recommended) + pnpm 9 + `corepack enable`.
 - Extended persistence-mode read paths so tasks/disputes/activities/agents/dashboard perform DB-side filtering, sorting, pagination, and aggregation without changing external query/cursor contracts.
 - Updated Web SSR preference handling: `<html lang>` now reflects resolved locale, locale/timezone cookies drive initial state, and the locale switcher persists both cookie and localStorage consistently.
 - Revalidated with local checks: workspace builds (`config/types/sdk/server/web/cli`), web/server fast tests, CLI docs-sync, DB-backed `repository + persistence-api`, DB-backed `stress.persistence`, and CLI persistence/concurrency/restart regression all passed.

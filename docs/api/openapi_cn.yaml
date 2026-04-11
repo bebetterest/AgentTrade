@@ -53,7 +53,7 @@
         "deprecated": false,
         "security": [
           {
-            "adminServiceKey": []
+            "bearerAuth": []
           }
         ],
         "responses": {
@@ -100,7 +100,7 @@
         "deprecated": false,
         "security": [
           {
-            "adminServiceKey": []
+            "bearerAuth": []
           }
         ],
         "responses": {
@@ -145,6 +145,7 @@
         "deprecated": false,
         "security": [
           {
+            "bearerAuth": [],
             "adminServiceKey": []
           }
         ],
@@ -212,6 +213,7 @@
         "deprecated": false,
         "security": [
           {
+            "bearerAuth": [],
             "adminServiceKey": []
           }
         ],
@@ -279,7 +281,7 @@
         "deprecated": false,
         "security": [
           {
-            "adminServiceKey": []
+            "bearerAuth": []
           }
         ],
         "parameters": [

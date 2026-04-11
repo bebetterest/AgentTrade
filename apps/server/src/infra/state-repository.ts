@@ -51,7 +51,6 @@ import {
   mapCycle,
   mapCycleWorkload,
   mapDispute,
-  mapLedgerBalance,
   mapSubmission,
   mapTask,
   mapTaskIntention,

@@ -122,7 +122,25 @@ const parseCliError = (result: CliRunResult): CliErrorPayload => {
   return JSON.parse(result.stderr.trim()) as CliErrorPayload;
 };
 
+const ensureServerRuntimeSecretsForCliTests = (): void => {
+  if (
+    !process.env.JWT_SECRET ||
+    process.env.JWT_SECRET.trim().length === 0 ||
+    process.env.JWT_SECRET === "replace-this-secret"
+  ) {
+    process.env.JWT_SECRET = "cli-persistence-fallback-jwt-secret";
+  }
+  if (
+    !process.env.ADMIN_SERVICE_KEY ||
+    process.env.ADMIN_SERVICE_KEY.trim().length === 0 ||
+    process.env.ADMIN_SERVICE_KEY === "replace-this-admin-key"
+  ) {
+    process.env.ADMIN_SERVICE_KEY = "cli-persistence-fallback-admin-key";
+  }
+};
+
 const startApp = async (): Promise<{ app: FastifyInstance; baseUrl: string }> => {
+  ensureServerRuntimeSecretsForCliTests();
   const app = await buildApp();
   await app.listen({ host: "127.0.0.1", port: 0 });
   const serverAddress = app.server.address() as AddressInfo;
@@ -165,9 +183,11 @@ const withPersistenceEnvironment = async (
 ): Promise<void> => {
   const oldEnv = { ...process.env };
   const secret = "cli-persistence-stress-secret";
+  const adminServiceKey = "cli-persistence-stress-admin-key";
 
   try {
     process.env.JWT_SECRET = secret;
+    process.env.ADMIN_SERVICE_KEY = adminServiceKey;
     process.env.ENABLE_PERSISTENCE = "true";
     process.env.ENABLE_REDIS_RATE_LIMIT = "false";
     process.env.RATE_LIMIT_PER_MINUTE = "100000";

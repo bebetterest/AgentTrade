@@ -86,6 +86,34 @@ const runCliJson = async (
   return JSON.parse(result.stdout.trim());
 };
 
+const ensureServerRuntimeSecretsForCliTests = (): void => {
+  if (
+    !process.env.JWT_SECRET ||
+    process.env.JWT_SECRET.trim().length === 0 ||
+    process.env.JWT_SECRET === "replace-this-secret"
+  ) {
+    process.env.JWT_SECRET = "cli-test-fallback-jwt-secret";
+  }
+  if (
+    !process.env.ADMIN_SERVICE_KEY ||
+    process.env.ADMIN_SERVICE_KEY.trim().length === 0 ||
+    process.env.ADMIN_SERVICE_KEY === "replace-this-admin-key"
+  ) {
+    process.env.ADMIN_SERVICE_KEY = "cli-test-fallback-admin-key";
+  }
+};
+
+const startApp = async (): Promise<{ app: FastifyInstance; baseUrl: string }> => {
+  ensureServerRuntimeSecretsForCliTests();
+  const app = await buildApp();
+  await app.listen({ host: "127.0.0.1", port: 0 });
+  const serverAddress = app.server.address() as AddressInfo;
+  return {
+    app,
+    baseUrl: `http://127.0.0.1:${serverAddress.port}`
+  };
+};
+
 test("cli integration: covers lifecycle/read/system-operator command groups", async () => {
   const oldEnv = { ...process.env };
   const jwtSecret = "cli-test-secret";
@@ -102,10 +130,9 @@ test("cli integration: covers lifecycle/read/system-operator command groups", as
   let app: FastifyInstance | null = null;
 
   try {
-    app = await buildApp();
-    await app.listen({ host: "127.0.0.1", port: 0 });
-    const serverAddress = app.server.address() as AddressInfo;
-    const baseUrl = `http://127.0.0.1:${serverAddress.port}`;
+    const started = await startApp();
+    app = started.app;
+    const baseUrl = started.baseUrl;
 
     const publisher = addr("cli-publisher-1");
     const worker = addr("cli-worker-1");
@@ -438,10 +465,9 @@ test("cli integration: persisted admin-key enables privileged settings update wi
   let app: FastifyInstance | null = null;
 
   try {
-    app = await buildApp();
-    await app.listen({ host: "127.0.0.1", port: 0 });
-    const serverAddress = app.server.address() as AddressInfo;
-    const baseUrl = `http://127.0.0.1:${serverAddress.port}`;
+    const started = await startApp();
+    app = started.app;
+    const baseUrl = started.baseUrl;
 
     const operator = addr("cli-persisted-admin-operator");
     const operatorToken = signToken(operator, jwtSecret);
@@ -491,8 +517,10 @@ test("cli integration: persisted admin-key enables privileged settings update wi
 test("cli integration: structured error output", async () => {
   const oldEnv = { ...process.env };
   const jwtSecret = "cli-test-secret-2";
+  const adminServiceKey = "cli-test-admin-key-2";
 
   process.env.JWT_SECRET = jwtSecret;
+  process.env.ADMIN_SERVICE_KEY = adminServiceKey;
   process.env.ENABLE_PERSISTENCE = "false";
   process.env.ENABLE_REDIS_RATE_LIMIT = "false";
   process.env.RATE_LIMIT_PER_MINUTE = "10000";
@@ -502,10 +530,9 @@ test("cli integration: structured error output", async () => {
   let app: FastifyInstance | null = null;
 
   try {
-    app = await buildApp();
-    await app.listen({ host: "127.0.0.1", port: 0 });
-    const serverAddress = app.server.address() as AddressInfo;
-    const baseUrl = `http://127.0.0.1:${serverAddress.port}`;
+    const started = await startApp();
+    app = started.app;
+    const baseUrl = started.baseUrl;
 
     const missingToken = await runCli(baseUrl, ["tasks", "intend", "--task", "task-1"]);
     assert.equal(missingToken.code, 3);

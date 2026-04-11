@@ -1,5 +1,13 @@
 import { Prisma, PrismaClient } from "@prisma/client";
-import { defaultConfig, type AppConfig } from "@agentrade/config";
+import {
+  defaultConfig,
+  mergeRuntimeEditableRules,
+  pickRuntimeEditableRules,
+  validateRuntimeEditableRules,
+  type AppConfig,
+  type RuntimeEditableRules,
+  type RuntimeEditableRulesPatch
+} from "@agentrade/config";
 import { nanoid } from "nanoid";
 import type { EngineStateSnapshot } from "../domain/engine.js";
 import {
@@ -26,6 +34,8 @@ import {
   type SupervisionVote,
   type Task,
   type TaskIntention,
+  type RuntimeRuleAuditRecord,
+  type RuntimeSettingsState,
   TaskStatus as DomainTaskStatus,
   VoteChoice as DomainVoteChoice,
   VoteChoice,
@@ -109,10 +119,13 @@ import {
 } from "./state-repository-write-helpers.js";
 
 const RUNTIME_ID = "singleton";
+const RUNTIME_RULE_STATE_ID = "singleton";
 const OPEN_DISPUTE_UNIQUE_INDEX = "uq_dispute_open_submission";
 const MAX_SERIALIZABLE_RETRIES = 20;
 const SERIALIZABLE_RETRY_BACKOFF_MS = 10;
 const MAX_SERIALIZABLE_RETRY_BACKOFF_MS = 200;
+const RUNTIME_AUDIT_PAGE_LIMIT_MAX = 100;
+const runtimeRuleDefaults = pickRuntimeEditableRules(defaultConfig);
 
 const toDate = (value: string): Date => new Date(value);
 const toIso = (value: Date): string => value.toISOString();
@@ -203,6 +216,59 @@ const toNumber = (value: unknown): number => {
   return Number(value ?? 0);
 };
 
+const isObjectRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const runtimeRuleKeys = Object.keys(runtimeRuleDefaults) as Array<keyof RuntimeEditableRules>;
+
+const toRuntimeEditableRules = (value: unknown): RuntimeEditableRules => {
+  if (!isObjectRecord(value)) {
+    throw new Error("invalid runtime rule state payload: expected object");
+  }
+  const rules: Partial<RuntimeEditableRules> = {};
+  for (const key of runtimeRuleKeys) {
+    const raw = value[key];
+    if (typeof raw !== "number" || !Number.isFinite(raw)) {
+      throw new Error(`invalid runtime rule state payload: ${String(key)} must be a finite number`);
+    }
+    rules[key] = raw as RuntimeEditableRules[typeof key];
+  }
+  const normalized = rules as RuntimeEditableRules;
+  validateRuntimeEditableRules(normalized);
+  return normalized;
+};
+
+const toRuntimeEditableRulesPatch = (value: unknown): RuntimeEditableRulesPatch => {
+  if (!isObjectRecord(value)) {
+    return {};
+  }
+  const patch: RuntimeEditableRulesPatch = {};
+  for (const key of runtimeRuleKeys) {
+    if (!(key in value)) {
+      continue;
+    }
+    const raw = value[key];
+    if (typeof raw !== "number" || !Number.isFinite(raw)) {
+      throw new Error(`invalid runtime rule patch payload: ${String(key)} must be a finite number`);
+    }
+    patch[key] = raw as RuntimeEditableRules[typeof key];
+  }
+  return patch;
+};
+
+const diffRuntimeEditableRules = (
+  base: RuntimeEditableRules,
+  target: RuntimeEditableRules
+): RuntimeEditableRulesPatch => {
+  const patch: RuntimeEditableRulesPatch = {};
+  for (const key of runtimeRuleKeys) {
+    if (base[key] !== target[key]) {
+      patch[key] = target[key];
+    }
+  }
+  return patch;
+};
+
 export class PersistenceConflictError extends Error {
   readonly code = "PERSISTENCE_CONFLICT";
 
@@ -239,6 +305,294 @@ export class PrismaStateRepository {
       }
       await this.applySnapshotDiffWithTx(tx, null, initialSnapshot, null);
     });
+  }
+
+  async ensureRuntimeRulesInitialized(
+    defaults: RuntimeEditableRules = pickRuntimeEditableRules(this.config)
+  ): Promise<RuntimeSettingsState> {
+    validateRuntimeEditableRules(defaults);
+    return this.executeWithRetry(async () =>
+      this.prisma.$transaction(async (tx) => {
+        const runtime = await tx.runtimeState.findUnique({
+          where: { id: RUNTIME_ID },
+          select: { id: true }
+        });
+        if (!runtime) {
+          throw new Error("runtime state is unavailable while initializing runtime rules");
+        }
+        await tx.$queryRaw`SELECT id FROM "RuntimeState" WHERE id = ${RUNTIME_ID} FOR UPDATE`;
+        await tx.runtimeRuleState.upsert({
+          where: { id: RUNTIME_RULE_STATE_ID },
+          create: {
+            id: RUNTIME_RULE_STATE_ID,
+            currentRules: defaults,
+            pendingNextPatch: Prisma.JsonNull
+          },
+          update: {}
+        });
+        const row = await tx.runtimeRuleState.findUniqueOrThrow({
+          where: { id: RUNTIME_RULE_STATE_ID }
+        });
+        return this.toRuntimeSettingsState(row);
+      })
+    );
+  }
+
+  async getRuntimeSettingsDirect(): Promise<RuntimeSettingsState | null> {
+    const row = await this.prisma.runtimeRuleState.findUnique({
+      where: { id: RUNTIME_RULE_STATE_ID }
+    });
+    return row ? this.toRuntimeSettingsState(row) : null;
+  }
+
+  async listRuntimeRuleAuditsDirect(input: {
+    cursor?: string;
+    limit: number;
+  }): Promise<PaginatedResponse<RuntimeRuleAuditRecord>> {
+    const boundedLimit = Math.min(
+      RUNTIME_AUDIT_PAGE_LIMIT_MAX,
+      Math.max(1, Number.isFinite(input.limit) ? input.limit : 20)
+    );
+    const cursor = input.cursor
+      ? parseListCursor(input.cursor, {
+          resource: "runtime-rule-audits",
+          sort: "createdAt",
+          order: "desc"
+        })
+      : null;
+    const keysetWhere =
+      cursor?.mode === "keyset"
+        ? (() => {
+            const cursorId = cursor.values.id;
+            const cursorPrimary = cursor.values.primary;
+            if (typeof cursorId !== "string" || cursorId.length === 0) {
+              throw new DomainError("INVALID_CURSOR", "cursor id must be a non-empty string", 400);
+            }
+            if (typeof cursorPrimary !== "string" || cursorPrimary.length === 0) {
+              throw new DomainError(
+                "INVALID_CURSOR",
+                "cursor primary must be a non-empty ISO datetime string",
+                400
+              );
+            }
+            const createdAt = new Date(cursorPrimary);
+            if (Number.isNaN(createdAt.getTime())) {
+              throw new DomainError("INVALID_CURSOR", "cursor primary must be valid ISO datetime", 400);
+            }
+            return {
+              OR: [
+                { createdAt: { lt: createdAt } },
+                {
+                  AND: [{ createdAt }, { id: { lt: cursorId } }]
+                }
+              ]
+            } satisfies Prisma.RuntimeRuleAuditWhereInput;
+          })()
+        : null;
+
+    const rows = await this.prisma.runtimeRuleAudit.findMany({
+      where: keysetWhere ? { AND: [keysetWhere] } : undefined,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      ...(cursor?.mode === "legacy-offset"
+        ? { skip: cursor.offset, take: boundedLimit + 1 }
+        : { take: boundedLimit + 1 })
+    });
+
+    const mapped = rows.map((item) => this.mapRuntimeRuleAudit(item));
+    const hasMore = mapped.length > boundedLimit;
+    const items = hasMore ? mapped.slice(0, boundedLimit) : mapped;
+    const nextCursor =
+      hasMore && items.length > 0
+        ? encodeKeysetCursor({
+            resource: "runtime-rule-audits",
+            sort: "createdAt",
+            order: "desc",
+            offset: nextCursorOffset(cursor ?? { mode: "start", offset: 0 }, items.length),
+            values: {
+              primary: items[items.length - 1]!.createdAt,
+              id: items[items.length - 1]!.id
+            }
+          })
+        : null;
+
+    return {
+      items,
+      nextCursor
+    };
+  }
+
+  async updateRuntimeRulesDirect(input: {
+    applyTo: "current" | "next";
+    patch: RuntimeEditableRulesPatch;
+    reason?: string;
+    actor?: string;
+  }): Promise<RuntimeSettingsState> {
+    return this.executeWithRetry(async () =>
+      this.prisma.$transaction(async (tx) => {
+        const runtime = await this.lockRuntimeWithTx(tx);
+        const { row, currentRules, pendingNextPatch } = await this.lockRuntimeRuleStateWithTx(tx);
+        if (Object.keys(input.patch).length === 0) {
+          return this.toRuntimeSettingsState(row);
+        }
+
+        let nextCurrentRules = currentRules;
+        let nextPendingPatch = pendingNextPatch;
+
+        if (input.applyTo === "current") {
+          nextCurrentRules = mergeRuntimeEditableRules(currentRules, input.patch);
+          validateRuntimeEditableRules(nextCurrentRules);
+          if (input.patch.mintPerCycle !== undefined) {
+            await tx.cycle.updateMany({
+              where: { id: runtime.activeCycleId, status: DomainCycleStatus.OPEN },
+              data: { mintedAmount: nextCurrentRules.mintPerCycle }
+            });
+          }
+        } else {
+          const currentNextRules = mergeRuntimeEditableRules(currentRules, pendingNextPatch);
+          const mergedNext = mergeRuntimeEditableRules(currentNextRules, input.patch);
+          validateRuntimeEditableRules(mergedNext);
+          nextPendingPatch = diffRuntimeEditableRules(currentRules, mergedNext);
+        }
+
+        const normalizedPending = this.normalizePendingPatch(nextPendingPatch);
+        const updated = await tx.runtimeRuleState.update({
+          where: { id: RUNTIME_RULE_STATE_ID },
+          data: {
+            currentRules: nextCurrentRules,
+            pendingNextPatch:
+              normalizedPending === null ? Prisma.JsonNull : (normalizedPending as Prisma.InputJsonValue)
+          }
+        });
+
+        await tx.runtimeRuleAudit.create({
+          data: {
+            id: nanoid(),
+            eventType: "UPDATE",
+            applyTo: input.applyTo === "current" ? "CURRENT" : "NEXT",
+            reason: input.reason?.trim().length ? input.reason.trim() : null,
+            actor: input.actor?.trim().length ? input.actor.trim() : null,
+            cycleId: runtime.activeCycleId,
+            beforeRules: currentRules,
+            afterRules: nextCurrentRules,
+            patch: input.patch as Prisma.InputJsonValue,
+            pendingNextPatch:
+              normalizedPending === null ? Prisma.JsonNull : (normalizedPending as Prisma.InputJsonValue)
+          }
+        });
+
+        return this.toRuntimeSettingsState(updated);
+      })
+    );
+  }
+
+  async resetRuntimeRulesDirect(input: {
+    applyTo: "current" | "next";
+    defaults: RuntimeEditableRules;
+    reason?: string;
+    actor?: string;
+  }): Promise<RuntimeSettingsState> {
+    validateRuntimeEditableRules(input.defaults);
+    return this.executeWithRetry(async () =>
+      this.prisma.$transaction(async (tx) => {
+        const runtime = await this.lockRuntimeWithTx(tx);
+        const { currentRules, pendingNextPatch } = await this.lockRuntimeRuleStateWithTx(tx);
+
+        let nextCurrentRules = currentRules;
+        let nextPendingPatch = pendingNextPatch;
+        if (input.applyTo === "current") {
+          nextCurrentRules = input.defaults;
+          if (nextCurrentRules.mintPerCycle !== currentRules.mintPerCycle) {
+            await tx.cycle.updateMany({
+              where: { id: runtime.activeCycleId, status: DomainCycleStatus.OPEN },
+              data: { mintedAmount: nextCurrentRules.mintPerCycle }
+            });
+          }
+        } else {
+          nextPendingPatch = diffRuntimeEditableRules(currentRules, input.defaults);
+        }
+
+        const normalizedPending = this.normalizePendingPatch(nextPendingPatch);
+        const patch =
+          input.applyTo === "current"
+            ? diffRuntimeEditableRules(currentRules, nextCurrentRules)
+            : normalizedPending ?? {};
+        const updated = await tx.runtimeRuleState.update({
+          where: { id: RUNTIME_RULE_STATE_ID },
+          data: {
+            currentRules: nextCurrentRules,
+            pendingNextPatch:
+              normalizedPending === null ? Prisma.JsonNull : (normalizedPending as Prisma.InputJsonValue)
+          }
+        });
+
+        await tx.runtimeRuleAudit.create({
+          data: {
+            id: nanoid(),
+            eventType: "RESET",
+            applyTo: input.applyTo === "current" ? "CURRENT" : "NEXT",
+            reason: input.reason?.trim().length ? input.reason.trim() : null,
+            actor: input.actor?.trim().length ? input.actor.trim() : null,
+            cycleId: runtime.activeCycleId,
+            beforeRules: currentRules,
+            afterRules: nextCurrentRules,
+            patch: patch as Prisma.InputJsonValue,
+            pendingNextPatch:
+              normalizedPending === null ? Prisma.JsonNull : (normalizedPending as Prisma.InputJsonValue)
+          }
+        });
+
+        return this.toRuntimeSettingsState(updated);
+      })
+    );
+  }
+
+  async applyPendingRuntimeRulesForOpenedCycleDirect(input: {
+    openedCycleId: string;
+    actor?: string;
+  }): Promise<RuntimeSettingsState> {
+    return this.executeWithRetry(async () =>
+      this.prisma.$transaction(async (tx) => {
+        const runtime = await this.lockRuntimeWithTx(tx);
+        const { currentRules, pendingNextPatch } = await this.lockRuntimeRuleStateWithTx(tx);
+        if (!pendingNextPatch || Object.keys(pendingNextPatch).length === 0) {
+          const row = await tx.runtimeRuleState.findUniqueOrThrow({
+            where: { id: RUNTIME_RULE_STATE_ID }
+          });
+          return this.toRuntimeSettingsState(row);
+        }
+
+        const nextCurrent = mergeRuntimeEditableRules(currentRules, pendingNextPatch);
+        validateRuntimeEditableRules(nextCurrent);
+        await tx.cycle.updateMany({
+          where: { id: input.openedCycleId, status: DomainCycleStatus.OPEN },
+          data: { mintedAmount: nextCurrent.mintPerCycle }
+        });
+        const updated = await tx.runtimeRuleState.update({
+          where: { id: RUNTIME_RULE_STATE_ID },
+          data: {
+            currentRules: nextCurrent,
+            pendingNextPatch: Prisma.JsonNull
+          }
+        });
+
+        await tx.runtimeRuleAudit.create({
+          data: {
+            id: nanoid(),
+            eventType: "AUTO_APPLY_NEXT",
+            applyTo: null,
+            reason: null,
+            actor: input.actor?.trim().length ? input.actor.trim() : "system",
+            cycleId: runtime.activeCycleId,
+            beforeRules: currentRules,
+            afterRules: nextCurrent,
+            patch: pendingNextPatch as Prisma.InputJsonValue,
+            pendingNextPatch: Prisma.JsonNull
+          }
+        });
+
+        return this.toRuntimeSettingsState(updated);
+      })
+    );
   }
 
   async load(): Promise<EngineStateSnapshot | null> {
@@ -1181,6 +1535,112 @@ export class PrismaStateRepository {
       throw new DomainError("CYCLE_ID_INVARIANT_BROKEN", "cycle sequence cannot advance safely", 500);
     }
     return `cycle-${nextNumber}`;
+  }
+
+  private normalizePendingPatch(
+    patch: RuntimeEditableRulesPatch | null | undefined
+  ): RuntimeEditableRulesPatch | null {
+    if (!patch) {
+      return null;
+    }
+    const normalized: RuntimeEditableRulesPatch = {};
+    for (const key of runtimeRuleKeys) {
+      if (patch[key] !== undefined) {
+        normalized[key] = patch[key];
+      }
+    }
+    return Object.keys(normalized).length > 0 ? normalized : null;
+  }
+
+  private toRuntimeSettingsState(row: {
+    currentRules: Prisma.JsonValue;
+    pendingNextPatch: Prisma.JsonValue | null;
+    updatedAt: Date;
+  }): RuntimeSettingsState {
+    const currentRules = toRuntimeEditableRules(row.currentRules);
+    const pendingNextPatch = this.normalizePendingPatch(toRuntimeEditableRulesPatch(row.pendingNextPatch));
+    const nextRules = pendingNextPatch
+      ? mergeRuntimeEditableRules(currentRules, pendingNextPatch)
+      : currentRules;
+    validateRuntimeEditableRules(nextRules);
+    return {
+      currentRules,
+      pendingNextPatch,
+      nextRules,
+      updatedAt: row.updatedAt.toISOString()
+    };
+  }
+
+  private mapRuntimeRuleAudit(row: {
+    id: string;
+    eventType: string;
+    applyTo: string | null;
+    reason: string | null;
+    actor: string | null;
+    cycleId: string | null;
+    beforeRules: Prisma.JsonValue | null;
+    afterRules: Prisma.JsonValue | null;
+    patch: Prisma.JsonValue | null;
+    pendingNextPatch: Prisma.JsonValue | null;
+    createdAt: Date;
+  }): RuntimeRuleAuditRecord {
+    return {
+      id: row.id,
+      eventType: row.eventType as RuntimeRuleAuditRecord["eventType"],
+      applyTo:
+        row.applyTo === "CURRENT" ? "current" : row.applyTo === "NEXT" ? "next" : null,
+      reason: row.reason,
+      actor: row.actor,
+      cycleId: row.cycleId,
+      beforeRules: row.beforeRules ? toRuntimeEditableRules(row.beforeRules) : null,
+      afterRules: row.afterRules ? toRuntimeEditableRules(row.afterRules) : null,
+      patch: row.patch ? this.normalizePendingPatch(toRuntimeEditableRulesPatch(row.patch)) : null,
+      pendingNextPatch: row.pendingNextPatch
+        ? this.normalizePendingPatch(toRuntimeEditableRulesPatch(row.pendingNextPatch))
+        : null,
+      createdAt: row.createdAt.toISOString()
+    };
+  }
+
+  private async lockRuntimeRuleStateWithTx(tx: Prisma.TransactionClient): Promise<{
+    row: {
+      id: string;
+      currentRules: Prisma.JsonValue;
+      pendingNextPatch: Prisma.JsonValue | null;
+      updatedAt: Date;
+    };
+    currentRules: RuntimeEditableRules;
+    pendingNextPatch: RuntimeEditableRulesPatch;
+  }> {
+    const defaults = pickRuntimeEditableRules(this.config);
+    validateRuntimeEditableRules(defaults);
+    await tx.runtimeRuleState.upsert({
+      where: { id: RUNTIME_RULE_STATE_ID },
+      create: {
+        id: RUNTIME_RULE_STATE_ID,
+        currentRules: defaults,
+        pendingNextPatch: Prisma.JsonNull
+      },
+      update: {}
+    });
+    await tx.$queryRaw`SELECT id FROM "RuntimeRuleState" WHERE id = ${RUNTIME_RULE_STATE_ID} FOR UPDATE`;
+    const row = await tx.runtimeRuleState.findUniqueOrThrow({
+      where: { id: RUNTIME_RULE_STATE_ID },
+      select: {
+        id: true,
+        currentRules: true,
+        pendingNextPatch: true,
+        updatedAt: true
+      }
+    });
+    const currentRules = toRuntimeEditableRules(row.currentRules);
+    const pendingNextPatch =
+      this.normalizePendingPatch(toRuntimeEditableRulesPatch(row.pendingNextPatch)) ?? {};
+    return {
+      row,
+      currentRules,
+      pendingNextPatch
+    };
   }
 
   private async applySnapshotDiffWithTx(

@@ -502,7 +502,8 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       [ActivityEventType.SUBMISSION_REJECTED]: "Submission Rejected",
       [ActivityEventType.TASK_COMPLETED]: "Task Completed",
       [ActivityEventType.DISPUTE_OPENED]: "Dispute Opened",
-      [ActivityEventType.TASK_TERMINATED]: "Task Terminated"
+      [ActivityEventType.TASK_TERMINATED]: "Task Terminated",
+      [ActivityEventType.ADMIN_AUDIT]: "Admin Audit"
     }
   },
   zh: {
@@ -763,7 +764,8 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       [ActivityEventType.SUBMISSION_REJECTED]: "拒绝提交",
       [ActivityEventType.TASK_COMPLETED]: "任务完成",
       [ActivityEventType.DISPUTE_OPENED]: "发起争议",
-      [ActivityEventType.TASK_TERMINATED]: "任务终止"
+      [ActivityEventType.TASK_TERMINATED]: "任务终止",
+      [ActivityEventType.ADMIN_AUDIT]: "管理员审计"
     }
   }
 };

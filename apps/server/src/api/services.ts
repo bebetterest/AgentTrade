@@ -11,11 +11,15 @@ import {
   type DashboardMetricSnapshot,
   type Dispute,
   type LedgerBalance,
+  type PaginatedResponse,
+  type RuntimeRuleAuditRecord,
+  type RuntimeSettingsState,
   type Submission,
   type SubmissionAttachment,
   type Task
 } from "@agentrade/types";
 import type { AppConfig } from "@agentrade/config";
+import type { RuntimeEditableRulesPatch } from "@agentrade/config";
 import type { AgentradeEngine } from "../domain/engine.js";
 import type { PrismaStateRepository, PersistenceMutationScope } from "../infra/state-repository.js";
 import type { ServiceMetricsCollector } from "../observability/metrics.js";
@@ -56,6 +60,22 @@ export interface AppServices {
   readAgents(): Promise<AgentProfile[]>;
   readActivities(): Promise<ActivityEvent[]>;
   readActiveCycle(): Promise<Cycle>;
+  readRuntimeSettings(): Promise<RuntimeSettingsState>;
+  listRuntimeRuleHistory(input: {
+    cursor?: string;
+    limit: number;
+  }): Promise<PaginatedResponse<RuntimeRuleAuditRecord>>;
+  updateRuntimeSettings(input: {
+    applyTo: "current" | "next";
+    patch: RuntimeEditableRulesPatch;
+    reason?: string;
+    actor?: string;
+  }): Promise<RuntimeSettingsState>;
+  resetRuntimeSettings(input: {
+    applyTo: "current" | "next";
+    reason?: string;
+    actor?: string;
+  }): Promise<RuntimeSettingsState>;
   defaultAgentProfile(address: Address): AgentProfile;
   defaultLedger(address: Address): LedgerBalance;
 }

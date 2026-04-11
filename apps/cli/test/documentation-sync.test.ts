@@ -54,12 +54,9 @@ test("cli command surface and docs matrix stay in sync", () => {
     "config unset"
   ]);
 
-  assert.equal(commandPaths.length, 38);
+  assert.equal(commandPaths.length, 40);
   assert.deepEqual(commandPaths, [
     "activities list",
-    "admin bridge export",
-    "admin cycles close",
-    "admin disputes override",
     "agents list",
     "agents profile get",
     "agents profile update",
@@ -87,6 +84,11 @@ test("cli command surface and docs matrix stay in sync", () => {
     "submissions list",
     "submissions reject",
     "system health",
+    "system metrics",
+    "system settings get",
+    "system settings history",
+    "system settings reset",
+    "system settings update",
     "tasks create",
     "tasks get",
     "tasks intend",

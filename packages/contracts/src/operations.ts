@@ -9,9 +9,6 @@ import {
   authChallengeResponseSchema,
   authVerifyRequestSchema,
   authVerifyResponseSchema,
-  bridgeExportRequestSchema,
-  bridgeExportResponseSchema,
-  closeCycleResultSchema,
   createTaskRequestSchema,
   cycleListQuerySchemaV2,
   cycleRewardsResponseSchema,
@@ -27,15 +24,19 @@ import {
   ledgerBalanceSchema,
   openDisputeRequestSchema,
   openApiSchemaComponents,
-  overrideDisputeRequestSchema,
   paginatedActivityResponseSchema,
   paginatedAgentDirectoryResponseSchema,
   paginatedCycleResponseSchema,
   paginatedDisputeResponseSchema,
+  paginatedRuntimeRuleAuditResponseSchema,
   paginatedSubmissionResponseSchema,
   paginatedTaskIntentionResponseSchema,
   paginatedTaskResponseSchema,
   publicEconomyParamsSchema,
+  runtimeRuleAuditHistoryQuerySchemaV2,
+  runtimeSettingsResetRequestSchema,
+  runtimeSettingsStateSchema,
+  runtimeSettingsUpdateRequestSchema,
   serviceMetricsResponseSchema,
   schemaRef,
   submitTaskRequestSchema,
@@ -301,6 +302,7 @@ const dashboardTrendParameters = [
 ];
 
 const cycleListParametersV2 = [queryCursorParam, queryLimitParam];
+const runtimeRuleHistoryParametersV2 = [queryCursorParam, queryLimitParam];
 
 export const apiOperations = [
   defineOperationSpec({
@@ -323,6 +325,56 @@ export const apiOperations = [
     pathTemplate: "/v2/system/metrics",
     responseSchema: serviceMetricsResponseSchema.schema,
     responseComponent: serviceMetricsResponseSchema,
+    errorStatuses: [401, 500]
+  }),
+  defineOperationSpec({
+    baseOperationId: "systemSettingsGet",
+    method: "GET",
+    tag: "System",
+    auth: "admin",
+    summary: { en: "Get runtime settings", zh: "读取运行规则设置" },
+    pathTemplate: "/v2/system/settings",
+    responseSchema: runtimeSettingsStateSchema.schema,
+    responseComponent: runtimeSettingsStateSchema,
+    errorStatuses: [401, 500]
+  }),
+  defineOperationSpec({
+    baseOperationId: "systemSettingsUpdate",
+    method: "PATCH",
+    tag: "System",
+    auth: "admin",
+    summary: { en: "Update runtime settings", zh: "更新运行规则设置" },
+    pathTemplate: "/v2/system/settings",
+    bodySchema: runtimeSettingsUpdateRequestSchema.schema,
+    requestBodyComponent: runtimeSettingsUpdateRequestSchema,
+    responseSchema: runtimeSettingsStateSchema.schema,
+    responseComponent: runtimeSettingsStateSchema,
+    errorStatuses: [400, 401, 500]
+  }),
+  defineOperationSpec({
+    baseOperationId: "systemSettingsReset",
+    method: "POST",
+    tag: "System",
+    auth: "admin",
+    summary: { en: "Reset runtime settings", zh: "重置运行规则设置" },
+    pathTemplate: "/v2/system/settings/reset",
+    bodySchema: runtimeSettingsResetRequestSchema.schema,
+    requestBodyComponent: runtimeSettingsResetRequestSchema,
+    responseSchema: runtimeSettingsStateSchema.schema,
+    responseComponent: runtimeSettingsStateSchema,
+    errorStatuses: [400, 401, 500]
+  }),
+  defineOperationSpec({
+    baseOperationId: "systemSettingsHistory",
+    method: "GET",
+    tag: "System",
+    auth: "admin",
+    summary: { en: "List runtime settings history", zh: "读取运行规则变更历史" },
+    pathTemplate: "/v2/system/settings/history",
+    querySchema: runtimeRuleAuditHistoryQuerySchemaV2,
+    responseSchema: paginatedRuntimeRuleAuditResponseSchema.schema,
+    responseComponent: paginatedRuntimeRuleAuditResponseSchema,
+    parameters: runtimeRuleHistoryParametersV2,
     errorStatuses: [401, 500]
   }),
   defineOperationSpec({
@@ -717,49 +769,6 @@ export const apiOperations = [
     responseSchema: publicEconomyParamsSchema.schema,
     responseComponent: publicEconomyParamsSchema,
     errorStatuses: [500]
-  }),
-  defineOperationSpec({
-    baseOperationId: "adminCloseCycle",
-    method: "POST",
-    tag: "Admin",
-    auth: "admin",
-    summary: { en: "Close current cycle", zh: "关闭当前周期" },
-    pathTemplate: "/v2/admin/cycles/close",
-    responseSchema: closeCycleResultSchema.schema,
-    responseComponent: closeCycleResultSchema,
-    errorStatuses: [401, 409, 500]
-  }),
-  defineOperationSpec({
-    baseOperationId: "adminOverrideDispute",
-    method: "POST",
-    tag: "Admin",
-    auth: "admin",
-    summary: { en: "Override dispute", zh: "管理员覆盖争议结果" },
-    description: {
-      en: "NOT_COMPLETED reopens dispute to OPEN. If another OPEN dispute already exists for the same submission, returns 409 OPEN_DISPUTE_ALREADY_EXISTS.",
-      zh: "NOT_COMPLETED 会将争议重开为 OPEN。若同一 submission 已存在其他 OPEN 争议，则返回 409 OPEN_DISPUTE_ALREADY_EXISTS。"
-    },
-    pathTemplate: "/v2/admin/disputes/{id}/override",
-    pathParamsSchema: idPathSchema,
-    bodySchema: overrideDisputeRequestSchema.schema,
-    requestBodyComponent: overrideDisputeRequestSchema,
-    responseSchema: disputeSchema.schema,
-    responseComponent: disputeSchema,
-    parameters: [pathStringParam("id", { en: "Dispute id", zh: "争议 id" })],
-    errorStatuses: [401, 404, 409, 500]
-  }),
-  defineOperationSpec({
-    baseOperationId: "adminBridgeExport",
-    method: "POST",
-    tag: "Admin",
-    auth: "admin",
-    summary: { en: "Export bridge batch", zh: "导出桥接批次" },
-    pathTemplate: "/v2/admin/bridge/export",
-    bodySchema: bridgeExportRequestSchema.schema,
-    requestBodyComponent: bridgeExportRequestSchema,
-    responseSchema: bridgeExportResponseSchema.schema,
-    responseComponent: bridgeExportResponseSchema,
-    errorStatuses: [400, 401, 500]
   })
 ] as const;
 

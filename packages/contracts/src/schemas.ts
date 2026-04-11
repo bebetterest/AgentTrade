@@ -1156,6 +1156,219 @@ export const publicEconomyParamsSchema = defineSchema(
   }
 );
 
+export const runtimeEditableRulesSchema = defineSchema(
+  "RuntimeEditableRules",
+  z.object({
+    cycleDurationHours: z.number().int(),
+    mintPerCycle: z.number().int(),
+    taxRateBps: z.number().int(),
+    taskCompletionPublisherWorkload: z.number(),
+    taskCompletionWorkerWorkload: z.number(),
+    disputeQuorum: z.number().int(),
+    disputeApprovalBps: z.number().int(),
+    terminationPenaltyBps: z.number().int(),
+    submissionTimeoutHours: z.number().int(),
+    resubmitCooldownMinutes: z.number().int(),
+    reputationWeightPublisherBps: z.number().int(),
+    reputationWeightWorkerBps: z.number().int(),
+    reputationWeightSupervisorBps: z.number().int(),
+    scoreWeightReputationBps: z.number().int(),
+    scoreWeightCompletionBps: z.number().int(),
+    scoreWeightQualityBps: z.number().int()
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "cycleDurationHours",
+      "mintPerCycle",
+      "taxRateBps",
+      "taskCompletionPublisherWorkload",
+      "taskCompletionWorkerWorkload",
+      "disputeQuorum",
+      "disputeApprovalBps",
+      "terminationPenaltyBps",
+      "submissionTimeoutHours",
+      "resubmitCooldownMinutes",
+      "reputationWeightPublisherBps",
+      "reputationWeightWorkerBps",
+      "reputationWeightSupervisorBps",
+      "scoreWeightReputationBps",
+      "scoreWeightCompletionBps",
+      "scoreWeightQualityBps"
+    ],
+    properties: {
+      cycleDurationHours: { ...integerField },
+      mintPerCycle: { ...integerField },
+      taxRateBps: { ...integerField },
+      taskCompletionPublisherWorkload: { ...numberField },
+      taskCompletionWorkerWorkload: { ...numberField },
+      disputeQuorum: { ...integerField },
+      disputeApprovalBps: { ...integerField },
+      terminationPenaltyBps: { ...integerField },
+      submissionTimeoutHours: { ...integerField },
+      resubmitCooldownMinutes: { ...integerField },
+      reputationWeightPublisherBps: { ...integerField },
+      reputationWeightWorkerBps: { ...integerField },
+      reputationWeightSupervisorBps: { ...integerField },
+      scoreWeightReputationBps: { ...integerField },
+      scoreWeightCompletionBps: { ...integerField },
+      scoreWeightQualityBps: { ...integerField }
+    }
+  }
+);
+
+export const runtimeEditableRulesPatchSchema = defineSchema(
+  "RuntimeEditableRulesPatch",
+  runtimeEditableRulesSchema.schema.partial(),
+  {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      cycleDurationHours: { ...integerField },
+      mintPerCycle: { ...integerField },
+      taxRateBps: { ...integerField },
+      taskCompletionPublisherWorkload: { ...numberField },
+      taskCompletionWorkerWorkload: { ...numberField },
+      disputeQuorum: { ...integerField },
+      disputeApprovalBps: { ...integerField },
+      terminationPenaltyBps: { ...integerField },
+      submissionTimeoutHours: { ...integerField },
+      resubmitCooldownMinutes: { ...integerField },
+      reputationWeightPublisherBps: { ...integerField },
+      reputationWeightWorkerBps: { ...integerField },
+      reputationWeightSupervisorBps: { ...integerField },
+      scoreWeightReputationBps: { ...integerField },
+      scoreWeightCompletionBps: { ...integerField },
+      scoreWeightQualityBps: { ...integerField }
+    }
+  }
+);
+
+export const runtimeSettingsStateSchema = defineSchema(
+  "RuntimeSettingsState",
+  z.object({
+    currentRules: runtimeEditableRulesSchema.schema,
+    pendingNextPatch: runtimeEditableRulesPatchSchema.schema.nullable(),
+    nextRules: runtimeEditableRulesSchema.schema,
+    updatedAt: isoDateSchema
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: ["currentRules", "pendingNextPatch", "nextRules", "updatedAt"],
+    properties: {
+      currentRules: schemaRef(runtimeEditableRulesSchema),
+      pendingNextPatch: { ...schemaRef(runtimeEditableRulesPatchSchema), nullable: true },
+      nextRules: schemaRef(runtimeEditableRulesSchema),
+      updatedAt: { ...isoDateField }
+    }
+  }
+);
+
+export const runtimeSettingsUpdateRequestSchema = defineSchema(
+  "RuntimeSettingsUpdateRequest",
+  z.object({
+    applyTo: z.enum(["current", "next"]),
+    patch: runtimeEditableRulesPatchSchema.schema.refine(
+      (value) => Object.keys(value).length > 0,
+      "patch must contain at least one editable rule"
+    ),
+    reason: z.string().trim().min(1).max(1000).optional()
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: ["applyTo", "patch"],
+    properties: {
+      applyTo: { type: "string", enum: ["current", "next"] },
+      patch: schemaRef(runtimeEditableRulesPatchSchema),
+      reason: { ...stringField, minLength: 1, maxLength: 1000 }
+    }
+  }
+);
+
+export const runtimeSettingsResetRequestSchema = defineSchema(
+  "RuntimeSettingsResetRequest",
+  z.object({
+    applyTo: z.enum(["current", "next"]),
+    reason: z.string().trim().min(1).max(1000).optional()
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: ["applyTo"],
+    properties: {
+      applyTo: { type: "string", enum: ["current", "next"] },
+      reason: { ...stringField, minLength: 1, maxLength: 1000 }
+    }
+  }
+);
+
+export const runtimeRuleAuditRecordSchema = defineSchema(
+  "RuntimeRuleAuditRecord",
+  z.object({
+    id: z.string(),
+    eventType: z.enum(["UPDATE", "RESET", "AUTO_APPLY_NEXT"]),
+    applyTo: z.enum(["current", "next"]).nullable(),
+    reason: z.string().nullable(),
+    actor: z.string().nullable(),
+    cycleId: z.string().nullable(),
+    beforeRules: runtimeEditableRulesSchema.schema.nullable(),
+    afterRules: runtimeEditableRulesSchema.schema.nullable(),
+    patch: runtimeEditableRulesPatchSchema.schema.nullable(),
+    pendingNextPatch: runtimeEditableRulesPatchSchema.schema.nullable(),
+    createdAt: isoDateSchema
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "id",
+      "eventType",
+      "applyTo",
+      "reason",
+      "actor",
+      "cycleId",
+      "beforeRules",
+      "afterRules",
+      "patch",
+      "pendingNextPatch",
+      "createdAt"
+    ],
+    properties: {
+      id: { ...stringField },
+      eventType: { type: "string", enum: ["UPDATE", "RESET", "AUTO_APPLY_NEXT"] },
+      applyTo: { type: "string", enum: ["current", "next"], nullable: true },
+      reason: { ...stringField, nullable: true },
+      actor: { ...stringField, nullable: true },
+      cycleId: { ...stringField, nullable: true },
+      beforeRules: { ...schemaRef(runtimeEditableRulesSchema), nullable: true },
+      afterRules: { ...schemaRef(runtimeEditableRulesSchema), nullable: true },
+      patch: { ...schemaRef(runtimeEditableRulesPatchSchema), nullable: true },
+      pendingNextPatch: { ...schemaRef(runtimeEditableRulesPatchSchema), nullable: true },
+      createdAt: { ...isoDateField }
+    }
+  }
+);
+
+export const paginatedRuntimeRuleAuditResponseSchema = defineSchema(
+  "PaginatedRuntimeRuleAuditResponse",
+  z.object({
+    items: z.array(runtimeRuleAuditRecordSchema.schema),
+    nextCursor: z.string().nullable()
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: ["items", "nextCursor"],
+    properties: {
+      items: { type: "array", items: schemaRef(runtimeRuleAuditRecordSchema) },
+      nextCursor: { type: "string", nullable: true }
+    }
+  }
+);
+
 export const createTaskRequestSchema = defineSchema(
   "CreateTaskRequest",
   z.object({
@@ -1405,6 +1618,11 @@ export const cycleListQuerySchemaV2 = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20)
 });
 
+export const runtimeRuleAuditHistoryQuerySchemaV2 = z.object({
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(20)
+});
+
 export const idPathSchema = z.object({
   id: nonEmptyStringSchema
 });
@@ -1455,6 +1673,13 @@ export const namedSchemas = [
   bridgeExportItemSchema,
   bridgeExportResponseSchema,
   publicEconomyParamsSchema,
+  runtimeEditableRulesSchema,
+  runtimeEditableRulesPatchSchema,
+  runtimeSettingsStateSchema,
+  runtimeSettingsUpdateRequestSchema,
+  runtimeSettingsResetRequestSchema,
+  runtimeRuleAuditRecordSchema,
+  paginatedRuntimeRuleAuditResponseSchema,
   createTaskRequestSchema,
   submitTaskRequestSchema,
   openDisputeRequestSchema,

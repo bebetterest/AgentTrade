@@ -93,6 +93,15 @@ describe("API integration", () => {
     expect(rejectRes.statusCode).toBe(200);
   };
 
+  const forceAutoCloseCurrentCycle = async (): Promise<void> => {
+    app!.engine.getActiveCycle().startedAt = new Date(Date.now() - 8 * 24 * 3_600_000).toISOString();
+    const trigger = await app!.inject({
+      method: "GET",
+      url: "/v2/cycles/active"
+    });
+    expect(trigger.statusCode).toBe(200);
+  };
+
   it("rejects unauthenticated write requests", async () => {
     const response = await app!.inject({
       method: "POST",
@@ -1327,14 +1336,7 @@ describe("API integration", () => {
       expect(voteRes.statusCode).toBe(200);
     }
 
-    const closeCycle1Res = await app!.inject({
-      method: "POST",
-      url: "/v2/admin/cycles/close",
-      headers: { "x-admin-service-key": adminKey }
-    });
-    expect(closeCycle1Res.statusCode).toBe(200);
-    const closeCycle1 = closeCycle1Res.json() as { finalizedDisputes: string[] };
-    expect(closeCycle1.finalizedDisputes).toHaveLength(0);
+    await forceAutoCloseCurrentCycle();
 
     const disputeOpenRes = await app!.inject({
       method: "GET",
@@ -1355,14 +1357,7 @@ describe("API integration", () => {
       expect(voteRes.statusCode).toBe(200);
     }
 
-    const closeCycle2Res = await app!.inject({
-      method: "POST",
-      url: "/v2/admin/cycles/close",
-      headers: { "x-admin-service-key": adminKey }
-    });
-    expect(closeCycle2Res.statusCode).toBe(200);
-    const closeCycle2 = closeCycle2Res.json() as { finalizedDisputes: string[] };
-    expect(closeCycle2.finalizedDisputes).toContain(dispute.id);
+    await forceAutoCloseCurrentCycle();
 
     const taskAfterRes = await app!.inject({
       method: "GET",
@@ -1624,10 +1619,10 @@ describe("API integration", () => {
     expect(cycle.penaltyPool).toBe(penalty);
   });
 
-  it("rejects admin-only cycle close when key is invalid", async () => {
+  it("rejects runtime settings access when admin key is invalid", async () => {
     const response = await app!.inject({
-      method: "POST",
-      url: "/v2/admin/cycles/close",
+      method: "GET",
+      url: "/v2/system/settings",
       headers: { "x-admin-service-key": "wrong-key" }
     });
     expect(response.statusCode).toBe(401);
@@ -1687,7 +1682,7 @@ describe("API integration", () => {
     }
   });
 
-  it("exposes cycle list and active cycle updates after admin close", async () => {
+  it("exposes cycle list and active cycle updates after auto close", async () => {
     const activeBefore = await app!.inject({
       method: "GET",
       url: "/v2/cycles/active"
@@ -1696,12 +1691,7 @@ describe("API integration", () => {
     const cycleBefore = activeBefore.json();
     expect(cycleBefore.id).toBe("cycle-1");
 
-    const closeRes = await app!.inject({
-      method: "POST",
-      url: "/v2/admin/cycles/close",
-      headers: { "x-admin-service-key": adminKey }
-    });
-    expect(closeRes.statusCode).toBe(200);
+    await forceAutoCloseCurrentCycle();
 
     const activeAfter = await app!.inject({
       method: "GET",
@@ -1720,112 +1710,103 @@ describe("API integration", () => {
     expect(list.items.length).toBeGreaterThanOrEqual(2);
   });
 
-  it("allows admin NOT_COMPLETED override to reopen dispute for supervision", async () => {
+  it("updates runtime settings with applyTo=next and applies patch on next cycle", async () => {
     const publisher = addr("ov1");
-    const worker = addr("ov2");
-    const task = await createSingleSlotTask(publisher);
-
-    const acceptRes = await app!.inject({
-      method: "POST",
-      url: `/v2/tasks/${task.id}/intentions`,
-      headers: { authorization: `Bearer ${bearer(worker)}` }
+    const settingsBefore = await app!.inject({
+      method: "GET",
+      url: "/v2/system/settings",
+      headers: { "x-admin-service-key": adminKey }
     });
-    expect(acceptRes.statusCode).toBe(200);
+    expect(settingsBefore.statusCode).toBe(200);
+    const before = settingsBefore.json() as {
+      currentRules: { taxRateBps: number; cycleDurationHours: number };
+      pendingNextPatch: Record<string, number> | null;
+    };
+    expect(before.pendingNextPatch).toBeNull();
 
-    const submitRes = await app!.inject({
-      method: "POST",
-      url: `/v2/tasks/${task.id}/submissions`,
-      headers: { authorization: `Bearer ${bearer(worker)}` },
-      payload: { payloadMd: "result" }
-    });
-    expect(submitRes.statusCode).toBe(200);
-    const submission = submitRes.json() as { id: string };
-    await rejectSubmission(submission.id, publisher);
-
-    const disputeRes = await app!.inject({
-      method: "POST",
-      url: "/v2/disputes",
-      headers: { authorization: `Bearer ${bearer(publisher)}` },
+    const updateRes = await app!.inject({
+      method: "PATCH",
+      url: "/v2/system/settings",
+      headers: { "x-admin-service-key": adminKey },
       payload: {
-        taskId: task.id,
-        submissionId: submission.id,
-        reasonMd: "manual override path"
+        applyTo: "next",
+        patch: { taxRateBps: before.currentRules.taxRateBps + 100 }
       }
     });
-    expect(disputeRes.statusCode).toBe(200);
-    const dispute = disputeRes.json() as { id: string };
+    expect(updateRes.statusCode).toBe(200);
 
-    const overrideRes = await app!.inject({
+    const taskBeforeRes = await app!.inject({
       method: "POST",
-      url: `/v2/admin/disputes/${dispute.id}/override`,
-      headers: { "x-admin-service-key": adminKey },
-      payload: { result: "NOT_COMPLETED" }
+      url: "/v2/tasks",
+      headers: { authorization: `Bearer ${bearer(publisher)}` },
+      payload: {
+        title: "task-1",
+        descriptionMd: "desc",
+        acceptanceCriteria: "criteria",
+        deadlineUtc: futureDeadline(),
+        displayTimezone: "UTC",
+        slotsTotal: 1,
+        rewardPerSlot: 100,
+        allowRepeatCompletionsBySameAgent: false
+      }
     });
-    expect(overrideRes.statusCode).toBe(200);
-    const overridden = overrideRes.json() as { status: string };
-    expect(overridden.status).toBe("OPEN");
+    expect(taskBeforeRes.statusCode).toBe(200);
+    const taskBefore = taskBeforeRes.json() as { id: string };
+    const beforeTaskRes = await app!.inject({ method: "GET", url: `/v2/tasks/${taskBefore.id}` });
+    const beforeTask = beforeTaskRes.json() as { taxAmount: number };
 
-    const voteAfterOverride = await app!.inject({
+    await forceAutoCloseCurrentCycle();
+
+    const taskAfterRes = await app!.inject({
       method: "POST",
-      url: `/v2/disputes/${dispute.id}/votes`,
-      headers: { authorization: `Bearer ${bearer(addr("ov3"))}` },
-      payload: { vote: VoteChoice.COMPLETED }
+      url: "/v2/tasks",
+      headers: { authorization: `Bearer ${bearer(publisher)}` },
+      payload: {
+        title: "task-2",
+        descriptionMd: "desc",
+        acceptanceCriteria: "criteria",
+        deadlineUtc: futureDeadline(),
+        displayTimezone: "UTC",
+        slotsTotal: 1,
+        rewardPerSlot: 100,
+        allowRepeatCompletionsBySameAgent: false
+      }
     });
-    expect(voteAfterOverride.statusCode).toBe(200);
+    expect(taskAfterRes.statusCode).toBe(200);
+    const taskAfter = taskAfterRes.json() as { taxAmount: number };
+    expect(taskAfter.taxAmount).not.toBe(beforeTask.taxAmount);
   });
 
-  it("allows admin COMPLETED override to finalize dispute and close voting", async () => {
+  it("keeps existing task tax amount unchanged when current tax rate is updated", async () => {
     const publisher = addr("ov4");
-    const worker = addr("ov5");
     const task = await createSingleSlotTask(publisher);
+    const taskBeforeRes = await app!.inject({ method: "GET", url: `/v2/tasks/${task.id}` });
+    expect(taskBeforeRes.statusCode).toBe(200);
+    const taskBefore = taskBeforeRes.json() as { taxAmount: number };
 
-    const acceptRes = await app!.inject({
-      method: "POST",
-      url: `/v2/tasks/${task.id}/intentions`,
-      headers: { authorization: `Bearer ${bearer(worker)}` }
+    const settingsRes = await app!.inject({
+      method: "GET",
+      url: "/v2/system/settings",
+      headers: { "x-admin-service-key": adminKey }
     });
-    expect(acceptRes.statusCode).toBe(200);
+    expect(settingsRes.statusCode).toBe(200);
+    const settings = settingsRes.json() as { currentRules: { taxRateBps: number } };
 
-    const submitRes = await app!.inject({
-      method: "POST",
-      url: `/v2/tasks/${task.id}/submissions`,
-      headers: { authorization: `Bearer ${bearer(worker)}` },
-      payload: { payloadMd: "result" }
-    });
-    expect(submitRes.statusCode).toBe(200);
-    const submission = submitRes.json() as { id: string };
-    await rejectSubmission(submission.id, publisher);
-
-    const disputeRes = await app!.inject({
-      method: "POST",
-      url: "/v2/disputes",
-      headers: { authorization: `Bearer ${bearer(publisher)}` },
+    const updateRes = await app!.inject({
+      method: "PATCH",
+      url: "/v2/system/settings",
+      headers: { "x-admin-service-key": adminKey },
       payload: {
-        taskId: task.id,
-        submissionId: submission.id,
-        reasonMd: "manual complete override"
+        applyTo: "current",
+        patch: { taxRateBps: settings.currentRules.taxRateBps + 100 }
       }
     });
-    expect(disputeRes.statusCode).toBe(200);
-    const dispute = disputeRes.json() as { id: string };
+    expect(updateRes.statusCode).toBe(200);
 
-    const overrideRes = await app!.inject({
-      method: "POST",
-      url: `/v2/admin/disputes/${dispute.id}/override`,
-      headers: { "x-admin-service-key": adminKey },
-      payload: { result: "COMPLETED" }
-    });
-    expect(overrideRes.statusCode).toBe(200);
-    const overridden = overrideRes.json() as { status: string };
-    expect(overridden.status).toBe("RESOLVED_COMPLETED");
-
-    const voteAfterOverride = await app!.inject({
-      method: "POST",
-      url: `/v2/disputes/${dispute.id}/votes`,
-      headers: { authorization: `Bearer ${bearer(addr("ov6"))}` },
-      payload: { vote: VoteChoice.COMPLETED }
-    });
-    expect(voteAfterOverride.statusCode).toBe(409);
+    const taskAfterRes = await app!.inject({ method: "GET", url: `/v2/tasks/${task.id}` });
+    expect(taskAfterRes.statusCode).toBe(200);
+    const taskAfter = taskAfterRes.json() as { taxAmount: number };
+    expect(taskAfter.taxAmount).toBe(taskBefore.taxAmount);
   });
 
   it("exposes dashboard summary and trend metrics from activity events", async () => {
@@ -1946,17 +1927,11 @@ describe("API integration", () => {
       expect(voteRes.statusCode).toBe(200);
     }
 
-    const closeRes = await app!.inject({
-      method: "POST",
-      url: "/v2/admin/cycles/close",
-      headers: { "x-admin-service-key": adminKey }
-    });
-    expect(closeRes.statusCode).toBe(200);
-    const close = closeRes.json() as { closedCycleId: string };
+    await forceAutoCloseCurrentCycle();
 
     const rewardsRes = await app!.inject({
       method: "GET",
-      url: `/v2/cycles/${close.closedCycleId}/rewards`
+      url: "/v2/cycles/cycle-1/rewards"
     });
     expect(rewardsRes.statusCode).toBe(200);
     const rewards = rewardsRes.json() as {
@@ -1999,17 +1974,11 @@ describe("API integration", () => {
     });
     expect(confirmRes.statusCode).toBe(200);
 
-    const closeRes = await app!.inject({
-      method: "POST",
-      url: "/v2/admin/cycles/close",
-      headers: { "x-admin-service-key": adminKey }
-    });
-    expect(closeRes.statusCode).toBe(200);
-    const close = closeRes.json() as { closedCycleId: string };
+    await forceAutoCloseCurrentCycle();
 
     const rewardsRes = await app!.inject({
       method: "GET",
-      url: `/v2/cycles/${close.closedCycleId}/rewards`
+      url: "/v2/cycles/cycle-1/rewards"
     });
     expect(rewardsRes.statusCode).toBe(200);
     const rewards = rewardsRes.json() as {

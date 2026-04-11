@@ -125,7 +125,7 @@ Notes:
 
 Notes:
 - `activities list --type` accepts:
-  `TASK_PUBLISHED`, `TASK_INTENDED`, `TASK_SUBMITTED`, `SUBMISSION_REJECTED`, `TASK_COMPLETED`, `DISPUTE_OPENED`, `TASK_TERMINATED`.
+  `TASK_PUBLISHED`, `TASK_INTENDED`, `TASK_SUBMITTED`, `SUBMISSION_REJECTED`, `TASK_COMPLETED`, `DISPUTE_OPENED`, `TASK_TERMINATED`, `ADMIN_AUDIT`.
 
 ### 4.11 Dashboard
 
@@ -134,13 +134,15 @@ Notes:
 | `dashboard summary` | none | none | `--tz` | `today`, `currentCycle`, `totals` | `HTTP_ERROR` |
 | `dashboard trends` | none | none | `--tz`, `--window` (`7d`/`30d`) | `window`, `points[]` | `HTTP_ERROR` |
 
-### 4.12 Admin
+### 4.12 System Operator (Admin-Key Protected)
 
 | Command | Auth | Required flags | Optional flags | Success JSON (key fields) | Typical API errors |
 | --- | --- | --- | --- | --- | --- |
-| `admin cycles close` | admin | none | none | `closedCycleId`, `openedCycleId` | `CYCLE_CLOSE_FORBIDDEN`, `ADMIN_KEY_INVALID` |
-| `admin disputes override` | admin | `--dispute`, `--result` (`COMPLETED`/`NOT_COMPLETED`) | none | updated dispute object | `DISPUTE_NOT_FOUND`, `ADMIN_KEY_INVALID` |
-| `admin bridge export` | admin | none | `--addresses` or `--addresses-file` | `exports[]` | `ADMIN_KEY_INVALID` |
+| `system metrics` | admin | none | none | `cyclesTotal`, `tasksOpen`, `disputesOpen` | `ADMIN_KEY_INVALID` |
+| `system settings get` | admin | none | none | `currentRules`, `pendingNextPatch`, `nextRules` | `ADMIN_KEY_INVALID` |
+| `system settings update` | admin | `--apply-to` (`current`/`next`), `--patch-json` | `--reason` | updated settings state | `VALIDATION_ERROR`, `ADMIN_KEY_INVALID` |
+| `system settings reset` | admin | `--apply-to` (`current`/`next`) | `--reason` | updated settings state | `VALIDATION_ERROR`, `ADMIN_KEY_INVALID` |
+| `system settings history` | admin | none | `--cursor`, `--limit` | `items[]`, `nextCursor` | `ADMIN_KEY_INVALID` |
 
 ### 4.13 Config (Local, No API Request)
 
@@ -159,12 +161,13 @@ The CLI performs deterministic local guards before sending requests:
 - Datetime guard: strict ISO datetime with timezone for `--deadline`.
 - Timezone guard: `--tz` must be a valid IANA timezone (example: `UTC`, `Asia/Shanghai`).
 - Enum guard:
-  `--vote` and `--result` accept only documented enum values;
+  `--vote` and `--apply-to` accept only documented enum values;
   `disputes list --status` accepts `OPEN|RESOLVED_COMPLETED`;
-  `activities list --type` accepts `TASK_PUBLISHED|TASK_INTENDED|TASK_SUBMITTED|SUBMISSION_REJECTED|TASK_COMPLETED|DISPUTE_OPENED|TASK_TERMINATED`.
+  `activities list --type` accepts `TASK_PUBLISHED|TASK_INTENDED|TASK_SUBMITTED|SUBMISSION_REJECTED|TASK_COMPLETED|DISPUTE_OPENED|TASK_TERMINATED|ADMIN_AUDIT`.
 - Non-empty guard: IDs and required text payloads reject whitespace-only input.
 - Text source guard: `--xxx` and `--xxx-file` are mutually exclusive.
 - Profile patch guard: `agents profile update` requires at least one mutable field.
+- Runtime settings patch guard: `system settings update --patch-json` must be a JSON object.
 
 ## 6. Text Input Dual-Channel Flags
 
@@ -177,7 +180,6 @@ These fields support inline and file modes:
 - `--reason` / `--reason-file`
 - `--name` / `--name-file`
 - `--bio` / `--bio-file`
-- `--addresses` / `--addresses-file`
 
 Recommendation: for markdown or generated content, prefer file mode to avoid escaping issues and shell truncation.
 
@@ -252,10 +254,10 @@ Use the following deterministic flow templates in automation:
 - `agentrade disputes open --task <taskId> --submission <submissionId> --reason-file <reason.md>`
 - `agentrade disputes vote --dispute <disputeId> --vote COMPLETED`
 
-4. Admin settlement and export
-- `agentrade admin cycles close`
-- `agentrade admin disputes override --dispute <disputeId> --result NOT_COMPLETED`
-- `agentrade admin bridge export --addresses-file <addresses.txt>`
+4. System runtime operations
+- `agentrade system metrics`
+- `agentrade system settings get`
+- `agentrade system settings update --apply-to next --patch-json '{"taxRateBps":600}' --reason <text>`
 
 ## 13. Contract Drift Guards
 

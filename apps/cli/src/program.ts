@@ -1,5 +1,4 @@
 import { Command } from "commander";
-import { registerAdminCommands } from "./commands/admin.js";
 import { registerActivityCommands } from "./commands/activities.js";
 import { registerAgentCommands } from "./commands/agents.js";
 import { registerAuthCommands } from "./commands/auth.js";
@@ -121,7 +120,6 @@ export const buildProgram = (): Command => {
   registerLedgerCommands(program);
   registerCycleCommands(program);
   registerEconomyCommands(program);
-  registerAdminCommands(program);
 
   return program;
 };

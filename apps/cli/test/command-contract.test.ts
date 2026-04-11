@@ -210,12 +210,47 @@ test("cli command contract: method/path/auth/body coverage for all command group
     startedAt: now,
     closedAt: null
   };
-  const closeCyclePayload = {
-    closedCycleId: "cycle-1",
-    openedCycleId: "cycle-2",
-    rewardPool: 0,
-    distributions: [],
-    finalizedDisputes: []
+  const runtimeRulesPayload = {
+    cycleDurationHours: 168,
+    mintPerCycle: 1000,
+    taxRateBps: 500,
+    taskCompletionPublisherWorkload: 1,
+    taskCompletionWorkerWorkload: 1,
+    disputeQuorum: 3,
+    disputeApprovalBps: 5000,
+    terminationPenaltyBps: 1000,
+    submissionTimeoutHours: 24,
+    resubmitCooldownMinutes: 30,
+    reputationWeightPublisherBps: 3334,
+    reputationWeightWorkerBps: 3333,
+    reputationWeightSupervisorBps: 3333,
+    scoreWeightReputationBps: 4500,
+    scoreWeightCompletionBps: 3500,
+    scoreWeightQualityBps: 2000
+  };
+  const runtimeSettingsPayload = {
+    currentRules: runtimeRulesPayload,
+    pendingNextPatch: { taxRateBps: 600 },
+    nextRules: { ...runtimeRulesPayload, taxRateBps: 600 },
+    updatedAt: now
+  };
+  const runtimeSettingsHistoryPayload = {
+    items: [
+      {
+        id: "runtime-rule-audit-1",
+        eventType: "UPDATE",
+        applyTo: "next",
+        reason: "test update",
+        actor: "cli-contract-test",
+        cycleId: "cycle-1",
+        beforeRules: runtimeRulesPayload,
+        afterRules: runtimeRulesPayload,
+        patch: { taxRateBps: 600 },
+        pendingNextPatch: { taxRateBps: 600 },
+        createdAt: now
+      }
+    ],
+    nextCursor: null
   };
   const publicEconomyPayload = {
     appName: "Agentrade",
@@ -264,14 +299,12 @@ test("cli command contract: method/path/auth/body coverage for all command group
   const payloadFile = join(tmpDir, "payload.md");
   const reasonFile = join(tmpDir, "reason.md");
   const nameFile = join(tmpDir, "name.txt");
-  const addressesFile = join(tmpDir, "addresses.txt");
   writeFileSync(messageFile, "message-from-file", "utf8");
   writeFileSync(descFile, "desc-from-file", "utf8");
   writeFileSync(criteriaFile, "criteria-from-file", "utf8");
   writeFileSync(payloadFile, "payload-from-file", "utf8");
   writeFileSync(reasonFile, "reason-from-file", "utf8");
   writeFileSync(nameFile, "name-from-file", "utf8");
-  writeFileSync(addressesFile, `${addressA},${addressB}\n${addressA}`, "utf8");
 
   const calls: RecordedRequest[] = [];
   const server = createServer(async (request, response) => {
@@ -291,6 +324,36 @@ test("cli command contract: method/path/auth/body coverage for all command group
     switch (routeKey) {
       case "GET /v2/system/health":
         response.end(JSON.stringify({ ok: true, service: "mock-agentrade" }));
+        return;
+      case "GET /v2/system/metrics":
+        response.end(
+          JSON.stringify({
+            generatedAt: now,
+            startedAt: now,
+            counters: {
+              requestsTotal: 10,
+              errorsTotal: 0,
+              rateLimitedTotal: 0,
+              writeTotal: 4,
+              writeErrorTotal: 0,
+              writeConflictTotal: 0,
+              writeDeadlockTotal: 0
+            },
+            latencies: {
+              requests: { count: 10, avgMs: 5, p50Ms: 4, p95Ms: 8, p99Ms: 9, maxMs: 10 },
+              writes: { count: 4, avgMs: 6, p50Ms: 5, p95Ms: 8, p99Ms: 9, maxMs: 10 }
+            }
+          })
+        );
+        return;
+      case "GET /v2/system/settings":
+      case "PATCH /v2/system/settings":
+      case "POST /v2/system/settings/reset":
+        response.end(JSON.stringify(runtimeSettingsPayload));
+        return;
+      case "GET /v2/system/settings/history":
+      case "GET /v2/system/settings/history?cursor=7&limit=9":
+        response.end(JSON.stringify(runtimeSettingsHistoryPayload));
         return;
       case "POST /v2/auth/challenge":
         response.end(JSON.stringify({ nonce: "nonce-1", message: "mock-message" }));
@@ -412,24 +475,6 @@ test("cli command contract: method/path/auth/body coverage for all command group
         return;
       case "GET /v2/economy/params":
         response.end(JSON.stringify(publicEconomyPayload));
-        return;
-      case "POST /v2/admin/cycles/close":
-        response.end(JSON.stringify(closeCyclePayload));
-        return;
-      case "POST /v2/admin/disputes/dispute-1/override":
-        response.end(JSON.stringify({ ...disputePayload, status: "RESOLVED_COMPLETED" }));
-        return;
-      case "POST /v2/admin/bridge/export":
-        response.end(
-          JSON.stringify({
-            chain: "base-sepolia",
-            mode: "OFFCHAIN_EXPORT_ONLY",
-            exports: [
-              { address: addressA, amount: 1 },
-              { address: addressB, amount: 2 }
-            ]
-          })
-        );
         return;
       default:
         response.statusCode = 404;
@@ -888,22 +933,49 @@ test("cli command contract: method/path/auth/body coverage for all command group
       auth: "none"
     });
 
-    await runAndAssert(["admin", "cycles", "close"], {
-      method: "POST",
-      url: "/v2/admin/cycles/close",
+    await runAndAssert(["system", "metrics"], {
+      method: "GET",
+      url: "/v2/system/metrics",
       auth: "admin"
     });
-    await runAndAssert(["admin", "disputes", "override", "--dispute", "dispute-1", "--result", "NOT_COMPLETED"], {
-      method: "POST",
-      url: "/v2/admin/disputes/dispute-1/override",
-      auth: "admin",
-      body: { result: "NOT_COMPLETED" }
+    await runAndAssert(["system", "settings", "get"], {
+      method: "GET",
+      url: "/v2/system/settings",
+      auth: "admin"
     });
-    await runAndAssert(["admin", "bridge", "export", "--addresses-file", addressesFile], {
+    await runAndAssert(
+      [
+        "system",
+        "settings",
+        "update",
+        "--apply-to",
+        "next",
+        "--patch-json",
+        '{"taxRateBps":600,"mintPerCycle":1200}',
+        "--reason",
+        "planned-tuning"
+      ],
+      {
+        method: "PATCH",
+        url: "/v2/system/settings",
+        auth: "admin",
+        body: {
+          applyTo: "next",
+          patch: { taxRateBps: 600, mintPerCycle: 1200 },
+          reason: "planned-tuning"
+        }
+      }
+    );
+    await runAndAssert(["system", "settings", "reset", "--apply-to", "current"], {
       method: "POST",
-      url: "/v2/admin/bridge/export",
+      url: "/v2/system/settings/reset",
       auth: "admin",
-      body: { addresses: [addressA, addressB] }
+      body: { applyTo: "current" }
+    });
+    await runAndAssert(["system", "settings", "history", "--cursor", "7", "--limit", "9"], {
+      method: "GET",
+      url: "/v2/system/settings/history?cursor=7&limit=9",
+      auth: "admin"
     });
   } finally {
     await new Promise<void>((resolvePromise, rejectPromise) => {

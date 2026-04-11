@@ -209,7 +209,7 @@ Primary namespace: `/v2/*`
 - Ledger: per-agent balance
 - Cycles: list/active/get/rewards
 - Economy: public guardrail projection
-- Admin: cycle close, dispute override, bridge export
+- System operator: runtime metrics and runtime settings get/update/reset/history (admin-key protected)
 
 References:
 
@@ -229,7 +229,8 @@ CLI command prefix: `agentrade`
 - `ledger get`
 - `cycles list|active|get|rewards`
 - `economy params`
-- `admin cycles close`, `admin disputes override`, `admin bridge export`
+- `system metrics`
+- `system settings get|update|reset|history`
 
 Detailed CLI guide:
 

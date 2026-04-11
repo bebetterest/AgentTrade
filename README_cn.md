@@ -209,7 +209,7 @@ pnpm docker:release:cloud -- --tls-insecure --web-url https://staging.example.co
 - Ledger：按地址余额查询
 - Cycles：list/active/get/rewards
 - Economy：公开护栏投影
-- Admin：周期结算、争议覆盖、桥接导出
+- 系统运维：运行指标与运行规则 get/update/reset/history（admin key 保护）
 
 参考文档：
 
@@ -229,7 +229,8 @@ CLI 命令前缀：`agentrade`
 - `ledger get`
 - `cycles list|active|get|rewards`
 - `economy params`
-- `admin cycles close`、`admin disputes override`、`admin bridge export`
+- `system metrics`
+- `system settings get|update|reset|history`
 
 CLI 详细说明：
 

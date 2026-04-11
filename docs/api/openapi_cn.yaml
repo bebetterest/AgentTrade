@@ -90,6 +90,254 @@
         }
       }
     },
+    "/v2/system/settings": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "operationId": "systemSettingsGetV2",
+        "summary": "读取运行规则设置",
+        "deprecated": false,
+        "security": [
+          {
+            "adminServiceKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeSettingsState"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "认证失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "System"
+        ],
+        "operationId": "systemSettingsUpdateV2",
+        "summary": "更新运行规则设置",
+        "deprecated": false,
+        "security": [
+          {
+            "adminServiceKey": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuntimeSettingsUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeSettingsState"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入或校验错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "认证失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/system/settings/reset": {
+      "post": {
+        "tags": [
+          "System"
+        ],
+        "operationId": "systemSettingsResetV2",
+        "summary": "重置运行规则设置",
+        "deprecated": false,
+        "security": [
+          {
+            "adminServiceKey": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuntimeSettingsResetRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuntimeSettingsState"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入或校验错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "认证失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/system/settings/history": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "operationId": "systemSettingsHistoryV2",
+        "summary": "读取运行规则变更历史",
+        "deprecated": false,
+        "security": [
+          {
+            "adminServiceKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "description": "分页游标",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "description": "分页大小",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedRuntimeRuleAuditResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "认证失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v2/auth/challenge": {
       "post": {
         "tags": [
@@ -2408,220 +2656,6 @@
           }
         }
       }
-    },
-    "/v2/admin/cycles/close": {
-      "post": {
-        "tags": [
-          "Admin"
-        ],
-        "operationId": "adminCloseCycleV2",
-        "summary": "关闭当前周期",
-        "deprecated": false,
-        "security": [
-          {
-            "adminServiceKey": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "成功响应",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CloseCycleResult"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "认证失败",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "状态冲突或前置条件失败",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "服务端内部错误",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v2/admin/disputes/{id}/override": {
-      "post": {
-        "tags": [
-          "Admin"
-        ],
-        "operationId": "adminOverrideDisputeV2",
-        "summary": "管理员覆盖争议结果",
-        "description": "NOT_COMPLETED 会将争议重开为 OPEN。若同一 submission 已存在其他 OPEN 争议，则返回 409 OPEN_DISPUTE_ALREADY_EXISTS。",
-        "deprecated": false,
-        "security": [
-          {
-            "adminServiceKey": []
-          }
-        ],
-        "parameters": [
-          {
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "description": "争议 id",
-            "schema": {
-              "type": "string",
-              "minLength": 1
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/OverrideDisputeRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "成功响应",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Dispute"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "认证失败",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "资源不存在",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "状态冲突或前置条件失败",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "服务端内部错误",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v2/admin/bridge/export": {
-      "post": {
-        "tags": [
-          "Admin"
-        ],
-        "operationId": "adminBridgeExportV2",
-        "summary": "导出桥接批次",
-        "deprecated": false,
-        "security": [
-          {
-            "adminServiceKey": []
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/BridgeExportRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "成功响应",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BridgeExportResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "输入或校验错误",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "认证失败",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "服务端内部错误",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
-                }
-              }
-            }
-          }
-        }
-      }
     }
   },
   "components": {
@@ -3196,7 +3230,8 @@
               "SUBMISSION_REJECTED",
               "TASK_COMPLETED",
               "DISPUTE_OPENED",
-              "TASK_TERMINATED"
+              "TASK_TERMINATED",
+              "ADMIN_AUDIT"
             ]
           },
           "cycleId": {
@@ -4080,6 +4115,296 @@
             "enum": [
               "OFFCHAIN_EXPORT_ONLY"
             ]
+          }
+        }
+      },
+      "RuntimeEditableRules": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "cycleDurationHours",
+          "mintPerCycle",
+          "taxRateBps",
+          "taskCompletionPublisherWorkload",
+          "taskCompletionWorkerWorkload",
+          "disputeQuorum",
+          "disputeApprovalBps",
+          "terminationPenaltyBps",
+          "submissionTimeoutHours",
+          "resubmitCooldownMinutes",
+          "reputationWeightPublisherBps",
+          "reputationWeightWorkerBps",
+          "reputationWeightSupervisorBps",
+          "scoreWeightReputationBps",
+          "scoreWeightCompletionBps",
+          "scoreWeightQualityBps"
+        ],
+        "properties": {
+          "cycleDurationHours": {
+            "type": "integer"
+          },
+          "mintPerCycle": {
+            "type": "integer"
+          },
+          "taxRateBps": {
+            "type": "integer"
+          },
+          "taskCompletionPublisherWorkload": {
+            "type": "number"
+          },
+          "taskCompletionWorkerWorkload": {
+            "type": "number"
+          },
+          "disputeQuorum": {
+            "type": "integer"
+          },
+          "disputeApprovalBps": {
+            "type": "integer"
+          },
+          "terminationPenaltyBps": {
+            "type": "integer"
+          },
+          "submissionTimeoutHours": {
+            "type": "integer"
+          },
+          "resubmitCooldownMinutes": {
+            "type": "integer"
+          },
+          "reputationWeightPublisherBps": {
+            "type": "integer"
+          },
+          "reputationWeightWorkerBps": {
+            "type": "integer"
+          },
+          "reputationWeightSupervisorBps": {
+            "type": "integer"
+          },
+          "scoreWeightReputationBps": {
+            "type": "integer"
+          },
+          "scoreWeightCompletionBps": {
+            "type": "integer"
+          },
+          "scoreWeightQualityBps": {
+            "type": "integer"
+          }
+        }
+      },
+      "RuntimeEditableRulesPatch": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "cycleDurationHours": {
+            "type": "integer"
+          },
+          "mintPerCycle": {
+            "type": "integer"
+          },
+          "taxRateBps": {
+            "type": "integer"
+          },
+          "taskCompletionPublisherWorkload": {
+            "type": "number"
+          },
+          "taskCompletionWorkerWorkload": {
+            "type": "number"
+          },
+          "disputeQuorum": {
+            "type": "integer"
+          },
+          "disputeApprovalBps": {
+            "type": "integer"
+          },
+          "terminationPenaltyBps": {
+            "type": "integer"
+          },
+          "submissionTimeoutHours": {
+            "type": "integer"
+          },
+          "resubmitCooldownMinutes": {
+            "type": "integer"
+          },
+          "reputationWeightPublisherBps": {
+            "type": "integer"
+          },
+          "reputationWeightWorkerBps": {
+            "type": "integer"
+          },
+          "reputationWeightSupervisorBps": {
+            "type": "integer"
+          },
+          "scoreWeightReputationBps": {
+            "type": "integer"
+          },
+          "scoreWeightCompletionBps": {
+            "type": "integer"
+          },
+          "scoreWeightQualityBps": {
+            "type": "integer"
+          }
+        }
+      },
+      "RuntimeSettingsState": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "currentRules",
+          "pendingNextPatch",
+          "nextRules",
+          "updatedAt"
+        ],
+        "properties": {
+          "currentRules": {
+            "$ref": "#/components/schemas/RuntimeEditableRules"
+          },
+          "pendingNextPatch": {
+            "$ref": "#/components/schemas/RuntimeEditableRulesPatch",
+            "nullable": true
+          },
+          "nextRules": {
+            "$ref": "#/components/schemas/RuntimeEditableRules"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-04-02T08:00:00.000Z"
+          }
+        }
+      },
+      "RuntimeSettingsUpdateRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "applyTo",
+          "patch"
+        ],
+        "properties": {
+          "applyTo": {
+            "type": "string",
+            "enum": [
+              "current",
+              "next"
+            ]
+          },
+          "patch": {
+            "$ref": "#/components/schemas/RuntimeEditableRulesPatch"
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        }
+      },
+      "RuntimeSettingsResetRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "applyTo"
+        ],
+        "properties": {
+          "applyTo": {
+            "type": "string",
+            "enum": [
+              "current",
+              "next"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        }
+      },
+      "RuntimeRuleAuditRecord": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "eventType",
+          "applyTo",
+          "reason",
+          "actor",
+          "cycleId",
+          "beforeRules",
+          "afterRules",
+          "patch",
+          "pendingNextPatch",
+          "createdAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "eventType": {
+            "type": "string",
+            "enum": [
+              "UPDATE",
+              "RESET",
+              "AUTO_APPLY_NEXT"
+            ]
+          },
+          "applyTo": {
+            "type": "string",
+            "enum": [
+              "current",
+              "next"
+            ],
+            "nullable": true
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "actor": {
+            "type": "string",
+            "nullable": true
+          },
+          "cycleId": {
+            "type": "string",
+            "nullable": true
+          },
+          "beforeRules": {
+            "$ref": "#/components/schemas/RuntimeEditableRules",
+            "nullable": true
+          },
+          "afterRules": {
+            "$ref": "#/components/schemas/RuntimeEditableRules",
+            "nullable": true
+          },
+          "patch": {
+            "$ref": "#/components/schemas/RuntimeEditableRulesPatch",
+            "nullable": true
+          },
+          "pendingNextPatch": {
+            "$ref": "#/components/schemas/RuntimeEditableRulesPatch",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-04-02T08:00:00.000Z"
+          }
+        }
+      },
+      "PaginatedRuntimeRuleAuditResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RuntimeRuleAuditRecord"
+            }
+          },
+          "nextCursor": {
+            "type": "string",
+            "nullable": true
           }
         }
       },

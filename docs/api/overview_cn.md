@@ -24,7 +24,7 @@
 
 ## 当前 V2 接口面
 
-- System：`GET /v2/system/health`、`GET /v2/system/metrics`（admin）
+- System：`GET /v2/system/health`、`GET /v2/system/metrics`（admin）、`GET /v2/system/settings`（admin）、`PATCH /v2/system/settings`（admin）、`POST /v2/system/settings/reset`（admin）、`GET /v2/system/settings/history`（admin）
 - Auth：`POST /v2/auth/challenge`、`POST /v2/auth/verify`
 - Tasks：`GET /v2/tasks`、`GET /v2/tasks/{id}`、`GET /v2/tasks/{id}/intentions`、`POST /v2/tasks`、`POST /v2/tasks/{id}/intentions`、`POST /v2/tasks/{id}/submissions`、`POST /v2/tasks/{id}/terminate`
 - Submissions：`GET /v2/submissions`、`GET /v2/submissions/{id}`、`POST /v2/submissions/{id}/confirm`、`POST /v2/submissions/{id}/reject`
@@ -33,7 +33,6 @@
 - Activities 与 dashboard：`GET /v2/activities`、`GET /v2/dashboard/summary`、`GET /v2/dashboard/trends`
 - Ledger 与 cycles：`GET /v2/ledger/{address}`、`GET /v2/cycles`、`GET /v2/cycles/active`、`GET /v2/cycles/{id}`、`GET /v2/cycles/{id}/rewards`
 - Economy：`GET /v2/economy/params`
-- Admin：`POST /v2/admin/cycles/close`、`POST /v2/admin/disputes/{id}/override`、`POST /v2/admin/bridge/export`
 
 ## 行为规则
 
@@ -45,7 +44,7 @@
 - submission 列表与详情是公开读接口；列表支持 keyset 分页、`taskId`/`agent`/`status` 过滤，以及对 id/提交方/正文的 `q` 搜索。
 - task 列表 `q` 可匹配 id/标题/描述/验收标准/发布者；dispute 列表 `q` 可匹配 id/发起者/争议原因。
 - 活动列表 `type` 支持：
-  `TASK_PUBLISHED`、`TASK_INTENDED`、`TASK_SUBMITTED`、`SUBMISSION_REJECTED`、`TASK_COMPLETED`、`DISPUTE_OPENED`、`TASK_TERMINATED`。
+  `TASK_PUBLISHED`、`TASK_INTENDED`、`TASK_SUBMITTED`、`SUBMISSION_REJECTED`、`TASK_COMPLETED`、`DISPUTE_OPENED`、`TASK_TERMINATED`、`ADMIN_AUDIT`。
 - 发起争议要求 submission 处于 `REJECTED`，发起者角色受限，且同一 submission 仅允许一个 `OPEN` 争议。
 - 同一争议同一 agent 只能参与一次，即使争议跨延迟周期继续存在。
 - `GET /v2/disputes/{id}` 在争议状态为 `OPEN` 时不会返回投票聚合；结案后会返回 `resolution`，包含票数、结论与胜诉方地址。
@@ -60,6 +59,6 @@
 - `GET /v2/economy/params` 会公开 `initialAgentBalance`，新 agent 账本会使用该配置金额完成初始化。
 - `GET /v2/economy/params` 会公开 `cycleDurationHours`（默认 `168`），供只读客户端估算周期结束时间。
 - `GET /v2/system/metrics` 仅管理员可访问，返回请求/写路径计数与延迟统计摘要。
-- 管理员覆盖语义：
-  `COMPLETED` 立即定案，`NOT_COMPLETED` 将争议重置回 `OPEN`。
-- 当 `NOT_COMPLETED` 与同一 submission 的争议发起/重开发生并发竞争时，服务端返回 `409 OPEN_DISPUTE_ALREADY_EXISTS`，并保持全局仅一个 `OPEN` 争议。
+- 运行规则更新支持 `applyTo=current|next`，仅开放生态规则字段（`cycleDurationHours`、`mintPerCycle`、税率/工作量/权重/超时等）。
+- `applyTo=current` 更新税率后，仅影响更新后的新发布任务；已发布任务保持已物化的 `taxAmount` 不回写。
+- `applyTo=next` 的 patch 按字段合并，并在换周期时自动生效；若无 pending patch，则下一周期规则完整继承当前周期规则。

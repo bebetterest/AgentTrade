@@ -86,7 +86,7 @@ const runCliJson = async (
   return JSON.parse(result.stdout.trim());
 };
 
-test("cli integration: covers lifecycle/read/admin command groups", async () => {
+test("cli integration: covers lifecycle/read/system-operator command groups", async () => {
   const oldEnv = { ...process.env };
   const jwtSecret = "cli-test-secret";
   const adminKey = "cli-test-admin-key";
@@ -348,24 +348,70 @@ test("cli integration: covers lifecycle/read/admin command groups", async () => 
     assert.equal(rewards.cycle.id, activeCycle.id);
     assert.ok(Array.isArray(rewards.workloads));
 
-    const closed = (await runCliJson(baseUrl, ["admin", "cycles", "close"], {
+    const metrics = (await runCliJson(baseUrl, ["system", "metrics"], {
       AGENTRADE_ADMIN_SERVICE_KEY: adminKey
-    })) as { closedCycleId: string; openedCycleId: string };
-    assert.equal(typeof closed.closedCycleId, "string");
-    assert.equal(typeof closed.openedCycleId, "string");
+    })) as {
+      generatedAt: string;
+      counters: {
+        requestsTotal: number;
+        writeTotal: number;
+      };
+      latencies: {
+        requests: { count: number };
+      };
+    };
+    assert.equal(typeof metrics.generatedAt, "string");
+    assert.equal(typeof metrics.counters.requestsTotal, "number");
+    assert.equal(typeof metrics.counters.writeTotal, "number");
+    assert.equal(typeof metrics.latencies.requests.count, "number");
 
-    await runCliJson(baseUrl, ["admin", "disputes", "override", "--dispute", dispute.id, "--result", "COMPLETED"], {
+    const settingsBefore = (await runCliJson(baseUrl, ["system", "settings", "get"], {
       AGENTRADE_ADMIN_SERVICE_KEY: adminKey
-    });
+    })) as {
+      currentRules: { taxRateBps: number };
+      pendingNextPatch: Record<string, unknown> | null;
+    };
+    assert.equal(typeof settingsBefore.currentRules.taxRateBps, "number");
 
-    const bridge = (await runCliJson(
+    const settingsAfterUpdate = (await runCliJson(
       baseUrl,
-      ["admin", "bridge", "export", "--addresses", `${publisher},${worker}`],
+      [
+        "system",
+        "settings",
+        "update",
+        "--apply-to",
+        "next",
+        "--patch-json",
+        JSON.stringify({ taxRateBps: settingsBefore.currentRules.taxRateBps + 100 }),
+        "--reason",
+        "integration-test"
+      ],
       { AGENTRADE_ADMIN_SERVICE_KEY: adminKey }
     )) as {
-      exports: Array<{ address: string }>;
+      pendingNextPatch: { taxRateBps: number } | null;
+      nextRules: { taxRateBps: number };
     };
-    assert.ok(bridge.exports.length >= 2);
+    assert.equal(settingsAfterUpdate.pendingNextPatch?.taxRateBps, settingsBefore.currentRules.taxRateBps + 100);
+    assert.equal(settingsAfterUpdate.nextRules.taxRateBps, settingsBefore.currentRules.taxRateBps + 100);
+
+    const settingsHistory = (await runCliJson(
+      baseUrl,
+      ["system", "settings", "history", "--limit", "5"],
+      { AGENTRADE_ADMIN_SERVICE_KEY: adminKey }
+    )) as {
+      items: Array<{ eventType: string }>;
+    };
+    assert.ok(settingsHistory.items.length >= 1);
+    assert.ok(settingsHistory.items.some((item) => item.eventType === "UPDATE"));
+
+    const settingsAfterReset = (await runCliJson(
+      baseUrl,
+      ["system", "settings", "reset", "--apply-to", "next", "--reason", "cleanup"],
+      { AGENTRADE_ADMIN_SERVICE_KEY: adminKey }
+    )) as {
+      pendingNextPatch: Record<string, unknown> | null;
+    };
+    assert.equal(settingsAfterReset.pendingNextPatch, null);
   } finally {
     if (app) {
       await app.close();

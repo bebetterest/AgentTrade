@@ -1,9 +1,27 @@
 import { VoteChoice } from "@agentrade/types";
-import type { Address } from "@agentrade/types";
+import type { Address, RuntimeEditableRulesPatch } from "@agentrade/types";
 import { CliValidationError } from "./errors.js";
 
 const ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/;
 const ISO_DATETIME_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/;
+const RUNTIME_EDITABLE_KEYS = new Set<keyof RuntimeEditableRulesPatch>([
+  "cycleDurationHours",
+  "mintPerCycle",
+  "taxRateBps",
+  "taskCompletionPublisherWorkload",
+  "taskCompletionWorkerWorkload",
+  "disputeQuorum",
+  "disputeApprovalBps",
+  "terminationPenaltyBps",
+  "submissionTimeoutHours",
+  "resubmitCooldownMinutes",
+  "reputationWeightPublisherBps",
+  "reputationWeightWorkerBps",
+  "reputationWeightSupervisorBps",
+  "scoreWeightReputationBps",
+  "scoreWeightCompletionBps",
+  "scoreWeightQualityBps"
+]);
 
 const parseInteger = (raw: string, flag: string): number => {
   if (!/^[-]?\d+$/.test(raw.trim())) {
@@ -102,6 +120,43 @@ export const ensureOverrideResult = (raw: string): "COMPLETED" | "NOT_COMPLETED"
     throw new CliValidationError("--result must be COMPLETED or NOT_COMPLETED");
   }
   return normalized;
+};
+
+export const ensureRuntimeSettingsApplyTo = (raw: string, flag = "--apply-to"): "current" | "next" => {
+  const normalized = raw.trim().toLowerCase();
+  if (normalized !== "current" && normalized !== "next") {
+    throw new CliValidationError(`${flag} must be current or next`);
+  }
+  return normalized;
+};
+
+export const ensureRuntimeSettingsPatchJson = (
+  raw: string,
+  flag = "--patch-json"
+): RuntimeEditableRulesPatch => {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new CliValidationError(`${flag} must be a valid JSON object`);
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new CliValidationError(`${flag} must be a JSON object`);
+  }
+  const patch: RuntimeEditableRulesPatch = {};
+  for (const [key, value] of Object.entries(parsed)) {
+    if (!RUNTIME_EDITABLE_KEYS.has(key as keyof RuntimeEditableRulesPatch)) {
+      throw new CliValidationError(`${flag} contains unsupported key: ${key}`);
+    }
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+      throw new CliValidationError(`${flag}.${key} must be a finite number`);
+    }
+    patch[key as keyof RuntimeEditableRulesPatch] = value;
+  }
+  if (Object.keys(patch).length === 0) {
+    throw new CliValidationError(`${flag} must include at least one editable rule`);
+  }
+  return patch;
 };
 
 export const parseOptionalAddressList = (raw: string | undefined, flag: string): Address[] | undefined => {

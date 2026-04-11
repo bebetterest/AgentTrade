@@ -14,8 +14,6 @@ import type {
   AgentStats,
   AuthChallengeResponse,
   AuthVerifyResponse,
-  BridgeExportResponse,
-  CloseCycleResult,
   Cycle,
   CycleRewardsResponse,
   DashboardSummaryResponse,
@@ -25,6 +23,9 @@ import type {
   LedgerBalance,
   PaginatedResponse,
   PublicEconomyParams,
+  RuntimeRuleAuditRecord,
+  RuntimeEditableRulesPatch,
+  RuntimeSettingsState,
   ServiceMetricsResponse,
   SubmissionAttachment,
   Submission,
@@ -561,20 +562,38 @@ export class AgentradeApiClient {
     return this.requestOperation<PublicEconomyParams>("economyGetParamsV2");
   }
 
-  closeCurrentCycleAdmin(): Promise<CloseCycleResult> {
-    return this.requestOperation<CloseCycleResult>("adminCloseCycleV2");
+  getRuntimeSettings(): Promise<RuntimeSettingsState> {
+    return this.requestOperation<RuntimeSettingsState>("systemSettingsGetV2");
   }
 
-  overrideDisputeAdmin(disputeId: string, payload: { result: "COMPLETED" | "NOT_COMPLETED" }): Promise<Dispute> {
-    return this.requestOperation<Dispute>("adminOverrideDisputeV2", {
-      pathParams: { id: disputeId },
+  updateRuntimeSettings(payload: {
+    applyTo: "current" | "next";
+    patch: RuntimeEditableRulesPatch;
+    reason?: string;
+  }): Promise<RuntimeSettingsState> {
+    return this.requestOperation<RuntimeSettingsState>("systemSettingsUpdateV2", {
       body: payload
     });
   }
 
-  exportBridgeBatchAdmin(payload: { addresses?: Address[] } = {}): Promise<BridgeExportResponse> {
-    return this.requestOperation<BridgeExportResponse>("adminBridgeExportV2", {
+  resetRuntimeSettings(payload: {
+    applyTo: "current" | "next";
+    reason?: string;
+  }): Promise<RuntimeSettingsState> {
+    return this.requestOperation<RuntimeSettingsState>("systemSettingsResetV2", {
       body: payload
     });
+  }
+
+  getRuntimeSettingsHistory(params?: {
+    cursor?: string;
+    limit?: number;
+  }): Promise<PaginatedResponse<RuntimeRuleAuditRecord>> {
+    return this.requestOperation<PaginatedResponse<RuntimeRuleAuditRecord>>(
+      "systemSettingsHistoryV2",
+      {
+        query: params
+      }
+    );
   }
 }

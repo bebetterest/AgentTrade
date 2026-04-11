@@ -38,9 +38,6 @@ const cycleListOperation = getApiOperation("cyclesListV2");
 const cycleActiveOperation = getApiOperation("cyclesGetActiveV2");
 const cycleGetOperation = getApiOperation("cyclesGetV2");
 const cycleRewardsOperation = getApiOperation("cyclesGetRewardsV2");
-const adminCloseOperation = getApiOperation("adminCloseCycleV2");
-const adminOverrideOperation = getApiOperation("adminOverrideDisputeV2");
-const adminBridgeExportOperation = getApiOperation("adminBridgeExportV2");
 
 const sortAgents = (
   items: AgentDirectoryItem[],
@@ -431,84 +428,6 @@ const registerCycleRewardsRoute = (
   });
 };
 
-const registerAdminCloseRoute = (
-  app: FastifyInstance,
-  services: AppServices,
-  operation: ApiOperationDefinition
-) => {
-  app.post(toServerRoutePath(operation.pathTemplate), { preHandler: [app.requireAdmin] }, async () => {
-    if (services.stateRepository) {
-      return validateOperationResponse(
-        operation,
-        await services.mutateDirect(
-          () => services.stateRepository!.closeCurrentCycleDirect(services.config),
-          services.writeMeta({ operation: "admin.cycles.close" })
-        )
-      );
-    }
-    return validateOperationResponse(
-      operation,
-      await services.mutate((engine) => engine.closeCurrentCycle(), [
-        "profiles",
-        "balances",
-        "tasks",
-        "submissions",
-        "disputes",
-        "cycleWorkloads",
-        "cycles"
-      ], services.writeMeta({ operation: "admin.cycles.close" }))
-    );
-  });
-};
-
-const registerAdminOverrideRoute = (
-  app: FastifyInstance,
-  services: AppServices,
-  operation: ApiOperationDefinition
-) => {
-  app.post(toServerRoutePath(operation.pathTemplate), { preHandler: [app.requireAdmin] }, async (request) => {
-    const params = parseOperationParams<{ id: string }>(operation, request);
-    const body = parseOperationBody<{ result: "COMPLETED" | "NOT_COMPLETED" }>(operation, request);
-    if (services.stateRepository) {
-      return validateOperationResponse(
-        operation,
-        await services.mutateDirect(() =>
-          services.stateRepository!.overrideDisputeDirect(params.id, body.result)
-        , services.writeMeta({ operation: "admin.disputes.override" }))
-      );
-    }
-    return validateOperationResponse(
-      operation,
-      await services.mutate((engine) => engine.overrideDispute(params.id, body.result), [
-        "profiles",
-        "balances",
-        "tasks",
-        "submissions",
-        "disputes"
-      ], services.writeMeta({ operation: "admin.disputes.override" }))
-    );
-  });
-};
-
-const registerAdminBridgeExportRoute = (
-  app: FastifyInstance,
-  services: AppServices,
-  operation: ApiOperationDefinition
-) => {
-  app.post(toServerRoutePath(operation.pathTemplate), { preHandler: [app.requireAdmin] }, async (request) => {
-    const body = parseOperationBody<{ addresses?: string[] }>(operation, request, request.body ?? {});
-    const addresses = body.addresses?.filter((item): item is Address => isAddress(item));
-    const payload = {
-      chain: services.config.bridgeChain,
-      mode: services.config.bridgeMode,
-      exports: services.stateRepository
-        ? await services.stateRepository.exportBridgeBatchDirect({ addresses })
-        : await services.read((engine) => engine.exportBridgeBatch({ addresses }))
-    };
-    return validateOperationResponse(operation, payload);
-  });
-};
-
 export const registerAgentRoutes = (app: FastifyInstance, services: AppServices): void => {
   registerAgentListRoute(app, services, agentListOperation);
   registerAgentGetRoute(app, services, agentGetOperation);
@@ -519,7 +438,4 @@ export const registerAgentRoutes = (app: FastifyInstance, services: AppServices)
   registerCycleActiveRoute(app, services, cycleActiveOperation);
   registerCycleGetRoute(app, services, cycleGetOperation);
   registerCycleRewardsRoute(app, services, cycleRewardsOperation);
-  registerAdminCloseRoute(app, services, adminCloseOperation);
-  registerAdminOverrideRoute(app, services, adminOverrideOperation);
-  registerAdminBridgeExportRoute(app, services, adminBridgeExportOperation);
 };

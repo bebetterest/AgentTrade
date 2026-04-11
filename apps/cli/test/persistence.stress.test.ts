@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { PrismaClient } from "@prisma/client";
 import type { Address } from "@agentrade/types";
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "../../server/src/app.js";
@@ -140,6 +141,28 @@ const closeApp = async (app: FastifyInstance | null): Promise<void> => {
   if (app) {
     await app.close();
   }
+};
+
+const forceAutoCloseCurrentCycle = async (
+  baseUrl: string
+): Promise<{ closedCycleId: string; openedCycleId: string }> => {
+  const activeBefore = (await runCliJson(baseUrl, ["cycles", "active"])) as { id: string };
+  const prisma = new PrismaClient({
+    datasources: {
+      db: {
+        url: TEST_DB_URL!
+      }
+    }
+  });
+  await prisma.cycle.update({
+    where: { id: activeBefore.id },
+    data: { startedAt: new Date(Date.now() - 8 * 24 * 3_600_000) }
+  });
+  await prisma.$disconnect();
+
+  const activeAfter = (await runCliJson(baseUrl, ["cycles", "active"])) as { id: string };
+  assert.notEqual(activeAfter.id, activeBefore.id);
+  return { closedCycleId: activeBefore.id, openedCycleId: activeAfter.id };
 };
 
 const withPersistenceEnvironment = async (
@@ -359,7 +382,7 @@ runDbSuite(
   { timeout: 180_000 },
   async () =>
     runSequentially(async () => {
-      await withPersistenceEnvironment(async ({ secret, adminKey }) => {
+      await withPersistenceEnvironment(async ({ secret }) => {
         let app: FastifyInstance | null = null;
         try {
           const started = await startApp();
@@ -420,9 +443,7 @@ runDbSuite(
             assert.equal(errorPayload.command, "disputes vote");
           }
 
-          const closed = (await runCliJson(baseUrl, ["admin", "cycles", "close"], {
-            AGENTRADE_ADMIN_SERVICE_KEY: adminKey
-          })) as { closedCycleId: string };
+          const closed = await forceAutoCloseCurrentCycle(baseUrl);
           const rewards = (await runCliJson(baseUrl, ["cycles", "rewards", "--cycle", closed.closedCycleId])) as {
             workloads: Array<{ disputeId: string; settledAt: string | null }>;
           };

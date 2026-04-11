@@ -333,3 +333,11 @@
   - `docker:test:cli:persistence`,
   - `docker:smoke:local`,
   - `docker:smoke:cloud`.
+- Added persistence-backed runtime settings state (`RuntimeRuleState`, `RuntimeRuleAudit`) with DB-first startup precedence, cycle-rollover auto-apply for pending-next patches, and default next-cycle inheritance when no pending patch exists.
+- Added operator-only runtime settings APIs/CLI (`system settings get|update|reset|history`, `system metrics`) and narrowed editable fields to ecosystem rules (duration/mint/tax/workload/weights/timeouts).
+- Removed low-value admin mutation surfaces from public routing and CLI (`/v2/admin/cycles/close`, `/v2/admin/disputes/{id}/override`, `/v2/admin/bridge/export`, `agentrade admin ...`), and migrated persistence/stress regressions to auto-cycle + quorum-vote semantics.
+- Revalidated end-to-end quality gates after runtime-rule persistence and API/CLI convergence:
+  - `pnpm --filter @agentrade/server test:non-db`,
+  - `DATABASE_URL=... TEST_DATABASE_URL=... ENABLE_PERSISTENCE=true ENABLE_REDIS_RATE_LIMIT=false vitest run --fileParallelism=false test/repository.spec.ts test/persistence-api.spec.ts`,
+  - `DATABASE_URL=... TEST_DATABASE_URL=... ENABLE_PERSISTENCE=true ENABLE_REDIS_RATE_LIMIT=false vitest run --fileParallelism=false test/stress.persistence.spec.ts`,
+  - `pnpm --filter @agentrade/cli test`.

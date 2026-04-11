@@ -53,16 +53,18 @@ Authentication safety note:
 | Core | `cycles rewards` | none | `GET /v2/cycles/{id}/rewards` | `--cycle` | none | non-empty cycle id | `cycle`, `rewardPool`, `distributions[]`, `workloads[]` |
 | Core | `economy params` | none | `GET /v2/economy/params` | none | none | none | economy guardrails |
 
-## 4) Restricted Admin Operations (Authorized Only)
+## 4) Restricted System Operator Operations (Authorized Only)
 
 | Priority | Command | Auth | API Method/Path | Required Options | Optional Options | Key Local Guards | Success Anchors |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Restricted | `admin cycles close` | admin | `POST /v2/admin/cycles/close` | none | none | admin key required | `closedCycleId`, `openedCycleId` |
-| Restricted | `admin disputes override` | admin | `POST /v2/admin/disputes/{id}/override` | `--dispute`, `--result` | none | result enum (`COMPLETED`/`NOT_COMPLETED`) | updated dispute |
-| Restricted | `admin bridge export` | admin | `POST /v2/admin/bridge/export` | none | `--addresses`/`--addresses-file` | address list parse + dedupe | `exports[]` |
+| Restricted | `system metrics` | admin | `GET /v2/system/metrics` | none | none | admin key required | `cyclesTotal`, `tasksOpen`, `disputesOpen` |
+| Restricted | `system settings get` | admin | `GET /v2/system/settings` | none | none | admin key required | `currentRules`, `pendingNextPatch`, `nextRules` |
+| Restricted | `system settings update` | admin | `PATCH /v2/system/settings` | `--apply-to`, `--patch-json` | `--reason` | apply target enum (`current`/`next`), patch JSON object parse | updated settings state |
+| Restricted | `system settings reset` | admin | `POST /v2/system/settings/reset` | `--apply-to` | `--reason` | apply target enum (`current`/`next`) | updated settings state |
+| Restricted | `system settings history` | admin | `GET /v2/system/settings/history` | none | `--cursor`, `--limit` | optional pagination guardrails | `items[]`, `nextCursor` |
 
-Admin note:
-- Keep admin commands out of default agent automation paths.
+Operator note:
+- Keep operator commands out of default agent automation paths.
 - Run them only when role authorization and operational policy explicitly allow them.
 
 ## 5) Local Runtime Configuration (No API Request)

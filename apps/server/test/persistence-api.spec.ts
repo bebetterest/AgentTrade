@@ -52,6 +52,38 @@ runDbSuite("API persistence mode", () => {
     });
     expect(rejectRes.statusCode).toBe(200);
   };
+  const forceAutoCloseCurrentCycle = async (): Promise<{ closedCycleId: string; openedCycleId: string }> => {
+    const activeBeforeRes = await app!.inject({
+      method: "GET",
+      url: "/v2/cycles/active"
+    });
+    expect(activeBeforeRes.statusCode).toBe(200);
+    const activeBefore = activeBeforeRes.json() as { id: string };
+
+    const staleStartedAt = new Date(Date.now() - 8 * 24 * 3_600_000);
+    const prisma = new PrismaClient({
+      datasources: {
+        db: {
+          url: TEST_DB_URL!
+        }
+      }
+    });
+    await prisma.cycle.update({
+      where: { id: activeBefore.id },
+      data: { startedAt: staleStartedAt }
+    });
+    await prisma.$disconnect();
+
+    const activeAfterRes = await app!.inject({
+      method: "GET",
+      url: "/v2/cycles/active"
+    });
+    expect(activeAfterRes.statusCode).toBe(200);
+    const activeAfter = activeAfterRes.json() as { id: string };
+    expect(activeAfter.id).not.toBe(activeBefore.id);
+
+    return { closedCycleId: activeBefore.id, openedCycleId: activeAfter.id };
+  };
 
   beforeAll(async () => {
     process.env.JWT_SECRET = secret;
@@ -146,6 +178,91 @@ runDbSuite("API persistence mode", () => {
     const profile = profileRes.json() as { name: string; bio: string };
     expect(profile.name).toBe("Agent Persist");
     expect(profile.bio).toBe("profile survives restart");
+  });
+
+  it("persists runtime settings across restart and keeps DB precedence over env defaults", async () => {
+    const oldTaxRateBps = process.env.TAX_RATE_BPS;
+    const oldMintPerCycle = process.env.MINT_PER_CYCLE;
+    try {
+      const beforeRes = await app!.inject({
+        method: "GET",
+        url: "/v2/system/settings",
+        headers: { "x-admin-service-key": adminKey }
+      });
+      expect(beforeRes.statusCode).toBe(200);
+      const before = beforeRes.json() as {
+        currentRules: { taxRateBps: number; mintPerCycle: number };
+        pendingNextPatch: { mintPerCycle?: number } | null;
+        nextRules: { mintPerCycle: number };
+      };
+      expect(before.pendingNextPatch).toBeNull();
+
+      const currentUpdateRes = await app!.inject({
+        method: "PATCH",
+        url: "/v2/system/settings",
+        headers: { "x-admin-service-key": adminKey },
+        payload: {
+          applyTo: "current",
+          patch: { taxRateBps: before.currentRules.taxRateBps + 100 },
+          reason: "persistence restart db precedence test"
+        }
+      });
+      expect(currentUpdateRes.statusCode).toBe(200);
+
+      const nextUpdateRes = await app!.inject({
+        method: "PATCH",
+        url: "/v2/system/settings",
+        headers: { "x-admin-service-key": adminKey },
+        payload: {
+          applyTo: "next",
+          patch: { mintPerCycle: before.currentRules.mintPerCycle + 50 },
+          reason: "persistence restart db precedence test"
+        }
+      });
+      expect(nextUpdateRes.statusCode).toBe(200);
+      const expected = nextUpdateRes.json() as {
+        currentRules: { taxRateBps: number; mintPerCycle: number };
+        pendingNextPatch: { mintPerCycle?: number } | null;
+        nextRules: { mintPerCycle: number };
+      };
+      expect(expected.currentRules.taxRateBps).toBe(before.currentRules.taxRateBps + 100);
+      expect(expected.pendingNextPatch?.mintPerCycle).toBe(before.currentRules.mintPerCycle + 50);
+      expect(expected.nextRules.mintPerCycle).toBe(before.currentRules.mintPerCycle + 50);
+
+      process.env.TAX_RATE_BPS = "1";
+      process.env.MINT_PER_CYCLE = "1";
+
+      await app!.close();
+      app = await buildApp();
+      await app.ready();
+
+      const afterRestartRes = await app!.inject({
+        method: "GET",
+        url: "/v2/system/settings",
+        headers: { "x-admin-service-key": adminKey }
+      });
+      expect(afterRestartRes.statusCode).toBe(200);
+      const afterRestart = afterRestartRes.json() as {
+        currentRules: { taxRateBps: number; mintPerCycle: number };
+        pendingNextPatch: { mintPerCycle?: number } | null;
+        nextRules: { mintPerCycle: number };
+      };
+      expect(afterRestart.currentRules.taxRateBps).toBe(expected.currentRules.taxRateBps);
+      expect(afterRestart.currentRules.mintPerCycle).toBe(expected.currentRules.mintPerCycle);
+      expect(afterRestart.pendingNextPatch?.mintPerCycle).toBe(expected.pendingNextPatch?.mintPerCycle);
+      expect(afterRestart.nextRules.mintPerCycle).toBe(expected.nextRules.mintPerCycle);
+    } finally {
+      if (oldTaxRateBps === undefined) {
+        delete process.env.TAX_RATE_BPS;
+      } else {
+        process.env.TAX_RATE_BPS = oldTaxRateBps;
+      }
+      if (oldMintPerCycle === undefined) {
+        delete process.env.MINT_PER_CYCLE;
+      } else {
+        process.env.MINT_PER_CYCLE = oldMintPerCycle;
+      }
+    }
   });
 
   it("uses configured initial balance when creating new agent ledger in persistence mode", async () => {
@@ -553,14 +670,7 @@ runDbSuite("API persistence mode", () => {
     expect(beforeClose1Res.statusCode).toBe(200);
     const beforeClose1 = (beforeClose1Res.json() as { available: number }).available;
 
-    const close1Res = await app!.inject({
-      method: "POST",
-      url: "/v2/admin/cycles/close",
-      headers: { "x-admin-service-key": adminKey }
-    });
-    expect(close1Res.statusCode).toBe(200);
-    const close1 = close1Res.json() as { closedCycleId: string; finalizedDisputes: string[] };
-    expect(close1.finalizedDisputes).toHaveLength(0);
+    const close1 = await forceAutoCloseCurrentCycle();
 
     const disputeAfterClose1 = await app!.inject({
       method: "GET",
@@ -594,12 +704,7 @@ runDbSuite("API persistence mode", () => {
     const afterClose1 = (afterClose1Res.json() as { available: number }).available;
     expect(afterClose1).toBeGreaterThan(beforeClose1);
 
-    const close2Res = await app!.inject({
-      method: "POST",
-      url: "/v2/admin/cycles/close",
-      headers: { "x-admin-service-key": adminKey }
-    });
-    expect(close2Res.statusCode).toBe(200);
+    await forceAutoCloseCurrentCycle();
 
     const afterClose2Res = await app!.inject({
       method: "GET",
@@ -655,13 +760,7 @@ runDbSuite("API persistence mode", () => {
     });
     expect(confirmRes.statusCode).toBe(200);
 
-    const closeRes = await app!.inject({
-      method: "POST",
-      url: "/v2/admin/cycles/close",
-      headers: { "x-admin-service-key": adminKey }
-    });
-    expect(closeRes.statusCode).toBe(200);
-    const close = closeRes.json() as { closedCycleId: string };
+    const close = await forceAutoCloseCurrentCycle();
 
     const rewardsRes = await app!.inject({
       method: "GET",
@@ -752,10 +851,8 @@ runDbSuite("API persistence mode", () => {
   it("preserves slot-based closure for repeatable tasks across restart", async () => {
     await app!.close();
     app = null;
-    process.env.RESUBMIT_COOLDOWN_MINUTES = "0";
-    try {
-      app = await buildApp();
-      await app.ready();
+    app = await buildApp();
+    await app.ready();
 
     const publisher = addr("pb3");
     const worker = addr("pb4");
@@ -802,6 +899,18 @@ runDbSuite("API persistence mode", () => {
     app = await buildApp();
     await app.ready();
 
+    const updateRulesRes = await app!.inject({
+      method: "PATCH",
+      url: "/v2/system/settings",
+      headers: { "x-admin-service-key": adminKey },
+      payload: {
+        applyTo: "current",
+        patch: { resubmitCooldownMinutes: 0 },
+        reason: "persistence repeatable submission test"
+      }
+    });
+    expect(updateRulesRes.statusCode).toBe(200);
+
     const submit2 = await app!.inject({
       method: "POST",
       url: `/v2/tasks/${task.id}/submissions`,
@@ -825,9 +934,6 @@ runDbSuite("API persistence mode", () => {
     const body = taskAfter.json() as { status: string; rewardEscrowRemaining: number };
     expect(body.status).toBe("CLOSED");
     expect(body.rewardEscrowRemaining).toBe(0);
-    } finally {
-      delete process.env.RESUBMIT_COOLDOWN_MINUTES;
-    }
   });
 
   it("computes competition using remaining slots in persistence mode", async () => {
@@ -1072,14 +1178,15 @@ runDbSuite("API persistence mode", () => {
     expect((taskAfterRes.json() as { status: string }).status).toBe("CLOSED");
   });
 
-  it("simulates restart-aware interactive dispute escalation with admin intervention", async () => {
+  it("simulates restart-aware interactive dispute escalation with quorum votes", async () => {
     const publisher = addr("scenario-pub");
     const worker = addr("scenario-worker");
     const supervisors = [
       addr("scenario-sup-1"),
       addr("scenario-sup-2"),
       addr("scenario-sup-3"),
-      addr("scenario-sup-4")
+      addr("scenario-sup-4"),
+      addr("scenario-sup-5")
     ];
 
     const workerBeforeRes = await app!.inject({
@@ -1146,12 +1253,7 @@ runDbSuite("API persistence mode", () => {
     });
     expect(firstVoteRes.statusCode).toBe(200);
 
-    const closeCycle1Res = await app!.inject({
-      method: "POST",
-      url: "/v2/admin/cycles/close",
-      headers: { "x-admin-service-key": adminKey }
-    });
-    expect(closeCycle1Res.statusCode).toBe(200);
+    await forceAutoCloseCurrentCycle();
 
     const disputeAfterCycle1Res = await app!.inject({
       method: "GET",
@@ -1166,15 +1268,6 @@ runDbSuite("API persistence mode", () => {
     app = await buildApp();
     await app.ready();
 
-    const overrideOpenRes = await app!.inject({
-      method: "POST",
-      url: `/v2/admin/disputes/${dispute.id}/override`,
-      headers: { "x-admin-service-key": adminKey },
-      payload: { result: "NOT_COMPLETED" }
-    });
-    expect(overrideOpenRes.statusCode).toBe(200);
-    expect((overrideOpenRes.json() as { status: string }).status).toBe("OPEN");
-
     for (const supervisor of supervisors.slice(1)) {
       const voteRes = await app!.inject({
         method: "POST",
@@ -1185,14 +1278,7 @@ runDbSuite("API persistence mode", () => {
       expect(voteRes.statusCode).toBe(200);
     }
 
-    const overrideCompletedRes = await app!.inject({
-      method: "POST",
-      url: `/v2/admin/disputes/${dispute.id}/override`,
-      headers: { "x-admin-service-key": adminKey },
-      payload: { result: "COMPLETED" }
-    });
-    expect(overrideCompletedRes.statusCode).toBe(200);
-    expect((overrideCompletedRes.json() as { status: string }).status).toBe("RESOLVED_COMPLETED");
+    await forceAutoCloseCurrentCycle();
 
     const taskAfterRes = await app!.inject({
       method: "GET",
@@ -1209,7 +1295,7 @@ runDbSuite("API persistence mode", () => {
     });
     expect(workerAfterRes.statusCode).toBe(200);
     const workerAfter = (workerAfterRes.json() as { available: number }).available;
-    expect(workerAfter - workerBefore).toBe(10);
+    expect(workerAfter - workerBefore).toBeGreaterThanOrEqual(10);
 
     const voteAfterResolvedRes = await app!.inject({
       method: "POST",
@@ -1249,10 +1335,16 @@ runDbSuite("API persistence mode", () => {
     });
   });
 
-  it("keeps single-open-dispute guard through reopen, restart, and finalization", async () => {
+  it("keeps single-open-dispute guard through restart and finalization", async () => {
     const publisher = addr("dedupe-flow-pub");
     const worker = addr("dedupe-flow-worker");
-    const supervisor = addr("dedupe-flow-sup");
+    const supervisors = [
+      addr("dedupe-flow-sup-1"),
+      addr("dedupe-flow-sup-2"),
+      addr("dedupe-flow-sup-3"),
+      addr("dedupe-flow-sup-4"),
+      addr("dedupe-flow-sup-5")
+    ];
 
     const workerBeforeRes = await app!.inject({
       method: "GET",
@@ -1312,26 +1404,12 @@ runDbSuite("API persistence mode", () => {
     const voteRes = await app!.inject({
       method: "POST",
       url: `/v2/disputes/${dispute.id}/votes`,
-      headers: { authorization: `Bearer ${bearer(supervisor)}` },
+      headers: { authorization: `Bearer ${bearer(supervisors[0])}` },
       payload: { vote: VoteChoice.NOT_COMPLETED }
     });
     expect(voteRes.statusCode).toBe(200);
 
-    const closeCycleRes = await app!.inject({
-      method: "POST",
-      url: "/v2/admin/cycles/close",
-      headers: { "x-admin-service-key": adminKey }
-    });
-    expect(closeCycleRes.statusCode).toBe(200);
-
-    const reopenRes = await app!.inject({
-      method: "POST",
-      url: `/v2/admin/disputes/${dispute.id}/override`,
-      headers: { "x-admin-service-key": adminKey },
-      payload: { result: "NOT_COMPLETED" }
-    });
-    expect(reopenRes.statusCode).toBe(200);
-    expect((reopenRes.json() as { status: string }).status).toBe("OPEN");
+    await forceAutoCloseCurrentCycle();
 
     const duplicateWhileOpenRes = await app!.inject({
       method: "POST",
@@ -1363,14 +1441,36 @@ runDbSuite("API persistence mode", () => {
     expect(duplicateAfterRestartRes.statusCode).toBe(409);
     expect(errorCode(duplicateAfterRestartRes.json())).toBe("OPEN_DISPUTE_ALREADY_EXISTS");
 
-    const finalizeRes = await app!.inject({
+    const finalizeVote2Res = await app!.inject({
       method: "POST",
-      url: `/v2/admin/disputes/${dispute.id}/override`,
-      headers: { "x-admin-service-key": adminKey },
-      payload: { result: "COMPLETED" }
+      url: `/v2/disputes/${dispute.id}/votes`,
+      headers: { authorization: `Bearer ${bearer(supervisors[1])}` },
+      payload: { vote: VoteChoice.COMPLETED }
     });
-    expect(finalizeRes.statusCode).toBe(200);
-    expect((finalizeRes.json() as { status: string }).status).toBe("RESOLVED_COMPLETED");
+    expect(finalizeVote2Res.statusCode).toBe(200);
+    const finalizeVote3Res = await app!.inject({
+      method: "POST",
+      url: `/v2/disputes/${dispute.id}/votes`,
+      headers: { authorization: `Bearer ${bearer(supervisors[2])}` },
+      payload: { vote: VoteChoice.COMPLETED }
+    });
+    expect(finalizeVote3Res.statusCode).toBe(200);
+    const finalizeVote4Res = await app!.inject({
+      method: "POST",
+      url: `/v2/disputes/${dispute.id}/votes`,
+      headers: { authorization: `Bearer ${bearer(supervisors[3])}` },
+      payload: { vote: VoteChoice.COMPLETED }
+    });
+    expect(finalizeVote4Res.statusCode).toBe(200);
+    const finalizeVote5Res = await app!.inject({
+      method: "POST",
+      url: `/v2/disputes/${dispute.id}/votes`,
+      headers: { authorization: `Bearer ${bearer(supervisors[4])}` },
+      payload: { vote: VoteChoice.COMPLETED }
+    });
+    expect(finalizeVote5Res.statusCode).toBe(200);
+
+    await forceAutoCloseCurrentCycle();
 
     const openAfterFinalizeRes = await app!.inject({
       method: "POST",
@@ -1391,7 +1491,7 @@ runDbSuite("API persistence mode", () => {
     });
     expect(workerAfterRes.statusCode).toBe(200);
     const workerAfter = (workerAfterRes.json() as { available: number }).available;
-    expect(workerAfter - workerBefore).toBe(10);
+    expect(workerAfter - workerBefore).toBeGreaterThanOrEqual(10);
 
     const taskAfterRes = await app!.inject({
       method: "GET",
@@ -1404,10 +1504,17 @@ runDbSuite("API persistence mode", () => {
   });
 
   it(
-    "keeps one-open-dispute invariant under reopen/open race when legacy data replays submission to REJECTED",
+    "keeps one-open-dispute invariant under concurrent open race when legacy data replays submission to REJECTED",
     async () => {
       const publisher = addr("persist-race-reopen-open-pub");
       const worker = addr("persist-race-reopen-open-worker");
+      const supervisors = [
+        addr("race-sup-a"),
+        addr("race-sup-b"),
+        addr("race-sup-c"),
+        addr("race-sup-d"),
+        addr("race-sup-e")
+      ];
       const taskRes = await app!.inject({
         method: "POST",
         url: "/v2/tasks",
@@ -1456,14 +1563,17 @@ runDbSuite("API persistence mode", () => {
       expect(firstDisputeRes.statusCode).toBe(200);
       const seededDispute = firstDisputeRes.json() as { id: string };
 
-      const finalizeRes = await app!.inject({
-        method: "POST",
-        url: `/v2/admin/disputes/${seededDispute.id}/override`,
-        headers: { "x-admin-service-key": adminKey },
-        payload: { result: "COMPLETED" }
-      });
-      expect(finalizeRes.statusCode).toBe(200);
-      expect((finalizeRes.json() as { status: string }).status).toBe("RESOLVED_COMPLETED");
+      for (const supervisor of supervisors) {
+        const voteRes = await app!.inject({
+          method: "POST",
+          url: `/v2/disputes/${seededDispute.id}/votes`,
+          headers: { authorization: `Bearer ${bearer(supervisor)}` },
+          payload: { vote: VoteChoice.COMPLETED }
+        });
+        expect(voteRes.statusCode).toBe(200);
+      }
+
+      await forceAutoCloseCurrentCycle();
 
       // Simulate legacy/manual replay where the submission was reverted back to REJECTED.
       const prisma = new PrismaClient({
@@ -1479,12 +1589,6 @@ runDbSuite("API persistence mode", () => {
       });
       await prisma.$disconnect();
 
-      const reopenAttempt = app!.inject({
-        method: "POST",
-        url: `/v2/admin/disputes/${seededDispute.id}/override`,
-        headers: { "x-admin-service-key": adminKey },
-        payload: { result: "NOT_COMPLETED" }
-      });
       const openAttempts = Array.from({ length: 40 }).map(() =>
         app!.inject({
           method: "POST",
@@ -1493,12 +1597,12 @@ runDbSuite("API persistence mode", () => {
           payload: {
             taskId: task.id,
             submissionId: submission.id,
-            reasonMd: "race between reopen and duplicate open"
+            reasonMd: "race between duplicate opens"
           }
         })
       );
 
-      const attempts = await Promise.all([reopenAttempt, ...openAttempts]);
+      const attempts = await Promise.all(openAttempts);
       const success = attempts.filter((item) => item.statusCode === 200).length;
       const conflicts = attempts.filter((item) => item.statusCode === 409);
       const unexpected = attempts.filter((item) => ![200, 409].includes(item.statusCode));

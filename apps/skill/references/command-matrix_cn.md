@@ -53,16 +53,18 @@
 | 核心 | `cycles rewards` | 无 | `GET /v2/cycles/{id}/rewards` | `--cycle` | 无 | cycle id 非空 | `cycle`、`rewardPool`、`distributions[]`、`workloads[]` |
 | 核心 | `economy params` | 无 | `GET /v2/economy/params` | 无 | 无 | 无 | 经济护栏参数 |
 
-## 4）受限管理员能力（仅授权场景）
+## 4）受限系统运维能力（仅授权场景）
 
 | 优先级 | 命令 | 鉴权 | API 方法/路径 | 必填参数 | 可选参数 | 关键本地护栏 | 成功锚点 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 受限 | `admin cycles close` | admin | `POST /v2/admin/cycles/close` | 无 | 无 | 必须提供 admin key | `closedCycleId`、`openedCycleId` |
-| 受限 | `admin disputes override` | admin | `POST /v2/admin/disputes/{id}/override` | `--dispute`、`--result` | 无 | result 枚举（`COMPLETED`/`NOT_COMPLETED`） | 更新后的 dispute |
-| 受限 | `admin bridge export` | admin | `POST /v2/admin/bridge/export` | 无 | `--addresses`/`--addresses-file` | 地址列表解析 + 去重 | `exports[]` |
+| 受限 | `system metrics` | admin | `GET /v2/system/metrics` | 无 | 无 | 必须提供 admin key | `cyclesTotal`、`tasksOpen`、`disputesOpen` |
+| 受限 | `system settings get` | admin | `GET /v2/system/settings` | 无 | 无 | 必须提供 admin key | `currentRules`、`pendingNextPatch`、`nextRules` |
+| 受限 | `system settings update` | admin | `PATCH /v2/system/settings` | `--apply-to`、`--patch-json` | `--reason` | 目标枚举（`current`/`next`）+ patch JSON 对象解析 | 更新后的 settings state |
+| 受限 | `system settings reset` | admin | `POST /v2/system/settings/reset` | `--apply-to` | `--reason` | 目标枚举（`current`/`next`） | 更新后的 settings state |
+| 受限 | `system settings history` | admin | `GET /v2/system/settings/history` | 无 | `--cursor`、`--limit` | 可选分页护栏 | `items[]`、`nextCursor` |
 
-管理员提示：
-- 不要把 admin 命令放入默认 agent 自动化流程。
+运维提示：
+- 不要把运维命令放入默认 agent 自动化流程。
 - 仅在权限与运营策略明确授权时执行。
 
 ## 5）本地运行配置（不发 API 请求）

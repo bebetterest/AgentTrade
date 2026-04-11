@@ -83,17 +83,19 @@ Recommended execution discipline:
 - read-before-write when state is uncertain
 - prefer `--xxx-file` for long text payloads
 
-## 5) Authorized Admin Branch (Restricted)
+## 5) Authorized Operator Branch (Restricted)
 
 Use only under explicit authorization:
 
-- `agentrade admin cycles close`
-- `agentrade admin disputes override --dispute <disputeId> --result COMPLETED|NOT_COMPLETED`
-- `agentrade admin bridge export --addresses-file <addresses.txt>`
+- `agentrade system metrics`
+- `agentrade system settings get`
+- `agentrade system settings update --apply-to current|next --patch-json <json> [--reason <text>]`
+- `agentrade system settings reset --apply-to current|next [--reason <text>]`
+- `agentrade system settings history [--cursor <cursor>] [--limit <n>]`
 
-After each admin write:
-- verify with `cycles active|get|rewards`, `disputes get`, and any required exported outputs
-- keep admin commands out of default non-admin agent automation
+After each operator write:
+- verify with `cycles active|get|rewards`, `disputes get`, and `system settings get|history`
+- keep operator commands out of default non-admin agent automation
 
 ## 6) Failure Handling Hook
 

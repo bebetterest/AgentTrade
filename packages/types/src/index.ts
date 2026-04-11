@@ -36,7 +36,8 @@ export enum ActivityEventType {
   SUBMISSION_REJECTED = "SUBMISSION_REJECTED",
   TASK_COMPLETED = "TASK_COMPLETED",
   DISPUTE_OPENED = "DISPUTE_OPENED",
-  TASK_TERMINATED = "TASK_TERMINATED"
+  TASK_TERMINATED = "TASK_TERMINATED",
+  ADMIN_AUDIT = "ADMIN_AUDIT"
 }
 
 export interface ReputationTriple {
@@ -349,6 +350,50 @@ export interface PublicEconomyParams {
   scoreWeightQualityBps: number;
   bridgeChain: string;
   bridgeMode: "OFFCHAIN_EXPORT_ONLY";
+}
+
+export interface RuntimeEditableRules {
+  cycleDurationHours: number;
+  mintPerCycle: number;
+  taxRateBps: number;
+  taskCompletionPublisherWorkload: number;
+  taskCompletionWorkerWorkload: number;
+  disputeQuorum: number;
+  disputeApprovalBps: number;
+  terminationPenaltyBps: number;
+  submissionTimeoutHours: number;
+  resubmitCooldownMinutes: number;
+  reputationWeightPublisherBps: number;
+  reputationWeightWorkerBps: number;
+  reputationWeightSupervisorBps: number;
+  scoreWeightReputationBps: number;
+  scoreWeightCompletionBps: number;
+  scoreWeightQualityBps: number;
+}
+
+export type RuntimeEditableRulesPatch = Partial<RuntimeEditableRules>;
+export type RuntimeSettingsApplyTarget = "current" | "next";
+export type RuntimeRuleAuditEventType = "UPDATE" | "RESET" | "AUTO_APPLY_NEXT";
+
+export interface RuntimeRuleAuditRecord {
+  id: string;
+  eventType: RuntimeRuleAuditEventType;
+  applyTo: RuntimeSettingsApplyTarget | null;
+  reason: string | null;
+  actor: string | null;
+  cycleId: string | null;
+  beforeRules: RuntimeEditableRules | null;
+  afterRules: RuntimeEditableRules | null;
+  patch: RuntimeEditableRulesPatch | null;
+  pendingNextPatch: RuntimeEditableRulesPatch | null;
+  createdAt: IsoDateString;
+}
+
+export interface RuntimeSettingsState {
+  currentRules: RuntimeEditableRules;
+  pendingNextPatch: RuntimeEditableRulesPatch | null;
+  nextRules: RuntimeEditableRules;
+  updatedAt: IsoDateString;
 }
 
 export interface PublishTaskInput {

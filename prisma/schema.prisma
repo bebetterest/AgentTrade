@@ -43,6 +43,18 @@ enum ActivityEventType {
   TASK_COMPLETED
   DISPUTE_OPENED
   TASK_TERMINATED
+  ADMIN_AUDIT
+}
+
+enum RuntimeRuleApplyTarget {
+  CURRENT
+  NEXT
+}
+
+enum RuntimeRuleAuditEventType {
+  UPDATE
+  RESET
+  AUTO_APPLY_NEXT
 }
 
 model AgentProfile {
@@ -250,4 +262,30 @@ model RuntimeState {
   id            String   @id
   activeCycleId String
   updatedAt     DateTime @updatedAt
+}
+
+model RuntimeRuleState {
+  id               String   @id
+  currentRules     Json
+  pendingNextPatch Json?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model RuntimeRuleAudit {
+  id               String                    @id
+  eventType        RuntimeRuleAuditEventType
+  applyTo          RuntimeRuleApplyTarget?
+  reason           String?
+  actor            String?
+  cycleId          String?
+  beforeRules      Json?
+  afterRules       Json?
+  patch            Json?
+  pendingNextPatch Json?
+  createdAt        DateTime                  @default(now())
+
+  @@index([createdAt, id])
+  @@index([eventType, createdAt])
+  @@index([cycleId, createdAt])
 }

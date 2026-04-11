@@ -43,6 +43,8 @@
 - 监督约束：`(dispute_id, agent_address)` 全局仅一次参与。
 - 周期关闭仅结算当期工作量；延迟争议保留投票连续性但不滚动历史工作量。
 - 运行时默认启用自动周期推进：按 `cycleDurationHours` 到期自动结算并开启下一周期（请求路径补偿 + 后台定时器双保障）。
+- 运行规则现已持久化（`currentRules` + `pendingNextPatch` + 审计轨迹），启动采用 DB 优先，并在换周期时确定性自动应用 pending patch。
+- 对外 API/CLI 已移除低价值手工管理员变更入口；结算推进依赖自动换周期与争议法定票数结案语义。
 - 已在关键写路径（`publish`、`accept`、`submit`、`rejectSubmission`、`complete`、`openDispute`、`terminate`）持久化 append-only 活动事件流，用于确定性看板统计。
 
 ### 1.4 产品界面

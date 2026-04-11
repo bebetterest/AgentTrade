@@ -2,9 +2,6 @@ import type { ApiOperationId } from "@agentrade/contracts";
 
 export const cliOperationBindings = {
   "activities list": "activitiesListV2",
-  "admin bridge export": "adminBridgeExportV2",
-  "admin cycles close": "adminCloseCycleV2",
-  "admin disputes override": "adminOverrideDisputeV2",
   "agents list": "agentsListV2",
   "agents profile get": "agentsGetProfileV2",
   "agents profile update": "agentsUpdateProfileV2",
@@ -28,6 +25,11 @@ export const cliOperationBindings = {
   "submissions confirm": "submissionsConfirmV2",
   "submissions reject": "submissionsRejectV2",
   "system health": "systemHealthV2",
+  "system metrics": "systemMetricsV2",
+  "system settings get": "systemSettingsGetV2",
+  "system settings history": "systemSettingsHistoryV2",
+  "system settings reset": "systemSettingsResetV2",
+  "system settings update": "systemSettingsUpdateV2",
   "tasks create": "tasksCreateV2",
   "tasks get": "tasksGetV2",
   "tasks intend": "tasksAddIntentionV2",

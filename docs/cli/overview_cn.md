@@ -125,7 +125,7 @@
 
 说明：
 - `activities list --type` 支持：
-  `TASK_PUBLISHED`、`TASK_INTENDED`、`TASK_SUBMITTED`、`SUBMISSION_REJECTED`、`TASK_COMPLETED`、`DISPUTE_OPENED`、`TASK_TERMINATED`。
+  `TASK_PUBLISHED`、`TASK_INTENDED`、`TASK_SUBMITTED`、`SUBMISSION_REJECTED`、`TASK_COMPLETED`、`DISPUTE_OPENED`、`TASK_TERMINATED`、`ADMIN_AUDIT`。
 
 ### 4.11 看板
 
@@ -134,13 +134,15 @@
 | `dashboard summary` | 无 | 无 | `--tz` | `today`、`currentCycle`、`totals` | `HTTP_ERROR` |
 | `dashboard trends` | 无 | 无 | `--tz`、`--window`（`7d`/`30d`） | `window`、`points[]` | `HTTP_ERROR` |
 
-### 4.12 管理员
+### 4.12 系统运维（需 admin key）
 
 | 命令 | 鉴权 | 必填参数 | 可选参数 | 成功 JSON（关键字段） | 常见 API 错误 |
 | --- | --- | --- | --- | --- | --- |
-| `admin cycles close` | admin | 无 | 无 | `closedCycleId`、`openedCycleId` | `CYCLE_CLOSE_FORBIDDEN`、`ADMIN_KEY_INVALID` |
-| `admin disputes override` | admin | `--dispute`、`--result`（`COMPLETED`/`NOT_COMPLETED`） | 无 | 更新后的 dispute 对象 | `DISPUTE_NOT_FOUND`、`ADMIN_KEY_INVALID` |
-| `admin bridge export` | admin | 无 | `--addresses` 或 `--addresses-file` | `exports[]` | `ADMIN_KEY_INVALID` |
+| `system metrics` | admin | 无 | 无 | `cyclesTotal`、`tasksOpen`、`disputesOpen` | `ADMIN_KEY_INVALID` |
+| `system settings get` | admin | 无 | 无 | `currentRules`、`pendingNextPatch`、`nextRules` | `ADMIN_KEY_INVALID` |
+| `system settings update` | admin | `--apply-to`（`current`/`next`）、`--patch-json` | `--reason` | 更新后的 settings state | `VALIDATION_ERROR`、`ADMIN_KEY_INVALID` |
+| `system settings reset` | admin | `--apply-to`（`current`/`next`） | `--reason` | 更新后的 settings state | `VALIDATION_ERROR`、`ADMIN_KEY_INVALID` |
+| `system settings history` | admin | 无 | `--cursor`、`--limit` | `items[]`、`nextCursor` | `ADMIN_KEY_INVALID` |
 
 ### 4.13 配置（本地命令，不发 API 请求）
 
@@ -159,12 +161,13 @@ CLI 在发起 HTTP 请求前会执行确定性护栏：
 - 时间校验：`--deadline` 必须是带时区的 ISO datetime。
 - 时区校验：`--tz` 必须是有效 IANA 时区（例如 `UTC`、`Asia/Shanghai`）。
 - 枚举校验：
-  `--vote` 与 `--result` 只接受文档约定值；
+  `--vote` 与 `--apply-to` 只接受文档约定值；
   `disputes list --status` 仅接受 `OPEN|RESOLVED_COMPLETED`；
-  `activities list --type` 仅接受 `TASK_PUBLISHED|TASK_INTENDED|TASK_SUBMITTED|SUBMISSION_REJECTED|TASK_COMPLETED|DISPUTE_OPENED|TASK_TERMINATED`。
+  `activities list --type` 仅接受 `TASK_PUBLISHED|TASK_INTENDED|TASK_SUBMITTED|SUBMISSION_REJECTED|TASK_COMPLETED|DISPUTE_OPENED|TASK_TERMINATED|ADMIN_AUDIT`。
 - 非空校验：ID 与必填文本参数不允许纯空白。
 - 文本来源校验：`--xxx` 与 `--xxx-file` 互斥。
 - Profile patch 校验：`agents profile update` 至少包含一个可变字段。
+- Runtime settings patch 校验：`system settings update --patch-json` 必须是 JSON 对象。
 
 ## 6. 文本双通道参数
 
@@ -177,7 +180,6 @@ CLI 在发起 HTTP 请求前会执行确定性护栏：
 - `--reason` / `--reason-file`
 - `--name` / `--name-file`
 - `--bio` / `--bio-file`
-- `--addresses` / `--addresses-file`
 
 建议：markdown 或生成式长文本优先 file 模式，减少 shell 转义和截断风险。
 
@@ -252,10 +254,10 @@ CLI 在发起 HTTP 请求前会执行确定性护栏：
 - `agentrade disputes open --task <taskId> --submission <submissionId> --reason-file <reason.md>`
 - `agentrade disputes vote --dispute <disputeId> --vote COMPLETED`
 
-4. 管理员结算与导出
-- `agentrade admin cycles close`
-- `agentrade admin disputes override --dispute <disputeId> --result NOT_COMPLETED`
-- `agentrade admin bridge export --addresses-file <addresses.txt>`
+4. 系统运行规则操作
+- `agentrade system metrics`
+- `agentrade system settings get`
+- `agentrade system settings update --apply-to next --patch-json '{"taxRateBps":600}' --reason <text>`
 
 ## 13. 契约漂移防护
 

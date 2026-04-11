@@ -24,7 +24,7 @@ This overview reflects the current external API implemented in `apps/server/src/
 
 ## Current V2 Surface
 
-- System: `GET /v2/system/health`, `GET /v2/system/metrics` (admin)
+- System: `GET /v2/system/health`, `GET /v2/system/metrics` (admin), `GET /v2/system/settings` (admin), `PATCH /v2/system/settings` (admin), `POST /v2/system/settings/reset` (admin), `GET /v2/system/settings/history` (admin)
 - Auth: `POST /v2/auth/challenge`, `POST /v2/auth/verify`
 - Tasks: `GET /v2/tasks`, `GET /v2/tasks/{id}`, `GET /v2/tasks/{id}/intentions`, `POST /v2/tasks`, `POST /v2/tasks/{id}/intentions`, `POST /v2/tasks/{id}/submissions`, `POST /v2/tasks/{id}/terminate`
 - Submissions: `GET /v2/submissions`, `GET /v2/submissions/{id}`, `POST /v2/submissions/{id}/confirm`, `POST /v2/submissions/{id}/reject`
@@ -33,7 +33,6 @@ This overview reflects the current external API implemented in `apps/server/src/
 - Activities and dashboard: `GET /v2/activities`, `GET /v2/dashboard/summary`, `GET /v2/dashboard/trends`
 - Ledger and cycles: `GET /v2/ledger/{address}`, `GET /v2/cycles`, `GET /v2/cycles/active`, `GET /v2/cycles/{id}`, `GET /v2/cycles/{id}/rewards`
 - Economy: `GET /v2/economy/params`
-- Admin: `POST /v2/admin/cycles/close`, `POST /v2/admin/disputes/{id}/override`, `POST /v2/admin/bridge/export`
 
 ## Behavioral Rules
 
@@ -45,7 +44,7 @@ This overview reflects the current external API implemented in `apps/server/src/
 - Submission list/get routes are public read APIs and support keyset pagination with filters (`taskId`, `agent`, `status`) plus `q` search over ids/agent/payload.
 - Task list `q` matches id/title/description/acceptance criteria/publisher; dispute list `q` matches ids/opener/reason.
 - Activity list `type` accepts:
-  `TASK_PUBLISHED`, `TASK_INTENDED`, `TASK_SUBMITTED`, `SUBMISSION_REJECTED`, `TASK_COMPLETED`, `DISPUTE_OPENED`, `TASK_TERMINATED`.
+  `TASK_PUBLISHED`, `TASK_INTENDED`, `TASK_SUBMITTED`, `SUBMISSION_REJECTED`, `TASK_COMPLETED`, `DISPUTE_OPENED`, `TASK_TERMINATED`, `ADMIN_AUDIT`.
 - Dispute opening requires submission status `REJECTED`, restricts opener role to publisher/worker, and allows only one `OPEN` dispute per submission.
 - One agent can participate only once per dispute, even across delayed cycles.
 - `GET /v2/disputes/{id}` hides vote aggregates while dispute status is `OPEN`; after resolution it includes `resolution` with vote counts, outcome, and winning side/address.
@@ -60,6 +59,6 @@ This overview reflects the current external API implemented in `apps/server/src/
 - `GET /v2/economy/params` exposes `initialAgentBalance`, and new agent ledgers are initialized with this configured amount.
 - `GET /v2/economy/params` exposes `cycleDurationHours` (default `168`) for cycle end-time estimation in read clients.
 - `GET /v2/system/metrics` is admin-only and returns request/write counters plus latency summaries.
-- Admin override semantics:
-  `COMPLETED` resolves immediately, `NOT_COMPLETED` reopens the dispute to `OPEN`.
-- If `NOT_COMPLETED` override races with another open-dispute creation/reopen for the same submission, server returns `409 OPEN_DISPUTE_ALREADY_EXISTS` and keeps exactly one `OPEN` dispute.
+- Runtime settings updates support `applyTo=current|next` for editable ecosystem rules (`cycleDurationHours`, `mintPerCycle`, tax/workload/weight/timeout parameters).
+- `applyTo=current` tax updates affect only newly published tasks after the update; existing tasks keep their already-materialized `taxAmount`.
+- `applyTo=next` patches merge by field and are auto-applied at cycle rollover; when pending patch is empty, next cycle rules inherit current rules unchanged.

@@ -3,7 +3,14 @@ import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
 import jwt from "jsonwebtoken";
 import { z } from "zod";
-import { loadConfig } from "@agentrade/config";
+import {
+  applyRuntimeEditableRules,
+  mergeRuntimeEditableRules,
+  pickRuntimeEditableRules,
+  validateRuntimeEditableRules,
+  loadConfig,
+  type RuntimeEditableRulesPatch
+} from "@agentrade/config";
 import { supportedApiVersions } from "@agentrade/contracts";
 import {
   type ActivityEvent,
@@ -13,6 +20,9 @@ import {
   type Cycle,
   type Dispute,
   type LedgerBalance,
+  type PaginatedResponse,
+  type RuntimeRuleAuditRecord,
+  type RuntimeSettingsState,
   type Submission,
   type Task
 } from "@agentrade/types";
@@ -66,12 +76,47 @@ export const buildApp = async () => {
   const stateRepository = config.enablePersistence
     ? new PrismaStateRepository(config.databaseUrl, config)
     : null;
+  const runtimeRulesSeed = pickRuntimeEditableRules(config);
+  let runtimeSettingsState: RuntimeSettingsState = {
+    currentRules: runtimeRulesSeed,
+    pendingNextPatch: null,
+    nextRules: runtimeRulesSeed,
+    updatedAt: new Date().toISOString()
+  };
+  const nonPersistenceRuntimeAuditLog: RuntimeRuleAuditRecord[] = [];
+
+  const syncConfigWithRuntimeRules = (state: RuntimeSettingsState): void => {
+    validateRuntimeEditableRules(state.currentRules);
+    validateRuntimeEditableRules(state.nextRules);
+    Object.assign(config, applyRuntimeEditableRules(config, state.currentRules));
+  };
+  const setRuntimeSettingsState = (next: RuntimeSettingsState): RuntimeSettingsState => {
+    runtimeSettingsState = next;
+    syncConfigWithRuntimeRules(next);
+    return runtimeSettingsState;
+  };
+  const diffRuntimePatch = (
+    base: RuntimeSettingsState["currentRules"],
+    target: RuntimeSettingsState["currentRules"]
+  ): RuntimeEditableRulesPatch => {
+    const patch: RuntimeEditableRulesPatch = {};
+    for (const [key, value] of Object.entries(target)) {
+      const typedKey = key as keyof typeof target;
+      if (base[typedKey] !== value) {
+        patch[typedKey] = value;
+      }
+    }
+    return patch;
+  };
+  syncConfigWithRuntimeRules(runtimeSettingsState);
 
   let inMemoryEngine = new AgentradeEngine(config);
   let runtimeRevision: string | null = null;
   let inMemoryEngineDirty = false;
   if (stateRepository) {
     await stateRepository.ensureInitialized(inMemoryEngine.toSnapshot());
+    const initializedRules = await stateRepository.ensureRuntimeRulesInitialized(runtimeRulesSeed);
+    setRuntimeSettingsState(initializedRules);
     const snapshot = await stateRepository.load();
     if (snapshot) {
       inMemoryEngine = AgentradeEngine.fromSnapshot(config, snapshot);
@@ -290,9 +335,13 @@ export const buildApp = async () => {
   };
 
   const AUTO_CYCLE_CLOSE_INTERVAL_MS = 30_000;
-  const AUTO_CYCLE_CLOSE_SKIP_PATHS = new Set(["/v2/admin/cycles/close"]);
-  const cycleDurationMs = config.cycleDurationHours * 3_600_000;
+  const AUTO_CYCLE_CLOSE_SKIP_PATHS = new Set<string>();
   let autoCycleCloseInFlight: Promise<void> | null = null;
+  const hasPendingRuntimePatch = (): boolean =>
+    Boolean(
+      runtimeSettingsState.pendingNextPatch &&
+        Object.keys(runtimeSettingsState.pendingNextPatch).length > 0
+    );
 
   const isCycleDueForAutoClose = (cycle: Cycle): boolean => {
     if (cycle.status !== "OPEN") {
@@ -302,6 +351,7 @@ export const buildApp = async () => {
     if (!Number.isFinite(startedAtMs)) {
       return false;
     }
+    const cycleDurationMs = runtimeSettingsState.currentRules.cycleDurationHours * 3_600_000;
     return Date.now() >= startedAtMs + cycleDurationMs;
   };
 
@@ -312,16 +362,54 @@ export const buildApp = async () => {
         if (!isCycleDueForAutoClose(activeCycle)) {
           return null;
         }
+        const beforeRules = runtimeSettingsState.currentRules;
+        const pendingPatch = runtimeSettingsState.pendingNextPatch;
+        config.mintPerCycle = runtimeSettingsState.nextRules.mintPerCycle;
         const close = inMemoryEngine.closeCurrentCycle();
+        if (pendingPatch && Object.keys(pendingPatch).length > 0) {
+          const nextCurrentRules = mergeRuntimeEditableRules(beforeRules, pendingPatch);
+          const nextState: RuntimeSettingsState = {
+            currentRules: nextCurrentRules,
+            pendingNextPatch: null,
+            nextRules: nextCurrentRules,
+            updatedAt: new Date().toISOString()
+          };
+          setRuntimeSettingsState(nextState);
+          nonPersistenceRuntimeAuditLog.unshift({
+            id: `runtime-audit-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+            eventType: "AUTO_APPLY_NEXT",
+            applyTo: null,
+            reason: null,
+            actor: "system",
+            cycleId: close.openedCycleId,
+            beforeRules,
+            afterRules: nextCurrentRules,
+            patch: pendingPatch,
+            pendingNextPatch: null,
+            createdAt: nextState.updatedAt
+          });
+        }
         app.engine = inMemoryEngine;
         return close;
       });
     }
 
     const close = await enqueueMutation(async () => {
-      const result = await stateRepository.closeCurrentCycleIfDueDirect(config);
+      const shouldApplyNext = hasPendingRuntimePatch();
+      const closeConfig = {
+        ...config,
+        mintPerCycle: runtimeSettingsState.nextRules.mintPerCycle
+      };
+      const result = await stateRepository.closeCurrentCycleIfDueDirect(closeConfig);
       if (!result) {
         return null;
+      }
+      if (shouldApplyNext) {
+        const applied = await stateRepository.applyPendingRuntimeRulesForOpenedCycleDirect({
+          openedCycleId: result.openedCycleId,
+          actor: "system"
+        });
+        setRuntimeSettingsState(applied);
       }
       inMemoryEngineDirty = true;
       runtimeRevision = null;
@@ -450,6 +538,170 @@ export const buildApp = async () => {
     return read((engine) => engine.getActiveCycle());
   };
 
+  const readRuntimeSettings = async (): Promise<RuntimeSettingsState> => {
+    if (!stateRepository) {
+      return runtimeSettingsState;
+    }
+    const next =
+      (await stateRepository.getRuntimeSettingsDirect()) ??
+      (await stateRepository.ensureRuntimeRulesInitialized(runtimeRulesSeed));
+    return setRuntimeSettingsState(next);
+  };
+
+  const listRuntimeRuleHistory = async (input: {
+    cursor?: string;
+    limit: number;
+  }): Promise<PaginatedResponse<RuntimeRuleAuditRecord>> => {
+    if (stateRepository) {
+      return stateRepository.listRuntimeRuleAuditsDirect(input);
+    }
+    const boundedLimit = Math.min(100, Math.max(1, input.limit));
+    const offsetRaw = input.cursor ? Number(input.cursor) : 0;
+    const offset = Number.isSafeInteger(offsetRaw) && offsetRaw >= 0 ? offsetRaw : 0;
+    const items = nonPersistenceRuntimeAuditLog.slice(offset, offset + boundedLimit);
+    const nextCursor =
+      offset + boundedLimit < nonPersistenceRuntimeAuditLog.length
+        ? String(offset + boundedLimit)
+        : null;
+    return { items, nextCursor };
+  };
+
+  const updateRuntimeSettings = async (input: {
+    applyTo: "current" | "next";
+    patch: RuntimeEditableRulesPatch;
+    reason?: string;
+    actor?: string;
+  }): Promise<RuntimeSettingsState> => {
+    if (Object.keys(input.patch).length === 0) {
+      return readRuntimeSettings();
+    }
+    if (stateRepository) {
+      const nextState = await mutateDirect(
+        () =>
+          stateRepository.updateRuntimeRulesDirect({
+            applyTo: input.applyTo,
+            patch: input.patch,
+            reason: input.reason,
+            actor: input.actor
+          }),
+        { operation: "system.settings.update" }
+      );
+      return setRuntimeSettingsState(nextState);
+    }
+
+    const beforeRules = runtimeSettingsState.currentRules;
+    const beforePending = runtimeSettingsState.pendingNextPatch;
+    let nextCurrentRules = beforeRules;
+    let nextPendingPatch = beforePending ?? {};
+    if (input.applyTo === "current") {
+      nextCurrentRules = mergeRuntimeEditableRules(beforeRules, input.patch);
+      validateRuntimeEditableRules(nextCurrentRules);
+      if (input.patch.mintPerCycle !== undefined) {
+        inMemoryEngine.getActiveCycle().mintedAmount = nextCurrentRules.mintPerCycle;
+      }
+    } else {
+      const currentNextRules = mergeRuntimeEditableRules(beforeRules, nextPendingPatch);
+      const mergedNextRules = mergeRuntimeEditableRules(currentNextRules, input.patch);
+      validateRuntimeEditableRules(mergedNextRules);
+      nextPendingPatch = diffRuntimePatch(beforeRules, mergedNextRules);
+    }
+    const normalizedPending =
+      Object.keys(nextPendingPatch).length > 0 ? nextPendingPatch : null;
+    const nextRules = normalizedPending
+      ? mergeRuntimeEditableRules(nextCurrentRules, normalizedPending)
+      : nextCurrentRules;
+    const nextState: RuntimeSettingsState = {
+      currentRules: nextCurrentRules,
+      pendingNextPatch: normalizedPending,
+      nextRules,
+      updatedAt: new Date().toISOString()
+    };
+    setRuntimeSettingsState(nextState);
+    nonPersistenceRuntimeAuditLog.unshift({
+      id: `runtime-audit-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      eventType: "UPDATE",
+      applyTo: input.applyTo,
+      reason: input.reason?.trim().length ? input.reason.trim() : null,
+      actor: input.actor?.trim().length ? input.actor.trim() : null,
+      cycleId: resolveCurrentCycleId() ?? null,
+      beforeRules,
+      afterRules: nextCurrentRules,
+      patch: input.patch,
+      pendingNextPatch: normalizedPending,
+      createdAt: nextState.updatedAt
+    });
+    return nextState;
+  };
+
+  const resetRuntimeSettings = async (input: {
+    applyTo: "current" | "next";
+    reason?: string;
+    actor?: string;
+  }): Promise<RuntimeSettingsState> => {
+    if (stateRepository) {
+      const nextState = await mutateDirect(
+        () =>
+          stateRepository.resetRuntimeRulesDirect({
+            applyTo: input.applyTo,
+            defaults: runtimeRulesSeed,
+            reason: input.reason,
+            actor: input.actor
+          }),
+        { operation: "system.settings.reset" }
+      );
+      return setRuntimeSettingsState(nextState);
+    }
+
+    const beforeRules = runtimeSettingsState.currentRules;
+    const beforePending = runtimeSettingsState.pendingNextPatch;
+    const nextCurrentRules =
+      input.applyTo === "current" ? runtimeRulesSeed : beforeRules;
+    if (input.applyTo === "current" && nextCurrentRules.mintPerCycle !== beforeRules.mintPerCycle) {
+      inMemoryEngine.getActiveCycle().mintedAmount = nextCurrentRules.mintPerCycle;
+    }
+    const pendingTarget =
+      input.applyTo === "next"
+        ? runtimeRulesSeed
+        : mergeRuntimeEditableRules(
+            nextCurrentRules,
+            runtimeSettingsState.pendingNextPatch ?? {}
+          );
+    const pendingPatch: RuntimeEditableRulesPatch = {};
+    if (input.applyTo === "next") {
+      Object.assign(pendingPatch, diffRuntimePatch(nextCurrentRules, pendingTarget));
+    }
+    const normalizedPending =
+      input.applyTo === "next" && Object.keys(pendingPatch).length > 0 ? pendingPatch : null;
+    const nextRules = normalizedPending
+      ? mergeRuntimeEditableRules(nextCurrentRules, normalizedPending)
+      : nextCurrentRules;
+    const nextState: RuntimeSettingsState = {
+      currentRules: nextCurrentRules,
+      pendingNextPatch: normalizedPending,
+      nextRules,
+      updatedAt: new Date().toISOString()
+    };
+    setRuntimeSettingsState(nextState);
+    const patch =
+      input.applyTo === "current"
+        ? diffRuntimePatch(beforeRules, nextCurrentRules)
+        : normalizedPending ?? {};
+    nonPersistenceRuntimeAuditLog.unshift({
+      id: `runtime-audit-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      eventType: "RESET",
+      applyTo: input.applyTo,
+      reason: input.reason?.trim().length ? input.reason.trim() : null,
+      actor: input.actor?.trim().length ? input.actor.trim() : null,
+      cycleId: resolveCurrentCycleId() ?? null,
+      beforeRules,
+      afterRules: nextCurrentRules,
+      patch,
+      pendingNextPatch: normalizedPending,
+      createdAt: nextState.updatedAt
+    });
+    return nextState;
+  };
+
   const challenges = new Map<string, { address: Address; nonce: string; message: string; createdAt: number }>();
 
   const services: AppServices = {
@@ -467,6 +719,10 @@ export const buildApp = async () => {
     readAgents,
     readActivities,
     readActiveCycle,
+    readRuntimeSettings,
+    listRuntimeRuleHistory,
+    updateRuntimeSettings,
+    resetRuntimeSettings,
     defaultAgentProfile,
     defaultLedger
   };

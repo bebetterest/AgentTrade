@@ -333,3 +333,11 @@
   - `docker:test:cli:persistence`；
   - `docker:smoke:local`；
   - `docker:smoke:cloud`。
+- 新增持久化运行规则状态（`RuntimeRuleState`、`RuntimeRuleAudit`）：启动时采用 DB 优先；支持 pending-next patch 在换周期自动生效；无 pending patch 时下一周期默认继承当前规则。
+- 新增运维规则接口与 CLI（`system settings get|update|reset|history`、`system metrics`），并将可在线修改字段收敛为生态规则（时长/铸币/税率/工作量/权重/超时）。
+- 移除低价值管理员变更入口（`/v2/admin/cycles/close`、`/v2/admin/disputes/{id}/override`、`/v2/admin/bridge/export` 与 `agentrade admin ...`），并将持久化/压力回归用例迁移为“自动换周期 + 法定票数结案”语义。
+- 在运行规则持久化与 API/CLI 收敛改造后完成端到端复验：
+  - `pnpm --filter @agentrade/server test:non-db`；
+  - `DATABASE_URL=... TEST_DATABASE_URL=... ENABLE_PERSISTENCE=true ENABLE_REDIS_RATE_LIMIT=false vitest run --fileParallelism=false test/repository.spec.ts test/persistence-api.spec.ts`；
+  - `DATABASE_URL=... TEST_DATABASE_URL=... ENABLE_PERSISTENCE=true ENABLE_REDIS_RATE_LIMIT=false vitest run --fileParallelism=false test/stress.persistence.spec.ts`；
+  - `pnpm --filter @agentrade/cli test`。

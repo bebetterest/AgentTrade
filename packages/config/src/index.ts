@@ -57,6 +57,29 @@ export interface WebRuntimeConfig {
   skillsInstallCommand: string;
 }
 
+export const runtimeEditableRuleKeys = [
+  "cycleDurationHours",
+  "mintPerCycle",
+  "taxRateBps",
+  "taskCompletionPublisherWorkload",
+  "taskCompletionWorkerWorkload",
+  "disputeQuorum",
+  "disputeApprovalBps",
+  "terminationPenaltyBps",
+  "submissionTimeoutHours",
+  "resubmitCooldownMinutes",
+  "reputationWeightPublisherBps",
+  "reputationWeightWorkerBps",
+  "reputationWeightSupervisorBps",
+  "scoreWeightReputationBps",
+  "scoreWeightCompletionBps",
+  "scoreWeightQualityBps"
+] as const;
+
+export type RuntimeEditableRuleKey = (typeof runtimeEditableRuleKeys)[number];
+export type RuntimeEditableRules = Pick<AppConfig, RuntimeEditableRuleKey>;
+export type RuntimeEditableRulesPatch = Partial<RuntimeEditableRules>;
+
 export type PublicEconomyParams = Pick<
   AppConfig,
   | "appName"
@@ -213,6 +236,126 @@ const assertRuntimeWeightConfig = (config: AppConfig): void => {
     { key: "SCORE_WEIGHT_QUALITY_BPS", value: config.scoreWeightQualityBps }
   ]);
 };
+
+const assertIntegerInRange = (
+  key: string,
+  value: number,
+  options: { min?: number; max?: number } = {}
+): void => {
+  if (!Number.isFinite(value)) {
+    throw new Error(`invalid runtime config: ${key} must be a finite number`);
+  }
+  if (!Number.isInteger(value)) {
+    throw new Error(`invalid runtime config: ${key} must be an integer`);
+  }
+  if (options.min !== undefined && value < options.min) {
+    throw new Error(`invalid runtime config: ${key} must be >= ${options.min}`);
+  }
+  if (options.max !== undefined && value > options.max) {
+    throw new Error(`invalid runtime config: ${key} must be <= ${options.max}`);
+  }
+};
+
+const assertNonNegativeFinite = (key: string, value: number): void => {
+  if (!Number.isFinite(value)) {
+    throw new Error(`invalid runtime config: ${key} must be a finite number`);
+  }
+  if (value < 0) {
+    throw new Error(`invalid runtime config: ${key} must be >= 0`);
+  }
+};
+
+export const pickRuntimeEditableRules = (config: AppConfig): RuntimeEditableRules => ({
+  cycleDurationHours: config.cycleDurationHours,
+  mintPerCycle: config.mintPerCycle,
+  taxRateBps: config.taxRateBps,
+  taskCompletionPublisherWorkload: config.taskCompletionPublisherWorkload,
+  taskCompletionWorkerWorkload: config.taskCompletionWorkerWorkload,
+  disputeQuorum: config.disputeQuorum,
+  disputeApprovalBps: config.disputeApprovalBps,
+  terminationPenaltyBps: config.terminationPenaltyBps,
+  submissionTimeoutHours: config.submissionTimeoutHours,
+  resubmitCooldownMinutes: config.resubmitCooldownMinutes,
+  reputationWeightPublisherBps: config.reputationWeightPublisherBps,
+  reputationWeightWorkerBps: config.reputationWeightWorkerBps,
+  reputationWeightSupervisorBps: config.reputationWeightSupervisorBps,
+  scoreWeightReputationBps: config.scoreWeightReputationBps,
+  scoreWeightCompletionBps: config.scoreWeightCompletionBps,
+  scoreWeightQualityBps: config.scoreWeightQualityBps
+});
+
+export const mergeRuntimeEditableRules = (
+  base: RuntimeEditableRules,
+  patch: RuntimeEditableRulesPatch
+): RuntimeEditableRules => ({
+  ...base,
+  ...patch
+});
+
+export const validateRuntimeEditableRules = (rules: RuntimeEditableRules): void => {
+  assertIntegerInRange("CYCLE_DURATION_HOURS", rules.cycleDurationHours, { min: 1 });
+  assertIntegerInRange("MINT_PER_CYCLE", rules.mintPerCycle, { min: 0 });
+  assertIntegerInRange("TAX_RATE_BPS", rules.taxRateBps, { min: 0, max: BPS_TOTAL });
+  assertNonNegativeFinite(
+    "TASK_COMPLETION_PUBLISHER_WORKLOAD",
+    rules.taskCompletionPublisherWorkload
+  );
+  assertNonNegativeFinite("TASK_COMPLETION_WORKER_WORKLOAD", rules.taskCompletionWorkerWorkload);
+  assertIntegerInRange("DISPUTE_QUORUM", rules.disputeQuorum, { min: 1 });
+  assertIntegerInRange("DISPUTE_APPROVAL_BPS", rules.disputeApprovalBps, {
+    min: 0,
+    max: BPS_TOTAL
+  });
+  assertIntegerInRange("TERMINATION_PENALTY_BPS", rules.terminationPenaltyBps, {
+    min: 0,
+    max: BPS_TOTAL
+  });
+  assertIntegerInRange("SUBMISSION_TIMEOUT_HOURS", rules.submissionTimeoutHours, { min: 1 });
+  assertIntegerInRange("RESUBMIT_COOLDOWN_MINUTES", rules.resubmitCooldownMinutes, { min: 0 });
+  assertIntegerInRange("REPUTATION_WEIGHT_PUBLISHER_BPS", rules.reputationWeightPublisherBps, {
+    min: 0,
+    max: BPS_TOTAL
+  });
+  assertIntegerInRange("REPUTATION_WEIGHT_WORKER_BPS", rules.reputationWeightWorkerBps, {
+    min: 0,
+    max: BPS_TOTAL
+  });
+  assertIntegerInRange("REPUTATION_WEIGHT_SUPERVISOR_BPS", rules.reputationWeightSupervisorBps, {
+    min: 0,
+    max: BPS_TOTAL
+  });
+  assertIntegerInRange("SCORE_WEIGHT_REPUTATION_BPS", rules.scoreWeightReputationBps, {
+    min: 0,
+    max: BPS_TOTAL
+  });
+  assertIntegerInRange("SCORE_WEIGHT_COMPLETION_BPS", rules.scoreWeightCompletionBps, {
+    min: 0,
+    max: BPS_TOTAL
+  });
+  assertIntegerInRange("SCORE_WEIGHT_QUALITY_BPS", rules.scoreWeightQualityBps, {
+    min: 0,
+    max: BPS_TOTAL
+  });
+
+  assertWeightGroup("REPUTATION_WEIGHT_*_BPS", [
+    { key: "REPUTATION_WEIGHT_PUBLISHER_BPS", value: rules.reputationWeightPublisherBps },
+    { key: "REPUTATION_WEIGHT_WORKER_BPS", value: rules.reputationWeightWorkerBps },
+    { key: "REPUTATION_WEIGHT_SUPERVISOR_BPS", value: rules.reputationWeightSupervisorBps }
+  ]);
+  assertWeightGroup("SCORE_WEIGHT_*_BPS", [
+    { key: "SCORE_WEIGHT_REPUTATION_BPS", value: rules.scoreWeightReputationBps },
+    { key: "SCORE_WEIGHT_COMPLETION_BPS", value: rules.scoreWeightCompletionBps },
+    { key: "SCORE_WEIGHT_QUALITY_BPS", value: rules.scoreWeightQualityBps }
+  ]);
+};
+
+export const applyRuntimeEditableRules = (
+  config: AppConfig,
+  rules: RuntimeEditableRules
+): AppConfig => ({
+  ...config,
+  ...rules
+});
 
 const assertCorsOrigins = (origins: string[]): void => {
   if (origins.length === 0) {

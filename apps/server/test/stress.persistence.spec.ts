@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import jwt from "jsonwebtoken";
 import type { FastifyInstance } from "fastify";
+import { PrismaClient } from "@prisma/client";
 import type { Address } from "@agentrade/types";
 import { VoteChoice } from "@agentrade/types";
 import { defaultConfig } from "@agentrade/config";
@@ -52,6 +53,36 @@ runDbSuite("Persistence Stress", () => {
       headers: { authorization: `Bearer ${bearer(publisher)}` }
     });
     expect(rejectRes.statusCode).toBe(200);
+  };
+  const forceAutoCloseCurrentCycle = async (): Promise<{ closedCycleId: string; openedCycleId: string }> => {
+    const activeBeforeRes = await app!.inject({
+      method: "GET",
+      url: "/v2/cycles/active"
+    });
+    expect(activeBeforeRes.statusCode).toBe(200);
+    const activeBefore = activeBeforeRes.json() as { id: string };
+
+    const prisma = new PrismaClient({
+      datasources: {
+        db: {
+          url: TEST_DB_URL!
+        }
+      }
+    });
+    await prisma.cycle.update({
+      where: { id: activeBefore.id },
+      data: { startedAt: new Date(Date.now() - 8 * 24 * 3_600_000) }
+    });
+    await prisma.$disconnect();
+
+    const activeAfterRes = await app!.inject({
+      method: "GET",
+      url: "/v2/cycles/active"
+    });
+    expect(activeAfterRes.statusCode).toBe(200);
+    const activeAfter = activeAfterRes.json() as { id: string };
+    expect(activeAfter.id).not.toBe(activeBefore.id);
+    return { closedCycleId: activeBefore.id, openedCycleId: activeAfter.id };
   };
 
   const createTask = async (publisher: Address, slotsTotal: number) => {
@@ -189,14 +220,7 @@ runDbSuite("Persistence Stress", () => {
     );
     expect(voteResponses.every((response) => response.statusCode === 200)).toBe(true);
 
-    const closeRes = await app!.inject({
-      method: "POST",
-      url: "/v2/admin/cycles/close",
-      headers: { "x-admin-service-key": adminKey }
-    });
-    expect(closeRes.statusCode).toBe(200);
-    const closePayload = closeRes.json() as { closedCycleId: string; finalizedDisputes: string[] };
-    expect(closePayload.finalizedDisputes).toContain(dispute.id);
+    const closePayload = await forceAutoCloseCurrentCycle();
 
     const disputeAfter = await app!.inject({ method: "GET", url: `/v2/disputes/${dispute.id}` });
     expect(disputeAfter.statusCode).toBe(200);
@@ -274,13 +298,7 @@ runDbSuite("Persistence Stress", () => {
     expect(success).toBe(1);
     expect(conflicts).toBe(39);
 
-    const closeRes = await app!.inject({
-      method: "POST",
-      url: "/v2/admin/cycles/close",
-      headers: { "x-admin-service-key": adminKey }
-    });
-    expect(closeRes.statusCode).toBe(200);
-    const close = closeRes.json() as { closedCycleId: string };
+    const close = await forceAutoCloseCurrentCycle();
 
     const rewards = await app!.inject({
       method: "GET",

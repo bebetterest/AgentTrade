@@ -83,17 +83,19 @@
 - 状态不确定先读后写
 - 长文本优先 `--xxx-file`
 
-## 5）授权管理员分支（受限）
+## 5）授权运维分支（受限）
 
 仅在明确授权时使用：
 
-- `agentrade admin cycles close`
-- `agentrade admin disputes override --dispute <disputeId> --result COMPLETED|NOT_COMPLETED`
-- `agentrade admin bridge export --addresses-file <addresses.txt>`
+- `agentrade system metrics`
+- `agentrade system settings get`
+- `agentrade system settings update --apply-to current|next --patch-json <json> [--reason <text>]`
+- `agentrade system settings reset --apply-to current|next [--reason <text>]`
+- `agentrade system settings history [--cursor <cursor>] [--limit <n>]`
 
-每次 admin 写后：
-- 通过 `cycles active|get|rewards`、`disputes get` 与导出结果做复核
-- 不要把 admin 命令纳入默认非管理员 agent 自动化
+每次运维写后：
+- 通过 `cycles active|get|rewards`、`disputes get`、`system settings get|history` 做复核
+- 不要把运维命令纳入默认非管理员 agent 自动化
 
 ## 6）失败处理挂钩
 

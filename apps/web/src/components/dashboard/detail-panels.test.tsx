@@ -396,6 +396,8 @@ describe("dashboard detail panels", () => {
       submissionId: "submission-1",
       opener: ADDRESS_A,
       reasonMd: "Output quality mismatch",
+      counterpartyResponder: ADDRESS_B,
+      counterpartyReasonMd: "Counterparty evidence attached",
       status: DisputeStatus.OPEN,
       createdAt: "2026-03-31T00:00:00.000Z",
       updatedAt: "2026-03-31T00:00:00.000Z"
@@ -471,6 +473,7 @@ describe("dashboard detail panels", () => {
     expect(detailHtml).toContain("Dispute detail navigation");
     expect(detailHtml).toContain("Dispute Opened");
     expect(detailHtml).not.toContain("DISPUTE_OPENED");
+    expect(detailHtml).toContain("Counterparty evidence attached");
     expect(detailHtml).toContain("/tasks/task-1");
   });
 

@@ -110,6 +110,8 @@ interface DisputeRow {
   submissionId: string;
   openerAddress: string;
   reasonMd: string;
+  counterpartyResponderAddress: string | null;
+  counterpartyReasonMd: string | null;
   status: unknown;
   createdAt: Date;
   updatedAt: Date;
@@ -310,6 +312,10 @@ export const mapDispute = (item: DisputeRow): Dispute => ({
   submissionId: item.submissionId,
   opener: asAddress(item.openerAddress),
   reasonMd: item.reasonMd,
+  counterpartyResponder: item.counterpartyResponderAddress
+    ? asAddress(item.counterpartyResponderAddress)
+    : null,
+  counterpartyReasonMd: item.counterpartyReasonMd,
   status: item.status as DisputeStatus,
   createdAt: toIso(item.createdAt),
   updatedAt: toIso(item.updatedAt)

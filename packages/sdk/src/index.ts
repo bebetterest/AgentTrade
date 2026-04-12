@@ -481,6 +481,13 @@ export class AgentradeApiClient {
     });
   }
 
+  respondDispute(disputeId: string, payload: { reasonMd: string }): Promise<Dispute> {
+    return this.requestOperation<Dispute>("disputesRespondV2", {
+      pathParams: { id: disputeId },
+      body: payload
+    });
+  }
+
   getAgentProfile(address: Address): Promise<AgentProfile> {
     return this.requestOperation<AgentProfile>("agentsGetProfileV2", {
       pathParams: { address }

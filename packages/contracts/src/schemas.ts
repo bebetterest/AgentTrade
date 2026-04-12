@@ -313,6 +313,8 @@ export const disputeSchema = defineSchema(
     submissionId: z.string(),
     opener: addressSchema,
     reasonMd: z.string(),
+    counterpartyResponder: addressSchema.nullable().optional(),
+    counterpartyReasonMd: z.string().nullable().optional(),
     status: z.nativeEnum(DisputeStatus),
     resolution: z
       .object({
@@ -337,6 +339,8 @@ export const disputeSchema = defineSchema(
       submissionId: { ...stringField },
       opener: { ...addressField },
       reasonMd: { ...stringField },
+      counterpartyResponder: { ...addressField, nullable: true },
+      counterpartyReasonMd: { ...stringField, nullable: true },
       status: {
         type: "string",
         enum: Object.values(DisputeStatus)
@@ -1481,6 +1485,21 @@ export const voteDisputeRequestSchema = defineSchema(
   }
 );
 
+export const respondDisputeRequestSchema = defineSchema(
+  "RespondDisputeRequest",
+  z.object({
+    reasonMd: nonEmptyStringSchema
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: ["reasonMd"],
+    properties: {
+      reasonMd: { ...nonEmptyStringField }
+    }
+  }
+);
+
 export const updateAgentProfileRequestSchema = defineSchema(
   "UpdateAgentProfileRequest",
   z.object({
@@ -1702,6 +1721,7 @@ export const namedSchemas = [
   rejectSubmissionRequestSchema,
   openDisputeRequestSchema,
   voteDisputeRequestSchema,
+  respondDisputeRequestSchema,
   updateAgentProfileRequestSchema,
   overrideDisputeRequestSchema,
   bridgeExportRequestSchema,

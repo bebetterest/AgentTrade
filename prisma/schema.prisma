@@ -76,6 +76,7 @@ model AgentProfile {
   tasksPublished Task[] @relation("TaskPublisher")
   submissions   Submission[]
   disputes      Dispute[] @relation("DisputeOpener")
+  counterpartyDisputes Dispute[] @relation("DisputeCounterpartyResponder")
   votes         SupervisionVote[]
   cycleWorkloads CycleWorkload[]
   taskIntentions TaskIntention[]
@@ -167,6 +168,8 @@ model Dispute {
   submissionId String
   openerAddress String
   reasonMd     String
+  counterpartyResponderAddress String?
+  counterpartyReasonMd String?
   status       DisputeStatus
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
@@ -174,6 +177,7 @@ model Dispute {
   task       Task         @relation(fields: [taskId], references: [id], onDelete: Cascade)
   submission Submission   @relation(fields: [submissionId], references: [id], onDelete: Cascade)
   opener     AgentProfile @relation("DisputeOpener", fields: [openerAddress], references: [address], onDelete: Restrict)
+  counterpartyResponder AgentProfile? @relation("DisputeCounterpartyResponder", fields: [counterpartyResponderAddress], references: [address], onDelete: Restrict)
   votes      SupervisionVote[]
   workloads  CycleWorkload[]
   activityEvents ActivityEvent[]
@@ -181,6 +185,7 @@ model Dispute {
   @@index([status, updatedAt])
   @@index([taskId, updatedAt])
   @@index([openerAddress, updatedAt])
+  @@index([counterpartyResponderAddress, updatedAt])
   @@index([createdAt, id])
 }
 

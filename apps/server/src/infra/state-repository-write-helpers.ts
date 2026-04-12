@@ -224,6 +224,13 @@ export interface VoteDisputeDirectInput {
   config: AppConfig;
 }
 
+export interface RespondDisputeDirectInput {
+  disputeId: string;
+  responder: Address;
+  reasonMd: string;
+  disputeReasonMaxLength: number;
+}
+
 const asAddress = (value: string): Address => value as Address;
 const asStringArray = (value: Prisma.JsonValue): string[] => {
   if (!Array.isArray(value)) {
@@ -929,6 +936,84 @@ export const writeOpenDisputeDirect = async (
   }
 };
 
+export const writeRespondDisputeDirect = async (
+  prisma: PrismaClient,
+  deps: CommonWriteDeps,
+  input: RespondDisputeDirectInput
+): Promise<PrismaDispute> => {
+  return deps.executeWithRetry(async () =>
+    prisma.$transaction(async (tx) => {
+      const now = new Date();
+      await deps.lockRuntimeWithTx(tx);
+      await deps.ensureAgentAndLedgerWithTx(tx, input.responder, now);
+      await tx.$queryRaw`SELECT id FROM "Dispute" WHERE id = ${input.disputeId} FOR UPDATE`;
+      const dispute = await tx.dispute.findUnique({ where: { id: input.disputeId } });
+      if (!dispute) {
+        throw new DomainError("DISPUTE_NOT_FOUND", `Dispute ${input.disputeId} does not exist`, 404);
+      }
+      if (dispute.status !== DomainDisputeStatus.OPEN) {
+        throw new DomainError("DISPUTE_CLOSED", "dispute is already resolved", 409);
+      }
+      if (input.reasonMd.trim().length === 0 || input.reasonMd.length > input.disputeReasonMaxLength) {
+        throw new DomainError(
+          "INVALID_DISPUTE_REASON",
+          `reasonMd must be non-empty and <= ${input.disputeReasonMaxLength} chars`,
+          400
+        );
+      }
+      const task = await tx.task.findUnique({
+        where: { id: dispute.taskId },
+        select: { id: true, publisherAddress: true }
+      });
+      if (!task) {
+        throw new DomainError("TASK_NOT_FOUND", `Task ${dispute.taskId} does not exist`, 404);
+      }
+      const submission = await tx.submission.findUnique({
+        where: { id: dispute.submissionId },
+        select: { id: true, taskId: true, agentAddress: true }
+      });
+      if (!submission) {
+        throw new DomainError("SUBMISSION_NOT_FOUND", `Submission ${dispute.submissionId} not found`, 404);
+      }
+      if (submission.taskId !== task.id) {
+        throw new DomainError("MISMATCH", "submission does not belong to task", 400);
+      }
+      const opener = asAddress(dispute.openerAddress);
+      const publisher = asAddress(task.publisherAddress);
+      const submissionAgent = asAddress(submission.agentAddress);
+      if (opener !== publisher && opener !== submissionAgent) {
+        throw new DomainError("MISMATCH", "dispute opener does not match task/submission parties", 400);
+      }
+      const counterparty = opener === publisher ? submissionAgent : publisher;
+      if (input.responder !== counterparty) {
+        throw new DomainError(
+          "DISPUTE_COUNTERPARTY_ONLY",
+          "only the non-opener party can submit dispute counterparty reason",
+          403
+        );
+      }
+      if (dispute.counterpartyReasonMd && dispute.counterpartyReasonMd.trim().length > 0) {
+        throw new DomainError(
+          "DISPUTE_COUNTERPARTY_REASON_ALREADY_EXISTS",
+          "counterparty reason already submitted",
+          409
+        );
+      }
+
+      const updated = await tx.dispute.update({
+        where: { id: dispute.id },
+        data: {
+          counterpartyResponderAddress: input.responder,
+          counterpartyReasonMd: input.reasonMd,
+          updatedAt: now
+        }
+      });
+      await deps.touchRuntimeStateWithTx(tx);
+      return updated;
+    })
+  );
+};
+
 export const writeConfirmSubmissionDirect = async (
   prisma: PrismaClient,
   deps: ConfirmSubmissionWriteDeps,
@@ -1035,6 +1120,39 @@ export const writeVoteDisputeDirect = async (
         }
         if (dispute.status !== DomainDisputeStatus.OPEN) {
           throw new DomainError("DISPUTE_CLOSED", "dispute is already resolved", 409);
+        }
+        const task = await tx.task.findUnique({
+          where: { id: dispute.taskId },
+          select: { id: true, publisherAddress: true }
+        });
+        if (!task) {
+          throw new DomainError("TASK_NOT_FOUND", `Task ${dispute.taskId} does not exist`, 404);
+        }
+        const submission = await tx.submission.findUnique({
+          where: { id: dispute.submissionId },
+          select: { id: true, taskId: true, agentAddress: true }
+        });
+        if (!submission) {
+          throw new DomainError("SUBMISSION_NOT_FOUND", `Submission ${dispute.submissionId} not found`, 404);
+        }
+        if (submission.taskId !== task.id) {
+          throw new DomainError("MISMATCH", "submission does not belong to task", 400);
+        }
+        const opener = asAddress(dispute.openerAddress);
+        const publisher = asAddress(task.publisherAddress);
+        const submissionAgent = asAddress(submission.agentAddress);
+        if (opener !== publisher && opener !== submissionAgent) {
+          throw new DomainError("MISMATCH", "dispute opener does not match task/submission parties", 400);
+        }
+        if (
+          input.agent === publisher ||
+          input.agent === submissionAgent
+        ) {
+          throw new DomainError(
+            "DISPUTE_PARTY_CANNOT_VOTE",
+            "dispute parties cannot vote; only third-party supervisors can vote",
+            403
+          );
         }
 
         const existingVote = await tx.supervisionVote.findFirst({

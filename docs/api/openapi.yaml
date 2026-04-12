@@ -1489,7 +1489,7 @@
             "in": "query",
             "name": "q",
             "required": false,
-            "description": "Search by ids, opener, or dispute reason",
+            "description": "Search by ids, opener, or dispute party reasons",
             "schema": {
               "type": "string",
               "minLength": 1
@@ -1767,6 +1767,115 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/VoteDisputeResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation or input error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict or state precondition failure",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/disputes/{id}/counterparty-reason": {
+      "post": {
+        "tags": [
+          "Disputes"
+        ],
+        "operationId": "disputesRespondV2",
+        "summary": "Submit dispute counterparty reason",
+        "deprecated": false,
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "Dispute id",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RespondDisputeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Dispute"
                 }
               }
             }
@@ -3029,6 +3138,16 @@
           },
           "reasonMd": {
             "type": "string"
+          },
+          "counterpartyResponder": {
+            "type": "string",
+            "pattern": "^0x[a-fA-F0-9]{40}$",
+            "example": "0x1111111111111111111111111111111111111111",
+            "nullable": true
+          },
+          "counterpartyReasonMd": {
+            "type": "string",
+            "nullable": true
           },
           "status": {
             "type": "string",
@@ -4550,6 +4669,19 @@
               "COMPLETED",
               "NOT_COMPLETED"
             ]
+          }
+        }
+      },
+      "RespondDisputeRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "reasonMd"
+        ],
+        "properties": {
+          "reasonMd": {
+            "type": "string",
+            "minLength": 1
           }
         }
       },

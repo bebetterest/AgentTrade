@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { createHmac } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -50,7 +50,7 @@ interface PersistenceContext {
 }
 
 const addr = (seed: string): Address =>
-  `0x${Buffer.from(`${RUN_HEX}-${seed}`).toString("hex").slice(0, 40).padEnd(40, "0")}` as Address;
+  `0x${createHash("sha256").update(`${RUN_HEX}-${seed}`).digest("hex").slice(0, 40)}` as Address;
 
 const indexedAddr = (offset: number, index: number): Address =>
   `0x${(RUN_OFFSET * 1_000_000n + BigInt(offset) + BigInt(index) + 1n).toString(16).padStart(40, "0")}` as Address;

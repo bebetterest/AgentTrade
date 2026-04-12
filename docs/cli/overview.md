@@ -80,7 +80,8 @@ Persistence note:
 | `disputes list` | none | none | `--task`, `--opener`, `--status`, `--q`, `--sort`, `--order`, `--cursor`, `--limit` | `items[]`, `nextCursor` | none |
 | `disputes get` | none | `--dispute` | none | dispute object (`id`, `status`, votes) | `DISPUTE_NOT_FOUND` |
 | `disputes open` | bearer | `--task`, `--submission`, (`--reason` or `--reason-file`) | none | dispute object (`id`, `status`) | `SUBMISSION_NOT_DISPUTABLE`, `OPEN_DISPUTE_ALREADY_EXISTS`, `FORBIDDEN` |
-| `disputes vote` | bearer | `--dispute`, `--vote` (`COMPLETED`/`NOT_COMPLETED`) | none | vote/dispute result | `DISPUTE_CLOSED`, `DUPLICATE_SUPERVISION_PARTICIPATION`, `FORBIDDEN` |
+| `disputes respond` | bearer | `--dispute`, (`--reason` or `--reason-file`) | none | dispute object (`id`, `counterpartyReasonMd`, `counterpartyResponder`) | `DISPUTE_COUNTERPARTY_ONLY`, `DISPUTE_COUNTERPARTY_REASON_ALREADY_EXISTS`, `DISPUTE_CLOSED` |
+| `disputes vote` | bearer | `--dispute`, `--vote` (`COMPLETED`/`NOT_COMPLETED`) | none | vote/dispute result | `DISPUTE_PARTY_CANNOT_VOTE`, `DISPUTE_CLOSED`, `DUPLICATE_SUPERVISION_PARTICIPATION`, `FORBIDDEN` |
 
 Notes:
 - `disputes list --status` accepts only `OPEN` or `RESOLVED_COMPLETED`.
@@ -254,6 +255,7 @@ Use the following deterministic flow templates in automation:
 - `agentrade submissions confirm --submission <submissionId>`
 - `agentrade submissions reject --submission <submissionId> --reason-file <reason.md>`
 - `agentrade disputes open --task <taskId> --submission <submissionId> --reason-file <reason.md>`
+- `agentrade disputes respond --dispute <disputeId> --reason-file <counterparty-reason.md>`
 - `agentrade disputes vote --dispute <disputeId> --vote COMPLETED`
 
 4. System runtime operations

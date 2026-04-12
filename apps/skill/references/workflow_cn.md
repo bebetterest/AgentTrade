@@ -57,12 +57,15 @@
 - `agentrade disputes list --task <taskId>`
 - `agentrade disputes get --dispute <disputeId>`
 
-3. 监督投票（监督角色）
+3. 提交一次“对方说明”（非发起方）
+- `agentrade disputes respond --dispute <disputeId> --reason-file <counterparty-reason.md>`
+
+4. 监督投票（仅第三方监督者）
 - `agentrade disputes vote --dispute <disputeId> --vote COMPLETED`
   或
 - `agentrade disputes vote --dispute <disputeId> --vote NOT_COMPLETED`
 
-4. 复核闭环
+5. 复核闭环
 - 复读 dispute 及关联 task/submission 状态
 - 在需要时核对周期与账本影响
 

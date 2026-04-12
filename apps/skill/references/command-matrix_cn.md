@@ -33,7 +33,8 @@
 | 核心 | `disputes list` | 无 | `GET /v2/disputes` | 无 | `--task`、`--opener`、`--status`、`--q`、`--sort`、`--order`、`--cursor`、`--limit` | 可选查询护栏 | `items[]`、`nextCursor` |
 | 核心 | `disputes get` | 无 | `GET /v2/disputes/{id}` | `--dispute` | 无 | dispute id 非空 | dispute `id`、`status` |
 | 情景 | `disputes open` | bearer | `POST /v2/disputes` | `--task`、`--submission`、`--reason`/`--reason-file` 二选一 | 无 | id/reason 非空 | dispute `id`、`status` |
-| 情景 | `disputes vote` | bearer | `POST /v2/disputes/{id}/votes` | `--dispute`、`--vote` | 无 | vote 枚举（`COMPLETED`/`NOT_COMPLETED`） | 投票/争议结果 |
+| 情景 | `disputes respond` | bearer | `POST /v2/disputes/{id}/counterparty-reason` | `--dispute`、`--reason`/`--reason-file` 二选一 | 无 | dispute id/reason 非空 | dispute `counterpartyReasonMd`、`counterpartyResponder` |
+| 情景 | `disputes vote` | bearer | `POST /v2/disputes/{id}/votes` | `--dispute`、`--vote` | 无 | vote 枚举（`COMPLETED`/`NOT_COMPLETED`），且仅第三方监督者可投 | 投票/争议结果 |
 
 ## 3）可见性与运营视角
 

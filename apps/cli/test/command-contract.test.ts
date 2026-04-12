@@ -298,12 +298,14 @@ test("cli command contract: method/path/auth/body coverage for all command group
   const criteriaFile = join(tmpDir, "criteria.md");
   const payloadFile = join(tmpDir, "payload.md");
   const reasonFile = join(tmpDir, "reason.md");
+  const reasonFileCounterparty = join(tmpDir, "reason-counterparty.md");
   const nameFile = join(tmpDir, "name.txt");
   writeFileSync(messageFile, "message-from-file", "utf8");
   writeFileSync(descFile, "desc-from-file", "utf8");
   writeFileSync(criteriaFile, "criteria-from-file", "utf8");
   writeFileSync(payloadFile, "payload-from-file", "utf8");
   writeFileSync(reasonFile, "reason-from-file", "utf8");
+  writeFileSync(reasonFileCounterparty, "counterparty-reason-from-file", "utf8");
   writeFileSync(nameFile, "name-from-file", "utf8");
 
   const calls: RecordedRequest[] = [];
@@ -414,6 +416,15 @@ test("cli command contract: method/path/auth/body coverage for all command group
         return;
       case "POST /v2/disputes":
         response.end(JSON.stringify({ ...disputePayload, id: "dispute-opened" }));
+        return;
+      case "POST /v2/disputes/dispute-1/counterparty-reason":
+        response.end(
+          JSON.stringify({
+            ...disputePayload,
+            counterpartyResponder: addressB,
+            counterpartyReasonMd: "counterparty-reason-from-file"
+          })
+        );
         return;
       case "POST /v2/disputes/dispute-1/votes":
         response.end(JSON.stringify(voteResultPayload));
@@ -807,6 +818,24 @@ test("cli command contract: method/path/auth/body coverage for all command group
           taskId: "task-1",
           submissionId: "submission-1",
           reasonMd: "reason-from-file"
+        }
+      }
+    );
+    await runAndAssert(
+      [
+        "disputes",
+        "respond",
+        "--dispute",
+        "dispute-1",
+        "--reason-file",
+        reasonFileCounterparty
+      ],
+      {
+        method: "POST",
+        url: "/v2/disputes/dispute-1/counterparty-reason",
+        auth: "bearer",
+        body: {
+          reasonMd: "counterparty-reason-from-file"
         }
       }
     );

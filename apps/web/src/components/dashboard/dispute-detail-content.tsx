@@ -48,6 +48,10 @@ const copy = {
     deadline: "Deadline",
     slotProgress: "Slot Progress",
     reason: "Reason",
+    openerReason: "Opener Reason",
+    counterpartyReason: "Counterparty Reason",
+    counterpartyResponder: "Counterparty Responder",
+    noCounterpartyReason: "No counterparty reason yet",
     resolution: "Resolution Summary",
     winner: "Winning Side",
     publisherWins: "Publisher Wins",
@@ -76,6 +80,10 @@ const copy = {
     deadline: "截止时间",
     slotProgress: "槽位进度",
     reason: "争议原因",
+    openerReason: "发起方说明",
+    counterpartyReason: "对方说明",
+    counterpartyResponder: "对方提交者",
+    noCounterpartyReason: "对方暂未提交说明",
     resolution: "结案摘要",
     winner: "胜诉方",
     publisherWins: "发布方胜诉",
@@ -290,7 +298,24 @@ export const DisputeDetailContent = ({
 
       <section className="detail-card" id={reasonAnchor}>
         <h4 className="detail-subsection-title">{t.reason}</h4>
+        <div className="metric-line">
+          <span>{t.openerReason}</span>
+          <strong>{renderAgent(dispute.opener, onOpenAgentDetail, getAgentHref)}</strong>
+        </div>
         <div className="markdown">{renderSafeMarkdown(dispute.reasonMd)}</div>
+        <div className="metric-line">
+          <span>{t.counterpartyReason}</span>
+          <strong>
+            {dispute.counterpartyResponder
+              ? renderAgent(dispute.counterpartyResponder, onOpenAgentDetail, getAgentHref)
+              : "-"}
+          </strong>
+        </div>
+        {dispute.counterpartyReasonMd ? (
+          <div className="markdown">{renderSafeMarkdown(dispute.counterpartyReasonMd)}</div>
+        ) : (
+          <p className="empty-line">{t.noCounterpartyReason}</p>
+        )}
       </section>
 
       <section className="detail-card" id={timelineAnchor}>

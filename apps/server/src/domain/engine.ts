@@ -609,6 +609,8 @@ export class AgentradeEngine {
       submissionId: submission.id,
       opener: input.opener,
       reasonMd: input.reasonMd,
+      counterpartyResponder: null,
+      counterpartyReasonMd: null,
       status: DisputeStatus.OPEN,
       createdAt: now,
       updatedAt: now
@@ -632,6 +634,14 @@ export class AgentradeEngine {
     const dispute = this.getDispute(input.disputeId);
     if (dispute.status !== DisputeStatus.OPEN) {
       throw new DomainError("DISPUTE_CLOSED", "dispute is already resolved", 409);
+    }
+    const parties = this.resolveDisputeParties(dispute);
+    if (input.agent === parties.publisher || input.agent === parties.submissionAgent) {
+      throw new DomainError(
+        "DISPUTE_PARTY_CANNOT_VOTE",
+        "dispute parties cannot vote; only third-party supervisors can vote",
+        403
+      );
     }
     const dedupeKey = `${input.disputeId}:${input.agent}`;
     if (this.votesByDisputeAndAgent.has(dedupeKey)) {
@@ -671,6 +681,44 @@ export class AgentradeEngine {
     profile.stats.supervisionVotes += 1;
     this.shiftReputation(input.agent, "supervisor", 0.5);
     return { vote, workload };
+  }
+
+  respondDispute(input: {
+    disputeId: string;
+    responder: Address;
+    reasonMd: string;
+  }): Dispute {
+    this.requireAgent(input.responder);
+    const dispute = this.getDispute(input.disputeId);
+    if (dispute.status !== DisputeStatus.OPEN) {
+      throw new DomainError("DISPUTE_CLOSED", "dispute is already resolved", 409);
+    }
+    if (input.reasonMd.trim().length === 0 || input.reasonMd.length > this.config.disputeReasonMaxLength) {
+      throw new DomainError(
+        "INVALID_DISPUTE_REASON",
+        `reasonMd must be non-empty and <= ${this.config.disputeReasonMaxLength} chars`,
+        400
+      );
+    }
+    const parties = this.resolveDisputeParties(dispute);
+    if (input.responder !== parties.counterparty) {
+      throw new DomainError(
+        "DISPUTE_COUNTERPARTY_ONLY",
+        "only the non-opener party can submit dispute counterparty reason",
+        403
+      );
+    }
+    if (dispute.counterpartyReasonMd && dispute.counterpartyReasonMd.trim().length > 0) {
+      throw new DomainError(
+        "DISPUTE_COUNTERPARTY_REASON_ALREADY_EXISTS",
+        "counterparty reason already submitted",
+        409
+      );
+    }
+    dispute.counterpartyResponder = input.responder;
+    dispute.counterpartyReasonMd = input.reasonMd;
+    dispute.updatedAt = this.nowIso();
+    return dispute;
   }
 
   closeCurrentCycle(): CloseCycleResult {
@@ -764,6 +812,25 @@ export class AgentradeEngine {
     return entries
       .filter((entry) => !allowSet || allowSet.has(entry.address))
       .map((entry) => ({ address: entry.address, amount: entry.available }));
+  }
+
+  private resolveDisputeParties(dispute: Dispute): {
+    publisher: Address;
+    submissionAgent: Address;
+    counterparty: Address;
+  } {
+    const task = this.getTask(dispute.taskId);
+    const submission = this.requireSubmission(dispute.submissionId);
+    const publisher = task.publisher;
+    const submissionAgent = submission.agent;
+    if (dispute.opener !== publisher && dispute.opener !== submissionAgent) {
+      throw new DomainError("MISMATCH", "dispute opener does not match task/submission parties", 400);
+    }
+    return {
+      publisher,
+      submissionAgent,
+      counterparty: dispute.opener === publisher ? submissionAgent : publisher
+    };
   }
 
   private evaluateDispute(disputeId: string): void {
@@ -1091,7 +1158,18 @@ export class AgentradeEngine {
         }
       ])
     );
-    this.disputes = new Map(snapshot.disputes.map((item) => [item.id, item]));
+    this.disputes = new Map(
+      snapshot.disputes.map((item) => [
+        item.id,
+        {
+          ...item,
+          counterpartyResponder:
+            typeof item.counterpartyResponder === "string" ? item.counterpartyResponder : null,
+          counterpartyReasonMd:
+            typeof item.counterpartyReasonMd === "string" ? item.counterpartyReasonMd : null
+        }
+      ])
+    );
     this.votes = new Map(snapshot.votes.map((item) => [item.id, item]));
     this.votesByDisputeAndAgent = new Map(snapshot.votesByDisputeAndAgent);
     this.cycleWorkloads = new Map(snapshot.cycleWorkloads.map((item) => [item.id, item]));

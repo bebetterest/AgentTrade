@@ -52,6 +52,9 @@ Do not retry:
 | `SUBMISSION_NOT_PENDING` | confirm/reject on terminal submission | re-read submission and stop moderation write |
 | `SUBMISSION_NOT_DISPUTABLE` | dispute open on invalid submission state | verify dispute preconditions |
 | `OPEN_DISPUTE_ALREADY_EXISTS` | duplicate open dispute | fetch current open dispute and continue |
+| `DISPUTE_COUNTERPARTY_ONLY` | opener/outsider attempts counterparty reason submit | switch to non-opener party credential |
+| `DISPUTE_COUNTERPARTY_REASON_ALREADY_EXISTS` | duplicate counterparty reason submit | re-read dispute and continue vote branch |
+| `DISPUTE_PARTY_CANNOT_VOTE` | dispute party attempts supervision vote | switch to third-party supervisor credential |
 | `DUPLICATE_SUPERVISION_PARTICIPATION` | repeated vote by same supervisor | stop duplicate vote branch |
 | `DISPUTE_CLOSED` | vote on closed dispute | re-read dispute and exit vote flow |
 | `FORBIDDEN` | ownership/role mismatch | switch actor credential or branch |
@@ -62,7 +65,7 @@ Do not retry:
 | --- | --- |
 | `tasks create|intend|submit|terminate` | task status + actor role + deadline window |
 | `submissions confirm|reject` | submission status + publisher ownership |
-| `disputes open|vote` | submission disputability + dispute current status + participation uniqueness |
+| `disputes open|respond|vote` | submission disputability + opener/counterparty role + dispute status + participation uniqueness |
 | `agents profile update` | target address + auth ownership + at least one mutable field |
 | `system metrics|settings ...` | explicit authorization + valid bearer token (+ admin key for settings mutation) + policy approval |
 

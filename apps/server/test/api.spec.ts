@@ -1239,6 +1239,148 @@ describe("API integration", () => {
     }
   });
 
+  it("allows only third-party supervisors to vote on disputes", async () => {
+    const publisher = addr("dsp-vote-1");
+    const worker = addr("dsp-vote-2");
+    const supervisor = addr("dsp-vote-3");
+
+    const task = await createSingleSlotTask(publisher);
+
+    const acceptRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/intentions`,
+      headers: { authorization: `Bearer ${bearer(worker)}` }
+    });
+    expect(acceptRes.statusCode).toBe(200);
+
+    const submitRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/submissions`,
+      headers: { authorization: `Bearer ${bearer(worker)}` },
+      payload: { payloadMd: "result" }
+    });
+    expect(submitRes.statusCode).toBe(200);
+    const submission = submitRes.json() as { id: string };
+    await rejectSubmission(submission.id, publisher);
+
+    const disputeRes = await app!.inject({
+      method: "POST",
+      url: "/v2/disputes",
+      headers: { authorization: `Bearer ${bearer(publisher)}` },
+      payload: {
+        taskId: task.id,
+        submissionId: submission.id,
+        reasonMd: "review"
+      }
+    });
+    expect(disputeRes.statusCode).toBe(200);
+    const dispute = disputeRes.json() as { id: string };
+
+    const publisherVoteRes = await app!.inject({
+      method: "POST",
+      url: `/v2/disputes/${dispute.id}/votes`,
+      headers: { authorization: `Bearer ${bearer(publisher)}` },
+      payload: { vote: VoteChoice.COMPLETED }
+    });
+    expect(publisherVoteRes.statusCode).toBe(403);
+    expect(errorCode(publisherVoteRes.json())).toBe("DISPUTE_PARTY_CANNOT_VOTE");
+
+    const workerVoteRes = await app!.inject({
+      method: "POST",
+      url: `/v2/disputes/${dispute.id}/votes`,
+      headers: { authorization: `Bearer ${bearer(worker)}` },
+      payload: { vote: VoteChoice.COMPLETED }
+    });
+    expect(workerVoteRes.statusCode).toBe(403);
+    expect(errorCode(workerVoteRes.json())).toBe("DISPUTE_PARTY_CANNOT_VOTE");
+
+    const supervisorVoteRes = await app!.inject({
+      method: "POST",
+      url: `/v2/disputes/${dispute.id}/votes`,
+      headers: { authorization: `Bearer ${bearer(supervisor)}` },
+      payload: { vote: VoteChoice.COMPLETED }
+    });
+    expect(supervisorVoteRes.statusCode).toBe(200);
+  });
+
+  it("allows the non-opener party to submit one counterparty dispute reason", async () => {
+    const publisher = addr("dsp-resp-1");
+    const worker = addr("dsp-resp-2");
+    const outsider = addr("dsp-resp-3");
+    const task = await createSingleSlotTask(publisher);
+
+    const acceptRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/intentions`,
+      headers: { authorization: `Bearer ${bearer(worker)}` }
+    });
+    expect(acceptRes.statusCode).toBe(200);
+
+    const submitRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/submissions`,
+      headers: { authorization: `Bearer ${bearer(worker)}` },
+      payload: { payloadMd: "result" }
+    });
+    expect(submitRes.statusCode).toBe(200);
+    const submission = submitRes.json() as { id: string };
+    await rejectSubmission(submission.id, publisher);
+
+    const disputeRes = await app!.inject({
+      method: "POST",
+      url: "/v2/disputes",
+      headers: { authorization: `Bearer ${bearer(publisher)}` },
+      payload: {
+        taskId: task.id,
+        submissionId: submission.id,
+        reasonMd: "opener reason"
+      }
+    });
+    expect(disputeRes.statusCode).toBe(200);
+    const dispute = disputeRes.json() as { id: string };
+
+    const workerRespondRes = await app!.inject({
+      method: "POST",
+      url: `/v2/disputes/${dispute.id}/counterparty-reason`,
+      headers: { authorization: `Bearer ${bearer(worker)}` },
+      payload: { reasonMd: "counterparty reason" }
+    });
+    expect(workerRespondRes.statusCode).toBe(200);
+    const workerRespond = workerRespondRes.json() as {
+      counterpartyResponder?: string | null;
+      counterpartyReasonMd?: string | null;
+    };
+    expect(workerRespond.counterpartyResponder).toBe(worker);
+    expect(workerRespond.counterpartyReasonMd).toBe("counterparty reason");
+
+    const duplicateRespondRes = await app!.inject({
+      method: "POST",
+      url: `/v2/disputes/${dispute.id}/counterparty-reason`,
+      headers: { authorization: `Bearer ${bearer(worker)}` },
+      payload: { reasonMd: "counterparty reason duplicate" }
+    });
+    expect(duplicateRespondRes.statusCode).toBe(409);
+    expect(errorCode(duplicateRespondRes.json())).toBe("DISPUTE_COUNTERPARTY_REASON_ALREADY_EXISTS");
+
+    const openerRespondRes = await app!.inject({
+      method: "POST",
+      url: `/v2/disputes/${dispute.id}/counterparty-reason`,
+      headers: { authorization: `Bearer ${bearer(publisher)}` },
+      payload: { reasonMd: "opener cannot respond" }
+    });
+    expect(openerRespondRes.statusCode).toBe(403);
+    expect(errorCode(openerRespondRes.json())).toBe("DISPUTE_COUNTERPARTY_ONLY");
+
+    const outsiderRespondRes = await app!.inject({
+      method: "POST",
+      url: `/v2/disputes/${dispute.id}/counterparty-reason`,
+      headers: { authorization: `Bearer ${bearer(outsider)}` },
+      payload: { reasonMd: "outsider cannot respond" }
+    });
+    expect(outsiderRespondRes.statusCode).toBe(403);
+    expect(errorCode(outsiderRespondRes.json())).toBe("DISPUTE_COUNTERPARTY_ONLY");
+  });
+
   it("returns 409 when the same agent votes twice for a dispute", async () => {
     const publisher = addr("a1");
     const worker = addr("b1");

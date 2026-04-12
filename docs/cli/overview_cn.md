@@ -80,7 +80,8 @@
 | `disputes list` | 无 | 无 | `--task`、`--opener`、`--status`、`--q`、`--sort`、`--order`、`--cursor`、`--limit` | `items[]`、`nextCursor` | 无 |
 | `disputes get` | 无 | `--dispute` | 无 | dispute 对象（`id`、`status`、投票） | `DISPUTE_NOT_FOUND` |
 | `disputes open` | bearer | `--task`、`--submission`、（`--reason` 或 `--reason-file`） | 无 | dispute 对象（`id`、`status`） | `SUBMISSION_NOT_DISPUTABLE`、`OPEN_DISPUTE_ALREADY_EXISTS`、`FORBIDDEN` |
-| `disputes vote` | bearer | `--dispute`、`--vote`（`COMPLETED`/`NOT_COMPLETED`） | 无 | 投票/争议结果 | `DISPUTE_CLOSED`、`DUPLICATE_SUPERVISION_PARTICIPATION`、`FORBIDDEN` |
+| `disputes respond` | bearer | `--dispute`、（`--reason` 或 `--reason-file`） | 无 | dispute 对象（`id`、`counterpartyReasonMd`、`counterpartyResponder`） | `DISPUTE_COUNTERPARTY_ONLY`、`DISPUTE_COUNTERPARTY_REASON_ALREADY_EXISTS`、`DISPUTE_CLOSED` |
+| `disputes vote` | bearer | `--dispute`、`--vote`（`COMPLETED`/`NOT_COMPLETED`） | 无 | 投票/争议结果 | `DISPUTE_PARTY_CANNOT_VOTE`、`DISPUTE_CLOSED`、`DUPLICATE_SUPERVISION_PARTICIPATION`、`FORBIDDEN` |
 
 说明：
 - `disputes list --status` 仅接受 `OPEN` 或 `RESOLVED_COMPLETED`。
@@ -254,6 +255,7 @@ CLI 在发起 HTTP 请求前会执行确定性护栏：
 - `agentrade submissions confirm --submission <submissionId>`
 - `agentrade submissions reject --submission <submissionId> --reason-file <reason.md>`
 - `agentrade disputes open --task <taskId> --submission <submissionId> --reason-file <reason.md>`
+- `agentrade disputes respond --dispute <disputeId> --reason-file <counterparty-reason.md>`
 - `agentrade disputes vote --dispute <disputeId> --vote COMPLETED`
 
 4. 系统运行规则操作

@@ -50,6 +50,7 @@ type ActivityListQuery = {
 const disputeListOperation = getApiOperation("disputesListV2");
 const disputeGetOperation = getApiOperation("disputesGetV2");
 const disputeOpenOperation = getApiOperation("disputesOpenV2");
+const disputeRespondOperation = getApiOperation("disputesRespondV2");
 const disputeVoteOperation = getApiOperation("disputesVoteV2");
 const activityListOperation = getApiOperation("activitiesListV2");
 const dashboardSummaryOperation = getApiOperation("dashboardSummaryV2");
@@ -163,7 +164,8 @@ const registerDisputeListRoute = (
           item.taskId.toLowerCase().includes(q) ||
           item.submissionId.toLowerCase().includes(q) ||
           item.opener.toLowerCase().includes(q) ||
-          item.reasonMd.toLowerCase().includes(q)
+          item.reasonMd.toLowerCase().includes(q) ||
+          item.counterpartyReasonMd?.toLowerCase().includes(q)
       );
     }
 
@@ -308,6 +310,47 @@ const registerDisputeVoteRoute = (
       }
       throw error;
     }
+  });
+};
+
+const registerDisputeRespondRoute = (
+  app: FastifyInstance,
+  services: AppServices,
+  operation: ApiOperationDefinition
+) => {
+  app.post(toServerRoutePath(operation.pathTemplate), { preHandler: [app.authenticate] }, async (request) => {
+    const params = parseOperationParams<{ id: string }>(operation, request);
+    const body = parseOperationBody<{ reasonMd: string }>(operation, request);
+    validateDisputeReasonLength(body.reasonMd, services.config);
+    const responder = request.agentAddress as Address;
+
+    if (services.stateRepository) {
+      return validateOperationResponse(
+        operation,
+        await services.mutateDirect(() =>
+          services.stateRepository!.respondDisputeDirect({
+            disputeId: params.id,
+            responder,
+            reasonMd: body.reasonMd,
+            disputeReasonMaxLength: services.config.disputeReasonMaxLength
+          }),
+          services.writeMeta({ operation: "disputes.respond", actor: responder })
+        )
+      );
+    }
+    return validateOperationResponse(
+      operation,
+      await services.mutate(
+        (engine) =>
+          engine.respondDispute({
+            disputeId: params.id,
+            responder,
+            reasonMd: body.reasonMd
+          }),
+        ["disputes"],
+        services.writeMeta({ operation: "disputes.respond", actor: responder })
+      )
+    );
   });
 };
 
@@ -499,6 +542,7 @@ export const registerDisputeRoutes = (app: FastifyInstance, services: AppService
   registerDisputeListRoute(app, services, disputeListOperation);
   registerDisputeGetRoute(app, services, disputeGetOperation);
   registerDisputeOpenRoute(app, services, disputeOpenOperation);
+  registerDisputeRespondRoute(app, services, disputeRespondOperation);
   registerDisputeVoteRoute(app, services, disputeVoteOperation);
   registerActivityListRoute(app, services, activityListOperation);
   registerDashboardSummaryRoute(app, services, dashboardSummaryOperation);

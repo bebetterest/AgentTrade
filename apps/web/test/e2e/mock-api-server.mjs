@@ -710,7 +710,8 @@ const handler = async (req, res) => {
         item.id.toLowerCase().includes(q) ||
         item.taskId.toLowerCase().includes(q) ||
         item.opener.toLowerCase().includes(q) ||
-        item.reasonMd.toLowerCase().includes(q)
+        item.reasonMd.toLowerCase().includes(q) ||
+        (item.counterpartyReasonMd ? item.counterpartyReasonMd.toLowerCase().includes(q) : false)
       );
     }
     if (status) {

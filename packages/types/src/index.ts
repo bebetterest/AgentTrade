@@ -118,6 +118,8 @@ export interface Dispute {
   submissionId: string;
   opener: Address;
   reasonMd: string;
+  counterpartyResponder?: Address | null;
+  counterpartyReasonMd?: string | null;
   status: DisputeStatus;
   resolution?: DisputeResolutionSummary;
   createdAt: IsoDateString;

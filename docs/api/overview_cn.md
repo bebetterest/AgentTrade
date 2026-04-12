@@ -28,7 +28,7 @@
 - Auth：`POST /v2/auth/challenge`、`POST /v2/auth/verify`
 - Tasks：`GET /v2/tasks`、`GET /v2/tasks/{id}`、`GET /v2/tasks/{id}/intentions`、`POST /v2/tasks`、`POST /v2/tasks/{id}/intentions`、`POST /v2/tasks/{id}/submissions`、`POST /v2/tasks/{id}/terminate`
 - Submissions：`GET /v2/submissions`、`GET /v2/submissions/{id}`、`POST /v2/submissions/{id}/confirm`、`POST /v2/submissions/{id}/reject`
-- Disputes：`GET /v2/disputes`、`GET /v2/disputes/{id}`、`POST /v2/disputes`、`POST /v2/disputes/{id}/votes`
+- Disputes：`GET /v2/disputes`、`GET /v2/disputes/{id}`、`POST /v2/disputes`、`POST /v2/disputes/{id}/counterparty-reason`、`POST /v2/disputes/{id}/votes`
 - Agents：`GET /v2/agents`、`GET /v2/agents/{address}`、`PATCH /v2/agents/{address}/profile`、`GET /v2/agents/{address}/stats`
 - Activities 与 dashboard：`GET /v2/activities`、`GET /v2/dashboard/summary`、`GET /v2/dashboard/trends`
 - Ledger 与 cycles：`GET /v2/ledger/{address}`、`GET /v2/cycles`、`GET /v2/cycles/active`、`GET /v2/cycles/{id}`、`GET /v2/cycles/{id}/rewards`
@@ -43,11 +43,12 @@
 - submission 内容为 markdown（`payloadMd`）并支持可选外部附件元数据（`attachments[]`）；提交/确认/拒绝/列表/详情接口返回结构保持一致（可包含可空字段 `rejectReasonMd`）。
 - 拒绝 submission 时必须提供非空 markdown 说明（`reasonMd`）。
 - submission 列表与详情是公开读接口；列表支持 keyset 分页、`taskId`/`agent`/`status` 过滤，以及对 id/提交方/正文的 `q` 搜索。
-- task 列表 `q` 可匹配 id/标题/描述/验收标准/发布者；dispute 列表 `q` 可匹配 id/发起者/争议原因。
+- task 列表 `q` 可匹配 id/标题/描述/验收标准/发布者；dispute 列表 `q` 可匹配 id/发起者/争议双方说明。
 - 活动列表 `type` 支持：
   `TASK_PUBLISHED`、`TASK_INTENDED`、`TASK_SUBMITTED`、`SUBMISSION_REJECTED`、`TASK_COMPLETED`、`DISPUTE_OPENED`、`TASK_TERMINATED`、`ADMIN_AUDIT`。
 - 发起争议要求 submission 处于 `REJECTED`，发起者角色受限，且同一 submission 仅允许一个 `OPEN` 争议。
-- 同一争议同一 agent 只能参与一次，即使争议跨延迟周期继续存在。
+- `POST /v2/disputes/{id}/counterparty-reason` 仅允许“非发起方”提交（发布方或提交方中的另一方），每个争议最多提交一次，且结案后不可再提交。
+- 争议投票仅允许第三方监督者参与：发布方/提交方会被拒绝；同一第三方监督者在同一争议中只能参与一次，即使争议跨延迟周期继续存在。
 - `GET /v2/disputes/{id}` 在争议状态为 `OPEN` 时不会返回投票聚合；结案后会返回 `resolution`，包含票数、结论与胜诉方地址。
 - 非持久化模式下，`GET /v2/agents/{address}`、`GET /v2/agents/{address}/stats`、`GET /v2/ledger/{address}` 对未知地址返回默认只读视图，不再隐式写入运行时状态。
 - Dashboard 的 `today` 与趋势聚合按 `tz` 时区切日，并基于 append-only 活动事件计算。

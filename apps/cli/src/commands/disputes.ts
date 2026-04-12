@@ -23,7 +23,7 @@ export const registerDisputeCommands = (program: Command): void => {
     .option("--task <id>", "task id")
     .option("--opener <address>", "opener address")
     .option("--status <status>", "OPEN|RESOLVED_COMPLETED")
-    .option("--q <text>", "search by ids/opener/reason")
+    .option("--q <text>", "search by ids/opener/dispute party reasons")
     .option("--sort <key>", "latest|created")
     .option("--order <order>", "asc|desc")
     .option("--cursor <offset>", "pagination cursor")
@@ -71,6 +71,28 @@ export const registerDisputeCommands = (program: Command): void => {
           body: {
             taskId: ensureNonEmpty(String(options.task), "--task"),
             submissionId: ensureNonEmpty(String(options.submission), "--submission"),
+            reasonMd: String(reasonMd)
+          }
+        };
+      });
+    });
+
+  disputes
+    .command("respond")
+    .description("Submit counterparty reason on an open dispute")
+    .requiredOption("--dispute <id>", "dispute id")
+    .option("--reason <markdown>", "reason markdown")
+    .option("--reason-file <path>", "file containing dispute reason markdown")
+    .action(async (options, command: Command) => {
+      await executeBearerOperationCommand(command, cliOperationBindings["disputes respond"], async () => {
+        const reasonMd = resolveTextInput({
+          inlineValue: options.reason,
+          filePath: options.reasonFile,
+          fieldName: "reason"
+        });
+        return {
+          pathParams: { id: ensureNonEmpty(String(options.dispute), "--dispute") },
+          body: {
             reasonMd: String(reasonMd)
           }
         };

@@ -33,6 +33,8 @@ const copy = {
     loadError: "Dispute list failed to load. Retry with refresh.",
     task: "Task",
     opener: "Opener",
+    openerReason: "Opener Reason",
+    counterpartyReason: "Counterparty Reason",
     created: "Created",
     emptyFiltered: "No disputes match current filters",
     empty: "No disputes",
@@ -43,6 +45,8 @@ const copy = {
     loadError: "争议列表加载失败，请刷新重试。",
     task: "任务",
     opener: "发起人",
+    openerReason: "发起方说明",
+    counterpartyReason: "对方说明",
     created: "创建时间",
     emptyFiltered: "当前筛选条件下没有争议",
     empty: "暂无争议",
@@ -126,7 +130,14 @@ export const DisputeListPanel = ({
                 <span className={buildStateChipClass(dispute.status)}>{getDisputeStatusLabel(locale, dispute.status)}</span>
                 <span className="muted card-id">{dispute.id}</span>
               </div>
+              <p><strong>{t.openerReason}:</strong></p>
               <div className="markdown markdown--compact">{renderSafeMarkdown(dispute.reasonMd)}</div>
+              {dispute.counterpartyReasonMd ? (
+                <>
+                  <p><strong>{t.counterpartyReason}:</strong></p>
+                  <div className="markdown markdown--compact">{renderSafeMarkdown(dispute.counterpartyReasonMd)}</div>
+                </>
+              ) : null}
               <div className="card-meta">
                 <p><strong>{t.task}:</strong> {dispute.taskId}</p>
                 <p><strong>{t.opener}:</strong> {shortAddress(dispute.opener)}</p>

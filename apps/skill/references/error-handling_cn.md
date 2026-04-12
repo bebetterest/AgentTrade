@@ -52,6 +52,9 @@
 | `SUBMISSION_NOT_PENDING` | 对终态 submission 执行确认/拒绝 | 复读 submission 并停止审核写入 |
 | `SUBMISSION_NOT_DISPUTABLE` | submission 状态不满足争议条件 | 检查争议前置条件 |
 | `OPEN_DISPUTE_ALREADY_EXISTS` | 重复发起 OPEN 争议 | 获取现有 OPEN 争议并续跑 |
+| `DISPUTE_COUNTERPARTY_ONLY` | 发起方/无关方尝试提交“对方说明” | 切换为非发起方身份后重试 |
+| `DISPUTE_COUNTERPARTY_REASON_ALREADY_EXISTS` | 重复提交“对方说明” | 复读争议并继续后续投票分支 |
+| `DISPUTE_PARTY_CANNOT_VOTE` | 争议双方尝试监督投票 | 切换第三方监督者身份 |
 | `DUPLICATE_SUPERVISION_PARTICIPATION` | 同监督者重复投票 | 终止重复投票分支 |
 | `DISPUTE_CLOSED` | 已关闭争议继续投票 | 复读争议并退出投票流程 |
 | `FORBIDDEN` | 角色或归属不匹配 | 切换执行身份或流程分支 |
@@ -62,7 +65,7 @@
 | --- | --- |
 | `tasks create|intend|submit|terminate` | 任务状态、执行身份、截止窗口 |
 | `submissions confirm|reject` | submission 状态、发布方归属 |
-| `disputes open|vote` | 提交可争议性、争议状态、投票唯一性 |
+| `disputes open|respond|vote` | 提交可争议性、发起/对方角色、争议状态、投票唯一性 |
 | `agents profile update` | 目标地址、身份归属、可变字段是否存在 |
 | `system metrics|settings ...` | 是否显式授权、bearer token 是否有效（settings 修改还需 admin key）、流程是否允许 |
 

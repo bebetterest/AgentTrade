@@ -344,7 +344,8 @@ export const queryDisputesDirect = async (
           { taskId: { contains: query.q, mode: "insensitive" } },
           { submissionId: { contains: query.q, mode: "insensitive" } },
           { openerAddress: { contains: query.q, mode: "insensitive" } },
-          { reasonMd: { contains: query.q, mode: "insensitive" } }
+          { reasonMd: { contains: query.q, mode: "insensitive" } },
+          { counterpartyReasonMd: { contains: query.q, mode: "insensitive" } }
         ]
       : undefined
   };

@@ -432,6 +432,106 @@ describe("AgentradeEngine disputes and cycle settlement", () => {
     ).toThrowError(/only task publisher or submission agent/i);
   });
 
+  it("allows only the non-opener party to submit one counterparty reason", () => {
+    const { engine, clock } = makeEngine();
+    const publisher = addr("dsp3r");
+    const worker = addr("dsp4r");
+    const outsider = addr("dsp5r");
+    const task = engine.publishTask({
+      publisher,
+      title: "Task dispute counterparty reason",
+      descriptionMd: "desc",
+      acceptanceCriteria: "accept",
+      deadlineUtc: "2026-04-05T00:00:00.000Z",
+      displayTimezone: "UTC",
+      slotsTotal: 1,
+      rewardPerSlot: 10,
+      allowRepeatCompletionsBySameAgent: false
+    });
+    engine.addTaskIntention(task.id, worker);
+    clock.advanceMinutes(31);
+    const submission = engine.submitTask(task.id, worker, "result");
+    engine.rejectSubmission(submission.id, publisher, "needs revision");
+    const dispute = engine.openDispute({
+      taskId: task.id,
+      submissionId: submission.id,
+      opener: publisher,
+      reasonMd: "publisher reason"
+    });
+
+    const updated = engine.respondDispute({
+      disputeId: dispute.id,
+      responder: worker,
+      reasonMd: "worker counterparty reason"
+    });
+    expect(updated.counterpartyResponder).toBe(worker);
+    expect(updated.counterpartyReasonMd).toBe("worker counterparty reason");
+
+    expect(() =>
+      engine.respondDispute({
+        disputeId: dispute.id,
+        responder: worker,
+        reasonMd: "worker duplicate reason"
+      })
+    ).toThrowError(/already submitted/i);
+    expect(() =>
+      engine.respondDispute({
+        disputeId: dispute.id,
+        responder: publisher,
+        reasonMd: "opener cannot respond"
+      })
+    ).toThrowError(/non-opener party/i);
+    expect(() =>
+      engine.respondDispute({
+        disputeId: dispute.id,
+        responder: outsider,
+        reasonMd: "outsider cannot respond"
+      })
+    ).toThrowError(/non-opener party/i);
+  });
+
+  it("blocks dispute parties from voting and allows third-party supervisors only", () => {
+    const { engine, clock } = makeEngine();
+    const publisher = addr("dsp6v");
+    const worker = addr("dsp7v");
+    const supervisor = addr("dsp8v");
+    const task = engine.publishTask({
+      publisher,
+      title: "Task dispute voting parties",
+      descriptionMd: "desc",
+      acceptanceCriteria: "accept",
+      deadlineUtc: "2026-04-05T00:00:00.000Z",
+      displayTimezone: "UTC",
+      slotsTotal: 1,
+      rewardPerSlot: 10,
+      allowRepeatCompletionsBySameAgent: false
+    });
+    engine.addTaskIntention(task.id, worker);
+    clock.advanceMinutes(31);
+    const submission = engine.submitTask(task.id, worker, "result");
+    engine.rejectSubmission(submission.id, publisher, "needs revision");
+    const dispute = engine.openDispute({
+      taskId: task.id,
+      submissionId: submission.id,
+      opener: publisher,
+      reasonMd: "first reason"
+    });
+
+    expect(() =>
+      engine.voteDispute({ disputeId: dispute.id, agent: publisher, vote: VoteChoice.COMPLETED })
+    ).toThrowError(/only third-party supervisors/i);
+    expect(() =>
+      engine.voteDispute({ disputeId: dispute.id, agent: worker, vote: VoteChoice.COMPLETED })
+    ).toThrowError(/only third-party supervisors/i);
+
+    const acceptedVote = engine.voteDispute({
+      disputeId: dispute.id,
+      agent: supervisor,
+      vote: VoteChoice.COMPLETED
+    });
+    expect(acceptedVote.vote.agent).toBe(supervisor);
+  });
+
   it("enforces single open dispute per submission", () => {
     const { engine, clock } = makeEngine();
     const publisher = addr("dsp6");

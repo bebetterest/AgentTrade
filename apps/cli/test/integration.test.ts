@@ -239,6 +239,12 @@ test("cli integration: covers lifecycle/read/system-operator command groups", as
       { AGENTRADE_TOKEN: publisherToken }
     )) as { id: string };
 
+    await runCliJson(
+      baseUrl,
+      ["disputes", "respond", "--dispute", dispute.id, "--reason", "worker counterparty reason"],
+      { AGENTRADE_TOKEN: workerToken }
+    );
+
     const disputeList = (await runCliJson(baseUrl, ["disputes", "list"])) as {
       items: Array<{ id: string }>;
     };

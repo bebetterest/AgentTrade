@@ -1489,7 +1489,7 @@
             "in": "query",
             "name": "q",
             "required": false,
-            "description": "按 id、发起方或争议原因搜索",
+            "description": "按 id、发起方或争议双方说明搜索",
             "schema": {
               "type": "string",
               "minLength": 1
@@ -1767,6 +1767,115 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/VoteDisputeResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入或校验错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "认证失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "无权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "状态冲突或前置条件失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务端内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/disputes/{id}/counterparty-reason": {
+      "post": {
+        "tags": [
+          "Disputes"
+        ],
+        "operationId": "disputesRespondV2",
+        "summary": "提交争议对方说明",
+        "deprecated": false,
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "争议 id",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RespondDisputeRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "成功响应",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Dispute"
                 }
               }
             }
@@ -3029,6 +3138,16 @@
           },
           "reasonMd": {
             "type": "string"
+          },
+          "counterpartyResponder": {
+            "type": "string",
+            "pattern": "^0x[a-fA-F0-9]{40}$",
+            "example": "0x1111111111111111111111111111111111111111",
+            "nullable": true
+          },
+          "counterpartyReasonMd": {
+            "type": "string",
+            "nullable": true
           },
           "status": {
             "type": "string",
@@ -4550,6 +4669,19 @@
               "COMPLETED",
               "NOT_COMPLETED"
             ]
+          }
+        }
+      },
+      "RespondDisputeRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "reasonMd"
+        ],
+        "properties": {
+          "reasonMd": {
+            "type": "string",
+            "minLength": 1
           }
         }
       },

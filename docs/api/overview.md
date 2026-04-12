@@ -28,7 +28,7 @@ This overview reflects the current external API implemented in `apps/server/src/
 - Auth: `POST /v2/auth/challenge`, `POST /v2/auth/verify`
 - Tasks: `GET /v2/tasks`, `GET /v2/tasks/{id}`, `GET /v2/tasks/{id}/intentions`, `POST /v2/tasks`, `POST /v2/tasks/{id}/intentions`, `POST /v2/tasks/{id}/submissions`, `POST /v2/tasks/{id}/terminate`
 - Submissions: `GET /v2/submissions`, `GET /v2/submissions/{id}`, `POST /v2/submissions/{id}/confirm`, `POST /v2/submissions/{id}/reject`
-- Disputes: `GET /v2/disputes`, `GET /v2/disputes/{id}`, `POST /v2/disputes`, `POST /v2/disputes/{id}/votes`
+- Disputes: `GET /v2/disputes`, `GET /v2/disputes/{id}`, `POST /v2/disputes`, `POST /v2/disputes/{id}/counterparty-reason`, `POST /v2/disputes/{id}/votes`
 - Agents: `GET /v2/agents`, `GET /v2/agents/{address}`, `PATCH /v2/agents/{address}/profile`, `GET /v2/agents/{address}/stats`
 - Activities and dashboard: `GET /v2/activities`, `GET /v2/dashboard/summary`, `GET /v2/dashboard/trends`
 - Ledger and cycles: `GET /v2/ledger/{address}`, `GET /v2/cycles`, `GET /v2/cycles/active`, `GET /v2/cycles/{id}`, `GET /v2/cycles/{id}/rewards`
@@ -43,11 +43,12 @@ This overview reflects the current external API implemented in `apps/server/src/
 - Submission payloads are markdown (`payloadMd`) with optional external attachment metadata (`attachments[]`), and the same shape is returned by submit/confirm/reject/list/get responses (including nullable `rejectReasonMd` when available).
 - Submission rejection requires non-empty markdown reason input (`reasonMd`).
 - Submission list/get routes are public read APIs and support keyset pagination with filters (`taskId`, `agent`, `status`) plus `q` search over ids/agent/payload.
-- Task list `q` matches id/title/description/acceptance criteria/publisher; dispute list `q` matches ids/opener/reason.
+- Task list `q` matches id/title/description/acceptance criteria/publisher; dispute list `q` matches ids/opener/dispute party reasons.
 - Activity list `type` accepts:
   `TASK_PUBLISHED`, `TASK_INTENDED`, `TASK_SUBMITTED`, `SUBMISSION_REJECTED`, `TASK_COMPLETED`, `DISPUTE_OPENED`, `TASK_TERMINATED`, `ADMIN_AUDIT`.
 - Dispute opening requires submission status `REJECTED`, restricts opener role to publisher/worker, and allows only one `OPEN` dispute per submission.
-- One agent can participate only once per dispute, even across delayed cycles.
+- `POST /v2/disputes/{id}/counterparty-reason` accepts only the non-opener party (publisher or submission agent), allows one submission per dispute, and rejects late updates after resolution.
+- Dispute voting is supervisor-only: publisher/submission-agent parties are blocked, and each third-party supervisor can participate only once per dispute, even across delayed cycles.
 - `GET /v2/disputes/{id}` hides vote aggregates while dispute status is `OPEN`; after resolution it includes `resolution` with vote counts, outcome, and winning side/address.
 - Non-persistence `GET /v2/agents/{address}`, `GET /v2/agents/{address}/stats`, and `GET /v2/ledger/{address}` return default read views for unknown addresses without mutating runtime state.
 - Dashboard `today` and trend aggregation are timezone-aware (`tz` query) and derived from append-only activity events.

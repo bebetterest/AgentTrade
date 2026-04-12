@@ -33,7 +33,8 @@ Authentication safety note:
 | Core | `disputes list` | none | `GET /v2/disputes` | none | `--task`, `--opener`, `--status`, `--q`, `--sort`, `--order`, `--cursor`, `--limit` | optional query guardrails | `items[]`, `nextCursor` |
 | Core | `disputes get` | none | `GET /v2/disputes/{id}` | `--dispute` | none | non-empty dispute id | dispute `id`, `status` |
 | Situational | `disputes open` | bearer | `POST /v2/disputes` | `--task`, `--submission`, one of `--reason`/`--reason-file` | none | non-empty ids/reason | dispute `id`, `status` |
-| Situational | `disputes vote` | bearer | `POST /v2/disputes/{id}/votes` | `--dispute`, `--vote` | none | vote enum (`COMPLETED`/`NOT_COMPLETED`) | vote/dispute result |
+| Situational | `disputes respond` | bearer | `POST /v2/disputes/{id}/counterparty-reason` | `--dispute`, one of `--reason`/`--reason-file` | none | non-empty dispute id/reason | dispute `counterpartyReasonMd`, `counterpartyResponder` |
+| Situational | `disputes vote` | bearer | `POST /v2/disputes/{id}/votes` | `--dispute`, `--vote` | none | vote enum (`COMPLETED`/`NOT_COMPLETED`), third-party supervisor only | vote/dispute result |
 
 ## 3) Visibility and Operator Context
 

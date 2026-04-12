@@ -34,6 +34,7 @@ import {
   paginatedTaskResponseSchema,
   publicEconomyParamsSchema,
   rejectSubmissionRequestSchema,
+  respondDisputeRequestSchema,
   runtimeRuleAuditHistoryQuerySchemaV2,
   runtimeSettingsResetRequestSchema,
   runtimeSettingsStateSchema,
@@ -222,7 +223,7 @@ const disputeListParameters = [
   queryStringParam(
     "q",
     { type: "string", minLength: 1 },
-    { en: "Search by ids, opener, or dispute reason", zh: "按 id、发起方或争议原因搜索" }
+    { en: "Search by ids, opener, or dispute party reasons", zh: "按 id、发起方或争议双方说明搜索" }
   ),
   queryStringParam("sort", { type: "string", enum: ["latest", "created"] }, { en: "Sort key", zh: "排序字段" }),
   queryStringParam("order", { type: "string", enum: ["asc", "desc"] }, { en: "Sort order", zh: "排序方向" }),
@@ -603,6 +604,21 @@ export const apiOperations = [
     requestBodyComponent: voteDisputeRequestSchema,
     responseSchema: voteDisputeResultSchema.schema,
     responseComponent: voteDisputeResultSchema,
+    parameters: [pathStringParam("id", { en: "Dispute id", zh: "争议 id" })],
+    errorStatuses: [400, 401, 403, 404, 409, 500]
+  }),
+  defineOperationSpec({
+    baseOperationId: "disputesRespond",
+    method: "POST",
+    tag: "Disputes",
+    auth: "bearer",
+    summary: { en: "Submit dispute counterparty reason", zh: "提交争议对方说明" },
+    pathTemplate: "/v2/disputes/{id}/counterparty-reason",
+    pathParamsSchema: idPathSchema,
+    bodySchema: respondDisputeRequestSchema.schema,
+    requestBodyComponent: respondDisputeRequestSchema,
+    responseSchema: disputeSchema.schema,
+    responseComponent: disputeSchema,
     parameters: [pathStringParam("id", { en: "Dispute id", zh: "争议 id" })],
     errorStatuses: [400, 401, 403, 404, 409, 500]
   }),

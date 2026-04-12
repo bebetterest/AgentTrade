@@ -102,6 +102,7 @@ import {
   type OpenDisputeDirectInput,
   type PublishTaskDirectInput,
   type RejectSubmissionDirectInput,
+  type RespondDisputeDirectInput,
   type SubmitTaskDirectInput,
   type VoteDisputeDirectInput,
   writeAddTaskIntentionDirect,
@@ -112,6 +113,7 @@ import {
   writeOverrideDisputeDirect,
   writePublishTaskDirect,
   writeRejectSubmissionDirect,
+  writeRespondDisputeDirect,
   writeSubmitTaskDirect,
   writeTerminateTaskDirect,
   writeVoteDisputeDirect,
@@ -1113,6 +1115,21 @@ export class PrismaStateRepository {
     return mapDispute(dispute);
   }
 
+  async respondDisputeDirect(input: RespondDisputeDirectInput): Promise<Dispute> {
+    const dispute = await writeRespondDisputeDirect(
+      this.prisma,
+      {
+        executeWithRetry: (operation) => this.executeWithRetry(operation),
+        lockRuntimeWithTx: (tx) => this.lockRuntimeWithTx(tx),
+        ensureAgentAndLedgerWithTx: (tx, address, now) =>
+          this.ensureAgentAndLedgerWithTx(tx, address, now),
+        touchRuntimeStateWithTx: (tx) => this.touchRuntimeStateWithTx(tx)
+      },
+      input
+    );
+    return mapDispute(dispute);
+  }
+
   async closeCurrentCycleDirect(config: AppConfig): Promise<CloseCycleResult> {
     return writeCloseCurrentCycleDirect(
       this.prisma,
@@ -1867,6 +1884,8 @@ export class PrismaStateRepository {
           submissionId: item.submissionId,
           openerAddress: item.opener,
           reasonMd: item.reasonMd,
+          counterpartyResponderAddress: item.counterpartyResponder ?? null,
+          counterpartyReasonMd: item.counterpartyReasonMd ?? null,
           status: item.status,
           createdAt: toDate(item.createdAt),
           updatedAt: toDate(item.updatedAt)
@@ -1876,6 +1895,8 @@ export class PrismaStateRepository {
           submissionId: item.submissionId,
           openerAddress: item.opener,
           reasonMd: item.reasonMd,
+          counterpartyResponderAddress: item.counterpartyResponder ?? null,
+          counterpartyReasonMd: item.counterpartyReasonMd ?? null,
           status: item.status,
           createdAt: toDate(item.createdAt),
           updatedAt: toDate(item.updatedAt)
@@ -2233,6 +2254,10 @@ export class PrismaStateRepository {
       submissionId: item.submissionId,
       opener: asAddress(item.openerAddress),
       reasonMd: item.reasonMd,
+      counterpartyResponder: item.counterpartyResponderAddress
+        ? asAddress(item.counterpartyResponderAddress)
+        : null,
+      counterpartyReasonMd: item.counterpartyReasonMd,
       status: item.status as unknown as DomainDisputeStatus,
       createdAt: toIso(item.createdAt),
       updatedAt: toIso(item.updatedAt)

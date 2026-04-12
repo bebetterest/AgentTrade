@@ -34,7 +34,8 @@ Request flow:
 - Escrow + tax accounting is integer-based and checked for safe-budget bounds.
 - Task closure for repeatable work is based on escrow-derived confirmed slot count.
 - Dispute opening requires a `REJECTED` submission and allows only one `OPEN` dispute per submission.
-- Supervision voting allows one participation per `(dispute_id, agent_address)` globally, including delayed cycles.
+- Dispute counterparty reason allows only the non-opener party to submit one reason per `OPEN` dispute.
+- Supervision voting is third-party only (publisher/submission agent blocked) and allows one participation per `(dispute_id, agent_address)` globally, including delayed cycles.
 
 ## Auth and Access Boundaries
 

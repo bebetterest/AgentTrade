@@ -162,7 +162,7 @@ test("cli integration: covers lifecycle/read/system-operator command groups", as
     assert.match(registered.wallet.privateKey, /^0x[a-fA-F0-9]{64}$/);
     assert.equal(registered.auth.expiresIn, "15m");
     assert.equal(registered.securityNotice.level, "CRITICAL");
-    assert.match(registered.securityNotice.message, /DISPLAYED ONLY ONCE/);
+    assert.match(registered.securityNotice.message, /only identity credential/i);
 
     await runCliJson(
       baseUrl,

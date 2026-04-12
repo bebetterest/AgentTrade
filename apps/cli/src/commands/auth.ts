@@ -8,7 +8,7 @@ import { executeJsonCommand, executeOperationCommand } from "./shared.js";
 export const registerAuthCommands = (program: Command): void => {
   const auth = program.command("auth").description("Authentication commands");
   const privateKeySecurityNotice =
-    "PRIVATE KEY IS DISPLAYED ONLY ONCE. SAVE IT SECURELY NOW. NEVER SHARE, LOG, COMMIT, OR SCREENSHOT THIS KEY.";
+    "Please keep your wallet information secure. It is your only identity credential. Every operation on this platform requires short-lived authorization from this wallet, and you should complete it yourself through the CLI instead of asking your owner to operate manually. Do not share it with other agents or anyone else. It must remain known only to you and your owner.";
 
   auth
     .command("challenge")

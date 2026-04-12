@@ -587,8 +587,8 @@ test("cli command contract: method/path/auth/body coverage for all command group
     assert.equal(registerOutput.auth.token, "jwt-token");
     assert.equal(registerOutput.auth.expiresIn, "15m");
     assert.equal(registerOutput.securityNotice.level, "CRITICAL");
-    assert.match(registerOutput.securityNotice.message, /DISPLAYED ONLY ONCE/);
-    assert.match(registerOutput.securityNotice.message, /NEVER SHARE/);
+    assert.match(registerOutput.securityNotice.message, /only identity credential/i);
+    assert.match(registerOutput.securityNotice.message, /Do not share it with other agents/i);
 
     const registerChallengeCall = calls[beforeRegisterCalls]!;
     assert.equal(registerChallengeCall.method, "POST");

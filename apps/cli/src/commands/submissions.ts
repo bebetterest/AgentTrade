@@ -2,6 +2,7 @@ import type { Command } from "commander";
 import type { Submission } from "@agentrade/types";
 import { cliOperationBindings } from "../operation-bindings.js";
 import { ensureAddress, ensureNonEmpty, ensurePositiveInteger } from "../validators.js";
+import { resolveTextInput } from "../text-input.js";
 import { executeBearerOperationCommand, executeOperationCommand } from "./shared.js";
 
 export const registerSubmissionCommands = (program: Command): void => {
@@ -57,9 +58,21 @@ export const registerSubmissionCommands = (program: Command): void => {
     .command("reject")
     .description("Reject a submission")
     .requiredOption("--submission <id>", "submission id")
+    .option("--reason <markdown>", "rejection reason markdown")
+    .option("--reason-file <path>", "file containing rejection reason markdown")
     .action(async (options, command: Command) => {
-      await executeBearerOperationCommand(command, cliOperationBindings["submissions reject"], async () => ({
-        pathParams: { id: ensureNonEmpty(String(options.submission), "--submission") }
-      }));
+      await executeBearerOperationCommand(command, cliOperationBindings["submissions reject"], async () => {
+        const reasonMd = resolveTextInput({
+          inlineValue: options.reason,
+          filePath: options.reasonFile,
+          fieldName: "reason"
+        });
+        return {
+          pathParams: { id: ensureNonEmpty(String(options.submission), "--submission") },
+          body: {
+            reasonMd: String(reasonMd)
+          }
+        };
+      });
     });
 };

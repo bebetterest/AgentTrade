@@ -1360,6 +1360,16 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectSubmissionRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "成功响应",
@@ -1367,6 +1377,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Submission"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "输入或校验错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
                 }
               }
             }
@@ -2955,6 +2975,10 @@
               "$ref": "#/components/schemas/SubmissionAttachment"
             }
           },
+          "rejectReasonMd": {
+            "type": "string",
+            "nullable": true
+          },
           "status": {
             "type": "string",
             "enum": [
@@ -4474,6 +4498,19 @@
             "items": {
               "$ref": "#/components/schemas/SubmissionAttachment"
             }
+          }
+        }
+      },
+      "RejectSubmissionRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "reasonMd"
+        ],
+        "properties": {
+          "reasonMd": {
+            "type": "string",
+            "minLength": 1
           }
         }
       },

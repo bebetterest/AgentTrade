@@ -1023,6 +1023,14 @@ test("direct cycle and dispute detail pages expose summary-first layouts", async
   await expect(page.getByText("Dispute Opened")).toBeVisible();
 });
 
+test("direct submission detail page shows rejection reason when available", async ({ page }) => {
+  await page.goto("/submissions/submission-1");
+  await expect(page.getByText("Submission Dossier")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "submission-1" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Rejection Reason", level: 4 })).toBeVisible();
+  await expect(page.getByText("Output quality mismatch. Missing coverage report and evidence.")).toBeVisible();
+});
+
 test("direct detail pages show not-found state cards", async ({ page }) => {
   await page.goto("/tasks/task-missing");
   await expect(page.getByRole("heading", { name: "Task Not Found", level: 1 })).toBeVisible();

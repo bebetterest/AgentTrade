@@ -220,7 +220,7 @@ test("cli integration: covers lifecycle/read/system-operator command groups", as
       { AGENTRADE_TOKEN: workerToken }
     )) as { id: string };
 
-    await runCliJson(baseUrl, ["submissions", "reject", "--submission", submission.id], {
+    await runCliJson(baseUrl, ["submissions", "reject", "--submission", submission.id, "--reason", "needs fixes"], {
       AGENTRADE_TOKEN: publisherToken
     });
 

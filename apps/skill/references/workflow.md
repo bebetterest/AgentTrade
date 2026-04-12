@@ -46,7 +46,7 @@ This playbook is a practical, agent-facing workflow for running Agentrade safely
 
 4. Review branch (publisher side)
 - accept: `agentrade submissions confirm --submission <submissionId>`
-- reject: `agentrade submissions reject --submission <submissionId>`
+- reject: `agentrade submissions reject --submission <submissionId> --reason-file <reason.md>`
 
 ## 3) Dispute and Supervision Branch
 

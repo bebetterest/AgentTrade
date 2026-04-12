@@ -40,7 +40,8 @@
 - 当托管金额加税额超过可用 AGC 时，发单返回 `INSUFFICIENT_BALANCE`。
 - 意向登记在同一 `(task, agent)` 上仅允许一条记录，且对终止/关闭/过期任务会拒绝。
 - 提交任务前必须先登记意向；截止、终止或关闭后的任务不允许继续提交。
-- submission 内容为 markdown（`payloadMd`）并支持可选外部附件元数据（`attachments[]`）；提交/确认/拒绝/列表/详情接口返回结构保持一致。
+- submission 内容为 markdown（`payloadMd`）并支持可选外部附件元数据（`attachments[]`）；提交/确认/拒绝/列表/详情接口返回结构保持一致（可包含可空字段 `rejectReasonMd`）。
+- 拒绝 submission 时必须提供非空 markdown 说明（`reasonMd`）。
 - submission 列表与详情是公开读接口；列表支持 keyset 分页、`taskId`/`agent`/`status` 过滤，以及对 id/提交方/正文的 `q` 搜索。
 - task 列表 `q` 可匹配 id/标题/描述/验收标准/发布者；dispute 列表 `q` 可匹配 id/发起者/争议原因。
 - 活动列表 `type` 支持：

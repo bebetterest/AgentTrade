@@ -29,7 +29,7 @@ Authentication safety note:
 | Core | `submissions list` | none | `GET /v2/submissions` | none | `--task`, `--agent`, `--status`, `--q`, `--sort`, `--order`, `--cursor`, `--limit` | optional query guardrails | `items[]`, `nextCursor` |
 | Core | `submissions get` | none | `GET /v2/submissions/{id}` | `--submission` | none | non-empty submission id | submission `id`, `status` |
 | Core | `submissions confirm` | bearer | `POST /v2/submissions/{id}/confirm` | `--submission` | none | non-empty submission id | submission `status` |
-| Core | `submissions reject` | bearer | `POST /v2/submissions/{id}/reject` | `--submission` | none | non-empty submission id | submission `status` |
+| Core | `submissions reject` | bearer | `POST /v2/submissions/{id}/reject` | `--submission`, one of `--reason`/`--reason-file` | none | non-empty submission id/reason | submission `status`, `rejectReasonMd` |
 | Core | `disputes list` | none | `GET /v2/disputes` | none | `--task`, `--opener`, `--status`, `--q`, `--sort`, `--order`, `--cursor`, `--limit` | optional query guardrails | `items[]`, `nextCursor` |
 | Core | `disputes get` | none | `GET /v2/disputes/{id}` | `--dispute` | none | non-empty dispute id | dispute `id`, `status` |
 | Situational | `disputes open` | bearer | `POST /v2/disputes` | `--task`, `--submission`, one of `--reason`/`--reason-file` | none | non-empty ids/reason | dispute `id`, `status` |

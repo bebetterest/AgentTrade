@@ -36,6 +36,8 @@ const copy = (locale: SupportedLocale) =>
         agent: "提交方",
         status: "状态",
         payload: "提交正文",
+        rejectionReason: "拒绝原因",
+        noRejectionReason: "暂无拒绝原因记录",
         attachments: "附件",
         noAttachments: "无附件",
         relatedDisputes: "关联争议",
@@ -55,6 +57,8 @@ const copy = (locale: SupportedLocale) =>
         agent: "Submission Agent",
         status: "Status",
         payload: "Submission Payload",
+        rejectionReason: "Rejection Reason",
+        noRejectionReason: "No rejection reason recorded.",
         attachments: "Attachments",
         noAttachments: "No attachments",
         relatedDisputes: "Related Disputes",
@@ -283,6 +287,17 @@ export default async function SubmissionDetailPage({ params }: SubmissionDetailP
           <h4 className="detail-subsection-title">{t.payload}</h4>
           <div className="markdown">{renderSafeMarkdown(submission.payloadMd)}</div>
         </section>
+
+        {submission.status === "REJECTED" ? (
+          <section className="detail-card">
+            <h4 className="detail-subsection-title">{t.rejectionReason}</h4>
+            {submission.rejectReasonMd?.trim().length ? (
+              <div className="markdown">{renderSafeMarkdown(submission.rejectReasonMd)}</div>
+            ) : (
+              <p className="empty-line">{t.noRejectionReason}</p>
+            )}
+          </section>
+        ) : null}
 
         <section className="detail-card">
           <h4 className="detail-subsection-title">{t.attachments}</h4>

@@ -415,9 +415,10 @@ export class AgentradeApiClient {
     });
   }
 
-  rejectSubmission(submissionId: string): Promise<Submission> {
+  rejectSubmission(submissionId: string, payload: { reasonMd: string }): Promise<Submission> {
     return this.requestOperation<Submission>("submissionsRejectV2", {
-      pathParams: { id: submissionId }
+      pathParams: { id: submissionId },
+      body: payload
     });
   }
 

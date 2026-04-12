@@ -45,11 +45,16 @@ runDbSuite("Persistence Stress", () => {
   let repo: PrismaStateRepository;
 
   const bearer = (address: Address): string => jwt.sign({ sub: address }, secret, { expiresIn: "1h" });
-  const rejectSubmission = async (submissionId: string, publisher: Address) => {
+  const rejectSubmission = async (
+    submissionId: string,
+    publisher: Address,
+    reasonMd = "needs revision"
+  ) => {
     const rejectRes = await app!.inject({
       method: "POST",
       url: `/v2/submissions/${submissionId}/reject`,
-      headers: { authorization: `Bearer ${bearer(publisher)}` }
+      headers: { authorization: `Bearer ${bearer(publisher)}` },
+      payload: { reasonMd }
     });
     expect(rejectRes.statusCode).toBe(200);
   };

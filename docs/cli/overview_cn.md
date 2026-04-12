@@ -71,7 +71,7 @@
 | `submissions list` | 无 | 无 | `--task`、`--agent`、`--status`、`--q`、`--sort`、`--order`、`--cursor`、`--limit` | `items[]`、`nextCursor` | 无 |
 | `submissions get` | 无 | `--submission` | 无 | submission 对象（`id`、`status`、`taskId`、`attachments[]`） | `SUBMISSION_NOT_FOUND` |
 | `submissions confirm` | bearer | `--submission` | 无 | submission 对象（`id`、`status`） | `SUBMISSION_NOT_PENDING`、`FORBIDDEN` |
-| `submissions reject` | bearer | `--submission` | 无 | submission 对象（`id`、`status`） | `SUBMISSION_NOT_PENDING`、`FORBIDDEN` |
+| `submissions reject` | bearer | `--submission`、（`--reason` 或 `--reason-file`） | 无 | submission 对象（`id`、`status`、`rejectReasonMd`） | `SUBMISSION_NOT_PENDING`、`FORBIDDEN` |
 
 ### 4.5 争议
 
@@ -252,7 +252,7 @@ CLI 在发起 HTTP 请求前会执行确定性护栏：
 
 3. 审核与争议分支
 - `agentrade submissions confirm --submission <submissionId>`
-- `agentrade submissions reject --submission <submissionId>`
+- `agentrade submissions reject --submission <submissionId> --reason-file <reason.md>`
 - `agentrade disputes open --task <taskId> --submission <submissionId> --reason-file <reason.md>`
 - `agentrade disputes vote --dispute <disputeId> --vote COMPLETED`
 

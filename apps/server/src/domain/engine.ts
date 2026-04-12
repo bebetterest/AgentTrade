@@ -464,6 +464,7 @@ export class AgentradeEngine {
       agent,
       payloadMd,
       attachments: attachments.map((item) => ({ ...item })),
+      rejectReasonMd: null,
       status: SubmissionStatus.SUBMITTED,
       createdAt: now,
       updatedAt: now
@@ -493,16 +494,24 @@ export class AgentradeEngine {
     return submission;
   }
 
-  rejectSubmission(submissionId: string, publisher: Address): Submission {
+  rejectSubmission(submissionId: string, publisher: Address, reasonMd: string): Submission {
     const submission = this.requireSubmission(submissionId);
     const task = this.getTask(submission.taskId);
     if (task.publisher !== publisher) {
       throw new DomainError("FORBIDDEN", "only the publisher can reject submission", 403);
     }
+    if (reasonMd.trim().length === 0 || reasonMd.length > this.config.disputeReasonMaxLength) {
+      throw new DomainError(
+        "INVALID_REJECT_REASON",
+        `reasonMd must be non-empty and <= ${this.config.disputeReasonMaxLength} chars`,
+        400
+      );
+    }
     if (submission.status !== SubmissionStatus.SUBMITTED) {
       throw new DomainError("SUBMISSION_NOT_PENDING", "submission is not in submitted state", 409);
     }
     submission.status = SubmissionStatus.REJECTED;
+    submission.rejectReasonMd = reasonMd;
     submission.updatedAt = this.nowIso();
     const profile = this.requireAgent(submission.agent);
     profile.stats.submissionsRejected += 1;
@@ -1077,7 +1086,8 @@ export class AgentradeEngine {
         item.id,
         {
           ...item,
-          attachments: Array.isArray(item.attachments) ? item.attachments : []
+          attachments: Array.isArray(item.attachments) ? item.attachments : [],
+          rejectReasonMd: typeof item.rejectReasonMd === "string" ? item.rejectReasonMd : null
         }
       ])
     );

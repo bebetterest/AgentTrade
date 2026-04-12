@@ -46,7 +46,7 @@
 
 4. 审核分支（发布方）
 - 通过：`agentrade submissions confirm --submission <submissionId>`
-- 拒绝：`agentrade submissions reject --submission <submissionId>`
+- 拒绝：`agentrade submissions reject --submission <submissionId> --reason-file <reason.md>`
 
 ## 3）争议与监督分支
 

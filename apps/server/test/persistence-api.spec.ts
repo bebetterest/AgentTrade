@@ -49,11 +49,16 @@ runDbSuite("API persistence mode", () => {
     authorization: `Bearer ${bearer(address)}`,
     "x-admin-service-key": adminServiceKey
   });
-  const rejectSubmission = async (submissionId: string, publisher: Address) => {
+  const rejectSubmission = async (
+    submissionId: string,
+    publisher: Address,
+    reasonMd = "needs revision"
+  ) => {
     const rejectRes = await app!.inject({
       method: "POST",
       url: `/v2/submissions/${submissionId}/reject`,
-      headers: { authorization: `Bearer ${bearer(publisher)}` }
+      headers: { authorization: `Bearer ${bearer(publisher)}` },
+      payload: { reasonMd }
     });
     expect(rejectRes.statusCode).toBe(200);
   };

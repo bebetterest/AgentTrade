@@ -10,6 +10,7 @@ import {
   parseOperationQuery,
   toServerRoutePath,
   validateCreateTaskInput,
+  validateDisputeReasonLength,
   validateOperationResponse,
   validateSubmissionAttachments,
   validateSubmissionPayloadLength
@@ -435,18 +436,25 @@ const registerSubmissionRejectRoute = (
 ) => {
   app.post(toServerRoutePath(operation.pathTemplate), { preHandler: [app.authenticate] }, async (request) => {
     const params = parseOperationParams<{ id: string }>(operation, request);
+    const body = parseOperationBody<{ reasonMd: string }>(operation, request);
+    validateDisputeReasonLength(body.reasonMd, services.config);
     const publisher = request.agentAddress as Address;
     if (services.stateRepository) {
       return validateOperationResponse(
         operation,
         await services.mutateDirect(() =>
-          services.stateRepository!.rejectSubmissionDirect(params.id, publisher)
+          services.stateRepository!.rejectSubmissionDirect({
+            submissionId: params.id,
+            publisher,
+            reasonMd: body.reasonMd,
+            rejectReasonMaxLength: services.config.disputeReasonMaxLength
+          })
         , services.writeMeta({ operation: "submissions.reject", actor: publisher }))
       );
     }
     return validateOperationResponse(
       operation,
-      await services.mutate((engine) => engine.rejectSubmission(params.id, publisher), [
+      await services.mutate((engine) => engine.rejectSubmission(params.id, publisher, body.reasonMd), [
         "profiles",
         "submissions"
       ], services.writeMeta({ operation: "submissions.reject", actor: publisher }))

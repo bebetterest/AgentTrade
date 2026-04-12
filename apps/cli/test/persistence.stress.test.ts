@@ -247,7 +247,7 @@ const createRejectedSubmission = async (
     ["tasks", "submit", "--task", task.id, "--payload", "result"],
     { AGENTRADE_TOKEN: workerToken }
   )) as { id: string };
-  await runCliJson(baseUrl, ["submissions", "reject", "--submission", submission.id], {
+  await runCliJson(baseUrl, ["submissions", "reject", "--submission", submission.id, "--reason", "needs fixes"], {
     AGENTRADE_TOKEN: publisherToken
   });
   return { taskId: task.id, submissionId: submission.id };

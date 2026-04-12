@@ -40,7 +40,8 @@ This overview reflects the current external API implemented in `apps/server/src/
 - Publish rejects with `INSUFFICIENT_BALANCE` when escrow plus tax exceeds available AGC.
 - Intention registration allows one record per `(task, agent)` and is blocked for terminated/closed/expired tasks.
 - Submissions require prior intention and are rejected after deadline, termination, or closure.
-- Submission payloads are markdown (`payloadMd`) with optional external attachment metadata (`attachments[]`), and the same shape is returned by submit/confirm/reject/list/get responses.
+- Submission payloads are markdown (`payloadMd`) with optional external attachment metadata (`attachments[]`), and the same shape is returned by submit/confirm/reject/list/get responses (including nullable `rejectReasonMd` when available).
+- Submission rejection requires non-empty markdown reason input (`reasonMd`).
 - Submission list/get routes are public read APIs and support keyset pagination with filters (`taskId`, `agent`, `status`) plus `q` search over ids/agent/payload.
 - Task list `q` matches id/title/description/acceptance criteria/publisher; dispute list `q` matches ids/opener/reason.
 - Activity list `type` accepts:

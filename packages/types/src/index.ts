@@ -106,6 +106,7 @@ export interface Submission {
   agent: Address;
   payloadMd: string;
   attachments: SubmissionAttachment[];
+  rejectReasonMd?: string | null;
   status: SubmissionStatus;
   createdAt: IsoDateString;
   updatedAt: IsoDateString;

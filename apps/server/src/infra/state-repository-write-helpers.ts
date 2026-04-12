@@ -204,6 +204,13 @@ export interface SubmitTaskDirectInput {
   resubmitCooldownMinutes: number;
 }
 
+export interface RejectSubmissionDirectInput {
+  submissionId: string;
+  publisher: Address;
+  reasonMd: string;
+  rejectReasonMaxLength: number;
+}
+
 export interface TaskIntentionListDirectInput {
   taskId: string;
   cursor?: string;
@@ -340,24 +347,30 @@ export const writeUpdateAgentProfileDirect = async (
 export const writeRejectSubmissionDirect = async (
   prisma: PrismaClient,
   deps: ActivityWriteDeps,
-  submissionId: string,
-  publisher: Address
+  input: RejectSubmissionDirectInput
 ): Promise<PrismaSubmission> => {
   return deps.executeWithRetry(async () =>
     prisma.$transaction(async (tx) => {
       const runtime = await deps.lockRuntimeWithTx(tx);
       const now = new Date();
-      await tx.$queryRaw`SELECT id FROM "Submission" WHERE id = ${submissionId} FOR UPDATE`;
-      const submissionRow = await tx.submission.findUnique({ where: { id: submissionId } });
+      await tx.$queryRaw`SELECT id FROM "Submission" WHERE id = ${input.submissionId} FOR UPDATE`;
+      const submissionRow = await tx.submission.findUnique({ where: { id: input.submissionId } });
       if (!submissionRow) {
-        throw new DomainError("SUBMISSION_NOT_FOUND", `Submission ${submissionId} not found`, 404);
+        throw new DomainError("SUBMISSION_NOT_FOUND", `Submission ${input.submissionId} not found`, 404);
       }
       const task = await tx.task.findUnique({ where: { id: submissionRow.taskId } });
       if (!task) {
         throw new DomainError("TASK_NOT_FOUND", `Task ${submissionRow.taskId} does not exist`, 404);
       }
-      if (task.publisherAddress !== publisher) {
+      if (task.publisherAddress !== input.publisher) {
         throw new DomainError("FORBIDDEN", "only the publisher can reject submission", 403);
+      }
+      if (input.reasonMd.trim().length === 0 || input.reasonMd.length > input.rejectReasonMaxLength) {
+        throw new DomainError(
+          "INVALID_REJECT_REASON",
+          `reasonMd must be non-empty and <= ${input.rejectReasonMaxLength} chars`,
+          400
+        );
       }
       if (submissionRow.status !== DomainSubmissionStatus.SUBMITTED) {
         throw new DomainError("SUBMISSION_NOT_PENDING", "submission is not in submitted state", 409);
@@ -365,9 +378,10 @@ export const writeRejectSubmissionDirect = async (
 
       await deps.ensureAgentAndLedgerWithTx(tx, asAddress(submissionRow.agentAddress), now);
       const updated = await tx.submission.update({
-        where: { id: submissionId },
+        where: { id: input.submissionId },
         data: {
           status: DomainSubmissionStatus.REJECTED,
+          rejectReasonMd: input.reasonMd,
           updatedAt: now
         }
       });
@@ -380,7 +394,7 @@ export const writeRejectSubmissionDirect = async (
         cycleId: runtime.activeCycleId,
         taskId: task.id,
         disputeId: null,
-        actor: publisher,
+        actor: input.publisher,
         createdAt: now
       });
       await deps.touchRuntimeStateWithTx(tx);
@@ -547,6 +561,7 @@ export const writeSubmitTaskDirect = async (
           agentAddress: input.agent,
           payloadMd: input.payloadMd,
           attachments: toJsonSubmissionAttachments(attachments),
+          rejectReasonMd: null,
           status: DomainSubmissionStatus.SUBMITTED,
           createdAt: now,
           updatedAt: now

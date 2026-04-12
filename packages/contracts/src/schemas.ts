@@ -276,6 +276,7 @@ export const submissionSchema = defineSchema(
     agent: addressSchema,
     payloadMd: z.string(),
     attachments: z.array(submissionAttachmentSchema.schema),
+    rejectReasonMd: z.string().nullable().optional(),
     status: z.nativeEnum(SubmissionStatus),
     createdAt: isoDateSchema,
     updatedAt: isoDateSchema
@@ -293,6 +294,7 @@ export const submissionSchema = defineSchema(
         type: "array",
         items: schemaRef(submissionAttachmentSchema)
       },
+      rejectReasonMd: { ...stringField, nullable: true },
       status: {
         type: "string",
         enum: Object.values(SubmissionStatus)
@@ -1427,6 +1429,21 @@ export const submitTaskRequestSchema = defineSchema(
   }
 );
 
+export const rejectSubmissionRequestSchema = defineSchema(
+  "RejectSubmissionRequest",
+  z.object({
+    reasonMd: nonEmptyStringSchema
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: ["reasonMd"],
+    properties: {
+      reasonMd: { ...nonEmptyStringField }
+    }
+  }
+);
+
 export const openDisputeRequestSchema = defineSchema(
   "OpenDisputeRequest",
   z.object({
@@ -1682,6 +1699,7 @@ export const namedSchemas = [
   paginatedRuntimeRuleAuditResponseSchema,
   createTaskRequestSchema,
   submitTaskRequestSchema,
+  rejectSubmissionRequestSchema,
   openDisputeRequestSchema,
   voteDisputeRequestSchema,
   updateAgentProfileRequestSchema,

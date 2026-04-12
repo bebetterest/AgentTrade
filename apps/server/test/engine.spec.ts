@@ -42,7 +42,7 @@ describe("AgentradeEngine disputes and cycle settlement", () => {
     engine.addTaskIntention(task.id, worker);
     clock.advanceMinutes(31);
     const submission = engine.submitTask(task.id, worker, "work");
-    engine.rejectSubmission(submission.id, publisher);
+    engine.rejectSubmission(submission.id, publisher, "needs revision");
     const dispute = engine.openDispute({
       taskId: task.id,
       submissionId: submission.id,
@@ -75,7 +75,7 @@ describe("AgentradeEngine disputes and cycle settlement", () => {
     engine.addTaskIntention(task.id, worker);
     clock.advanceMinutes(31);
     const submission = engine.submitTask(task.id, worker, "work");
-    engine.rejectSubmission(submission.id, publisher);
+    engine.rejectSubmission(submission.id, publisher, "needs revision");
     const dispute = engine.openDispute({
       taskId: task.id,
       submissionId: submission.id,
@@ -112,7 +112,7 @@ describe("AgentradeEngine disputes and cycle settlement", () => {
     engine.addTaskIntention(task.id, worker);
     clock.advanceMinutes(31);
     const submission = engine.submitTask(task.id, worker, "work");
-    engine.rejectSubmission(submission.id, publisher);
+    engine.rejectSubmission(submission.id, publisher, "needs revision");
     const dispute = engine.openDispute({
       taskId: task.id,
       submissionId: submission.id,
@@ -153,7 +153,7 @@ describe("AgentradeEngine disputes and cycle settlement", () => {
     engine.addTaskIntention(task.id, worker);
     clock.advanceMinutes(31);
     const submission = engine.submitTask(task.id, worker, "work");
-    engine.rejectSubmission(submission.id, publisher);
+    engine.rejectSubmission(submission.id, publisher, "needs revision");
     const dispute = engine.openDispute({
       taskId: task.id,
       submissionId: submission.id,
@@ -189,7 +189,7 @@ describe("AgentradeEngine disputes and cycle settlement", () => {
     engine.addTaskIntention(task.id, worker);
     clock.advanceMinutes(31);
     const submission = engine.submitTask(task.id, worker, "work");
-    engine.rejectSubmission(submission.id, publisher);
+    engine.rejectSubmission(submission.id, publisher, "needs revision");
     const dispute = engine.openDispute({
       taskId: task.id,
       submissionId: submission.id,
@@ -225,7 +225,7 @@ describe("AgentradeEngine disputes and cycle settlement", () => {
     engine.addTaskIntention(task.id, worker);
     clock.advanceMinutes(31);
     const submission = engine.submitTask(task.id, worker, "work");
-    engine.rejectSubmission(submission.id, publisher);
+    engine.rejectSubmission(submission.id, publisher, "needs revision");
     const dispute = engine.openDispute({
       taskId: task.id,
       submissionId: submission.id,
@@ -260,7 +260,7 @@ describe("AgentradeEngine disputes and cycle settlement", () => {
     engine.addTaskIntention(task.id, worker);
     clock.advanceMinutes(31);
     const submission = engine.submitTask(task.id, worker, "work");
-    engine.rejectSubmission(submission.id, publisher);
+    engine.rejectSubmission(submission.id, publisher, "needs revision");
     const dispute = engine.openDispute({
       taskId: task.id,
       submissionId: submission.id,
@@ -421,7 +421,7 @@ describe("AgentradeEngine disputes and cycle settlement", () => {
     engine.addTaskIntention(task.id, worker);
     clock.advanceMinutes(31);
     const submission = engine.submitTask(task.id, worker, "result");
-    engine.rejectSubmission(submission.id, publisher);
+    engine.rejectSubmission(submission.id, publisher, "needs revision");
     expect(() =>
       engine.openDispute({
         taskId: task.id,
@@ -450,7 +450,7 @@ describe("AgentradeEngine disputes and cycle settlement", () => {
     engine.addTaskIntention(task.id, worker);
     clock.advanceMinutes(31);
     const submission = engine.submitTask(task.id, worker, "result");
-    engine.rejectSubmission(submission.id, publisher);
+    engine.rejectSubmission(submission.id, publisher, "needs revision");
     const dispute = engine.openDispute({
       taskId: task.id,
       submissionId: submission.id,

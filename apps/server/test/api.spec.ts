@@ -89,11 +89,16 @@ describe("API integration", () => {
     return taskRes.json() as { id: string };
   };
 
-  const rejectSubmission = async (submissionId: string, publisher: Address) => {
+  const rejectSubmission = async (
+    submissionId: string,
+    publisher: Address,
+    reasonMd = "needs revision"
+  ) => {
     const rejectRes = await app!.inject({
       method: "POST",
       url: `/v2/submissions/${submissionId}/reject`,
-      headers: { authorization: `Bearer ${bearer(publisher)}` }
+      headers: { authorization: `Bearer ${bearer(publisher)}` },
+      payload: { reasonMd }
     });
     expect(rejectRes.statusCode).toBe(200);
   };
@@ -927,6 +932,56 @@ describe("API integration", () => {
     expect(errorCode(submitRes.json())).toBe("VALIDATION_ERROR");
   });
 
+  it("requires rejection reasons and returns rejectReasonMd in submission responses", async () => {
+    const publisher = addr("reject-reason-pub");
+    const worker = addr("reject-reason-worker");
+    const task = await createSingleSlotTask(publisher);
+
+    const intendRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/intentions`,
+      headers: { authorization: `Bearer ${bearer(worker)}` }
+    });
+    expect(intendRes.statusCode).toBe(200);
+
+    const submitRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/submissions`,
+      headers: { authorization: `Bearer ${bearer(worker)}` },
+      payload: { payloadMd: "delivery" }
+    });
+    expect(submitRes.statusCode).toBe(200);
+    const submission = submitRes.json() as { id: string };
+
+    const rejectMissingReasonRes = await app!.inject({
+      method: "POST",
+      url: `/v2/submissions/${submission.id}/reject`,
+      headers: { authorization: `Bearer ${bearer(publisher)}` },
+      payload: {}
+    });
+    expect(rejectMissingReasonRes.statusCode).toBe(400);
+    expect(errorCode(rejectMissingReasonRes.json())).toBe("VALIDATION_ERROR");
+
+    const rejectReason = "Missing benchmark evidence and retry logs.";
+    const rejectRes = await app!.inject({
+      method: "POST",
+      url: `/v2/submissions/${submission.id}/reject`,
+      headers: { authorization: `Bearer ${bearer(publisher)}` },
+      payload: { reasonMd: rejectReason }
+    });
+    expect(rejectRes.statusCode).toBe(200);
+    expect(
+      (rejectRes.json() as { status: string; rejectReasonMd?: string | null }).rejectReasonMd
+    ).toBe(rejectReason);
+
+    const getRes = await app!.inject({
+      method: "GET",
+      url: `/v2/submissions/${submission.id}`
+    });
+    expect(getRes.statusCode).toBe(200);
+    expect((getRes.json() as { rejectReasonMd?: string | null }).rejectReasonMd).toBe(rejectReason);
+  });
+
   it("supports task/dispute q search for description, criteria, and dispute reason", async () => {
     const publisher = addr("search-rich-pub");
     const worker = addr("search-rich-worker");
@@ -1314,7 +1369,8 @@ describe("API integration", () => {
     const rejectBRes = await app!.inject({
       method: "POST",
       url: `/v2/submissions/${submissionB.id}/reject`,
-      headers: { authorization: `Bearer ${bearer(publisher)}` }
+      headers: { authorization: `Bearer ${bearer(publisher)}` },
+      payload: { reasonMd: "missing acceptance criteria evidence" }
     });
     expect(rejectBRes.statusCode).toBe(200);
 

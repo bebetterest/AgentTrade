@@ -709,10 +709,13 @@ test("cli command contract: method/path/auth/body coverage for all command group
       url: "/v2/submissions/submission-1/confirm",
       auth: "bearer"
     });
-    await runAndAssert(["submissions", "reject", "--submission", "submission-1"], {
+    await runAndAssert(["submissions", "reject", "--submission", "submission-1", "--reason", "needs fixes"], {
       method: "POST",
       url: "/v2/submissions/submission-1/reject",
-      auth: "bearer"
+      auth: "bearer",
+      body: {
+        reasonMd: "needs fixes"
+      }
     });
     await runAndAssert(["submissions", "list"], {
       method: "GET",

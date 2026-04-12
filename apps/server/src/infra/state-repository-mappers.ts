@@ -98,6 +98,7 @@ interface SubmissionRow {
   agentAddress: string;
   payloadMd: string;
   attachments: Prisma.JsonValue | null;
+  rejectReasonMd: string | null;
   status: unknown;
   createdAt: Date;
   updatedAt: Date;
@@ -297,6 +298,7 @@ export const mapSubmission = (item: SubmissionRow): Submission => ({
   agent: asAddress(item.agentAddress),
   payloadMd: item.payloadMd,
   attachments: asSubmissionAttachments(item.attachments),
+  rejectReasonMd: item.rejectReasonMd,
   status: item.status as SubmissionStatus,
   createdAt: toIso(item.createdAt),
   updatedAt: toIso(item.updatedAt)

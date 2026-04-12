@@ -143,6 +143,7 @@ model Submission {
   agentAddress String
   payloadMd    String
   attachments  Json?
+  rejectReasonMd String?
   status       SubmissionStatus
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt

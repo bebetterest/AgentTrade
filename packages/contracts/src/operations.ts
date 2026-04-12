@@ -33,6 +33,7 @@ import {
   paginatedTaskIntentionResponseSchema,
   paginatedTaskResponseSchema,
   publicEconomyParamsSchema,
+  rejectSubmissionRequestSchema,
   runtimeRuleAuditHistoryQuerySchemaV2,
   runtimeSettingsResetRequestSchema,
   runtimeSettingsStateSchema,
@@ -544,10 +545,12 @@ export const apiOperations = [
     summary: { en: "Reject submission", zh: "拒绝提交" },
     pathTemplate: "/v2/submissions/{id}/reject",
     pathParamsSchema: idPathSchema,
+    bodySchema: rejectSubmissionRequestSchema.schema,
+    requestBodyComponent: rejectSubmissionRequestSchema,
     responseSchema: submissionSchema.schema,
     responseComponent: submissionSchema,
     parameters: [pathStringParam("id", { en: "Submission id", zh: "提交 id" })],
-    errorStatuses: [401, 403, 404, 409, 500]
+    errorStatuses: [400, 401, 403, 404, 409, 500]
   }),
   defineOperationSpec({
     baseOperationId: "disputesList",

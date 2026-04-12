@@ -56,7 +56,7 @@ runDbSuite("PrismaStateRepository", () => {
     engine.addTaskIntention(task.id, worker);
     clock.advanceMinutes(31);
     const submission = engine.submitTask(task.id, worker, "payload");
-    engine.rejectSubmission(submission.id, publisher);
+    engine.rejectSubmission(submission.id, publisher, "needs revision");
     const dispute = engine.openDispute({
       taskId: task.id,
       submissionId: submission.id,
@@ -236,7 +236,7 @@ runDbSuite("PrismaStateRepository", () => {
       { name: "beta-log", url: "https://example.com/beta.log" }
     ]);
     clock.advanceMinutes(1);
-    engine.rejectSubmission(betaSubmission.id, publisherA);
+    engine.rejectSubmission(betaSubmission.id, publisherA, "needs revision");
     clock.advanceMinutes(1);
     const dispute = engine.openDispute({
       taskId: beta.id,
@@ -423,7 +423,7 @@ runDbSuite("PrismaStateRepository", () => {
     engine.addTaskIntention(beta.id, worker);
     clock.advanceMinutes(31);
     const betaSubmission = engine.submitTask(beta.id, worker, "beta-result");
-    engine.rejectSubmission(betaSubmission.id, publisherA);
+    engine.rejectSubmission(betaSubmission.id, publisherA, "needs revision");
     const dispute = engine.openDispute({
       taskId: beta.id,
       submissionId: betaSubmission.id,

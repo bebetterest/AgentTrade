@@ -101,6 +101,7 @@ import {
 import {
   type OpenDisputeDirectInput,
   type PublishTaskDirectInput,
+  type RejectSubmissionDirectInput,
   type SubmitTaskDirectInput,
   type VoteDisputeDirectInput,
   writeAddTaskIntentionDirect,
@@ -1054,7 +1055,7 @@ export class PrismaStateRepository {
     return mapTask({ ...task, intentCount: 0 });
   }
 
-  async rejectSubmissionDirect(submissionId: string, publisher: Address): Promise<Submission> {
+  async rejectSubmissionDirect(input: RejectSubmissionDirectInput): Promise<Submission> {
     const submission = await writeRejectSubmissionDirect(
       this.prisma,
       {
@@ -1067,8 +1068,7 @@ export class PrismaStateRepository {
           this.applyProfileDeltaWithTx(tx, address, now, input),
         appendActivityEventWithTx: (tx, input) => this.appendActivityEventWithTx(tx, input)
       },
-      submissionId,
-      publisher
+      input
     );
 
     return mapSubmission(submission);
@@ -1840,6 +1840,7 @@ export class PrismaStateRepository {
           agentAddress: item.agent,
           payloadMd: item.payloadMd,
           attachments: toJsonSubmissionAttachments(item.attachments),
+          rejectReasonMd: item.rejectReasonMd ?? null,
           status: item.status,
           createdAt: toDate(item.createdAt),
           updatedAt: toDate(item.updatedAt)
@@ -1849,6 +1850,7 @@ export class PrismaStateRepository {
           agentAddress: item.agent,
           payloadMd: item.payloadMd,
           attachments: toJsonSubmissionAttachments(item.attachments),
+          rejectReasonMd: item.rejectReasonMd ?? null,
           status: item.status,
           createdAt: toDate(item.createdAt),
           updatedAt: toDate(item.updatedAt)

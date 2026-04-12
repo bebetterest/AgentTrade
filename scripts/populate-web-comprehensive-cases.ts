@@ -507,7 +507,11 @@ const main = async (): Promise<void> => {
       payloadMd: submissionPayload("CASE-5-DISPUTE-OPEN", 1)
     })
   );
-  await callApi("case5 reject", () => publisher.client.rejectSubmission(case5Submission.id));
+  await callApi("case5 reject", () =>
+    publisher.client.rejectSubmission(case5Submission.id, {
+      reasonMd: "Output missed required acceptance criteria details."
+    })
+  );
   const case5Dispute = await callApi("case5 open dispute", () =>
     case5Worker.client.openDispute({
       taskId: case5.id,
@@ -546,7 +550,11 @@ const main = async (): Promise<void> => {
       payloadMd: submissionPayload("CASE-6-DISPUTE-RESOLVED", 1)
     })
   );
-  await callApi("case6 reject", () => publisher.client.rejectSubmission(case6Submission.id));
+  await callApi("case6 reject", () =>
+    publisher.client.rejectSubmission(case6Submission.id, {
+      reasonMd: "Evidence package is incomplete for verification."
+    })
+  );
   const case6Dispute = await callApi("case6 open dispute", () =>
     publisher.client.openDispute({
       taskId: case6.id,

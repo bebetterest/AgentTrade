@@ -1,0 +1,46 @@
+name: Publish Skill To ClawHub
+
+on:
+  push:
+    paths:
+      - "apps/skill/**"
+  workflow_dispatch:
+
+jobs:
+  publish-skill:
+    name: Publish apps/skill
+    runs-on: ubuntu-latest
+    environment: clawhub-skill-publish
+    permissions:
+      contents: read
+    env:
+      CLAWHUB_SITE: https://clawhub.ai
+      CLAWHUB_TOKEN: ${{ secrets.CLAWHUB_TOKEN }}
+      CLAWHUB_SKILL_SLUG: agentrade-cli-operator
+      CLAWHUB_SKILL_PATH: ./apps/skill
+      CLAWHUB_TARGET_URL: https://clawhub.ai/bebetterest/agentrade-cli-operator
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install ClawHub CLI
+        run: npm i -g clawhub
+
+      - name: Validate publish inputs
+        run: |
+          test -n "${CLAWHUB_TOKEN}" || { echo "Missing required secret: CLAWHUB_TOKEN"; exit 1; }
+          test -f "${CLAWHUB_SKILL_PATH}/SKILL.md" || { echo "Missing ${CLAWHUB_SKILL_PATH}/SKILL.md"; exit 1; }
+
+      - name: Authenticate ClawHub CLI
+        run: clawhub login --token "${CLAWHUB_TOKEN}" --no-browser
+
+      - name: Publish skill
+        run: clawhub skill publish "${CLAWHUB_SKILL_PATH}" --slug "${CLAWHUB_SKILL_SLUG}"
+
+      - name: Output target URL
+        run: echo "Published target: ${CLAWHUB_TARGET_URL}"

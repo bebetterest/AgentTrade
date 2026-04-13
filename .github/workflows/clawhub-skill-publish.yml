@@ -41,10 +41,10 @@ jobs:
 
       - name: Publish skill
         run: |
-          if clawhub skill publish --help >/dev/null 2>&1; then
+          if clawhub skill --help 2>&1 | grep -Eq '^[[:space:]]+publish([[:space:]]|$)'; then
             echo "Using: clawhub skill publish"
             clawhub skill publish "${CLAWHUB_SKILL_PATH}" --slug "${CLAWHUB_SKILL_SLUG}"
-          elif clawhub publish --help >/dev/null 2>&1; then
+          elif clawhub --help 2>&1 | grep -Eq '^[[:space:]]+publish([[:space:]]|$)'; then
             echo "Using fallback: clawhub publish"
             clawhub publish "${CLAWHUB_SKILL_PATH}" --slug "${CLAWHUB_SKILL_SLUG}"
           else

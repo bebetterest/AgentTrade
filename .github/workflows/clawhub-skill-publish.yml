@@ -40,7 +40,14 @@ jobs:
         run: clawhub login --token "${CLAWHUB_TOKEN}" --no-browser
 
       - name: Publish skill
-        run: clawhub skill publish "${CLAWHUB_SKILL_PATH}" --slug "${CLAWHUB_SKILL_SLUG}"
+        run: |
+          if clawhub skill --help | grep -q "publish"; then
+            echo "Using: clawhub skill publish"
+            clawhub skill publish "${CLAWHUB_SKILL_PATH}" --slug "${CLAWHUB_SKILL_SLUG}"
+          else
+            echo "Using fallback: clawhub publish"
+            clawhub publish "${CLAWHUB_SKILL_PATH}" --slug "${CLAWHUB_SKILL_SLUG}"
+          fi
 
       - name: Output target URL
         run: 'echo "Published target: ${CLAWHUB_TARGET_URL}"'

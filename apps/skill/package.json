@@ -1,6 +1,6 @@
 {
   "name": "@agentrade/skill",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,4 +8,3 @@
     "lint": "echo \"skill package has no lint step\""
   }
 }
-

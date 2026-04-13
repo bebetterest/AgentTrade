@@ -18,6 +18,7 @@ jobs:
       CLAWHUB_TOKEN: ${{ secrets.CLAWHUB_TOKEN }}
       CLAWHUB_CLI_VERSION: 0.9.0
       CLAWHUB_SKILL_SLUG: agentrade-cli-operator
+      CLAWHUB_SKILL_DISPLAY_NAME: agentrade-skill
       CLAWHUB_SKILL_PATH: ./apps/skill
       CLAWHUB_TARGET_URL: https://clawhub.ai/bebetterest/agentrade-cli-operator
     steps:
@@ -77,6 +78,7 @@ jobs:
         if: steps.version-change.outputs.version_changed == 'true'
         run: |
           test -n "${CLAWHUB_TOKEN}" || { echo "Missing required secret: CLAWHUB_TOKEN"; exit 1; }
+          test -n "${CLAWHUB_SKILL_DISPLAY_NAME}" || { echo "Missing skill display name"; exit 1; }
           test -f "${CLAWHUB_SKILL_PATH}/SKILL.md" || { echo "Missing ${CLAWHUB_SKILL_PATH}/SKILL.md"; exit 1; }
           test -f "${CLAWHUB_SKILL_PATH}/package.json" || { echo "Missing ${CLAWHUB_SKILL_PATH}/package.json"; exit 1; }
 
@@ -98,18 +100,10 @@ jobs:
         env:
           CLAWHUB_SKILL_VERSION: ${{ steps.skill-meta.outputs.skill_version }}
         run: |
-          if clawhub skill --help 2>&1 | grep -Eq '^[[:space:]]+publish([[:space:]]|$)'; then
-            echo "Using: clawhub skill publish"
-            clawhub skill publish "${CLAWHUB_SKILL_PATH}" --slug "${CLAWHUB_SKILL_SLUG}" --version "${CLAWHUB_SKILL_VERSION}"
-          elif clawhub --help 2>&1 | grep -Eq '^[[:space:]]+publish([[:space:]]|$)'; then
-            echo "Using fallback: clawhub publish"
-            clawhub publish "${CLAWHUB_SKILL_PATH}" --slug "${CLAWHUB_SKILL_SLUG}" --version "${CLAWHUB_SKILL_VERSION}"
-          else
-            echo "No supported clawhub publish command found."
-            clawhub --help || true
-            clawhub skill --help || true
-            exit 1
-          fi
+          clawhub publish "${CLAWHUB_SKILL_PATH}" \
+            --slug "${CLAWHUB_SKILL_SLUG}" \
+            --name "${CLAWHUB_SKILL_DISPLAY_NAME}" \
+            --version "${CLAWHUB_SKILL_VERSION}"
 
       - name: Output target URL
         if: steps.version-change.outputs.version_changed == 'true'

@@ -11,11 +11,12 @@ jobs:
   publish-cli:
     name: Publish @agentrade/cli
     if: github.ref == 'refs/heads/main'
+    environment: npm-cli-publish
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      id-token: write
     env:
-      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
       NPM_PACKAGE_NAME: "@agentrade/cli"
       CLI_PACKAGE_JSON: ./apps/cli/package.json
     steps:
@@ -69,14 +70,19 @@ jobs:
         if: steps.version-change.outputs.version_changed == 'true'
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "22.14.0"
           registry-url: "https://registry.npmjs.org"
           cache: "pnpm"
+
+      - name: Upgrade npm for trusted publishing
+        if: steps.version-change.outputs.version_changed == 'true'
+        run: |
+          npm i -g npm@^11.5.1
+          npm --version
 
       - name: Validate publish inputs
         if: steps.version-change.outputs.version_changed == 'true'
         run: |
-          test -n "${NPM_TOKEN}" || { echo "Missing required secret: NPM_TOKEN"; exit 1; }
           test -f "${CLI_PACKAGE_JSON}" || { echo "Missing ${CLI_PACKAGE_JSON}"; exit 1; }
 
       - name: Resolve CLI version
@@ -116,10 +122,8 @@ jobs:
       - name: Publish CLI package
         if: steps.version-change.outputs.version_changed == 'true' && steps.npm-check.outputs.should_publish == 'true'
         working-directory: ./apps/cli
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          pnpm publish --access public --publish-branch main --tag latest
+          npm publish --access public --tag latest
 
       - name: Output publish target
         if: steps.version-change.outputs.version_changed == 'true' && steps.npm-check.outputs.should_publish == 'true'

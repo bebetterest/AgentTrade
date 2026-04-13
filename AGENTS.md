@@ -38,6 +38,18 @@ This file defines operating principles for contributors and autonomous agents wo
 - Keep local scripts, Docker workflows, and CI validations aligned.
 - Ensure persistence and restart behavior is reproducible from repository data.
 
+## Agent Release Workflow Principles
+
+- Agents must treat release readiness as part of implementation, not a separate afterthought.
+- CLI release flow: finish `apps/cli` code changes, run local build/tests, bump `apps/cli/package.json` version, commit, push to `main`, then confirm auto-publish result.
+- Skill release flow: finish `apps/skill` changes, run local checks, bump `apps/skill/package.json` version, commit, push, then confirm auto-publish result.
+- Never push a release-intended version bump before the implementation is complete; otherwise a broken package/skill may be published.
+- Version bump is mandatory for auto publishing. If version is unchanged, publish is skipped by design.
+- Default version policy: bump one patch version (`x.y.z -> x.y.(z+1)`). Use minor/major only when change scope or user request requires it.
+- Published versions are immutable. Any post-release fix must use a new version instead of reusing the old one.
+- Before push, verify package metadata and runtime entrypoints are aligned with current source.
+- After push, verify both CI workflow status and remote registry result; if publish fails, fix root cause and publish with a new version.
+
 ## Product Boundary Principles
 
 - Web is read-only for human users.

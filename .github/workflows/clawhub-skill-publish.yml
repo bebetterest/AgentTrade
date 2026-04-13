@@ -3,7 +3,7 @@ name: Publish Skill To ClawHub
 on:
   push:
     paths:
-      - "apps/skill/**"
+      - "apps/skill/package.json"
   workflow_dispatch:
 
 jobs:
@@ -16,37 +16,94 @@ jobs:
     env:
       CLAWHUB_SITE: https://clawhub.ai
       CLAWHUB_TOKEN: ${{ secrets.CLAWHUB_TOKEN }}
+      CLAWHUB_CLI_VERSION: 0.9.0
       CLAWHUB_SKILL_SLUG: agentrade-cli-operator
       CLAWHUB_SKILL_PATH: ./apps/skill
       CLAWHUB_TARGET_URL: https://clawhub.ai/bebetterest/agentrade-cli-operator
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect skill version change
+        id: version-change
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version_changed=true" >> "${GITHUB_OUTPUT}"
+            echo "Manual trigger: publish enabled."
+            exit 0
+          fi
+
+          BEFORE="${{ github.event.before }}"
+          AFTER="${{ github.sha }}"
+
+          if [ -z "${BEFORE}" ] || [ "${BEFORE}" = "0000000000000000000000000000000000000000" ]; then
+            echo "version_changed=true" >> "${GITHUB_OUTPUT}"
+            echo "No usable before SHA; publish enabled."
+            exit 0
+          fi
+
+          BEFORE_JSON="$(git show "${BEFORE}:apps/skill/package.json" 2>/dev/null || true)"
+          BEFORE_VERSION="$(printf "%s" "${BEFORE_JSON}" | node -pe "const fs=require('fs'); const s=fs.readFileSync(0,'utf8').trim(); if(!s){process.exit(0)}; JSON.parse(s).version" 2>/dev/null || true)"
+          AFTER_VERSION="$(node -p "require('./apps/skill/package.json').version")"
+
+          echo "before_version=${BEFORE_VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "after_version=${AFTER_VERSION}" >> "${GITHUB_OUTPUT}"
+
+          if [ -z "${BEFORE_VERSION}" ]; then
+            echo "version_changed=true" >> "${GITHUB_OUTPUT}"
+            echo "Could not resolve previous version; publish enabled."
+          elif [ "${BEFORE_VERSION}" != "${AFTER_VERSION}" ]; then
+            echo "version_changed=true" >> "${GITHUB_OUTPUT}"
+            echo "Version changed: ${BEFORE_VERSION} -> ${AFTER_VERSION}"
+          else
+            echo "version_changed=false" >> "${GITHUB_OUTPUT}"
+            echo "Version unchanged (${AFTER_VERSION}); publish skipped."
+          fi
 
       - name: Setup Node.js
+        if: steps.version-change.outputs.version_changed == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: "22"
 
       - name: Install ClawHub CLI
-        run: npm i -g clawhub
+        if: steps.version-change.outputs.version_changed == 'true'
+        run: npm i -g "clawhub@${CLAWHUB_CLI_VERSION}"
 
       - name: Validate publish inputs
+        if: steps.version-change.outputs.version_changed == 'true'
         run: |
           test -n "${CLAWHUB_TOKEN}" || { echo "Missing required secret: CLAWHUB_TOKEN"; exit 1; }
           test -f "${CLAWHUB_SKILL_PATH}/SKILL.md" || { echo "Missing ${CLAWHUB_SKILL_PATH}/SKILL.md"; exit 1; }
+          test -f "${CLAWHUB_SKILL_PATH}/package.json" || { echo "Missing ${CLAWHUB_SKILL_PATH}/package.json"; exit 1; }
+
+      - name: Resolve skill version
+        if: steps.version-change.outputs.version_changed == 'true'
+        id: skill-meta
+        run: |
+          CLAWHUB_SKILL_VERSION="$(node -p "require('${CLAWHUB_SKILL_PATH}/package.json').version")"
+          test -n "${CLAWHUB_SKILL_VERSION}" || { echo "Failed to resolve skill version from package.json"; exit 1; }
+          echo "skill_version=${CLAWHUB_SKILL_VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "Resolved skill version: ${CLAWHUB_SKILL_VERSION}"
 
       - name: Authenticate ClawHub CLI
+        if: steps.version-change.outputs.version_changed == 'true'
         run: clawhub login --token "${CLAWHUB_TOKEN}" --no-browser
 
       - name: Publish skill
+        if: steps.version-change.outputs.version_changed == 'true'
+        env:
+          CLAWHUB_SKILL_VERSION: ${{ steps.skill-meta.outputs.skill_version }}
         run: |
           if clawhub skill --help 2>&1 | grep -Eq '^[[:space:]]+publish([[:space:]]|$)'; then
             echo "Using: clawhub skill publish"
-            clawhub skill publish "${CLAWHUB_SKILL_PATH}" --slug "${CLAWHUB_SKILL_SLUG}"
+            clawhub skill publish "${CLAWHUB_SKILL_PATH}" --slug "${CLAWHUB_SKILL_SLUG}" --version "${CLAWHUB_SKILL_VERSION}"
           elif clawhub --help 2>&1 | grep -Eq '^[[:space:]]+publish([[:space:]]|$)'; then
             echo "Using fallback: clawhub publish"
-            clawhub publish "${CLAWHUB_SKILL_PATH}" --slug "${CLAWHUB_SKILL_SLUG}"
+            clawhub publish "${CLAWHUB_SKILL_PATH}" --slug "${CLAWHUB_SKILL_SLUG}" --version "${CLAWHUB_SKILL_VERSION}"
           else
             echo "No supported clawhub publish command found."
             clawhub --help || true
@@ -55,4 +112,11 @@ jobs:
           fi
 
       - name: Output target URL
+        if: steps.version-change.outputs.version_changed == 'true'
         run: 'echo "Published target: ${CLAWHUB_TARGET_URL}"'
+
+      - name: Skip publish (version unchanged)
+        if: steps.version-change.outputs.version_changed != 'true'
+        run: |
+          echo "apps/skill/package.json changed but version stayed the same."
+          echo "Skip publishing to ClawHub."

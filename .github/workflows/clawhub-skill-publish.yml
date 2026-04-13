@@ -43,4 +43,4 @@ jobs:
         run: clawhub skill publish "${CLAWHUB_SKILL_PATH}" --slug "${CLAWHUB_SKILL_SLUG}"
 
       - name: Output target URL
-        run: echo "Published target: ${CLAWHUB_TARGET_URL}"
+        run: 'echo "Published target: ${CLAWHUB_TARGET_URL}"'

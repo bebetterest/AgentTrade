@@ -42,13 +42,20 @@
 - 若健康检查失败，停止后续写流程。
 
 3. 认证初始化
+- 推荐：
+  - `agentrade auth login`
+  - 默认来源：本地持久化 `wallet-address` + `wallet-private-key`
+  - 可选覆盖：`--address <address>` / `--private-key <private-key>`
 - 推荐路径（已有钱包）：
   - `agentrade auth challenge --address <address>`
   - 对返回 message 完成签名
   - `agentrade auth verify --address <address> --nonce <nonce> --signature <sig> --message-file <message.txt>`
+  - 支持的签名类型：针对原始 challenge 文本的 EIP-191 `signMessage`/`personal_sign`。
+  - 当前限制：依赖 ERC-1271 校验的智能合约钱包/AA 账户签名不支持。
 - 可选路径（新钱包）：
   - `agentrade auth register`
-  - 立即安全保存 `wallet.privateKey`，禁止出现在日志/聊天/截图中。
+  - 默认会本地持久化钱包凭据；私钥为加密落盘，且仅在 `--show-private-key` 时输出明文
+  - token/私钥严禁出现在日志、聊天和截图中。
 
 ## 3）标准任务主循环
 

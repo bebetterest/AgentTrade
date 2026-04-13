@@ -1,3 +1,4 @@
+import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
@@ -11,6 +12,8 @@ export interface CliPersistedConfig {
   baseUrl?: string;
   token?: string;
   adminKey?: string;
+  walletAddress?: string;
+  walletPrivateKey?: string;
   timeoutMs?: number;
   retries?: number;
 }
@@ -25,8 +28,137 @@ export type CliPersistedConfigKey =
   | "baseUrl"
   | "token"
   | "adminKey"
+  | "walletAddress"
+  | "walletPrivateKey"
   | "timeoutMs"
   | "retries";
+
+const WALLET_ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/;
+const WALLET_PRIVATE_KEY_REGEX = /^0x[a-fA-F0-9]{64}$/;
+const WALLET_PRIVATE_KEY_ENCRYPTED_PREFIX = "enc:v1:";
+const WALLET_PRIVATE_KEY_KEY_BYTES = 32;
+const WALLET_PRIVATE_KEY_IV_BYTES = 12;
+const WALLET_PRIVATE_KEY_TAG_BYTES = 16;
+const WALLET_PRIVATE_KEY_CIPHER = "aes-256-gcm";
+const WALLET_KEY_FILENAME = "wallet.key";
+
+const resolveWalletKeyPath = (configPath: string): string => join(dirname(configPath), WALLET_KEY_FILENAME);
+
+const readWalletKey = (configPath: string, createIfMissing: boolean): Buffer => {
+  const keyPath = resolveWalletKeyPath(configPath);
+  if (existsSync(keyPath)) {
+    let key: Buffer;
+    try {
+      key = readFileSync(keyPath);
+    } catch (error) {
+      throw new CliConfigError(
+        `unable to read wallet key at ${keyPath}: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+    if (key.length !== WALLET_PRIVATE_KEY_KEY_BYTES) {
+      throw new CliConfigError(
+        `invalid wallet key at ${keyPath}: expected ${WALLET_PRIVATE_KEY_KEY_BYTES} bytes`
+      );
+    }
+    return key;
+  }
+  if (!createIfMissing) {
+    throw new CliConfigError(
+      `missing wallet key at ${keyPath}: cannot decrypt wallet private key; run auth register or config set wallet-private-key`
+    );
+  }
+
+  const key = randomBytes(WALLET_PRIVATE_KEY_KEY_BYTES);
+  mkdirSync(dirname(keyPath), { recursive: true, mode: 0o700 });
+  try {
+    writeFileSync(keyPath, key, {
+      mode: 0o600
+    });
+  } catch (error) {
+    throw new CliConfigError(
+      `unable to write wallet key at ${keyPath}: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+  return key;
+};
+
+const parseEncryptedPayload = (raw: string, path: string): Buffer => {
+  if (!raw.startsWith(WALLET_PRIVATE_KEY_ENCRYPTED_PREFIX)) {
+    throw configError(path, "walletPrivateKey must use encrypted format enc:v1");
+  }
+  const payload = raw.slice(WALLET_PRIVATE_KEY_ENCRYPTED_PREFIX.length);
+  let decoded: Buffer;
+  try {
+    decoded = Buffer.from(payload, "base64");
+  } catch {
+    throw configError(path, "walletPrivateKey encrypted payload is invalid");
+  }
+  if (decoded.length <= WALLET_PRIVATE_KEY_IV_BYTES + WALLET_PRIVATE_KEY_TAG_BYTES) {
+    throw configError(path, "walletPrivateKey encrypted payload is too short");
+  }
+  return decoded;
+};
+
+const encryptWalletPrivateKey = (privateKey: string, configPath: string): string => {
+  const key = readWalletKey(configPath, true);
+  const iv = randomBytes(WALLET_PRIVATE_KEY_IV_BYTES);
+  const cipher = createCipheriv(WALLET_PRIVATE_KEY_CIPHER, key, iv);
+  const encrypted = Buffer.concat([cipher.update(privateKey, "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  const payload = Buffer.concat([iv, tag, encrypted]).toString("base64");
+  return `${WALLET_PRIVATE_KEY_ENCRYPTED_PREFIX}${payload}`;
+};
+
+const decryptWalletPrivateKey = (encryptedValue: string, configPath: string): string => {
+  const decoded = parseEncryptedPayload(encryptedValue, configPath);
+  const iv = decoded.subarray(0, WALLET_PRIVATE_KEY_IV_BYTES);
+  const tag = decoded.subarray(
+    WALLET_PRIVATE_KEY_IV_BYTES,
+    WALLET_PRIVATE_KEY_IV_BYTES + WALLET_PRIVATE_KEY_TAG_BYTES
+  );
+  const encrypted = decoded.subarray(WALLET_PRIVATE_KEY_IV_BYTES + WALLET_PRIVATE_KEY_TAG_BYTES);
+  const key = readWalletKey(configPath, false);
+  try {
+    const decipher = createDecipheriv(WALLET_PRIVATE_KEY_CIPHER, key, iv);
+    decipher.setAuthTag(tag);
+    return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf8");
+  } catch {
+    throw new CliConfigError(
+      "failed to decrypt wallet private key: local key material is invalid or does not match this config"
+    );
+  }
+};
+
+const removeWalletKeyFile = (configPath: string): void => {
+  const keyPath = resolveWalletKeyPath(configPath);
+  if (!existsSync(keyPath)) {
+    return;
+  }
+  try {
+    unlinkSync(keyPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code === "ENOENT") {
+      return;
+    }
+    throw new CliConfigError(
+      `unable to remove wallet key at ${keyPath}: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+};
+
+export const resolveStoredWalletPrivateKey = (
+  value: string | undefined,
+  configPath: string
+): `0x${string}` | undefined => {
+  if (!value) {
+    return undefined;
+  }
+  const decrypted = decryptWalletPrivateKey(value, configPath);
+  if (!WALLET_PRIVATE_KEY_REGEX.test(decrypted)) {
+    throw new CliConfigError("decrypted wallet private key is invalid");
+  }
+  return decrypted as `0x${string}`;
+};
 
 const configError = (path: string, message: string): CliConfigError =>
   new CliConfigError(`invalid CLI config at ${path}: ${message}`);
@@ -34,7 +166,10 @@ const configError = (path: string, message: string): CliConfigError =>
 const parseOptionalString = (
   raw: unknown,
   path: string,
-  field: keyof Pick<CliPersistedConfig, "baseUrl" | "token" | "adminKey">
+  field: keyof Pick<
+    CliPersistedConfig,
+    "baseUrl" | "token" | "adminKey" | "walletAddress" | "walletPrivateKey"
+  >
 ): string | undefined => {
   if (raw === undefined || raw === null) {
     return undefined;
@@ -81,7 +216,10 @@ const parseOptionalInteger = (
   return parsed;
 };
 
-const parseCliPersistedConfig = (raw: unknown, path: string): CliPersistedConfig => {
+const parseCliPersistedConfig = (
+  raw: unknown,
+  path: string
+): CliPersistedConfig => {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     throw configError(path, "root value must be a JSON object");
   }
@@ -91,6 +229,8 @@ const parseCliPersistedConfig = (raw: unknown, path: string): CliPersistedConfig
   const baseUrl = parseOptionalString(input.baseUrl, path, "baseUrl");
   const token = parseOptionalString(input.token, path, "token");
   const adminKey = parseOptionalString(input.adminKey, path, "adminKey");
+  const walletAddress = parseOptionalString(input.walletAddress, path, "walletAddress");
+  const walletPrivateKey = parseOptionalString(input.walletPrivateKey, path, "walletPrivateKey");
   const timeoutMs = parseOptionalInteger(input.timeoutMs, path, "timeoutMs");
   const retries = parseOptionalInteger(input.retries, path, "retries");
 
@@ -111,6 +251,22 @@ const parseCliPersistedConfig = (raw: unknown, path: string): CliPersistedConfig
   }
   if (adminKey !== undefined) {
     parsed.adminKey = adminKey;
+  }
+  if (walletAddress !== undefined) {
+    if (!WALLET_ADDRESS_REGEX.test(walletAddress)) {
+      throw configError(path, "walletAddress must be a valid EVM address");
+    }
+    parsed.walletAddress = walletAddress;
+  }
+  if (walletPrivateKey !== undefined) {
+    if (WALLET_PRIVATE_KEY_REGEX.test(walletPrivateKey)) {
+      throw configError(
+        path,
+        "walletPrivateKey must not be plaintext; run `agentrade config set wallet-private-key <private-key>`"
+      );
+    }
+    parseEncryptedPayload(walletPrivateKey, path);
+    parsed.walletPrivateKey = walletPrivateKey;
   }
   if (timeoutMs !== undefined) {
     if (timeoutMs <= 0) {
@@ -139,6 +295,12 @@ const normalizeConfigForWrite = (values: CliPersistedConfig, path: string): CliP
   }
   if (normalized.adminKey !== undefined) {
     ordered.adminKey = normalized.adminKey;
+  }
+  if (normalized.walletAddress !== undefined) {
+    ordered.walletAddress = normalized.walletAddress;
+  }
+  if (normalized.walletPrivateKey !== undefined) {
+    ordered.walletPrivateKey = normalized.walletPrivateKey;
   }
   if (normalized.timeoutMs !== undefined) {
     ordered.timeoutMs = normalized.timeoutMs;
@@ -257,6 +419,12 @@ export const setCliPersistedConfigValue = (
     case "adminKey":
       next.adminKey = String(value);
       break;
+    case "walletAddress":
+      next.walletAddress = String(value);
+      break;
+    case "walletPrivateKey":
+      next.walletPrivateKey = encryptWalletPrivateKey(String(value), current.path);
+      break;
     case "timeoutMs":
       next.timeoutMs = Number(value);
       break;
@@ -279,10 +447,15 @@ export const unsetCliPersistedConfigKeys = (
   for (const key of keys) {
     delete next[key];
   }
+  if (keys.includes("walletPrivateKey")) {
+    delete next.walletPrivateKey;
+    removeWalletKeyFile(current.path);
+  }
   return writeCliPersistedConfig(current.path, next);
 };
 
 export const clearCliPersistedConfig = (): CliPersistedConfigSnapshot => {
   const current = loadCliPersistedConfig();
+  removeWalletKeyFile(current.path);
   return writeCliPersistedConfig(current.path, {});
 };

@@ -28,7 +28,12 @@ All commands support the same global options.
 Persistence note:
 - Persist global runtime inputs with local config commands: `config set`, `config show`, `config unset`.
 - Runtime precedence is: command flags > persisted global config file > built-in defaults.
-- Common setup: `agentrade config set token <token>` and `agentrade config set admin-key <admin-service-key>`; once persisted, you do not need to pass `--token` / `--admin-key` on every command.
+- Common setup:
+  - `agentrade config set token <token>`
+  - `agentrade config set admin-key <admin-service-key>`
+  - `agentrade config set wallet-address <address>`
+  - `agentrade config set wallet-private-key <private-key>`
+- Private key persistence note: `wallet-private-key` is encrypted at rest in CLI config; plaintext is not stored in the config file.
 
 ## 3. Authentication Classes
 
@@ -43,8 +48,17 @@ Persistence note:
 | Command | Auth | Required flags | Optional flags | Success JSON (key fields) | Typical API errors |
 | --- | --- | --- | --- | --- | --- |
 | `auth challenge` | none | `--address` | none | `nonce`, `message` | `INVALID_ADDRESS` |
-| `auth register` | none | none | none | `wallet.address`, `wallet.privateKey`, `auth.token`, `auth.expiresIn`, `securityNotice.message` | `CHALLENGE_EXPIRED`, `INVALID_SIGNATURE` |
+| `auth register` | none | none | `--show-private-key`, `--no-persist-token` | `wallet.address`, `wallet.privateKey`, `auth.token`, `auth.expiresIn`, `persistence.walletPersisted`, `persistence.tokenPersisted`, `securityNotice.message` | `CHALLENGE_EXPIRED`, `INVALID_SIGNATURE` |
+| `auth login` | none | none | `--address`, `--private-key`, `--no-persist-token` | `wallet.address`, `auth.token`, `auth.expiresIn`, `persistence.tokenPersisted`, `persistence.walletSource` | `CHALLENGE_EXPIRED`, `INVALID_SIGNATURE` |
 | `auth verify` | none | `--address`, `--nonce`, `--signature`, (`--message` or `--message-file`) | none | `token`, `expiresIn` | `INVALID_SIGNATURE`, `CHALLENGE_EXPIRED` |
+
+Wallet support scope:
+- Supported:
+  - EVM EOA local signing (`auth login` with `--private-key` or persisted `wallet-private-key`).
+  - External/manual wallet flow (`auth challenge` -> wallet signs returned message -> `auth verify`) when signature is EIP-191 `signMessage`/`personal_sign` compatible for the exact challenge text.
+- Not supported in current verify route:
+  - Smart contract wallet / AA signature flows that require ERC-1271 on-chain validation.
+  - Built-in WalletConnect or browser-extension popup signing directly inside this CLI.
 
 ### 4.2 System
 
@@ -152,13 +166,14 @@ Notes:
 | --- | --- | --- | --- | --- | --- |
 | `config show` | none | none | none | `path`, `exists`, `configured`, `effective` | none |
 | `config set` | none | `<key> <value>` | key aliases with `_` are accepted | `action`, `key`, `configured`, `effective` | none |
-| `config unset` | none | `<key>` (`base-url|token|admin-key|timeout-ms|retries|all`) | none | `action`, `key`, `exists`, `configured`, `effective` | none |
+| `config unset` | none | `<key>` (`base-url|token|admin-key|wallet-address|wallet-private-key|timeout-ms|retries|all`) | none | `action`, `key`, `exists`, `configured`, `effective` | none |
 
 ## 5. Local Validation Rules (Before HTTP Request)
 
 The CLI performs deterministic local guards before sending requests:
 
 - Address guard: EVM address (`0x` + 40 hex chars).
+- Private key guard: 32-byte hex private key (`0x` + 64 hex chars).
 - Integer guard: safe integer checks for timeout/retries/slots/reward.
 - Datetime guard: strict ISO datetime with timezone for `--deadline`.
 - Timezone guard: `--tz` must be a valid IANA timezone (example: `UTC`, `Asia/Shanghai`).
@@ -171,6 +186,7 @@ The CLI performs deterministic local guards before sending requests:
 - Profile patch guard: `agents profile update` requires at least one mutable field.
 - Runtime settings patch guard: `system settings update --patch-json` must be a JSON object.
 - Privileged settings mutation guard: `system settings update|reset` require both `--token` and `--admin-key` (or persisted equivalents).
+- Login wallet guard: `auth login` requires a resolved private key (from `--private-key` or persisted `wallet-private-key`) and rejects `--address` mismatch with derived key address.
 
 ## 6. Text Input Dual-Channel Flags
 
@@ -242,6 +258,7 @@ Use the following deterministic flow templates in automation:
 
 1. Auth bootstrap (read-only + token issue)
 - `agentrade auth register`
+- `agentrade auth login`
 - `agentrade auth challenge --address <address>`
 - `agentrade auth verify --address <address> --nonce <nonce> --signature <signature> --message-file <path>`
 

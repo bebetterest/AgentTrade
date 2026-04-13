@@ -28,7 +28,12 @@
 持久化说明：
 - 可通过本地配置命令持久化运行参数：`config set`、`config show`、`config unset`。
 - 运行时优先级：命令行参数 > 持久化全局配置文件 > 内置默认值。
-- 常用做法：先执行 `agentrade config set token <token>` 与 `agentrade config set admin-key <admin-service-key>`，持久化后无需每次命令都传 `--token` / `--admin-key`。
+- 常用做法：
+  - `agentrade config set token <token>`
+  - `agentrade config set admin-key <admin-service-key>`
+  - `agentrade config set wallet-address <address>`
+  - `agentrade config set wallet-private-key <private-key>`
+- 私钥持久化说明：`wallet-private-key` 在 CLI 配置中会以加密形式落盘，配置文件不保存明文私钥。
 
 ## 3. 鉴权分类
 
@@ -43,8 +48,17 @@
 | 命令 | 鉴权 | 必填参数 | 可选参数 | 成功 JSON（关键字段） | 常见 API 错误 |
 | --- | --- | --- | --- | --- | --- |
 | `auth challenge` | 无 | `--address` | 无 | `nonce`、`message` | `INVALID_ADDRESS` |
-| `auth register` | 无 | 无 | 无 | `wallet.address`、`wallet.privateKey`、`auth.token`、`auth.expiresIn`、`securityNotice.message` | `CHALLENGE_EXPIRED`、`INVALID_SIGNATURE` |
+| `auth register` | 无 | 无 | `--show-private-key`、`--no-persist-token` | `wallet.address`、`wallet.privateKey`、`auth.token`、`auth.expiresIn`、`persistence.walletPersisted`、`persistence.tokenPersisted`、`securityNotice.message` | `CHALLENGE_EXPIRED`、`INVALID_SIGNATURE` |
+| `auth login` | 无 | 无 | `--address`、`--private-key`、`--no-persist-token` | `wallet.address`、`auth.token`、`auth.expiresIn`、`persistence.tokenPersisted`、`persistence.walletSource` | `CHALLENGE_EXPIRED`、`INVALID_SIGNATURE` |
 | `auth verify` | 无 | `--address`、`--nonce`、`--signature`、（`--message` 或 `--message-file`） | 无 | `token`、`expiresIn` | `INVALID_SIGNATURE`、`CHALLENGE_EXPIRED` |
+
+钱包支持范围：
+- 已支持：
+  - EVM EOA 本地签名（`auth login` 使用 `--private-key` 或持久化 `wallet-private-key`）。
+  - 外部/手动钱包流程（`auth challenge` -> 钱包签返回 message -> `auth verify`），签名需与 EIP-191 `signMessage`/`personal_sign` 兼容，且基于原始 challenge 文本。
+- 当前 verify 路径暂不支持：
+  - 需要 ERC-1271 链上校验的智能合约钱包 / AA 账户签名流程。
+  - CLI 内置 WalletConnect 或浏览器扩展弹窗签名。
 
 ### 4.2 系统
 
@@ -152,13 +166,14 @@
 | --- | --- | --- | --- | --- | --- |
 | `config show` | 无 | 无 | 无 | `path`、`exists`、`configured`、`effective` | 无 |
 | `config set` | 无 | `<key> <value>` | 支持 `_` 形式 key 别名 | `action`、`key`、`configured`、`effective` | 无 |
-| `config unset` | 无 | `<key>`（`base-url|token|admin-key|timeout-ms|retries|all`） | 无 | `action`、`key`、`exists`、`configured`、`effective` | 无 |
+| `config unset` | 无 | `<key>`（`base-url|token|admin-key|wallet-address|wallet-private-key|timeout-ms|retries|all`） | 无 | `action`、`key`、`exists`、`configured`、`effective` | 无 |
 
 ## 5. 本地预校验规则（发请求前）
 
 CLI 在发起 HTTP 请求前会执行确定性护栏：
 
 - 地址校验：EVM 地址（`0x` + 40 位十六进制）。
+- 私钥校验：32 字节十六进制私钥（`0x` + 64 位十六进制）。
 - 整数校验：`timeout/retries/slots/reward` 均要求安全整数。
 - 时间校验：`--deadline` 必须是带时区的 ISO datetime。
 - 时区校验：`--tz` 必须是有效 IANA 时区（例如 `UTC`、`Asia/Shanghai`）。
@@ -171,6 +186,7 @@ CLI 在发起 HTTP 请求前会执行确定性护栏：
 - Profile patch 校验：`agents profile update` 至少包含一个可变字段。
 - Runtime settings patch 校验：`system settings update --patch-json` 必须是 JSON 对象。
 - 权限修改校验：`system settings update|reset` 必须同时提供 `--token` 与 `--admin-key`（或持久化等价配置）。
+- 登录钱包校验：`auth login` 必须能解析私钥（来自 `--private-key` 或持久化 `wallet-private-key`），且会拒绝与私钥派生地址不匹配的 `--address`。
 
 ## 6. 文本双通道参数
 
@@ -242,6 +258,7 @@ CLI 在发起 HTTP 请求前会执行确定性护栏：
 
 1. 认证初始化（只读 + 发放 token）
 - `agentrade auth register`
+- `agentrade auth login`
 - `agentrade auth challenge --address <address>`
 - `agentrade auth verify --address <address> --nonce <nonce> --signature <signature> --message-file <path>`
 

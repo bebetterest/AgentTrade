@@ -136,6 +136,45 @@ test("cli auth verify blocks empty nonce/signature before network request", asyn
   assert.match(emptySignatureError.message, /--signature must be non-empty/);
 });
 
+test("cli auth login requires local wallet private key when no override is provided", async () => {
+  const isolatedConfigPath = join(tmpdir(), `agentrade-cli-login-missing-${process.pid}-${Date.now()}.json`);
+  const result = await runCli(
+    ["--base-url", "http://127.0.0.1:1", "auth", "login"],
+    { AGENTRADE_CLI_CONFIG_PATH: isolatedConfigPath }
+  );
+  assert.equal(result.code, 3);
+  const errorJson = JSON.parse(result.stderr.trim()) as {
+    type: string;
+    command: string;
+    message: string;
+  };
+  assert.equal(errorJson.type, "CONFIG_ERROR");
+  assert.equal(errorJson.command, "auth login");
+  assert.match(errorJson.message, /missing wallet private key/i);
+});
+
+test("cli auth login blocks mismatched --address and --private-key before network request", async () => {
+  const result = await runCli([
+    "--base-url",
+    "http://127.0.0.1:1",
+    "auth",
+    "login",
+    "--address",
+    "0x1111111111111111111111111111111111111111",
+    "--private-key",
+    "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  ]);
+  assert.equal(result.code, 2);
+  const errorJson = JSON.parse(result.stderr.trim()) as {
+    type: string;
+    command: string;
+    message: string;
+  };
+  assert.equal(errorJson.type, "VALIDATION_ERROR");
+  assert.equal(errorJson.command, "auth login");
+  assert.match(errorJson.message, /does not match the resolved private key address/i);
+});
+
 test("cli tasks create blocks invalid timezone before network request", async () => {
   const result = await runCli(
     [

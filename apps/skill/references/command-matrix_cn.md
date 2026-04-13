@@ -33,10 +33,14 @@
 | 核心 | `system health` | 无 | `GET /v2/system/health` | 无 | 无 | 无 | `ok=true`、`service` |
 | 核心 | `auth challenge` | 无 | `POST /v2/auth/challenge` | `--address` | 无 | EVM 地址 | `nonce`、`message` |
 | 核心 | `auth verify` | 无 | `POST /v2/auth/verify` | `--address`、`--nonce`、`--signature`、`--message`/`--message-file` 二选一 | 无 | nonce/signature/message 非空，EVM 地址 | `token`、`expiresIn` |
-| 可选 | `auth register` | 无 | 组合流程：`POST /v2/auth/challenge` -> `POST /v2/auth/verify` | 无 | 无 | 本地密钥生成 + SIWE 签名流程 | `wallet.address`、`wallet.privateKey`、`auth.token`、`auth.expiresIn`、`securityNotice.message` |
+| 可选 | `auth register` | 无 | 组合流程：`POST /v2/auth/challenge` -> `POST /v2/auth/verify` | 无 | `--show-private-key`、`--no-persist-token` | 本地密钥生成 + SIWE 签名流程 | `wallet.address`、`wallet.privateKey`、`auth.token`、`auth.expiresIn`、`persistence.walletPersisted`、`persistence.tokenPersisted`、`securityNotice.message` |
+| 核心 | `auth login` | 无 | 组合流程：`POST /v2/auth/challenge` -> `POST /v2/auth/verify` | 无 | `--address`、`--private-key`、`--no-persist-token` | 从参数/配置解析私钥，拒绝地址与私钥不匹配 | `wallet.address`、`auth.token`、`auth.expiresIn`、`persistence.tokenPersisted`、`persistence.walletSource` |
 
 认证安全提示：
-- `auth register` 返回的 `wallet.privateKey` 视为一次性密钥，必须立即安全保存，严禁出现在日志、提交、截图或共享渠道。
+- `auth register` 默认会把 `wallet-address` 与“加密后的”`wallet-private-key` 持久化到本地 CLI 配置。
+- 仅在显式传入 `--show-private-key` 时，stdout 才会输出明文 `wallet.privateKey`。
+- 外部/手动钱包仅在“对原始 challenge 文本进行 EIP-191 `signMessage`/`personal_sign` 签名”时受支持。
+- 需要 ERC-1271 校验的智能合约钱包/AA 账户签名，当前 auth verify 路径不支持。
 
 ## 3）日常 Agent 主流程
 
@@ -96,8 +100,8 @@
 | 优先级 | 命令 | 鉴权 | API 方法/路径 | 必填参数 | 可选参数 | 关键本地护栏 | 成功锚点 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 核心 | `config show` | 无 | 无（仅本地文件） | 无 | 无 | 持久化 JSON 配置解析 | `path`、`exists`、`configured`、`effective` |
-| 核心 | `config set` | 无 | 无（仅本地文件） | `<key> <value>` | 支持 `_` 形式 key 别名 | key 枚举 + 值校验（`URL`/整数/非空） | `action=set`、`key`、更新后配置 |
-| 核心 | `config unset` | 无 | 无（仅本地文件） | `<key>` 或 `all` | 无 | key 枚举校验 | `action=unset`、更新后配置 |
+| 核心 | `config set` | 无 | 无（仅本地文件） | `<key> <value>` | 支持 `_` 形式 key 别名 | key 枚举 + 值校验（`URL`/地址/私钥/整数/非空） | `action=set`、`key`、更新后配置 |
+| 核心 | `config unset` | 无 | 无（仅本地文件） | `<key>` 或 `all` | 无 | key 枚举校验（`base-url|token|admin-key|wallet-address|wallet-private-key|timeout-ms|retries|all`） | `action=unset`、更新后配置 |
 
 ## 7）共享全局参数
 
@@ -138,8 +142,8 @@
 
 - 新会话启动组合：
   - `system health`
-  - `auth challenge`
-  - `auth verify`
+  - `auth register`
+  - `auth login`
 - 任务执行组合：
   - `tasks list`
   - `tasks get`

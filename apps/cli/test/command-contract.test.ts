@@ -591,12 +591,15 @@ test("cli command contract: method/path/auth/body coverage for all command group
     const registerOutput = JSON.parse(registerResult.stdout.trim()) as {
       wallet: { address: string; privateKey: string };
       auth: { token: string; expiresIn: string };
+      persistence: { walletPersisted: boolean; tokenPersisted: boolean };
       securityNotice: { level: string; message: string };
     };
     assert.match(registerOutput.wallet.address, /^0x[a-fA-F0-9]{40}$/);
-    assert.match(registerOutput.wallet.privateKey, /^0x[a-fA-F0-9]{64}$/);
+    assert.equal(registerOutput.wallet.privateKey, "***hidden***");
     assert.equal(registerOutput.auth.token, "jwt-token");
     assert.equal(registerOutput.auth.expiresIn, "15m");
+    assert.equal(registerOutput.persistence.walletPersisted, true);
+    assert.equal(registerOutput.persistence.tokenPersisted, true);
     assert.equal(registerOutput.securityNotice.level, "CRITICAL");
     assert.match(registerOutput.securityNotice.message, /only identity credential/i);
     assert.match(registerOutput.securityNotice.message, /Do not share it with other agents/i);
@@ -622,6 +625,117 @@ test("cli command contract: method/path/auth/body coverage for all command group
     assert.equal(verifyBody.nonce, "nonce-1");
     assert.equal(verifyBody.message, "mock-message");
     assert.match(verifyBody.signature, /^0x[a-fA-F0-9]{130}$/);
+
+    const registerShowKey = await runCli(
+      ["--base-url", baseUrl, "auth", "register", "--show-private-key", "--no-persist-token"],
+      baseEnv
+    );
+    assert.equal(registerShowKey.code, 0, `command failed: auth register --show-private-key\n${registerShowKey.stderr}`);
+    const registerShowKeyOutput = JSON.parse(registerShowKey.stdout.trim()) as {
+      wallet: { address: string; privateKey: string };
+      persistence: { walletPersisted: boolean; tokenPersisted: boolean };
+    };
+    assert.match(registerShowKeyOutput.wallet.address, /^0x[a-fA-F0-9]{40}$/);
+    assert.match(registerShowKeyOutput.wallet.privateKey, /^0x[a-fA-F0-9]{64}$/);
+    assert.equal(registerShowKeyOutput.persistence.walletPersisted, true);
+    assert.equal(registerShowKeyOutput.persistence.tokenPersisted, false);
+
+    const beforeLoginCalls = calls.length;
+    const loginResult = await runCli(["--base-url", baseUrl, "auth", "login", "--no-persist-token"], baseEnv);
+    assert.equal(loginResult.code, 0, `command failed: auth login\n${loginResult.stderr}`);
+    assert.equal(calls.length, beforeLoginCalls + 2, "auth login must trigger challenge + verify");
+    const loginOutput = JSON.parse(loginResult.stdout.trim()) as {
+      wallet: { address: string };
+      auth: { token: string; expiresIn: string };
+      persistence: { tokenPersisted: boolean; walletSource: string };
+    };
+    assert.match(loginOutput.wallet.address, /^0x[a-fA-F0-9]{40}$/);
+    assert.equal(loginOutput.auth.token, "jwt-token");
+    assert.equal(loginOutput.auth.expiresIn, "15m");
+    assert.equal(loginOutput.persistence.tokenPersisted, false);
+    assert.equal(loginOutput.persistence.walletSource, "config");
+
+    const loginChallengeCall = calls[beforeLoginCalls]!;
+    assert.equal(loginChallengeCall.method, "POST");
+    assert.equal(loginChallengeCall.url, stripApiVersionPrefix("/v2/auth/challenge"));
+    assertAuth(loginChallengeCall.headers, "none");
+    assert.equal(typeof loginChallengeCall.body, "object");
+    const loginChallengeBody = loginChallengeCall.body as { address: string };
+    assert.match(loginChallengeBody.address, /^0x[a-fA-F0-9]{40}$/);
+
+    const loginVerifyCall = calls[beforeLoginCalls + 1]!;
+    assert.equal(loginVerifyCall.method, "POST");
+    assert.equal(loginVerifyCall.url, stripApiVersionPrefix("/v2/auth/verify"));
+    assertAuth(loginVerifyCall.headers, "none");
+    assert.equal(typeof loginVerifyCall.body, "object");
+    const loginVerifyBody = loginVerifyCall.body as {
+      address: string;
+      nonce: string;
+      signature: string;
+      message: string;
+    };
+    assert.equal(loginVerifyBody.address, loginChallengeBody.address);
+    assert.equal(loginVerifyBody.nonce, "nonce-1");
+    assert.equal(loginVerifyBody.message, "mock-message");
+    assert.match(loginVerifyBody.signature, /^0x[a-fA-F0-9]{130}$/);
+
+    const forceDifferentWalletAddress = await runCli(
+      ["--base-url", baseUrl, "config", "set", "wallet-address", registerOutput.wallet.address],
+      baseEnv
+    );
+    assert.equal(
+      forceDifferentWalletAddress.code,
+      0,
+      `command failed: config set wallet-address\n${forceDifferentWalletAddress.stderr}`
+    );
+
+    const beforeLoginOverrideCalls = calls.length;
+    const loginWithOverride = await runCli(
+      [
+        "--base-url",
+        baseUrl,
+        "auth",
+        "login",
+        "--private-key",
+        registerShowKeyOutput.wallet.privateKey,
+        "--no-persist-token"
+      ],
+      baseEnv
+    );
+    assert.equal(loginWithOverride.code, 0, `command failed: auth login --private-key\n${loginWithOverride.stderr}`);
+    assert.equal(calls.length, beforeLoginOverrideCalls + 2, "auth login --private-key must trigger challenge + verify");
+    const loginWithOverrideOutput = JSON.parse(loginWithOverride.stdout.trim()) as {
+      wallet: { address: string };
+      persistence: { walletSource: string };
+    };
+    assert.equal(loginWithOverrideOutput.wallet.address, registerShowKeyOutput.wallet.address);
+    assert.notEqual(loginWithOverrideOutput.wallet.address, registerOutput.wallet.address);
+    assert.equal(loginWithOverrideOutput.persistence.walletSource, "flag");
+
+    const beforeMismatchCalls = calls.length;
+    const loginMismatch = await runCli(
+      [
+        "--base-url",
+        baseUrl,
+        "auth",
+        "login",
+        "--address",
+        registerOutput.wallet.address,
+        "--private-key",
+        registerShowKeyOutput.wallet.privateKey
+      ],
+      baseEnv
+    );
+    assert.equal(loginMismatch.code, 2);
+    assert.equal(calls.length, beforeMismatchCalls, "auth login mismatch should fail before network request");
+    const loginMismatchErr = JSON.parse(loginMismatch.stderr.trim()) as {
+      type: string;
+      command: string;
+      message: string;
+    };
+    assert.equal(loginMismatchErr.type, "VALIDATION_ERROR");
+    assert.equal(loginMismatchErr.command, "auth login");
+    assert.match(loginMismatchErr.message, /does not match the resolved private key address/i);
 
     await runAndAssert(["tasks", "list"], { method: "GET", url: "/v2/tasks", auth: "none" });
     await runAndAssert(

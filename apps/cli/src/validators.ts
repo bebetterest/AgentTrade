@@ -3,6 +3,7 @@ import type { Address, RuntimeEditableRulesPatch } from "@agentrade/types";
 import { CliValidationError } from "./errors.js";
 
 const ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/;
+const PRIVATE_KEY_REGEX = /^0x[a-fA-F0-9]{64}$/;
 const ISO_DATETIME_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/;
 const RUNTIME_EDITABLE_KEYS = new Set<keyof RuntimeEditableRulesPatch>([
   "cycleDurationHours",
@@ -39,6 +40,13 @@ export const ensureAddress = (raw: string, flag: string): Address => {
     throw new CliValidationError(`${flag} must be a valid EVM address`);
   }
   return raw as Address;
+};
+
+export const ensurePrivateKey = (raw: string, flag: string): `0x${string}` => {
+  if (!PRIVATE_KEY_REGEX.test(raw)) {
+    throw new CliValidationError(`${flag} must be a valid hex private key`);
+  }
+  return raw as `0x${string}`;
 };
 
 export const ensureNonEmpty = (raw: string, flag: string): string => {

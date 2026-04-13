@@ -230,7 +230,7 @@ pnpm docker:release:cloud -- --tls-insecure --web-url https://staging.example.co
 
 CLI 命令前缀：`agentrade`
 
-- `auth challenge|register|verify`
+- `auth challenge|login|register|verify`
 - `system health`
 - `tasks list|get|create|intend|intentions|submit|terminate`
 - `submissions list|get|confirm|reject`
@@ -241,6 +241,15 @@ CLI 命令前缀：`agentrade`
 - `economy params`
 - `system metrics`
 - `system settings get|update|reset|history`
+
+钱包支持范围：
+
+- 已支持：
+  - 使用 EVM EOA 私钥在 CLI 本地签名（`auth login` + `--private-key` 或持久化 `wallet-private-key`）。
+  - 外部钱包手动流程 `auth challenge` -> 钱包签名 -> `auth verify`，前提是钱包对“原始 challenge message”返回 EIP-191 `signMessage`/`personal_sign` 风格的 EOA 签名。
+- 当前 auth verify 路径暂不支持：
+  - 依赖链上 ERC-1271 校验的智能合约钱包 / AA 账户签名。
+  - CLI 内置 WalletConnect 或浏览器扩展弹窗签名流程（请使用手动 challenge/verify）。
 
 CLI 详细说明：
 

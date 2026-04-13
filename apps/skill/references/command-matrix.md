@@ -33,10 +33,14 @@ Use each row as a deterministic contract:
 | Core | `system health` | none | `GET /v2/system/health` | none | none | none | `ok=true`, `service` |
 | Core | `auth challenge` | none | `POST /v2/auth/challenge` | `--address` | none | EVM address | `nonce`, `message` |
 | Core | `auth verify` | none | `POST /v2/auth/verify` | `--address`, `--nonce`, `--signature`, one of `--message`/`--message-file` | none | non-empty nonce/signature/message, EVM address | `token`, `expiresIn` |
-| Optional | `auth register` | none | composite: `POST /v2/auth/challenge` -> `POST /v2/auth/verify` | none | none | local key generation + SIWE signature flow | `wallet.address`, `wallet.privateKey`, `auth.token`, `auth.expiresIn`, `securityNotice.message` |
+| Optional | `auth register` | none | composite: `POST /v2/auth/challenge` -> `POST /v2/auth/verify` | none | `--show-private-key`, `--no-persist-token` | local key generation + SIWE signature flow | `wallet.address`, `wallet.privateKey`, `auth.token`, `auth.expiresIn`, `persistence.walletPersisted`, `persistence.tokenPersisted`, `securityNotice.message` |
+| Core | `auth login` | none | composite: `POST /v2/auth/challenge` -> `POST /v2/auth/verify` | none | `--address`, `--private-key`, `--no-persist-token` | resolve private key from flag/config, reject address mismatch | `wallet.address`, `auth.token`, `auth.expiresIn`, `persistence.tokenPersisted`, `persistence.walletSource` |
 
 Authentication safety note:
-- Treat `wallet.privateKey` from `auth register` as one-time display secret. Persist securely immediately and never expose it in logs, commits, screenshots, or shared channels.
+- `auth register` persists `wallet-address` and encrypted `wallet-private-key` into local CLI config by default.
+- Plaintext `wallet.privateKey` is printed only when `--show-private-key` is explicitly set.
+- External/manual wallet signatures are supported only when they are EIP-191 `signMessage`/`personal_sign` signatures over the exact challenge text.
+- Smart-contract wallet/AA signatures that require ERC-1271 verification are not supported by the current auth verify route.
 
 ## 3) Daily Agent Workflows
 
@@ -96,8 +100,8 @@ Operator note:
 | Priority | Command | Auth | API Method/Path | Required Options | Optional Options | Key Local Guards | Success Anchors |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Core | `config show` | none | none (local file only) | none | none | parse persisted JSON config | `path`, `exists`, `configured`, `effective` |
-| Core | `config set` | none | none (local file only) | `<key> <value>` | key aliases with `_` accepted | key enum + value validation (`URL`/integer/non-empty) | `action=set`, `key`, updated config |
-| Core | `config unset` | none | none (local file only) | `<key>` or `all` | none | key enum guard | `action=unset`, updated config |
+| Core | `config set` | none | none (local file only) | `<key> <value>` | key aliases with `_` accepted | key enum + value validation (`URL`/address/private-key/integer/non-empty) | `action=set`, `key`, updated config |
+| Core | `config unset` | none | none (local file only) | `<key>` or `all` | none | key enum guard (`base-url|token|admin-key|wallet-address|wallet-private-key|timeout-ms|retries|all`) | `action=unset`, updated config |
 
 ## 7) Shared Global Options
 
@@ -138,8 +142,8 @@ After write command:
 
 - Onboarding pack:
   - `system health`
-  - `auth challenge`
-  - `auth verify`
+  - `auth register`
+  - `auth login`
 - Task execution pack:
   - `tasks list`
   - `tasks get`

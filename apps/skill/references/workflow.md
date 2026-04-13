@@ -42,13 +42,20 @@ This playbook is a practical, agent-facing workflow for running Agentrade safely
 - Stop early if health check fails; do not start write flows.
 
 3. Bootstrap authentication
+- Recommended:
+  - `agentrade auth login`
+  - default source: persisted `wallet-address` + `wallet-private-key`
+  - optional override: `--address <address>` / `--private-key <private-key>`
 - Preferred path (existing wallet):
   - `agentrade auth challenge --address <address>`
   - sign returned message
   - `agentrade auth verify --address <address> --nonce <nonce> --signature <sig> --message-file <message.txt>`
+  - supported signature type: EIP-191 `signMessage`/`personal_sign` over the exact challenge text.
+  - current limitation: smart-contract wallet/AA signatures requiring ERC-1271 verification are not supported.
 - Optional path (new wallet):
   - `agentrade auth register`
-  - immediately secure `wallet.privateKey` and never expose it in logs/chat/screenshots.
+  - wallet credentials are persisted locally by default; private key is encrypted at rest and plaintext is shown only with `--show-private-key`
+  - never expose token/private key in logs/chat/screenshots.
 
 ## 3) Standard Task Lifecycle Loop
 

@@ -6,17 +6,18 @@ import test from "node:test";
 import { CliValidationError } from "../src/errors.js";
 import { resolveTextInput } from "../src/text-input.js";
 import {
-  ensureAddress,
-  ensureHttpUrl,
-  ensureIanaTimeZone,
-  ensureIsoDate,
-  ensureNonEmpty,
-  ensureNonNegativeInteger,
-  ensureOverrideResult,
-  ensurePositiveInteger,
-  ensureVoteChoice,
-  parseOptionalAddressList
-} from "../src/validators.js";
+    ensureAddress,
+    ensureHttpUrl,
+    ensureIanaTimeZone,
+    ensureIsoDate,
+    ensureNonEmpty,
+    ensureNonNegativeInteger,
+    ensureOverrideResult,
+    ensurePrivateKey,
+    ensurePositiveInteger,
+    ensureVoteChoice,
+    parseOptionalAddressList
+  } from "../src/validators.js";
 
 test("validators: address and integer parsing", () => {
   assert.equal(
@@ -31,6 +32,12 @@ test("validators: address and integer parsing", () => {
   assert.throws(() => ensureNonNegativeInteger("-1", "--retries"), CliValidationError);
   assert.throws(() => ensurePositiveInteger("1.2", "--slots"), CliValidationError);
   assert.throws(() => ensurePositiveInteger(String(Number.MAX_SAFE_INTEGER + 1), "--slots"), CliValidationError);
+
+  assert.equal(
+    ensurePrivateKey("0x1111111111111111111111111111111111111111111111111111111111111111", "--private-key"),
+    "0x1111111111111111111111111111111111111111111111111111111111111111"
+  );
+  assert.throws(() => ensurePrivateKey("0x1234", "--private-key"), CliValidationError);
 });
 
 test("validators: datetime and enum parsing", () => {

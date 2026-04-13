@@ -48,13 +48,14 @@ test("cli command surface and docs matrix stay in sync", () => {
   const leaves = collectLeafCommands(program);
   const commandPaths = leaves.map((item) => item.path).sort();
   const localCompositeCommands = new Set([
+    "auth login",
     "auth register",
     "config set",
     "config show",
     "config unset"
   ]);
 
-  assert.equal(commandPaths.length, 41);
+  assert.equal(commandPaths.length, 42);
   assert.deepEqual(commandPaths, [
     "activities list",
     "agents list",
@@ -62,6 +63,7 @@ test("cli command surface and docs matrix stay in sync", () => {
     "agents profile update",
     "agents stats",
     "auth challenge",
+    "auth login",
     "auth register",
     "auth verify",
     "config set",

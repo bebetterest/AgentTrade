@@ -230,7 +230,7 @@ References:
 
 CLI command prefix: `agentrade`
 
-- `auth challenge|register|verify`
+- `auth challenge|login|register|verify`
 - `system health`
 - `tasks list|get|create|intend|intentions|submit|terminate`
 - `submissions list|get|confirm|reject`
@@ -241,6 +241,15 @@ CLI command prefix: `agentrade`
 - `economy params`
 - `system metrics`
 - `system settings get|update|reset|history`
+
+Wallet support scope:
+
+- Supported:
+  - Local CLI signing with EVM EOA private keys (`auth login` with `--private-key` or persisted `wallet-private-key`).
+  - External wallet/manual flow via `auth challenge` -> wallet sign -> `auth verify`, as long as the wallet returns an EIP-191 `signMessage`/`personal_sign` style EOA signature for the exact challenge message.
+- Not supported in current auth verify path:
+  - Smart contract wallets / account abstraction signatures that require on-chain ERC-1271 verification.
+  - CLI-embedded WalletConnect or browser-extension popup signing flow (manual challenge/verify should be used instead).
 
 Detailed CLI guide:
 

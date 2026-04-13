@@ -13,9 +13,11 @@ import {
 import { CliValidationError } from "../errors.js";
 import { printJson } from "../output.js";
 import {
+  ensureAddress,
   ensureHttpUrl,
   ensureNonEmpty,
   ensureNonNegativeInteger,
+  ensurePrivateKey,
   ensurePositiveInteger
 } from "../validators.js";
 
@@ -28,6 +30,10 @@ type ConfigOutput = {
     tokenConfigured: boolean;
     adminKey: string | null;
     adminKeyConfigured: boolean;
+    walletAddress: string | null;
+    walletAddressConfigured: boolean;
+    walletPrivateKey: string | null;
+    walletPrivateKeyConfigured: boolean;
     timeoutMs: number | null;
     retries: number | null;
   };
@@ -35,6 +41,9 @@ type ConfigOutput = {
     baseUrl: string;
     tokenConfigured: boolean;
     adminKeyConfigured: boolean;
+    walletAddress: string | null;
+    walletAddressConfigured: boolean;
+    walletPrivateKeyConfigured: boolean;
     timeoutMs: number;
     retries: number;
   };
@@ -46,12 +55,16 @@ const KEY_ALIASES: Record<string, CliPersistedConfigKey> = {
   token: "token",
   "admin-key": "adminKey",
   admin_key: "adminKey",
+  "wallet-address": "walletAddress",
+  wallet_address: "walletAddress",
+  "wallet-private-key": "walletPrivateKey",
+  wallet_private_key: "walletPrivateKey",
   "timeout-ms": "timeoutMs",
   timeout_ms: "timeoutMs",
   retries: "retries"
 };
 
-const VALID_SET_KEYS = "base-url|token|admin-key|timeout-ms|retries";
+const VALID_SET_KEYS = "base-url|token|admin-key|wallet-address|wallet-private-key|timeout-ms|retries";
 
 const attachCommandPath = (error: unknown, commandPath: string): void => {
   if (!error || typeof error !== "object") {
@@ -82,6 +95,13 @@ const maskSecret = (value: string | undefined): string | null => {
   return `${trimmed.slice(0, 4)}...${trimmed.slice(-4)}`;
 };
 
+const maskEncryptedSecret = (value: string | undefined): string | null => {
+  if (!value || value.trim().length === 0) {
+    return null;
+  }
+  return "***encrypted***";
+};
+
 const toConfigOutput = (
   path: string,
   exists: boolean,
@@ -96,6 +116,10 @@ const toConfigOutput = (
       tokenConfigured: Boolean(values.token),
       adminKey: maskSecret(values.adminKey),
       adminKeyConfigured: Boolean(values.adminKey),
+      walletAddress: values.walletAddress ?? null,
+      walletAddressConfigured: Boolean(values.walletAddress),
+      walletPrivateKey: maskEncryptedSecret(values.walletPrivateKey),
+      walletPrivateKeyConfigured: Boolean(values.walletPrivateKey),
       timeoutMs: values.timeoutMs ?? null,
       retries: values.retries ?? null
     },
@@ -103,6 +127,9 @@ const toConfigOutput = (
       baseUrl: values.baseUrl ?? CLI_DEFAULT_BASE_URL,
       tokenConfigured: Boolean(values.token),
       adminKeyConfigured: Boolean(values.adminKey),
+      walletAddress: values.walletAddress ?? null,
+      walletAddressConfigured: Boolean(values.walletAddress),
+      walletPrivateKeyConfigured: Boolean(values.walletPrivateKey),
       timeoutMs: values.timeoutMs ?? CLI_DEFAULT_TIMEOUT_MS,
       retries: values.retries ?? CLI_DEFAULT_RETRIES
     }
@@ -139,6 +166,10 @@ const parseSetValue = (
       return ensureNonEmpty(rawValue, "<value>");
     case "adminKey":
       return ensureNonEmpty(rawValue, "<value>");
+    case "walletAddress":
+      return ensureAddress(rawValue, "<value>");
+    case "walletPrivateKey":
+      return ensurePrivateKey(rawValue, "<value>");
     case "timeoutMs":
       return ensurePositiveInteger(rawValue, "<value>");
     case "retries":
@@ -200,7 +231,10 @@ export const registerConfigCommands = (program: Command): void => {
   config
     .command("unset")
     .description("Remove one persisted key or clear all keys")
-    .argument("<key>", "setting key (base-url|token|admin-key|timeout-ms|retries|all)")
+    .argument(
+      "<key>",
+      "setting key (base-url|token|admin-key|wallet-address|wallet-private-key|timeout-ms|retries|all)"
+    )
     .action(function (this: Command, rawKey: string) {
       try {
         const key = parseUnsetKey(rawKey);

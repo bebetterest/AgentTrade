@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -99,14 +99,54 @@ test("cli config command: set/show/unset persisted values", async () => {
     assert.equal(setAdminJson.effective.adminKeyConfigured, true);
     assert.ok(setAdminJson.configured.adminKey?.includes("..."));
 
+    const walletAddress = "0x1111111111111111111111111111111111111111";
+    const walletPrivateKey = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+    const setWalletAddress = await runCli(
+      ["config", "set", "wallet-address", walletAddress],
+      configPath
+    );
+    assert.equal(setWalletAddress.code, 0, setWalletAddress.stderr);
+    const setWalletAddressJson = JSON.parse(setWalletAddress.stdout.trim()) as {
+      configured: { walletAddress: string | null; walletAddressConfigured: boolean };
+      effective: { walletAddress: string | null; walletAddressConfigured: boolean };
+    };
+    assert.equal(setWalletAddressJson.configured.walletAddress, walletAddress);
+    assert.equal(setWalletAddressJson.configured.walletAddressConfigured, true);
+    assert.equal(setWalletAddressJson.effective.walletAddressConfigured, true);
+
+    const setWalletPrivateKey = await runCli(
+      ["config", "set", "wallet-private-key", walletPrivateKey],
+      configPath
+    );
+    assert.equal(setWalletPrivateKey.code, 0, setWalletPrivateKey.stderr);
+    const setWalletPrivateKeyJson = JSON.parse(setWalletPrivateKey.stdout.trim()) as {
+      configured: { walletPrivateKey: string | null; walletPrivateKeyConfigured: boolean };
+      effective: { walletPrivateKeyConfigured: boolean };
+    };
+    assert.equal(setWalletPrivateKeyJson.configured.walletPrivateKeyConfigured, true);
+    assert.equal(setWalletPrivateKeyJson.effective.walletPrivateKeyConfigured, true);
+    assert.equal(setWalletPrivateKeyJson.configured.walletPrivateKey, "***encrypted***");
+    const persistedConfigText = readFileSync(configPath, "utf8");
+    assert.ok(!persistedConfigText.includes(walletPrivateKey));
+    assert.match(persistedConfigText, /"walletPrivateKey":\s*"enc:v1:/);
+
     const show = await runCli(["config", "show"], configPath);
     assert.equal(show.code, 0, show.stderr);
     const showJson = JSON.parse(show.stdout.trim()) as {
-      configured: { baseUrl: string | null; tokenConfigured: boolean; adminKeyConfigured: boolean };
+      configured: {
+        baseUrl: string | null;
+        tokenConfigured: boolean;
+        adminKeyConfigured: boolean;
+        walletAddress: string | null;
+        walletPrivateKeyConfigured: boolean;
+      };
     };
     assert.equal(showJson.configured.baseUrl, "https://api.example.com");
     assert.equal(showJson.configured.tokenConfigured, true);
     assert.equal(showJson.configured.adminKeyConfigured, true);
+    assert.equal(showJson.configured.walletAddress, walletAddress);
+    assert.equal(showJson.configured.walletPrivateKeyConfigured, true);
 
     const unsetToken = await runCli(["config", "unset", "token"], configPath);
     assert.equal(unsetToken.code, 0, unsetToken.stderr);
@@ -122,6 +162,20 @@ test("cli config command: set/show/unset persisted values", async () => {
     };
     assert.equal(unsetAdminJson.configured.adminKeyConfigured, false);
 
+    const unsetWalletAddress = await runCli(["config", "unset", "wallet-address"], configPath);
+    assert.equal(unsetWalletAddress.code, 0, unsetWalletAddress.stderr);
+    const unsetWalletAddressJson = JSON.parse(unsetWalletAddress.stdout.trim()) as {
+      configured: { walletAddressConfigured: boolean };
+    };
+    assert.equal(unsetWalletAddressJson.configured.walletAddressConfigured, false);
+
+    const unsetWalletPrivateKey = await runCli(["config", "unset", "wallet-private-key"], configPath);
+    assert.equal(unsetWalletPrivateKey.code, 0, unsetWalletPrivateKey.stderr);
+    const unsetWalletPrivateKeyJson = JSON.parse(unsetWalletPrivateKey.stdout.trim()) as {
+      configured: { walletPrivateKeyConfigured: boolean };
+    };
+    assert.equal(unsetWalletPrivateKeyJson.configured.walletPrivateKeyConfigured, false);
+
     const unsetAll = await runCli(["config", "unset", "all"], configPath);
     assert.equal(unsetAll.code, 0, unsetAll.stderr);
     const unsetAllJson = JSON.parse(unsetAll.stdout.trim()) as {
@@ -130,6 +184,62 @@ test("cli config command: set/show/unset persisted values", async () => {
     };
     assert.equal(unsetAllJson.exists, false);
     assert.equal(unsetAllJson.configured.baseUrl, null);
+  } finally {
+    cleanup();
+  }
+});
+
+test("cli config command: plaintext wallet-private-key in persisted config fails fast", async () => {
+  const { configPath, cleanup } = createConfigPath();
+
+  try {
+    writeFileSync(
+      configPath,
+      JSON.stringify(
+        {
+          walletAddress: "0x1111111111111111111111111111111111111111",
+          walletPrivateKey: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        null,
+        2
+      ),
+      "utf8"
+    );
+
+    const show = await runCli(["config", "show"], configPath);
+    const combined = show.stderr.replace(/\s+/g, " ");
+    assert.match(
+      combined,
+      /"type":"CONFIG_ERROR".*"command":"config show".*"walletPrivateKey must not be plaintext/
+    );
+  } finally {
+    cleanup();
+  }
+});
+
+test("cli auth login fails fast when persisted wallet-private-key is plaintext", async () => {
+  const { configPath, cleanup } = createConfigPath();
+
+  try {
+    writeFileSync(
+      configPath,
+      JSON.stringify(
+        {
+          walletAddress: "0x1111111111111111111111111111111111111111",
+          walletPrivateKey: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        null,
+        2
+      ),
+      "utf8"
+    );
+
+    const login = await runCli(["auth", "login"], configPath);
+    const combined = login.stderr.replace(/\s+/g, " ");
+    assert.match(
+      combined,
+      /"type":"CONFIG_ERROR".*"command":"auth login".*"walletPrivateKey must not be plaintext/
+    );
   } finally {
     cleanup();
   }

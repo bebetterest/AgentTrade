@@ -156,13 +156,30 @@ test("cli integration: covers lifecycle/read/system-operator command groups", as
     const registered = (await runCliJson(baseUrl, ["auth", "register"])) as {
       wallet: { address: Address; privateKey: string };
       auth: { token: string; expiresIn: string };
+      persistence: { walletPersisted: boolean; tokenPersisted: boolean };
       securityNotice: { level: string; message: string };
     };
     assert.match(registered.wallet.address, /^0x[a-fA-F0-9]{40}$/);
-    assert.match(registered.wallet.privateKey, /^0x[a-fA-F0-9]{64}$/);
+    assert.equal(registered.wallet.privateKey, "***hidden***");
     assert.equal(registered.auth.expiresIn, "15m");
+    assert.equal(registered.persistence.walletPersisted, true);
+    assert.equal(registered.persistence.tokenPersisted, true);
     assert.equal(registered.securityNotice.level, "CRITICAL");
     assert.match(registered.securityNotice.message, /only identity credential/i);
+
+    const loginFromPersistedWallet = (await runCliJson(baseUrl, [
+      "auth",
+      "login",
+      "--no-persist-token"
+    ])) as {
+      wallet: { address: Address };
+      auth: { token: string; expiresIn: string };
+      persistence: { tokenPersisted: boolean; walletSource: string };
+    };
+    assert.equal(loginFromPersistedWallet.wallet.address, registered.wallet.address);
+    assert.equal(loginFromPersistedWallet.auth.expiresIn, "15m");
+    assert.equal(loginFromPersistedWallet.persistence.tokenPersisted, false);
+    assert.equal(loginFromPersistedWallet.persistence.walletSource, "config");
 
     await runCliJson(
       baseUrl,
@@ -539,8 +556,13 @@ test("cli integration: structured error output", async () => {
     const started = await startApp();
     app = started.app;
     const baseUrl = started.baseUrl;
+    const isolatedConfigPath = join(
+      tmpdir(),
+      `agentrade-cli-integration-errors-${process.pid}-${Date.now()}.json`
+    );
+    const isolatedConfigEnv = { AGENTRADE_CLI_CONFIG_PATH: isolatedConfigPath };
 
-    const missingToken = await runCli(baseUrl, ["tasks", "intend", "--task", "task-1"]);
+    const missingToken = await runCli(baseUrl, ["tasks", "intend", "--task", "task-1"], isolatedConfigEnv);
     assert.equal(missingToken.code, 3);
     const missingTokenErr = JSON.parse(missingToken.stderr.trim()) as {
       type: string;
@@ -568,7 +590,7 @@ test("cli integration: structured error output", async () => {
         "--patch-json",
         JSON.stringify({ taxRateBps: 600 })
       ],
-      { AGENTRADE_TOKEN: operatorToken }
+      { ...isolatedConfigEnv, AGENTRADE_TOKEN: operatorToken }
     );
     assert.equal(missingAdminKey.code, 3);
     const missingAdminKeyErr = JSON.parse(missingAdminKey.stderr.trim()) as {
@@ -587,31 +609,41 @@ test("cli integration: structured error output", async () => {
     assert.match(missingAdminKeyErr.message, /missing admin key/i);
 
     const badVoteToken = signToken(addr("bad-voter"), jwtSecret);
-    const badVote = await runCli(baseUrl, ["disputes", "vote", "--dispute", "x", "--vote", "BAD"], {
-      AGENTRADE_TOKEN: badVoteToken
-    });
+    const badVote = await runCli(
+      baseUrl,
+      ["disputes", "vote", "--dispute", "x", "--vote", "BAD"],
+      { ...isolatedConfigEnv, AGENTRADE_TOKEN: badVoteToken }
+    );
     assert.equal(badVote.code, 2);
     const badVoteErr = JSON.parse(badVote.stderr.trim()) as { type: string; retryable: boolean };
     assert.equal(badVoteErr.type, "VALIDATION_ERROR");
     assert.equal(badVoteErr.retryable, false);
 
     const badAddress = addr("bad-address");
-    const challenge = (await runCliJson(baseUrl, ["auth", "challenge", "--address", badAddress])) as {
+    const challenge = (await runCliJson(
+      baseUrl,
+      ["auth", "challenge", "--address", badAddress],
+      isolatedConfigEnv
+    )) as {
       nonce: string;
       message: string;
     };
-    const verifyFail = await runCli(baseUrl, [
-      "auth",
-      "verify",
-      "--address",
-      badAddress,
-      "--nonce",
-      challenge.nonce,
-      "--message",
-      challenge.message,
-      "--signature",
-      "0xdeadbeef"
-    ]);
+    const verifyFail = await runCli(
+      baseUrl,
+      [
+        "auth",
+        "verify",
+        "--address",
+        badAddress,
+        "--nonce",
+        challenge.nonce,
+        "--message",
+        challenge.message,
+        "--signature",
+        "0xdeadbeef"
+      ],
+      isolatedConfigEnv
+    );
 
     assert.equal(verifyFail.code, 4);
     const verifyErr = JSON.parse(verifyFail.stderr.trim()) as {

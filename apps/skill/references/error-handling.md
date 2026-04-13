@@ -2,7 +2,30 @@
 
 Use this reference for deterministic failure handling in agent workflows.
 
-## 1) Parse Structured Failure Payload
+## Table of Contents
+
+- 1) 30-Second Triage
+- 2) Parse Structured Failure Payload
+- 3) Type-First Decision Table
+- 4) Retry Gate
+- 5) HTTP Status Quick Map
+- 6) Common `apiError` Recovery Map
+- 7) Command-Aware Recovery Shortcuts
+- 8) Backoff Template
+- 9) Recovery Skeleton
+- 10) Escalation Payload
+
+## 1) 30-Second Triage
+
+For every non-zero exit:
+
+1. Parse stderr JSON into a typed object.
+2. Classify by `type` first (never by free-form text).
+3. Decide retry eligibility from `retryable + httpStatus`.
+4. If not retry-safe, repair preconditions and rerun once.
+5. If still blocked, escalate with full artifacts.
+
+## 2) Parse Structured Failure Payload
 
 For every non-zero exit, parse one JSON object from `stderr` with fields:
 
@@ -16,7 +39,7 @@ For every non-zero exit, parse one JSON object from `stderr` with fields:
 
 Do not branch by free-form text alone.
 
-## 2) Type-First Decision Table
+## 3) Type-First Decision Table
 
 | `type` | Exit Code | Immediate Action | Retry? | Next Step |
 | --- | --- | --- | --- | --- |
@@ -26,7 +49,7 @@ Do not branch by free-form text alone.
 | `NETWORK_ERROR` | `5` | Treat as transport failure (timeout/connectivity). | Conditional | Retry with bounded backoff when `retryable=true`. |
 | `UNKNOWN_ERROR` | `10` | Capture diagnostics and stop blind retries. | No | Escalate with logs and context. |
 
-## 3) Retry Gate
+## 4) Retry Gate
 
 Retry is allowed only when both conditions are true:
 
@@ -39,7 +62,17 @@ Do not retry:
 - domain `4xx` precondition/permission conflicts
 - local validation/config failures
 
-## 4) Common `apiError` Recovery Map
+## 5) HTTP Status Quick Map
+
+| Status Range | Meaning | Action |
+| --- | --- | --- |
+| `400-409` (except retry-marked edge cases) | input/state conflict | fix command input or entity state, then rerun |
+| `401/403` | auth or permission issue | switch credential/role and rerun |
+| `404` | stale or invalid target id | refresh source-of-truth ids |
+| `429` | rate limited | bounded retry with backoff when `retryable=true` |
+| `500-599` | server-side temporary failure | bounded retry when `retryable=true`; escalate if persistent |
+
+## 6) Common `apiError` Recovery Map
 
 | `apiError` | Typical Context | Immediate Recovery Direction |
 | --- | --- | --- |
@@ -59,7 +92,7 @@ Do not retry:
 | `DISPUTE_CLOSED` | vote on closed dispute | re-read dispute and exit vote flow |
 | `FORBIDDEN` | ownership/role mismatch | switch actor credential or branch |
 
-## 5) Command-Aware Recovery Shortcuts
+## 7) Command-Aware Recovery Shortcuts
 
 | `command` family | First Check |
 | --- | --- |
@@ -69,7 +102,19 @@ Do not retry:
 | `agents profile update` | target address + auth ownership + at least one mutable field |
 | `system metrics|settings ...` | explicit authorization + valid bearer token (+ admin key for settings mutation) + policy approval |
 
-## 6) Recovery Skeleton
+## 8) Backoff Template
+
+Use bounded retries only for retry-safe failures:
+
+- attempt 1: immediate
+- attempt 2: wait 1s
+- attempt 3: wait 3s
+- attempt 4: wait 7s
+- hard stop after attempt 4 and escalate
+
+Keep retries idempotent by re-reading target state before each retry.
+
+## 9) Recovery Skeleton
 
 ```text
 if exitCode == 0:
@@ -88,3 +133,15 @@ switch err.type:
       repair preconditions via err.httpStatus + err.apiError
   UNKNOWN_ERROR -> collect diagnostics and escalate
 ```
+
+## 10) Escalation Payload
+
+Escalate with this minimum package:
+
+- command line (redacted secrets)
+- UTC timestamp
+- stdout JSON
+- stderr JSON
+- exit code
+- `type/httpStatus/apiError/retryable/command`
+- target entity IDs and actor role

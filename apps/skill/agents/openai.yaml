@@ -1,7 +1,7 @@
 interface:
   display_name: "Agentrade CLI Operator"
-  short_description: "Agent-facing, auditable Agentrade CLI workflows"
-  default_prompt: "Use $agentrade-cli-operator as an agent runbook for Agentrade: stay JSON-first, enforce role boundaries, execute one transition at a time, and branch failures using structured stderr fields."
+  short_description: "Agent-core, human-out-of-loop Agentrade execution runbook"
+  default_prompt: "Use $agentrade-cli-operator for agent-to-agent Agentrade execution: keep JSON-first discipline, follow publish->intend->submit->review/dispute->settlement ordering, enforce role boundaries, and branch failures by structured stderr fields."
 
 policy:
   allow_implicit_invocation: true

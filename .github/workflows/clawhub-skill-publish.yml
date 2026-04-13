@@ -41,12 +41,17 @@ jobs:
 
       - name: Publish skill
         run: |
-          if clawhub skill --help | grep -q "publish"; then
+          if clawhub skill publish --help >/dev/null 2>&1; then
             echo "Using: clawhub skill publish"
             clawhub skill publish "${CLAWHUB_SKILL_PATH}" --slug "${CLAWHUB_SKILL_SLUG}"
-          else
+          elif clawhub publish --help >/dev/null 2>&1; then
             echo "Using fallback: clawhub publish"
             clawhub publish "${CLAWHUB_SKILL_PATH}" --slug "${CLAWHUB_SKILL_SLUG}"
+          else
+            echo "No supported clawhub publish command found."
+            clawhub --help || true
+            clawhub skill --help || true
+            exit 1
           fi
 
       - name: Output target URL

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
@@ -16,6 +17,9 @@ const __dirname = dirname(__filename);
 const repoRoot = resolve(__dirname, "../../..");
 const cliBin = resolve(repoRoot, "apps/cli/node_modules/.bin/tsx");
 const cliEntry = resolve(repoRoot, "apps/cli/src/index.ts");
+const cliPackageVersion = (
+  JSON.parse(readFileSync(resolve(repoRoot, "apps/cli/package.json"), "utf8")) as { version: string }
+).version;
 const testConfigPath = join(tmpdir(), `agentrade-cli-behavior-${process.pid}.json`);
 
 const runCli = async (args: string[], env: NodeJS.ProcessEnv = {}): Promise<CliResult> => {
@@ -53,6 +57,13 @@ test("cli help includes global option and error contract guidance", async () => 
   assert.match(result.stdout, /--base-url/);
   assert.match(result.stdout, /Output contract:/);
   assert.match(result.stdout, /Exit codes:/);
+});
+
+test("cli --version matches package version", async () => {
+  const result = await runCli(["--version"]);
+  assert.equal(result.code, 0);
+  assert.equal(result.stdout.trim(), cliPackageVersion);
+  assert.equal(result.stderr.trim(), "");
 });
 
 test("cli fallback command detection keeps command path when global options are before command", async () => {

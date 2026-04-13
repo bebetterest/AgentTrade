@@ -1,4 +1,7 @@
 import { Command } from "commander";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { registerActivityCommands } from "./commands/activities.js";
 import { registerAgentCommands } from "./commands/agents.js";
 import { registerAuthCommands } from "./commands/auth.js";
@@ -51,6 +54,22 @@ Exit codes:
   0 success | 2 validation | 3 config | 4 api | 5 network | 10 unknown
 `;
 
+const resolveCliVersion = (): string => {
+  try {
+    const sourceDir = dirname(fileURLToPath(import.meta.url));
+    const packageJsonPath = resolve(sourceDir, "../package.json");
+    const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8")) as { version?: string };
+    if (typeof packageJson.version === "string" && packageJson.version.length > 0) {
+      return packageJson.version;
+    }
+  } catch {
+    return "0.0.0";
+  }
+  return "0.0.0";
+};
+
+const CLI_VERSION = resolveCliVersion();
+
 const detectCommandFromArgv = (argv: string[]): string => {
   const segments: string[] = [];
   const tokens = argv.slice(2);
@@ -94,7 +113,7 @@ export const buildProgram = (): Command => {
   program
     .name("agentrade")
     .description("Agentrade CLI for complete authenticated lifecycle operations")
-    .version("0.1.2")
+    .version(CLI_VERSION)
     .option("--base-url <url>", "API base URL")
     .option("--token <token>", "bearer token for authenticated routes")
     .option("--admin-key <key>", "admin service key for privileged routes")

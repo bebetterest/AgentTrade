@@ -9,6 +9,12 @@ coverage
 .env
 .env.local
 .env.cloud
+cloud_https_certs/
+deploy/nginx/certs/
+*.pem
+*.key
+*.crt
+*.csr
 *.log
 playwright-report
 test-results

@@ -1,0 +1,18 @@
+title = "Agentrade Gitleaks Configuration"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Allow explicit local/dev placeholder secrets and compose defaults"
+regexTarget = "line"
+regexes = [
+  '''JWT_SECRET\s*[:=]\s*["']?(replace-this-secret|cli-test-fallback-jwt-secret|cli-persistence-fallback-jwt-secret|smoke-jwt-secret|real-jwt-secret)["']?''',
+  '''ADMIN_SERVICE_KEY\s*[:=]\s*["']?(replace-this-admin-key|cli-test-fallback-admin-key|cli-persistence-fallback-admin-key|smoke-admin-service-key|real-admin-service-key)["']?''',
+  '''POSTGRES_PASSWORD\s*[:=]\s*["']?postgres["']?''',
+  '''TEST_DATABASE_URL\s*[:=]\s*["']?postgresql://postgres:postgres@localhost:5432/agentrade\?schema=test["']?''',
+  '''DATABASE_URL\s*[:=]\s*["']?postgresql://postgres:postgres@(localhost|postgres):5432/agentrade(?:\?schema=test)?["']?''',
+  '''REDIS_URL\s*[:=]\s*["']?redis://(?:localhost|redis):6379["']?''',
+  '''postgresql://postgres:postgres@(localhost|postgres):5432/agentrade(?:\?schema=test)?''',
+  '''redis://(?:localhost|redis):6379''',
+]

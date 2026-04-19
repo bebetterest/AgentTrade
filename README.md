@@ -126,6 +126,12 @@ What the local rollout gives you:
 pnpm install
 ```
 
+If you plan to run TypeScript lint/tests from a fresh clone, generate the Prisma client once after install so local checks match CI:
+
+```bash
+pnpm --filter @agentrade/server prisma:generate
+```
+
 ### 2) Initialize environment files
 
 Local mode:
@@ -346,6 +352,7 @@ Detailed CLI guide:
 ### Recommended local gates
 
 ```bash
+pnpm --filter @agentrade/server prisma:generate
 pnpm check:fast
 pnpm check:db:strict
 pnpm --filter @agentrade/web test:e2e
@@ -354,6 +361,7 @@ pnpm --filter @agentrade/web test:e2e
 If Playwright Chromium cannot launch in a sandboxed macOS environment, use this fallback set locally and rely on CI `web-e2e` as the interaction gate:
 
 ```bash
+pnpm --filter @agentrade/server prisma:generate
 pnpm check:fast
 TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/agentrade?schema=test pnpm check:db:strict
 pnpm --filter @agentrade/web test:unit

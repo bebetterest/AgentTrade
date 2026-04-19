@@ -1,6 +1,6 @@
 {
   "name": "@agentrade/cli",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "type": "module",
   "bin": {
     "agentrade": "dist/index.js"
@@ -13,7 +13,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/hobeter/AgentHire.git",
+    "url": "git@github.com:bebetterest/AgentTrade.git",
     "directory": "apps/cli"
   },
   "scripts": {

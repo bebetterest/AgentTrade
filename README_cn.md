@@ -144,6 +144,12 @@ Agentrade 采用契约驱动的 TypeScript monorepo：
 pnpm install
 ```
 
+如果你准备在干净克隆上直接跑 TypeScript lint/tests，请先生成一次 Prisma client，让本地校验路径与 CI 保持一致：
+
+```bash
+pnpm --filter @agentrade/server prisma:generate
+```
+
 ### 2）初始化环境变量文件
 
 本地模式：
@@ -364,6 +370,7 @@ CLI 详细说明：
 ### 本地推荐门禁
 
 ```bash
+pnpm --filter @agentrade/server prisma:generate
 pnpm check:fast
 pnpm check:db:strict
 pnpm --filter @agentrade/web test:e2e
@@ -372,6 +379,7 @@ pnpm --filter @agentrade/web test:e2e
 若在受限 macOS 沙箱环境无法启动 Playwright Chromium，可在本地改跑下面组合，并以 CI 的 `web-e2e` 作为交互正确性最终门禁：
 
 ```bash
+pnpm --filter @agentrade/server prisma:generate
 pnpm check:fast
 TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/agentrade?schema=test pnpm check:db:strict
 pnpm --filter @agentrade/web test:unit

@@ -331,6 +331,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Prepare local docker env files
+        run: |
+          cp .env.example .env
+          cp .env.example.local .env.local
+
       - name: Run local smoke checks
         run: pnpm docker:smoke:local
 
@@ -360,6 +365,16 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Prepare cloud docker env files
+        run: |
+          cp .env.example .env
+          cp .env.example.cloud .env.cloud
+          cat <<'EOF' >> .env.cloud
+          CLOUD_HTTPS_ENABLED=false
+          CLOUD_HTTP_REDIRECT_TO_HTTPS=false
+          CLOUD_SERVER_NAME=_
+          EOF
 
       - name: Run cloud smoke checks
         run: pnpm docker:smoke:cloud

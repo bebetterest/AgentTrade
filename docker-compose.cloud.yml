@@ -1,15 +1,11 @@
 services:
   server:
-    # Inject full shared + mode env to prevent per-variable drift in compose mapping.
+    # Inject only real env files; templates are for manual copying, not runtime fallback.
     env_file:
-      - path: ./.env.example
-        required: false
       - path: ./.env
-        required: false
-      - path: ./.env.example.cloud
-        required: false
+        required: true
       - path: ./.env.cloud
-        required: false
+        required: true
 
   web:
     environment:

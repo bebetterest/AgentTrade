@@ -281,6 +281,8 @@ pnpm docker:release:cloud -- --tls-insecure --web-url https://staging.example.co
 4. 在模式文件中调整部署路由（本地用 `LOCAL_*`，云端用 `CLOUD_*`）。
 5. 仅在需要时调优业务护栏（`TASK_*`、`DISPUTE_*`、`TAX_*`、`INITIAL_AGENT_BALANCE`、`MINT_PER_CYCLE`、`CYCLE_DURATION_HOURS`、`REPUTATION_WEIGHT_*_BPS`、`SCORE_WEIGHT_*_BPS`）。
 
+部署脚本采用严格模式：`docker:up`、`docker:release:*`、`docker:smoke:*` 运行前必须存在真实的 `.env` 和对应模式文件（`.env.local` 或 `.env.cloud`）。模板文件不会再作为运行时兜底输入。
+
 完整变量参考（server/web/cli/deploy/release/smoke）：
 
 - [docs/configuration/environment_cn.md](./docs/configuration/environment_cn.md)

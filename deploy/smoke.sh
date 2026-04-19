@@ -177,6 +177,27 @@ read_env_value_from_file() {
   ' "$file_path"
 }
 
+require_env_files() {
+  mode_env_file="$1"
+  if [ ! -f ".env" ]; then
+    echo "[smoke] missing required shared env file: .env" >&2
+    echo "[smoke] create it from .env.example before running smoke" >&2
+    exit 1
+  fi
+  if [ ! -f "$mode_env_file" ]; then
+    echo "[smoke] missing required mode env file: ${mode_env_file}" >&2
+    case "$mode_env_file" in
+      ".env.local")
+        echo "[smoke] create it from .env.example.local before running local smoke" >&2
+        ;;
+      ".env.cloud")
+        echo "[smoke] create it from .env.example.cloud before running cloud smoke" >&2
+        ;;
+    esac
+    exit 1
+  fi
+}
+
 resolve_value() {
   key="$1"
   fallback="$2"
@@ -275,6 +296,7 @@ check_https_redirect() {
 
 if [ "$mode" = "local" ]; then
   mode_env_file=".env.local"
+  require_env_files "$mode_env_file"
 
   if ! is_true "$smoke_skip_up"; then
     compose_up "local"
@@ -302,6 +324,7 @@ if [ "$mode" = "local" ]; then
 fi
 
 mode_env_file=".env.cloud"
+require_env_files "$mode_env_file"
 
 if ! is_true "$smoke_skip_up"; then
   compose_up "cloud"

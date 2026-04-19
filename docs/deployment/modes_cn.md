@@ -74,12 +74,16 @@ cp .env.example.cloud .env.cloud
 1. `.env`（共享基线）
 2. `.env.local` 或 `.env.cloud`（模式覆盖）
 
-`server` 运行时通过 compose `env_file` 注入完整 env，并带可选兜底，避免逐项映射遗漏：
+严格要求：
 
-1. `.env.example`
-2. `.env`
-3. 模式示例兜底（`.env.example.local` / `.env.example.cloud`）
-4. 模式文件（`.env.local` / `.env.cloud`）
+- 任何 Docker 部署辅助脚本运行前，必须已经存在 `.env` 和对应模式文件。
+- 缺少 `.env`、`.env.local` 或 `.env.cloud` 都会直接报错。
+- `.env.example*` 只用于手工复制生成真实配置。
+
+`server` 运行时通过 compose `env_file` 注入完整 env，不再读取示例文件兜底：
+
+1. `.env`
+2. 模式文件（`.env.local` / `.env.cloud`）
 
 `web` 与 `gateway` 保持显式最小环境变量映射（最小权限）。
 

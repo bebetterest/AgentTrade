@@ -263,6 +263,8 @@ Layered templates:
 4. Tune deployment routing in mode file (`LOCAL_*` for local or `CLOUD_*` for cloud).
 5. Validate advanced guardrails only when necessary (`TASK_*`, `DISPUTE_*`, `TAX_*`, `INITIAL_AGENT_BALANCE`, `MINT_PER_CYCLE`, `CYCLE_DURATION_HOURS`, `REPUTATION_WEIGHT_*_BPS`, `SCORE_WEIGHT_*_BPS`).
 
+Deployment scripts are strict: `docker:up`, `docker:release:*`, and `docker:smoke:*` require real `.env` plus the matching mode file (`.env.local` or `.env.cloud`). Template files are not used as runtime fallback.
+
 Full variable reference (server/web/cli/deploy/release/smoke):
 
 - [docs/configuration/environment.md](./docs/configuration/environment.md)

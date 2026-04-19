@@ -74,12 +74,16 @@ Resolution order in deployment scripts:
 1. `.env` (shared baseline)
 2. `.env.local` or `.env.cloud` (mode override)
 
-Runtime env injection for `server` uses compose `env_file` with optional fallbacks to avoid per-variable omissions:
+Strict requirement:
 
-1. `.env.example`
-2. `.env`
-3. mode example fallback (`.env.example.local` / `.env.example.cloud`)
-4. mode file (`.env.local` / `.env.cloud`)
+- Before any docker deployment helper runs, both `.env` and the matching mode file must already exist.
+- Missing `.env`, `.env.local`, or `.env.cloud` is a hard error.
+- `.env.example*` files are copy templates only.
+
+Runtime env injection for `server` uses compose `env_file` without example fallbacks:
+
+1. `.env`
+2. mode file (`.env.local` / `.env.cloud`)
 
 `web` and `gateway` keep explicit minimal env mapping (least privilege).
 

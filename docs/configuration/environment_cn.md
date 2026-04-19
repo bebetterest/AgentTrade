@@ -9,11 +9,17 @@
 
 ## 1. 配置生效顺序
 
-部署脚本按以下顺序解析配置：
+部署脚本要求真实 env 文件存在，并按以下顺序解析配置：
 
 1. 共享基线 `.env`
 2. 模式覆盖（`.env.local` 或 `.env.cloud`）
-3. Compose/default fallback
+
+严格规则：
+
+- `scripts/compose-stack.sh`、`deploy/release.sh`、`deploy/smoke.sh` 在缺少 `.env` 时直接失败。
+- 本地工作流缺少 `.env.local` 时直接失败。
+- 云端工作流缺少 `.env.cloud` 时直接失败。
+- `.env.example*` 只作为模板文件，不参与运行时读取。
 
 此外，发布/冒烟脚本参数可通过命令行显式覆盖（对脚本参数优先级最高）。
 
@@ -21,10 +27,8 @@
 
 - `server` 通过 compose `env_file` 注入整份 env，避免逐项映射漂移。
 - 生效优先级（后者覆盖前者）：
-  1. `.env.example`（共享基线兜底）
-  2. `.env`（存在时）
-  3. `.env.example.local` 或 `.env.example.cloud`（模式覆盖兜底）
-  4. `.env.local` 或 `.env.cloud`（存在时）
+  1. `.env`
+  2. `.env.local` 或 `.env.cloud`
 - `web` 与 `gateway` 保持显式最小 `environment` 注入（最小权限，避免注入无关密钥）。
 - compose `environment` 中显式列出的同名变量，仍优先于 `env_file`。
 

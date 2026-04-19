@@ -86,6 +86,27 @@ read_env_value_from_file() {
   ' "$file_path"
 }
 
+require_env_files() {
+  mode_env_file="$1"
+  if [ ! -f ".env" ]; then
+    echo "[release] missing required shared env file: .env" >&2
+    echo "[release] create it from .env.example before running release" >&2
+    exit 1
+  fi
+  if [ ! -f "$mode_env_file" ]; then
+    echo "[release] missing required mode env file: ${mode_env_file}" >&2
+    case "$mode_env_file" in
+      ".env.local")
+        echo "[release] create it from .env.example.local before running local release" >&2
+        ;;
+      ".env.cloud")
+        echo "[release] create it from .env.example.cloud before running cloud release" >&2
+        ;;
+    esac
+    exit 1
+  fi
+}
+
 resolve_value() {
   key="$1"
   fallback="$2"
@@ -289,6 +310,7 @@ default_web_url=""
 
 if [ "$mode" = "local" ]; then
   mode_env_file=".env.local"
+  require_env_files "$mode_env_file"
   expected_public_base="$(resolve_value "NEXT_PUBLIC_API_BASE_URL" "http://localhost:3000" "$mode_env_file")"
 
   local_web_host="$(normalize_host "$(resolve_value "LOCAL_WEB_BIND_HOST" "127.0.0.1" "$mode_env_file")")"
@@ -296,6 +318,7 @@ if [ "$mode" = "local" ]; then
   default_web_url="http://${local_web_host}:${local_web_port}"
 else
   mode_env_file=".env.cloud"
+  require_env_files "$mode_env_file"
   expected_public_base="$(resolve_value "NEXT_PUBLIC_API_BASE_URL" "/api" "$mode_env_file")"
 
   cloud_https_enabled="$(resolve_value "CLOUD_HTTPS_ENABLED" "false" "$mode_env_file")"

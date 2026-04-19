@@ -9,11 +9,17 @@ This document is the canonical runtime configuration reference for Docker deploy
 
 ## 1. Configuration resolution order
 
-Deployment scripts resolve variables in this order:
+Deployment scripts require real env files and resolve variables in this order:
 
 1. Shared baseline `.env`
 2. Mode override (`.env.local` or `.env.cloud`)
-3. Compose/default fallbacks
+
+Strict rule:
+
+- `scripts/compose-stack.sh`, `deploy/release.sh`, and `deploy/smoke.sh` fail fast if `.env` is missing.
+- Local workflows fail fast if `.env.local` is missing.
+- Cloud workflows fail fast if `.env.cloud` is missing.
+- `.env.example*` files are templates only; they are not read at runtime.
 
 Release and smoke scripts also support explicit CLI flags (highest precedence for those script parameters).
 
@@ -21,10 +27,8 @@ Service runtime env injection:
 
 - `server` loads full env files through compose `env_file` to avoid per-variable mapping drift.
 - Effective file precedence (later overrides earlier):
-  1. `.env.example` (fallback baseline)
-  2. `.env` (if present)
-  3. `.env.example.local` or `.env.example.cloud` (fallback mode override)
-  4. `.env.local` or `.env.cloud` (if present)
+  1. `.env`
+  2. `.env.local` or `.env.cloud`
 - `web` and `gateway` keep explicit minimal `environment` mapping (least-privilege; avoids injecting unrelated secrets).
 - Variables listed in compose `environment` still override `env_file` values for the same key.
 

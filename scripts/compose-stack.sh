@@ -15,28 +15,19 @@ fi
 
 shared_env_file=".env"
 if [ ! -f "$shared_env_file" ]; then
-  if [ -f ".env.example.all" ]; then
-    shared_env_file=".env.example.all"
-    echo "[compose-stack] missing .env; falling back to .env.example.all" >&2
-  elif [ -f ".env.example" ]; then
-    shared_env_file=".env.example"
-    echo "[compose-stack] missing .env; falling back to .env.example" >&2
-  else
-    echo "[compose-stack] missing shared env file: .env (fallback .env.example.all/.env.example not found)" >&2
-    exit 1
-  fi
+  echo "[compose-stack] missing required shared env file: .env" >&2
+  echo "[compose-stack] create it from .env.example before running docker compose workflows" >&2
+  exit 1
 fi
 
 case "$mode" in
   local)
     mode_compose_file="docker-compose.local.yml"
     mode_env_file=".env.local"
-    mode_example_env_file=".env.example.local"
     ;;
   cloud)
     mode_compose_file="docker-compose.cloud.yml"
     mode_env_file=".env.cloud"
-    mode_example_env_file=".env.example.cloud"
     ;;
   *)
     echo "[compose-stack] unsupported mode: ${mode} (expected local or cloud)" >&2
@@ -44,26 +35,22 @@ case "$mode" in
     ;;
 esac
 
-if [ -f "$mode_env_file" ]; then
-  docker compose \
-    --env-file "$shared_env_file" \
-    --env-file "$mode_env_file" \
-    -f docker-compose.yml \
-    -f "$mode_compose_file" \
-    "$@"
-elif [ -f "$mode_example_env_file" ]; then
-  echo "[compose-stack] mode override file not found: ${mode_env_file}; falling back to ${mode_example_env_file}" >&2
-  docker compose \
-    --env-file "$shared_env_file" \
-    --env-file "$mode_example_env_file" \
-    -f docker-compose.yml \
-    -f "$mode_compose_file" \
-    "$@"
-else
-  echo "[compose-stack] mode override file not found: ${mode_env_file}; using shared ${shared_env_file} only" >&2
-  docker compose \
-    --env-file "$shared_env_file" \
-    -f docker-compose.yml \
-    -f "$mode_compose_file" \
-    "$@"
+if [ ! -f "$mode_env_file" ]; then
+  echo "[compose-stack] missing required mode env file: ${mode_env_file}" >&2
+  case "$mode" in
+    local)
+      echo "[compose-stack] create it from .env.example.local before running local docker workflows" >&2
+      ;;
+    cloud)
+      echo "[compose-stack] create it from .env.example.cloud before running cloud docker workflows" >&2
+      ;;
+  esac
+  exit 1
 fi
+
+docker compose \
+  --env-file "$shared_env_file" \
+  --env-file "$mode_env_file" \
+  -f docker-compose.yml \
+  -f "$mode_compose_file" \
+  "$@"

@@ -45,7 +45,11 @@ const testConfigPath = join(tmpdir(), `agentrade-cli-command-contract-${process.
 const hasOption = (args: string[], option: string): boolean =>
   args.includes(option) || args.some((arg) => arg.startsWith(`${option}=`));
 
-const runCli = async (args: string[], env: NodeJS.ProcessEnv): Promise<CliResult> => {
+const runCli = async (
+  args: string[],
+  env: NodeJS.ProcessEnv,
+  stdinText?: string
+): Promise<CliResult> => {
   const globalArgs: string[] = [];
   if (env.AGENTRADE_TOKEN && !hasOption(args, "--token") && !hasOption(args, "--token-file")) {
     globalArgs.push("--token", env.AGENTRADE_TOKEN);
@@ -77,6 +81,7 @@ const runCli = async (args: string[], env: NodeJS.ProcessEnv): Promise<CliResult
       stderr += String(chunk);
     });
     child.on("error", rejectPromise);
+    child.stdin.end(stdinText ?? "");
     child.on("close", (code) => {
       resolvePromise({ code, stdout, stderr });
     });
@@ -532,10 +537,14 @@ test("cli command contract: method/path/auth/body coverage for all command group
   const runAndAssert = async (
     args: string[],
     expected: ExpectedRequest,
-    options: { pretty?: boolean; env?: NodeJS.ProcessEnv } = {}
+    options: { pretty?: boolean; env?: NodeJS.ProcessEnv; stdinText?: string } = {}
   ): Promise<void> => {
     const beforeCalls = calls.length;
-    const result = await runCli(["--base-url", baseUrl, ...args], { ...baseEnv, ...options.env });
+    const result = await runCli(
+      ["--base-url", baseUrl, ...args],
+      { ...baseEnv, ...options.env },
+      options.stdinText
+    );
     assert.equal(result.code, 0, `command failed: ${args.join(" ")}\n${result.stderr}`);
     assert.equal(calls.length, beforeCalls + 1, `request count mismatch for ${args.join(" ")}`);
 
@@ -863,6 +872,16 @@ test("cli command contract: method/path/auth/body coverage for all command group
       auth: "bearer",
       body: { payloadMd: "payload-from-file" }
     });
+    await runAndAssert(
+      ["tasks", "submit", "--task", "task-1", "--payload-file", "-"],
+      {
+        method: "POST",
+        url: "/v2/tasks/task-1/submissions",
+        auth: "bearer",
+        body: { payloadMd: "payload-from-stdin" }
+      },
+      { stdinText: "payload-from-stdin" }
+    );
     await runAndAssert(["tasks", "terminate", "--task", "task-1"], {
       method: "POST",
       url: "/v2/tasks/task-1/terminate",
@@ -1036,6 +1055,15 @@ test("cli command contract: method/path/auth/body coverage for all command group
         body: { name: "name-from-file", bio: "bio-inline" }
       }
     );
+    await runAndAssert(
+      ["agents", "profile", "update", "--address", addressA, "--clear-bio"],
+      {
+        method: "PATCH",
+        url: `/v2/agents/${addressA}/profile`,
+        auth: "bearer",
+        body: { bio: "" }
+      }
+    );
     await runAndAssert(["agents", "stats", "--address", addressA], {
       method: "GET",
       url: `/v2/agents/${addressA}/stats`,
@@ -1199,5 +1227,162 @@ test("cli command contract: method/path/auth/body coverage for all command group
         resolvePromise();
       });
     });
+  }
+});
+
+test("cli spec handoff contract: targets and bindings stay executable", async () => {
+  const result = await runCli(["spec"], {});
+  assert.equal(result.code, 0);
+
+  const envelope = JSON.parse(result.stdout) as {
+    ok: boolean;
+    data: {
+      globalOptions: Array<{
+        longFlag?: string;
+      }>;
+      commands: Array<{
+        path: string;
+        arguments: Array<{
+          syntax: string;
+        }>;
+        options: Array<{
+          longFlag?: string;
+        }>;
+        successFields: Array<{
+          path: string;
+        }>;
+        handoffHints: Array<{
+          targetCommand: string;
+          bindings: Array<{
+            sourcePath?: string;
+            sourceInput?: string;
+            sourceLiteral?: string | number | boolean;
+            targetInputs: string[];
+          }>;
+          selectionMode?: string;
+          selectionConditions?: Array<{
+            path: string;
+            operator: string;
+            value?: string | number | boolean;
+          }>;
+        }>;
+      }>;
+    };
+  };
+
+  assert.equal(envelope.ok, true);
+
+  const commands = envelope.data.commands;
+  const commandMap = new Map(commands.map((command) => [command.path, command]));
+  const globalInputs = new Set(
+    envelope.data.globalOptions.flatMap((option) => (option.longFlag ? [option.longFlag] : []))
+  );
+  const getCommandInputs = (
+    command: {
+      arguments: Array<{ syntax: string }>;
+      options: Array<{ longFlag?: string }>;
+    }
+  ): Set<string> =>
+    new Set([
+      ...globalInputs,
+      ...command.arguments.map((argument) => argument.syntax),
+      ...command.options.flatMap((option) => (option.longFlag ? [option.longFlag] : []))
+    ]);
+
+  for (const command of commands) {
+    const commandInputs = getCommandInputs(command);
+    const successPaths = new Set(command.successFields.map((field) => field.path));
+
+    for (const hint of command.handoffHints) {
+      const target = commandMap.get(hint.targetCommand);
+      assert.ok(target, `handoff target '${hint.targetCommand}' from '${command.path}' must resolve to a known command`);
+
+      const targetInputs = getCommandInputs(target!);
+      for (const binding of hint.bindings) {
+        const sourceKinds =
+          Number(Boolean(binding.sourcePath)) +
+          Number(Boolean(binding.sourceInput)) +
+          Number(binding.sourceLiteral !== undefined);
+        assert.equal(
+          sourceKinds,
+          1,
+          `handoff binding on '${command.path}' -> '${hint.targetCommand}' must declare exactly one of sourcePath/sourceInput/sourceLiteral`
+        );
+
+        if (binding.sourcePath) {
+          assert.ok(
+            successPaths.has(binding.sourcePath),
+            `handoff sourcePath '${binding.sourcePath}' on '${command.path}' must be present in successFields[]`
+          );
+        }
+
+        if (binding.sourceInput) {
+          assert.ok(
+            commandInputs.has(binding.sourceInput),
+            `handoff sourceInput '${binding.sourceInput}' on '${command.path}' must be a declared argument or option`
+          );
+        }
+
+        if (binding.sourceLiteral !== undefined) {
+          assert.ok(
+            ["string", "number", "boolean"].includes(typeof binding.sourceLiteral),
+            `handoff sourceLiteral on '${command.path}' -> '${hint.targetCommand}' must be a JSON scalar`
+          );
+        }
+
+        assert.ok(
+          binding.targetInputs.length > 0,
+          `handoff binding on '${command.path}' -> '${hint.targetCommand}' must declare at least one target input`
+        );
+        for (const targetInput of binding.targetInputs) {
+          assert.ok(
+            targetInputs.has(targetInput),
+            `handoff target input '${targetInput}' on '${command.path}' -> '${hint.targetCommand}' must exist on the target command`
+          );
+        }
+      }
+
+      if (hint.selectionMode !== undefined) {
+        assert.ok(
+          hint.selectionMode === "currentPageItem" || hint.selectionMode === "currentResult",
+          `handoff selectionMode on '${command.path}' -> '${hint.targetCommand}' must use a supported enum`
+        );
+      }
+
+      for (const condition of hint.selectionConditions ?? []) {
+        assert.ok(
+          hint.selectionMode === "currentPageItem" || hint.selectionMode === "currentResult",
+          `handoff selectionConditions on '${command.path}' -> '${hint.targetCommand}' require an explicit supported selectionMode`
+        );
+        assert.ok(
+          condition.path.startsWith("data."),
+          `handoff selection condition path '${condition.path}' on '${command.path}' must point into the success envelope`
+        );
+        assert.ok(
+          successPaths.has(condition.path),
+          `handoff selection condition path '${condition.path}' on '${command.path}' must be present in successFields[]`
+        );
+        assert.ok(
+          condition.operator === "equals" || condition.operator === "nonNull",
+          `handoff selection condition operator '${condition.operator}' on '${command.path}' must use a supported enum`
+        );
+
+        if (condition.operator === "equals") {
+          assert.notEqual(
+            condition.value,
+            undefined,
+            `handoff equals condition '${condition.path}' on '${command.path}' must declare a comparison value`
+          );
+        }
+
+        if (condition.operator === "nonNull") {
+          assert.equal(
+            condition.value,
+            undefined,
+            `handoff nonNull condition '${condition.path}' on '${command.path}' must not declare a comparison value`
+          );
+        }
+      }
+    }
   }
 });

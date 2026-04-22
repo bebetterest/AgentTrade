@@ -8,6 +8,7 @@ import { getApiOperation } from "@agentrade/contracts";
 import { ActivityEventType } from "@agentrade/types";
 import { buildProgram } from "../src/program.js";
 import { cliOperationBindings } from "../src/operation-bindings.js";
+import { cliRequestBindings } from "../src/request-bindings.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -66,10 +67,11 @@ test("cli command surface and docs matrix stay in sync", () => {
     "auth register",
     "config set",
     "config show",
-    "config unset"
+    "config unset",
+    "spec"
   ]);
 
-  assert.equal(commandPaths.length, 42);
+  assert.equal(commandPaths.length, 43);
   assert.deepEqual(commandPaths, [
     "activities list",
     "agents list",
@@ -96,6 +98,7 @@ test("cli command surface and docs matrix stay in sync", () => {
     "disputes vote",
     "economy params",
     "ledger get",
+    "spec",
     "submissions confirm",
     "submissions get",
     "submissions list",
@@ -114,6 +117,7 @@ test("cli command surface and docs matrix stay in sync", () => {
     "tasks submit",
     "tasks terminate"
   ]);
+  assert.deepEqual(Object.keys(cliRequestBindings).sort(), commandPaths);
 
   const contractBackedCommandPaths = commandPaths.filter((path) => !localCompositeCommands.has(path));
   assert.deepEqual(Object.keys(cliOperationBindings).sort(), contractBackedCommandPaths);
@@ -206,6 +210,152 @@ test("pagination limit guard stays documented in docs and skill references", () 
   assert.match(docsOverviewCn, /默认 `20`/);
   assert.match(matrixEn, /default `20`/);
   assert.match(matrixCn, /默认 `20`/);
+});
+
+test("stdin alias contract stays documented in docs and skill references", () => {
+  assert.match(docsOverviewEn, /accept `-` to read UTF-8 from stdin/i);
+  assert.match(docsOverviewCn, /接受 `-` 表示从 stdin 读取 UTF-8/);
+  assert.match(docsOverviewEn, /only one stdin-backed input consumer/i);
+  assert.match(docsOverviewCn, /只允许一个 stdin-backed 输入消费者/);
+  assert.match(docsOverviewEn, /stdinFileAlias/);
+  assert.match(docsOverviewCn, /stdinFileAlias/);
+  assert.match(matrixEn, /accepts `-` to read UTF-8 from stdin/i);
+  assert.match(matrixCn, /接受 `-` 表示从 stdin 读取 UTF-8/);
+  assert.match(matrixEn, /Only one stdin-backed file input is allowed/i);
+  assert.match(matrixCn, /只允许一个 stdin-backed 文件输入/);
+});
+
+test("spec auth requirement discovery stays documented in docs and skill references", () => {
+  assert.match(docsOverviewEn, /authRequirements\[\]/);
+  assert.match(docsOverviewCn, /authRequirements\[\]/);
+  assert.match(docsOverviewEn, /persistedConfig\.token/);
+  assert.match(docsOverviewCn, /persistedConfig\.token/);
+  assert.match(docsOverviewEn, /persistedConfig\.adminKey/);
+  assert.match(docsOverviewCn, /persistedConfig\.adminKey/);
+  assert.match(matrixEn, /commands\[\]\.authRequirements\[\]/);
+  assert.match(matrixCn, /commands\[\]\.authRequirements\[\]/);
+});
+
+test("spec local and composite execution discovery stays documented in docs and skill references", () => {
+  assert.match(docsOverviewEn, /executionSteps\[\]/);
+  assert.match(docsOverviewCn, /executionSteps\[\]/);
+  assert.match(docsOverviewEn, /sideEffects\[\]/);
+  assert.match(docsOverviewCn, /sideEffects\[\]/);
+  assert.match(docsOverviewEn, /inputSources\[\]/);
+  assert.match(docsOverviewCn, /inputSources\[\]/);
+  assert.match(docsOverviewEn, /outputs\[\]/);
+  assert.match(docsOverviewCn, /outputs\[\]/);
+  assert.match(docsOverviewEn, /successFields\[\]/);
+  assert.match(docsOverviewCn, /successFields\[\]/);
+  assert.match(docsOverviewEn, /especially important for `executionMode=local\|composite` commands/i);
+  assert.match(docsOverviewCn, /对 `executionMode=local\|composite` 命令尤其重要/);
+  assert.match(matrixEn, /commands\[\]\.executionSteps\[\]/);
+  assert.match(matrixCn, /commands\[\]\.executionSteps\[\]/);
+  assert.match(matrixEn, /commands\[\]\.sideEffects\[\]/);
+  assert.match(matrixCn, /commands\[\]\.sideEffects\[\]/);
+  assert.match(matrixEn, /commands\[\]\.successFields\[\]/);
+  assert.match(matrixCn, /commands\[\]\.successFields\[\]/);
+  assert.match(docsOverviewEn, /successFields\[\].*response schema/i);
+  assert.match(docsOverviewCn, /successFields\[\].*响应 schema/);
+  assert.match(docsOverviewEn, /field-level `required` and `schema` metadata/i);
+  assert.match(docsOverviewCn, /字段级 `required` 与 `schema` 元数据/);
+  assert.match(matrixEn, /successFields\[\].*response schema/i);
+  assert.match(matrixCn, /successFields\[\].*响应 schema/);
+  assert.match(docsOverviewEn, /automationHints/);
+  assert.match(docsOverviewCn, /automationHints/);
+  assert.match(docsOverviewEn, /failureHints\[\]/);
+  assert.match(docsOverviewCn, /failureHints\[\]/);
+  assert.match(docsOverviewEn, /workflowHints/);
+  assert.match(docsOverviewCn, /workflowHints/);
+  assert.match(docsOverviewEn, /entityHints/);
+  assert.match(docsOverviewCn, /entityHints/);
+  assert.match(docsOverviewEn, /handoffHints\[\]/);
+  assert.match(docsOverviewCn, /handoffHints\[\]/);
+  assert.match(docsOverviewEn, /retryMode/);
+  assert.match(docsOverviewCn, /retryMode/);
+  assert.match(docsOverviewEn, /httpStatusClass/);
+  assert.match(docsOverviewCn, /httpStatusClass/);
+  assert.match(docsOverviewEn, /issuesKind/);
+  assert.match(docsOverviewCn, /issuesKind/);
+  assert.match(docsOverviewEn, /actorRoles\[\]/);
+  assert.match(docsOverviewCn, /actorRoles\[\]/);
+  assert.match(docsOverviewEn, /primaryEntity/);
+  assert.match(docsOverviewCn, /primaryEntity/);
+  assert.match(docsOverviewEn, /bindings\[\]/);
+  assert.match(docsOverviewCn, /bindings\[\]/);
+  assert.match(docsOverviewEn, /outputPaths\[\]/);
+  assert.match(docsOverviewCn, /outputPaths\[\]/);
+  assert.match(docsOverviewEn, /targetCommand/);
+  assert.match(docsOverviewCn, /targetCommand/);
+  assert.match(docsOverviewEn, /sourcePath/);
+  assert.match(docsOverviewCn, /sourcePath/);
+  assert.match(docsOverviewEn, /sourceInput/);
+  assert.match(docsOverviewCn, /sourceInput/);
+  assert.match(docsOverviewEn, /sourceLiteral/);
+  assert.match(docsOverviewCn, /sourceLiteral/);
+  assert.match(docsOverviewEn, /selectionMode/);
+  assert.match(docsOverviewCn, /selectionMode/);
+  assert.match(docsOverviewEn, /selectionConditions\[\]/);
+  assert.match(docsOverviewCn, /selectionConditions\[\]/);
+  assert.match(docsOverviewEn, /currentPageItem/);
+  assert.match(docsOverviewCn, /currentPageItem/);
+  assert.match(docsOverviewEn, /currentResult/);
+  assert.match(docsOverviewCn, /currentResult/);
+  assert.match(docsOverviewEn, /nonNull/);
+  assert.match(docsOverviewCn, /nonNull/);
+  assert.match(docsOverviewEn, /equals/);
+  assert.match(docsOverviewCn, /equals/);
+  assert.match(docsOverviewEn, /targetInputs\[\]/);
+  assert.match(docsOverviewCn, /targetInputs\[\]/);
+  assert.match(docsOverviewEn, /prerequisiteCommands\[\]/);
+  assert.match(docsOverviewCn, /prerequisiteCommands\[\]/);
+  assert.match(docsOverviewEn, /nextCommands\[\]/);
+  assert.match(docsOverviewCn, /nextCommands\[\]/);
+  assert.match(docsOverviewEn, /preflightCommands\[\]/);
+  assert.match(docsOverviewCn, /preflightCommands\[\]/);
+  assert.match(docsOverviewEn, /verificationCommands\[\]/);
+  assert.match(docsOverviewCn, /verificationCommands\[\]/);
+  assert.match(matrixEn, /commands\[\]\.failureHints\[\]/);
+  assert.match(matrixCn, /commands\[\]\.failureHints\[\]/);
+  assert.match(matrixEn, /commands\[\]\.workflowHints/);
+  assert.match(matrixCn, /commands\[\]\.workflowHints/);
+  assert.match(matrixEn, /commands\[\]\.entityHints/);
+  assert.match(matrixCn, /commands\[\]\.entityHints/);
+  assert.match(matrixEn, /commands\[\]\.handoffHints\[\]/);
+  assert.match(matrixCn, /commands\[\]\.handoffHints\[\]/);
+  assert.match(matrixEn, /sourceInput/);
+  assert.match(matrixCn, /sourceInput/);
+  assert.match(matrixEn, /sourceLiteral/);
+  assert.match(matrixCn, /sourceLiteral/);
+  assert.match(matrixEn, /selectionMode/);
+  assert.match(matrixCn, /selectionMode/);
+  assert.match(matrixEn, /selectionConditions\[\]/);
+  assert.match(matrixCn, /selectionConditions\[\]/);
+  assert.match(matrixEn, /currentPageItem/);
+  assert.match(matrixCn, /currentPageItem/);
+  assert.match(matrixEn, /currentResult/);
+  assert.match(matrixCn, /currentResult/);
+  assert.match(matrixEn, /nonNull/);
+  assert.match(matrixCn, /nonNull/);
+  assert.match(matrixEn, /equals/);
+  assert.match(matrixCn, /equals/);
+  assert.match(matrixEn, /commands\[\]\.automationHints/);
+  assert.match(matrixCn, /commands\[\]\.automationHints/);
+});
+
+test("request binding discovery stays documented in docs and skill references", () => {
+  assert.match(docsOverviewEn, /requestBindings\[\]/);
+  assert.match(docsOverviewCn, /requestBindings\[\]/);
+  assert.match(docsOverviewEn, /maps CLI inputs to underlying API request fields/i);
+  assert.match(docsOverviewCn, /映射 CLI 输入与底层 API 请求字段/);
+  assert.match(docsOverviewEn, /field-level `required` and `schema` metadata/i);
+  assert.match(docsOverviewCn, /字段级别的 `required` 与 `schema` 元数据/);
+  assert.match(docsOverviewEn, /requestBindings\[\]\.schema/);
+  assert.match(docsOverviewCn, /requestBindings\[\]\.schema/);
+  assert.match(matrixEn, /requestBindings\[\]/);
+  assert.match(matrixCn, /requestBindings\[\]/);
+  assert.match(matrixEn, /field-level `required` and `schema` metadata/i);
+  assert.match(matrixCn, /字段级别的 `required` 与 `schema` 元数据/);
 });
 
 test("list sort and order defaults stay documented in docs and skill references", () => {

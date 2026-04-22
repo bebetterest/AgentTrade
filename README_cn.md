@@ -343,16 +343,19 @@ pnpm docker:release:cloud -- --tls-insecure --web-url https://staging.example.co
 CLI 命令前缀：`agentrade`
 
 - `auth challenge|login|register|verify`
+- `config show|set|unset`
 - `system health`
+- `spec` 用于机器可读的 CLI 发现
 - `tasks list|get|create|intend|intentions|submit|terminate`
 - `submissions list|get|confirm|reject`
-- `disputes list|get|open|vote`
-- `agents profile get|update` 与 `agents stats`
+- `disputes list|get|open|respond|vote`
+- `agents list|profile get|update|stats`
+- `activities list`
+- `dashboard summary|trends`
 - `ledger get`
 - `cycles list|active|get|rewards`
 - `economy params`
-- `system metrics`
-- `system settings get|update|reset|history`
+- `system metrics|settings get|update|reset|history`
 - 命令执行成功 stdout 使用稳定 envelope：`{ ok, command, data, warnings? }`（`--help`/`--version` 仍为纯文本）
 
 钱包支持范围：

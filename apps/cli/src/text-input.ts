@@ -2,6 +2,14 @@ import { readFileSync } from "node:fs";
 import { CliValidationError } from "./errors.js";
 
 const stripLeadingBom = (value: string): string => value.replace(/^\uFEFF/, "");
+export const STDIN_FILE_ALIAS = "-";
+
+let stdinCache:
+  | {
+      consumer: string;
+      value: string;
+    }
+  | undefined;
 
 interface BaseFileBackedInputOptions {
   inlineValue?: string;
@@ -35,6 +43,44 @@ interface OptionalTextInputOptions extends BaseTextInputOptions {
   required: false;
 }
 
+export const readFileBackedUtf8 = (filePath: string, fileFlag: string): string => {
+  if (filePath === STDIN_FILE_ALIAS) {
+    if (stdinCache) {
+      if (stdinCache.consumer !== fileFlag) {
+        throw new CliValidationError(
+          `stdin is already reserved by --${stdinCache.consumer}; use a real file for --${fileFlag}`
+        );
+      }
+      return stdinCache.value;
+    }
+
+    if (process.stdin.isTTY) {
+      throw new CliValidationError(`--${fileFlag} '${STDIN_FILE_ALIAS}' requires piped stdin`);
+    }
+
+    try {
+      const value = readFileSync(0, "utf8");
+      stdinCache = {
+        consumer: fileFlag,
+        value
+      };
+      return value;
+    } catch (error) {
+      throw new CliValidationError(
+        `failed to read --${fileFlag} from stdin: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+
+  try {
+    return readFileSync(filePath, "utf8");
+  } catch (error) {
+    throw new CliValidationError(
+      `failed to read --${fileFlag}: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+};
+
 export function resolveFileBackedInput(options: RequiredFileBackedInputOptions): string;
 export function resolveFileBackedInput(options: OptionalFileBackedInputOptions): string | undefined;
 export function resolveFileBackedInput(
@@ -56,13 +102,7 @@ export function resolveFileBackedInput(
 
   let value: string | undefined;
   if (filePath !== undefined) {
-    try {
-      value = readFileSync(filePath, "utf8");
-    } catch (error) {
-      throw new CliValidationError(
-        `failed to read --${fileFlag}: ${error instanceof Error ? error.message : String(error)}`
-      );
-    }
+    value = readFileBackedUtf8(filePath, fileFlag);
   } else {
     value = inlineValue;
   }

@@ -1,5 +1,51 @@
 # 进度状态
 
+## 2026-04-22
+
+- 已新增机器可读 CLI 发现面：
+  - 引入本地 `agentrade spec` 输出，向自动化 agent 暴露 binary/运行时/输出契约、共享全局参数、双通道输入对，以及逐命令的鉴权/参数/API 路由元数据，
+  - `spec` 不依赖持久化运行配置，因此在空配置或隔离环境中仍可执行发现。
+- 已收紧面向 agent 的 CLI 命令语义：
+  - `tasks create --help` 现明确说明 `--deadline` 必须包含时区，与现有本地护栏保持一致，
+  - `agents profile update` 新增 `--clear-name` / `--clear-bio`，用于确定性的空字符串写入；空白文本输入不再依赖含糊的隐式语义。
+- 已扩展 CLI 双通道文本输入能力，便于 agent 自动化：
+  - file-backed 文本/值参数现已支持使用 `-` 从 stdin 读取 UTF-8，包括 `config set --value-file -`，
+  - stdin 在单次调用中被明确限制为“单消费者”，多文本命令若重复占用 stdin 会直接返回确定性的校验错误，避免共享流被含糊消耗。
+- 已扩展 `agentrade spec`，让 agent 不必猜鉴权来源：
+  - 每个命令现都会输出结构化 `authRequirements[]`，
+  - bearer/admin 要求会显式列出可满足来源（`--token`、`--token-file`、持久化 token；`--admin-key`、`--admin-key-file`、持久化 admin key）。
+- 已继续扩展 `agentrade spec`，让 agent 能直接把 CLI 输入映射到真实请求字段：
+  - 每个命令现都会输出 `requestBindings[]`，包含 `path|query|body` 位置、请求字段名、CLI 来源参数，以及必要时的特殊语义说明，
+  - 像 `--deadline -> body.deadlineUtc`、`--tz -> body.displayTimezone`、clear flag 写空字符串这类关系不再需要 agent 自行猜测。
+- 已为 `requestBindings[]` 补齐字段级校验元数据：
+  - 当命令对应单个 API operation 时，每个 binding 还会携带 `required` 与 OpenAPI `schema` 片段，
+  - agent 可直接从发现输出读取枚举值、日期时间格式、范围限制和 `$ref` 嵌套对象提示。
+- 已继续扩展 composite/local 命令的发现能力：
+  - `agentrade spec` 现已为 `auth login/register`、`config set/show/unset` 与 `spec` 输出结构化 `executionSteps[]` 和 `sideEffects[]`，
+  - agent 现在可以机器可读地看到条件性 token 落盘、钱包生成/签名流程、config 文件写删、secret-key-file 生命周期，以及敏感 stdout 暴露路径。
+- 已补齐步骤级输入/输出与本地成功输出发现：
+  - `executionSteps[]` 现会携带 `inputSources[]` 与 `outputs[]`，
+  - `successFields[]` 会高亮最值得消费的成功包络字段，包括 `data.auth.token`、`data.wallet.privateKey` 与 `warnings[]` 这类条件性/敏感输出。
+- 已继续扩展 `agentrade spec` 的 API 成功输出发现：
+  - 单一 API operation 命令现会根据响应 schema 自动生成 `successFields[]`，
+  - 生成出的成功字段可附带字段级 `required` 与 `schema` 元数据，覆盖数组、嵌套对象、`$ref` 容器、nullable 字段，以及 `data.token` 这类敏感路径。
+- 已为 `agentrade spec` 增加执行安全发现能力：
+  - 每条命令现都会暴露结构化 `automationHints`，包含 `effect`、`retryMode`、`preflightCommands[]` 与 `verificationCommands[]`，
+  - agent 现在可以区分读命令与写命令，避免对 `tasks create`、`auth verify` 这类歧义写路径盲目重跑，并按显式回读命令做重试前/成功后的状态核验。
+- 已为 `agentrade spec` 增加结构化失败恢复发现：
+  - 每条命令现都会暴露 `failureHints[]`，按稳定 stderr 包络键 `type`、`httpStatus`、`httpStatusClass`、`apiError`、`issuesKind` 进行匹配，
+  - 当前恢复提示已覆盖 `INSUFFICIENT_BALANCE`、`TASK_INTENT_REQUIRED`、`SUBMISSION_NOT_PENDING`、`OPEN_DISPUTE_ALREADY_EXISTS`、`DISPUTE_CLOSED` 等命令级领域分支。
+- 已为 `agentrade spec` 增加生命周期阶段发现：
+  - 每条命令现都会暴露 `workflowHints`，包含 `phase`、`actorRoles[]`、`prerequisiteCommands[]` 与 `nextCommands[]`，
+  - agent 现在可以在执行前判断该命令属于 bootstrap、publish、join、deliver、review、dispute、supervision、settlement、profile、system、config 或 discovery 流程。
+- 已为 `agentrade spec` 增加实体流转发现：
+  - 每条命令现都会暴露 `entityHints`，包含 `primaryEntity` 以及描述实体 `relation`、`inputSources[]`、`outputPaths[]` 的 `bindings[]`，
+  - agent 现在可以直接追踪 task/submission/dispute/cycle/auth/config 句柄从哪里来，以及成功后新建或关联句柄会出现在哪个路径。
+- 已为 `agentrade spec` 增加输出到输入的交接发现：
+  - 每条命令现都会暴露 `handoffHints[]`，包含 `targetCommand`、`bindings[]`（`sourcePath`、`sourceInput` 或 `sourceLiteral` -> `targetInputs[]`），以及同时适用于列表项和单结果对象的结构化护栏（`selectionMode`、`selectionConditions[]`），
+  - agent 现在既可以复用 `--address` 这类当前输入，也可以注入诸如 `token -> config set <key>` 这样的固定字面量，把 task/submission/dispute id、SIWE challenge 字段等句柄接到下一条命令，并用 `equals` / `nonNull` 约束动作，而不必依赖 prose 注释猜流程。
+- 已同步中英文 CLI 文档与 skill 参考，覆盖新的发现能力和 profile 清空契约。
+
 ## 2026-04-11
 
 - 已恢复“管理员密钥”门槛，明确系统规则修改边界：

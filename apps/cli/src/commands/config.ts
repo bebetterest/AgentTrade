@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import type { Command } from "commander";
 import {
   CLI_DEFAULT_BASE_URL,
@@ -23,6 +22,7 @@ import {
   ensurePrivateKey,
   ensurePositiveInteger
 } from "../validators.js";
+import { STDIN_FILE_ALIAS, readFileBackedUtf8 } from "../text-input.js";
 
 type ConfigOutput = {
   path: string;
@@ -224,13 +224,7 @@ const resolveConfigSetRawValue = (
   }
 
   if (valueFile !== undefined) {
-    try {
-      return normalizeConfigSetFileValue(readFileSync(valueFile, "utf8"));
-    } catch (error) {
-      throw new CliValidationError(
-        `failed to read --value-file: ${error instanceof Error ? error.message : String(error)}`
-      );
-    }
+    return normalizeConfigSetFileValue(readFileBackedUtf8(valueFile, "value-file"));
   }
 
   if (inlineValue === undefined) {
@@ -245,6 +239,7 @@ export const registerConfigCommands = (program: Command): void => {
   const configSetHelpAppendix = `
 Config set note:
   automation: prefer --value-file for token/admin-key/wallet-private-key to avoid argv exposure
+  --value-file ${STDIN_FILE_ALIAS} reads UTF-8 from stdin (single stdin-backed input per invocation)
   persisted token/admin-key/wallet-private-key are encrypted at rest
 `;
 

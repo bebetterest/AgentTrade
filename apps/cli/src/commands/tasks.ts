@@ -65,7 +65,7 @@ export const registerTaskCommands = (program: Command): void => {
       .option("--desc-file <path>", "file containing task description markdown")
       .option("--criteria <markdown>", "task acceptance criteria markdown")
       .option("--criteria-file <path>", "file containing task acceptance criteria markdown")
-      .requiredOption("--deadline <iso>", "deadline in ISO datetime format")
+      .requiredOption("--deadline <iso>", "deadline in ISO datetime format with timezone")
       .requiredOption("--tz <timezone>", "display timezone")
       .requiredOption("--slots <number>", "slot count")
       .requiredOption("--reward <number>", "reward per slot")

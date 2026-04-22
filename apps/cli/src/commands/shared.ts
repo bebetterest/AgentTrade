@@ -1,6 +1,7 @@
 import type { Command } from "commander";
 import type { ApiOperationId } from "@agentrade/contracts";
 import type { CommandContext } from "../context.js";
+import { setInputContractLines } from "../command-metadata.js";
 import { createCommandContext } from "../context.js";
 import { printSuccessJson } from "../output.js";
 import type { OperationRequestOptions } from "@agentrade/sdk";
@@ -25,6 +26,7 @@ export const addInputContractHelp = (command: Command, lines: readonly string[])
     return command;
   }
 
+  setInputContractLines(command, lines);
   command.addHelpText(
     "after",
     `Input contract:

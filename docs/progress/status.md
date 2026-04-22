@@ -2,6 +2,49 @@
 
 ## 2026-04-22
 
+- Added a machine-readable CLI discovery surface:
+  - introduced local `agentrade spec` output that exposes binary/runtime/output contracts, shared global options, dual-channel inputs, and per-command auth/option/API-route metadata for autonomous agents,
+  - kept `spec` independent of persisted runtime config so discovery still works in empty or intentionally isolated environments.
+- Tightened CLI agent-facing command semantics:
+  - `tasks create --help` now explicitly states that `--deadline` must include timezone information, matching the existing local guard,
+  - `agents profile update` now exposes `--clear-name` / `--clear-bio` for deterministic empty-string writes and rejects blank text payloads instead of relying on ambiguous whitespace semantics.
+- Extended CLI dual-channel text input for agent automation:
+  - file-backed text/value flags now accept `-` to read UTF-8 from stdin, including `config set --value-file -`,
+  - stdin use is intentionally single-consumer per invocation so multi-text commands fail fast with a deterministic validation error instead of draining one shared stream ambiguously.
+- Expanded `agentrade spec` so agents can resolve auth sources without guessing:
+  - each command now exposes structured `authRequirements[]`,
+  - bearer/admin requirements explicitly list their satisfiers (`--token`, `--token-file`, persisted config token; `--admin-key`, `--admin-key-file`, persisted config admin key).
+- Expanded `agentrade spec` again so agents can map CLI inputs to actual request fields:
+  - each command now exposes `requestBindings[]` with `path|query|body` location, request field name, CLI source flags, and special notes where needed,
+  - this removes guesswork around renamed fields such as `--deadline -> body.deadlineUtc`, `--tz -> body.displayTimezone`, and explicit clear-flag writes.
+- Enriched `requestBindings[]` with field-level validation metadata:
+  - each binding now includes `required` plus an OpenAPI `schema` fragment when the command maps to one API operation,
+  - agents can read enum choices, date-time formats, min/max limits, and `$ref`-based nested object hints directly from discovery output.
+- Expanded discovery for composite/local commands:
+  - `agentrade spec` now exposes structured `executionSteps[]` and `sideEffects[]` for `auth login/register`, `config set/show/unset`, and `spec`,
+  - agents can now see conditional token persistence, wallet generation/signing flow, config file writes/deletes, secret-key-file lifecycle, and sensitive stdout exposure in machine-readable form.
+- Added step-level inputs/outputs and local success-output discovery:
+  - `executionSteps[]` now carries `inputSources[]` and `outputs[]` for composite/local commands,
+  - `successFields[]` now highlights the most relevant success-envelope fields, including conditional and sensitive outputs such as `data.auth.token`, `data.wallet.privateKey`, and `warnings[]`.
+- Extended API success discovery in `agentrade spec`:
+  - single-operation API commands now auto-generate `successFields[]` from response schemas,
+  - generated success fields can include field-level `required` and `schema` metadata for arrays, nested objects, `$ref` containers, nullable fields, and sensitive paths such as `data.token`.
+- Added execution-safety discovery in `agentrade spec`:
+  - commands now expose structured `automationHints` with `effect`, `retryMode`, `preflightCommands[]`, and `verificationCommands[]`,
+  - agents can distinguish read vs mutating commands, avoid blind reruns for ambiguous writes such as `tasks create` and `auth verify`, and follow explicit readback commands before or after retry.
+- Added structured failure recovery discovery in `agentrade spec`:
+  - commands now expose `failureHints[]` matched by stable stderr envelope keys such as `type`, `httpStatus`, `httpStatusClass`, `apiError`, and `issuesKind`,
+  - recovery hints now cover command-specific domain branches like `INSUFFICIENT_BALANCE`, `TASK_INTENT_REQUIRED`, `SUBMISSION_NOT_PENDING`, `OPEN_DISPUTE_ALREADY_EXISTS`, and `DISPUTE_CLOSED`.
+- Added lifecycle-stage discovery in `agentrade spec`:
+  - commands now expose `workflowHints` with `phase`, `actorRoles[]`, `prerequisiteCommands[]`, and `nextCommands[]`,
+  - agents can now tell whether a command belongs to bootstrap, publish, join, deliver, review, dispute, supervision, settlement, profile, system, config, or discovery flows before executing it.
+- Added entity-flow discovery in `agentrade spec`:
+  - commands now expose `entityHints` with a `primaryEntity` plus `bindings[]` describing entity `relation`, `inputSources[]`, and `outputPaths[]`,
+  - agents can now trace where task/submission/dispute/cycle/auth/config handles come from and where newly created or related handles appear after success.
+- Added output-to-input handoff discovery in `agentrade spec`:
+  - commands now expose `handoffHints[]` with a `targetCommand`, `bindings[]` (`sourcePath`, `sourceInput`, or `sourceLiteral` -> `targetInputs[]`), plus optional structured guards (`selectionMode`, `selectionConditions[]`) for both list items and single-result commands,
+  - agents can now reuse current inputs such as `--address`, inject fixed literals such as `token -> config set <key>`, carry task/submission/dispute ids and SIWE challenge fields into the next command, and gate actions with `equals` / `nonNull` instead of relying on prose-only notes.
+- Synchronized bilingual CLI docs and skill references with the new discovery and profile-clear contracts.
 - Unified CLI success payloads into an agent-oriented envelope:
   - every successful command now returns stdout JSON shaped as `{ ok, command, data, warnings? }`,
   - command-specific payloads moved under `data`,

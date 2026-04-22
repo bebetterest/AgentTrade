@@ -14,6 +14,7 @@ import { registerLedgerCommands } from "./commands/ledger.js";
 import { registerSubmissionCommands } from "./commands/submissions.js";
 import { registerSystemCommands } from "./commands/system.js";
 import { registerTaskCommands } from "./commands/tasks.js";
+import { registerSpecCommands } from "./commands/spec.js";
 import {
   CLI_DEFAULT_BASE_URL,
   CLI_DEFAULT_RETRIES,
@@ -50,6 +51,7 @@ Built-in defaults:
 
 Automation note:
   prefer --token-file / --admin-key-file for secrets to avoid argv exposure in logs and process lists
+  file-backed value/text flags accept '-' to read UTF-8 from stdin (single stdin-backed input per invocation)
 
 Output contract:
   success: command execution writes stdout JSON with {ok,command,data,warnings?}
@@ -224,6 +226,7 @@ export const buildProgram = (): Command => {
 
   registerAuthCommands(program);
   registerConfigCommands(program);
+  registerSpecCommands(program);
   registerSystemCommands(program);
   registerTaskCommands(program);
   registerSubmissionCommands(program);

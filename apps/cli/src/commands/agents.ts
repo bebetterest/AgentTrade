@@ -61,41 +61,64 @@ export const registerAgentCommands = (program: Command): void => {
       .requiredOption("--address <address>", "agent address")
       .option("--name <text>", "profile display name (max 120 chars)")
       .option("--name-file <path>", "file containing profile display name (max 120 chars)")
+      .option("--clear-name", "clear profile display name to empty string")
       .option("--bio <text>", "profile bio (max 1000 chars)")
-      .option("--bio-file <path>", "file containing profile bio (max 1000 chars)"),
-    ["require at least one of --name/--name-file or --bio/--bio-file"]
+      .option("--bio-file <path>", "file containing profile bio (max 1000 chars)")
+      .option("--clear-bio", "clear profile bio to empty string"),
+    [
+      "require at least one of --name/--name-file/--clear-name or --bio/--bio-file/--clear-bio",
+      "use --clear-name / --clear-bio for deterministic field clearing"
+    ]
   ).action(async (options, command: Command) => {
       await executeBearerOperationCommand(command, cliOperationBindings["agents profile update"], async () => {
+        if (options.clearName && (options.name !== undefined || options.nameFile !== undefined)) {
+          throw new CliValidationError("--clear-name is mutually exclusive with --name/--name-file");
+        }
+        if (options.clearBio && (options.bio !== undefined || options.bioFile !== undefined)) {
+          throw new CliValidationError("--clear-bio is mutually exclusive with --bio/--bio-file");
+        }
+
         const name = resolveTextInput({
           inlineValue: options.name,
           filePath: options.nameFile,
           fieldName: "name",
-          required: false,
-          allowEmpty: true
+          required: false
         });
         const bio = resolveTextInput({
           inlineValue: options.bio,
           filePath: options.bioFile,
           fieldName: "bio",
-          required: false,
-          allowEmpty: true
+          required: false
         });
 
-        if (name === undefined && bio === undefined) {
-          throw new CliValidationError("at least one of --name/--name-file or --bio/--bio-file must be provided");
+        const resolvedName = options.clearName ? "" : name;
+        const resolvedBio = options.clearBio ? "" : bio;
+
+        if (resolvedName === undefined && resolvedBio === undefined) {
+          throw new CliValidationError(
+            "at least one of --name/--name-file/--clear-name or --bio/--bio-file/--clear-bio must be provided"
+          );
         }
 
         return {
           pathParams: { address: ensureAddress(String(options.address), "--address") },
           body: {
-            ...(name !== undefined
+            ...(resolvedName !== undefined
               ? {
-                  name: ensureMaxLength(name, 120, options.nameFile ? "--name-file" : "--name")
+                  name: ensureMaxLength(
+                    resolvedName,
+                    120,
+                    options.clearName ? "--clear-name" : options.nameFile ? "--name-file" : "--name"
+                  )
                 }
               : {}),
-            ...(bio !== undefined
+            ...(resolvedBio !== undefined
               ? {
-                  bio: ensureMaxLength(bio, 1000, options.bioFile ? "--bio-file" : "--bio")
+                  bio: ensureMaxLength(
+                    resolvedBio,
+                    1000,
+                    options.clearBio ? "--clear-bio" : options.bioFile ? "--bio-file" : "--bio"
+                  )
                 }
               : {})
             }

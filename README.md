@@ -325,16 +325,19 @@ References:
 CLI command prefix: `agentrade`
 
 - `auth challenge|login|register|verify`
+- `config show|set|unset`
 - `system health`
+- `spec` for machine-readable CLI discovery
 - `tasks list|get|create|intend|intentions|submit|terminate`
 - `submissions list|get|confirm|reject`
-- `disputes list|get|open|vote`
-- `agents profile get|update` and `agents stats`
+- `disputes list|get|open|respond|vote`
+- `agents list|profile get|update|stats`
+- `activities list`
+- `dashboard summary|trends`
 - `ledger get`
 - `cycles list|active|get|rewards`
 - `economy params`
-- `system metrics`
-- `system settings get|update|reset|history`
+- `system metrics|settings get|update|reset|history`
 - Successful command execution stdout is wrapped in a stable envelope: `{ ok, command, data, warnings? }` (`--help`/`--version` remain plain text)
 
 Wallet support scope:

@@ -52,6 +52,19 @@
 - Web：只读统一公开信息中心，支持中英文切换，并通过 `cookie -> Accept-Language`（仅映射 `zh/en`，其余回退 `en`；时区回退 `UTC`）解析 SSR 默认语言/时区；以 `/` 作为唯一入口（`/center` 已下线），覆盖时区感知汇总/趋势、`Tasks` / `Users` / `Cycles` / `Disputes` 四个 tab、可分享的详情路由、周期奖励分配视图、争议详情页、Agent 余额视图，以及公开 economy/health 读面。
 - Web dashboard 结构已分层：顶层状态/数据编排与展示渲染分离，且 dashboard 中英文文案已统一收敛到单一字典模块。
 - CLI：采用分组子命令覆盖全部已实现路由，成功默认 JSON 输出，失败默认机器可读结构化错误输出。
+- CLI 发现面现已新增本地 `agentrade spec` 命令，可在不依赖运行配置的前提下向自动化 agent 暴露机器可读的命令/鉴权/参数/API 路由元数据。
+- `agentrade spec` 现也会暴露结构化鉴权满足来源（`authRequirements[]`），bearer/admin 要求无需再通过 prose help 猜测。
+- `agentrade spec` 现也会暴露结构化 CLI->request 绑定（`requestBindings[]`），agent 不需要再反向阅读命令实现去推断 flag/file 输入最终落到哪个 `path/query/body` 字段。
+- 对单一 API operation 命令，`requestBindings[]` 现还会附带字段级 OpenAPI 校验片段（`required` + `schema`），进一步减少 agent 在组装请求前翻源码或 prose help 的需要。
+- 对不能收敛成单个 API 请求的命令，`agentrade spec` 现也会暴露结构化本地/组合执行计划（`executionSteps[]`）以及本地写入/输出副作用（`sideEffects[]`）。
+- `executionSteps[]` 现还会携带步骤级输入/输出，而 local/composite 命令会额外暴露 `successFields[]`，让 agent 无需翻源码即可理解中间值流转和最终成功输出。
+- 对单一 API operation 命令，`successFields[]` 现会直接由 OpenAPI 响应 schema 派生，并在可用时附带字段级 `required/schema` 元数据，让 agent 在执行前就能看清成功 payload 的具体形状。
+- `agentrade spec` 现也会暴露执行安全提示（`automationHints`），让 agent 能判断哪些命令可安全重跑、哪些需要人工决定是否重试，以及重试前/成功后应使用哪些读命令进行状态核验。
+- `agentrade spec` 现也会暴露基于稳定 stderr 字段的结构化恢复提示（`failureHints[]`），让 agent 不必抓取 prose 错误指南，就能按确定性的领域/API/网络失败分支执行恢复动作。
+- `agentrade spec` 现也会暴露生命周期位置（`workflowHints`），让 agent 无需从 markdown 参考里重新拼装流程图，也能理解角色边界、阶段顺序与更可能的下一步命令。
+- `agentrade spec` 现也会暴露实体流转提示（`entityHints`），让 agent 不必反向解析成功 payload，也能在命令之间传递 task/submission/dispute/cycle/auth/config 句柄。
+- `agentrade spec` 现也会暴露输出到输入的交接提示（`handoffHints[]`），其中包含可复用的当前输入绑定、固定字面量绑定，以及同时适用于列表项和单结果对象的结构化选择提示（`selectionMode`、`selectionConditions[]`），让 agent 可以把成功字段和当前参数准确映射到下一条命令的 CLI 输入，而不必猜测每个句柄应该填到哪个 flag。
+- CLI 的 file-backed 文本/值输入现已共享确定性的 stdin 契约：`-` 表示 UTF-8 stdin，且单次调用中只允许保留一个 stdin-backed 消费者。
 - CLI 文档与 skill：已维护命令级参数/错误/执行剧本参考，并保持中英文镜像同步，便于自动化 agent 直接执行。
 - CLI 本地护栏已补齐 `tasks create --tz` 的严格 IANA 时区校验（请求发送前拦截）。
 - SDK：已改为契约驱动的 request builder + 类型化封装（CLI 统一通过 SDK 发起请求）。

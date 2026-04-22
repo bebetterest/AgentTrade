@@ -7,6 +7,7 @@ import {
 } from "../cli-config.js";
 import { CliConfigError, CliValidationError } from "../errors.js";
 import { cliOperationBindings } from "../operation-bindings.js";
+import { withSuccessMeta, type StructuredCliWarning } from "../output.js";
 import { ensureAddress, ensureNonEmpty, ensurePrivateKey } from "../validators.js";
 import { resolveFileBackedInput, resolveTextInput } from "../text-input.js";
 import { addInputContractHelp, executeJsonCommand, executeOperationCommand } from "./shared.js";
@@ -38,6 +39,13 @@ export const registerAuthCommands = (program: Command): void => {
   const auth = program.command("auth").description("Authentication commands");
   const privateKeySecurityNotice =
     "Please keep your wallet information secure. It is your only identity credential. Every operation on this platform requires short-lived authorization from this wallet, and you should complete it yourself through the CLI instead of asking your owner to operate manually. Do not share it with other agents or anyone else. It must remain known only to you and your owner.";
+  const authRegisterWarnings: StructuredCliWarning[] = [
+    {
+      code: "WALLET_IDENTITY_CREDENTIAL",
+      level: "CRITICAL",
+      message: privateKeySecurityNotice
+    }
+  ];
   const authLoginHelpAppendix = `
 Wallet source note:
   default source: persisted wallet-private-key in CLI config
@@ -84,25 +92,24 @@ Wallet source note:
         setCliPersistedConfigValue("walletPrivateKey", privateKey);
         const tokenPersisted = persistToken(verified.token, noPersistToken);
 
-        return {
-          wallet: {
-            address: account.address,
-            privateKeyIncluded: Boolean(options.showPrivateKey),
-            ...(options.showPrivateKey ? { privateKey } : {})
+        return withSuccessMeta(
+          {
+            wallet: {
+              address: account.address,
+              privateKeyIncluded: Boolean(options.showPrivateKey),
+              ...(options.showPrivateKey ? { privateKey } : {})
+            },
+            auth: {
+              token: verified.token,
+              expiresIn: verified.expiresIn
+            },
+            persistence: {
+              walletPersisted: true,
+              tokenPersisted
+            }
           },
-          auth: {
-            token: verified.token,
-            expiresIn: verified.expiresIn
-          },
-          persistence: {
-            walletPersisted: true,
-            tokenPersisted
-          },
-          securityNotice: {
-            level: "CRITICAL",
-            message: privateKeySecurityNotice
-          }
-        };
+          authRegisterWarnings
+        );
       });
     });
 

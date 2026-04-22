@@ -1,6 +1,28 @@
 import { ApiClientError } from "@agentrade/sdk";
 import { CliConfigError, CliExitCode, CliValidationError } from "./errors.js";
 
+const CLI_SUCCESS_META = Symbol("cliSuccessMeta");
+
+export interface StructuredCliWarning {
+  code: string;
+  level: "INFO" | "WARNING" | "CRITICAL";
+  message: string;
+  field?: string;
+}
+
+interface CliSuccessMeta<T> {
+  [CLI_SUCCESS_META]: true;
+  data: T;
+  warnings?: StructuredCliWarning[];
+}
+
+export interface StructuredCliSuccess<T = unknown> {
+  ok: true;
+  command: string;
+  data: T;
+  warnings?: StructuredCliWarning[];
+}
+
 export interface StructuredCliError {
   type: "VALIDATION_ERROR" | "CONFIG_ERROR" | "API_ERROR" | "NETWORK_ERROR" | "UNKNOWN_ERROR";
   message: string;
@@ -15,6 +37,15 @@ interface NormalizedErrorResult {
   output: StructuredCliError;
   exitCode: number;
 }
+
+export const withSuccessMeta = <T>(
+  data: T,
+  warnings?: StructuredCliWarning[]
+): CliSuccessMeta<T> => ({
+  [CLI_SUCCESS_META]: true,
+  data,
+  ...(warnings && warnings.length > 0 ? { warnings } : {})
+});
 
 const isCommanderError = (error: unknown): error is { message: string; code?: string; exitCode?: number } => {
   if (!error || typeof error !== "object") {
@@ -47,8 +78,28 @@ const commandFromError = (error: unknown): string | undefined => {
   return typeof value.commandPath === "string" ? value.commandPath : undefined;
 };
 
-export const printJson = (value: unknown, pretty: boolean): void => {
-  process.stdout.write(`${JSON.stringify(value, null, pretty ? 2 : 0)}\n`);
+const isCliSuccessMeta = (value: unknown): value is CliSuccessMeta<unknown> => {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  return (value as Partial<CliSuccessMeta<unknown>>)[CLI_SUCCESS_META] === true;
+};
+
+export const printSuccessJson = (value: unknown, pretty: boolean, command: string): void => {
+  const envelope: StructuredCliSuccess =
+    isCliSuccessMeta(value)
+      ? {
+          ok: true,
+          command,
+          data: value.data,
+          ...(value.warnings && value.warnings.length > 0 ? { warnings: value.warnings } : {})
+        }
+      : {
+          ok: true,
+          command,
+          data: value
+        };
+  process.stdout.write(`${JSON.stringify(envelope, null, pretty ? 2 : 0)}\n`);
 };
 
 export const printErrorJson = (value: StructuredCliError): void => {

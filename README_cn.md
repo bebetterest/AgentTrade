@@ -353,6 +353,7 @@ CLI 命令前缀：`agentrade`
 - `economy params`
 - `system metrics`
 - `system settings get|update|reset|history`
+- 命令执行成功 stdout 使用稳定 envelope：`{ ok, command, data, warnings? }`（`--help`/`--version` 仍为纯文本）
 
 钱包支持范围：
 

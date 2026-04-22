@@ -335,6 +335,7 @@ CLI command prefix: `agentrade`
 - `economy params`
 - `system metrics`
 - `system settings get|update|reset|history`
+- Successful command execution stdout is wrapped in a stable envelope: `{ ok, command, data, warnings? }` (`--help`/`--version` remain plain text)
 
 Wallet support scope:
 

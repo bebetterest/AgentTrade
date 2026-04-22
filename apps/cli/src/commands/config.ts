@@ -13,7 +13,7 @@ import {
   unsetCliPersistedConfigKeys
 } from "../cli-config.js";
 import { CliValidationError } from "../errors.js";
-import { printJson } from "../output.js";
+import { printSuccessJson, type StructuredCliWarning, withSuccessMeta } from "../output.js";
 import { addInputContractHelp } from "./shared.js";
 import {
   ensureAddress,
@@ -23,12 +23,6 @@ import {
   ensurePrivateKey,
   ensurePositiveInteger
 } from "../validators.js";
-
-type ConfigWarning = {
-  code: "PLAINTEXT_PERSISTED_SECRET";
-  field: "token" | "adminKey";
-  message: string;
-};
 
 type ConfigOutput = {
   path: string;
@@ -56,7 +50,6 @@ type ConfigOutput = {
     timeoutMs: number;
     retries: number;
   };
-  warnings?: ConfigWarning[];
 };
 
 const KEY_ALIASES: Record<string, CliPersistedConfigKey> = {
@@ -115,14 +108,15 @@ const maskEncryptedSecret = (value: string | undefined): string | null => {
   return "***encrypted***";
 };
 
-const toPlaintextPersistedSecretWarnings = (values: CliPersistedConfig): ConfigWarning[] => {
-  const warnings: ConfigWarning[] = [];
+const toPlaintextPersistedSecretWarnings = (values: CliPersistedConfig): StructuredCliWarning[] => {
+  const warnings: StructuredCliWarning[] = [];
   const token = values.token?.trim();
   const adminKey = values.adminKey?.trim();
 
   if (token && !isStoredCliSecretEncrypted(token)) {
     warnings.push({
       code: "PLAINTEXT_PERSISTED_SECRET",
+      level: "WARNING",
       field: "token",
       message:
         "token in CLI config is plaintext and not encrypted at rest; rerun `agentrade config set token --value-file <path>` or `agentrade config set token <value>` to rewrite it securely"
@@ -132,6 +126,7 @@ const toPlaintextPersistedSecretWarnings = (values: CliPersistedConfig): ConfigW
   if (adminKey && !isStoredCliSecretEncrypted(adminKey)) {
     warnings.push({
       code: "PLAINTEXT_PERSISTED_SECRET",
+      level: "WARNING",
       field: "adminKey",
       message:
         "admin-key in CLI config is plaintext and not encrypted at rest; rerun `agentrade config set admin-key --value-file <path>` or `agentrade config set admin-key <value>` to rewrite it securely"
@@ -146,8 +141,6 @@ const toConfigOutput = (
   exists: boolean,
   values: CliPersistedConfig
 ): ConfigOutput => {
-  const warnings = toPlaintextPersistedSecretWarnings(values);
-
   return {
     path,
     exists,
@@ -173,8 +166,7 @@ const toConfigOutput = (
       walletPrivateKeyConfigured: Boolean(values.walletPrivateKey),
       timeoutMs: values.timeoutMs ?? CLI_DEFAULT_TIMEOUT_MS,
       retries: values.retries ?? CLI_DEFAULT_RETRIES
-    },
-    ...(warnings.length > 0 ? { warnings } : {})
+    }
   };
 };
 
@@ -262,12 +254,13 @@ Config set note:
     .action(function (this: Command) {
       try {
         const snapshot = loadCliPersistedConfig();
-        printJson(
-          {
-            ok: true,
-            ...toConfigOutput(snapshot.path, snapshot.exists, snapshot.values)
-          },
-          resolvePretty(this)
+        printSuccessJson(
+          withSuccessMeta(
+            toConfigOutput(snapshot.path, snapshot.exists, snapshot.values),
+            toPlaintextPersistedSecretWarnings(snapshot.values)
+          ),
+          resolvePretty(this),
+          "config show"
         );
       } catch (error) {
         attachCommandPath(error, "config show");
@@ -291,14 +284,17 @@ Config set note:
         const key = parseSetKey(rawKey);
         const value = parseSetValue(key, resolveConfigSetRawValue(rawValue, options.valueFile));
         const snapshot = setCliPersistedConfigValue(key, value);
-        printJson(
-          {
-            ok: true,
-            action: "set",
-            key,
-            ...toConfigOutput(snapshot.path, snapshot.exists, snapshot.values)
-          },
-          resolvePretty(this)
+        printSuccessJson(
+          withSuccessMeta(
+            {
+              action: "set",
+              key,
+              ...toConfigOutput(snapshot.path, snapshot.exists, snapshot.values)
+            },
+            toPlaintextPersistedSecretWarnings(snapshot.values)
+          ),
+          resolvePretty(this),
+          "config set"
         );
       } catch (error) {
         attachCommandPath(error, "config set");
@@ -318,14 +314,17 @@ Config set note:
         const key = parseUnsetKey(rawKey);
         const snapshot =
           key === "all" ? clearCliPersistedConfig() : unsetCliPersistedConfigKeys([key]);
-        printJson(
-          {
-            ok: true,
-            action: "unset",
-            key,
-            ...toConfigOutput(snapshot.path, snapshot.exists, snapshot.values)
-          },
-          resolvePretty(this)
+        printSuccessJson(
+          withSuccessMeta(
+            {
+              action: "unset",
+              key,
+              ...toConfigOutput(snapshot.path, snapshot.exists, snapshot.values)
+            },
+            toPlaintextPersistedSecretWarnings(snapshot.values)
+          ),
+          resolvePretty(this),
+          "config unset"
         );
       } catch (error) {
         attachCommandPath(error, "config unset");

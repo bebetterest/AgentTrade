@@ -29,6 +29,11 @@
 分页规则：
 - 所有 `nextCursor` 都应视为 opaque 值，并通过 `--cursor` 原样回传。
 
+成功 envelope 规则：
+- 所有成功 stdout 都应按 `{ ok, command, data, warnings? }` 解析。
+- 除非某一行显式写了顶层 `warnings[]`，下文“成功锚点”字段都应从 `data.*` 读取。
+- 发现型输出是例外：`--help` 与 `--version` 仍然会向 stdout 输出纯文本。
+
 ## 2）会话检查与认证
 
 | 优先级 | 命令 | 鉴权 | API 方法/路径 | 必填参数 | 可选参数 | 关键本地护栏 | 成功锚点 |
@@ -36,7 +41,7 @@
 | 核心 | `system health` | 无 | `GET /v2/system/health` | 无 | 无 | 无 | `ok=true`、`service` |
 | 核心 | `auth challenge` | 无 | `POST /v2/auth/challenge` | `--address` | 无 | EVM 地址 | `nonce`、`message` |
 | 核心 | `auth verify` | 无 | `POST /v2/auth/verify` | `--address`、`--nonce`、`--signature`、`--message`/`--message-file` 二选一 | 无 | nonce/signature/message 非空，EVM 地址 | `token`、`expiresIn` |
-| 可选 | `auth register` | 无 | 组合流程：`POST /v2/auth/challenge` -> `POST /v2/auth/verify` | 无 | `--show-private-key`、`--no-persist-token` | 本地密钥生成 + SIWE 签名流程 | `wallet.address`、`wallet.privateKeyIncluded`、可选 `wallet.privateKey`、`auth.token`、`auth.expiresIn`、`persistence.walletPersisted`、`persistence.tokenPersisted`、`securityNotice.message` |
+| 可选 | `auth register` | 无 | 组合流程：`POST /v2/auth/challenge` -> `POST /v2/auth/verify` | 无 | `--show-private-key`、`--no-persist-token` | 本地密钥生成 + SIWE 签名流程 | `wallet.address`、`wallet.privateKeyIncluded`、可选 `wallet.privateKey`、`auth.token`、`auth.expiresIn`、`persistence.walletPersisted`、`persistence.tokenPersisted`、可选顶层 `warnings[].message` |
 | 核心 | `auth login` | 无 | 组合流程：`POST /v2/auth/challenge` -> `POST /v2/auth/verify` | 无 | `--address`、`--private-key`、`--private-key-file`、`--no-persist-token` | 从参数/文件/配置解析私钥，拒绝地址与私钥不匹配 | `wallet.address`、`auth.token`、`auth.expiresIn`、`persistence.tokenPersisted`、`persistence.walletSource` |
 
 认证安全提示：
@@ -104,12 +109,12 @@
 
 | 优先级 | 命令 | 鉴权 | API 方法/路径 | 必填参数 | 可选参数 | 关键本地护栏 | 成功锚点 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 核心 | `config show` | 无 | 无（仅本地文件） | 无 | 无 | 持久化 JSON 配置解析 | `path`、`exists`、`configured`、`effective`、可选 `warnings[]` |
-| 核心 | `config set` | 无 | 无（仅本地文件） | `<key>`，以及 `<value>` / `--value-file` 二选一 | 支持 `_` 形式 key 别名 | key 枚举 + 值校验（`URL`/地址/私钥/整数/非空），且值/文件互斥 | `action=set`、`key`、更新后配置、可选 `warnings[]` |
-| 核心 | `config unset` | 无 | 无（仅本地文件） | `<key>` 或 `all` | 无 | key 枚举校验（`base-url|token|admin-key|wallet-address|wallet-private-key|timeout-ms|retries|all`） | `action=unset`、更新后配置、可选 `warnings[]` |
+| 核心 | `config show` | 无 | 无（仅本地文件） | 无 | 无 | 持久化 JSON 配置解析 | `path`、`exists`、`configured`、`effective`、可选顶层 `warnings[]` |
+| 核心 | `config set` | 无 | 无（仅本地文件） | `<key>`，以及 `<value>` / `--value-file` 二选一 | 支持 `_` 形式 key 别名 | key 枚举 + 值校验（`URL`/地址/私钥/整数/非空），且值/文件互斥 | `action=set`、`key`、更新后配置、可选顶层 `warnings[]` |
+| 核心 | `config unset` | 无 | 无（仅本地文件） | `<key>` 或 `all` | 无 | key 枚举校验（`base-url|token|admin-key|wallet-address|wallet-private-key|timeout-ms|retries|all`） | `action=unset`、更新后配置、可选顶层 `warnings[]` |
 
 本地配置提示：
-- 如果检测到历史遗留的明文 `token` 或 `admin-key`，`config show|set|unset` 会附带 `warnings[]`；重新执行 `config set` 后即可把它们改写成加密落盘。
+- 如果检测到历史遗留的明文 `token` 或 `admin-key`，`config show|set|unset` 会附带顶层 `warnings[]`；重新执行 `config set` 后即可把它们改写成加密落盘。
 - 对于 `configured.token` / `configured.adminKey`，加密落盘值会显示为 `***encrypted***`，历史明文值会显示为 `***configured***`，表示仍需迁移。
 - `configured.walletPrivateKey` 在存在时始终显示为 `***encrypted***`；明文 wallet private key 会被直接判为配置错误。
 

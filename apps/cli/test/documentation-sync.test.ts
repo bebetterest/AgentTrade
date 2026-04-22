@@ -186,6 +186,17 @@ test("error contracts stay mirrored in docs and skill references", () => {
   assert.doesNotMatch(docsOverviewCn, /HTTP_ERROR/, "stale HTTP_ERROR alias found in docs/cli/overview_cn.md");
 });
 
+test("success envelope stays documented in docs and skill references", () => {
+  assert.match(docsOverviewEn, /\{ ok, command, data, warnings\? \}/);
+  assert.match(docsOverviewCn, /\{ ok, command, data, warnings\? \}/);
+  assert.match(matrixEn, /\{ ok, command, data, warnings\? \}/);
+  assert.match(matrixCn, /\{ ok, command, data, warnings\? \}/);
+  assert.match(docsOverviewEn, /--help.*--version.*plain text/);
+  assert.match(docsOverviewCn, /--help.*--version.*纯文本/);
+  assert.match(matrixEn, /--help.*--version.*plain text/);
+  assert.match(matrixCn, /--help.*--version.*纯文本/);
+});
+
 test("pagination limit guard stays documented in docs and skill references", () => {
   assert.match(docsOverviewEn, /`--limit`.*`1-100`/);
   assert.match(docsOverviewCn, /`--limit`.*`1-100`/);
@@ -244,10 +255,10 @@ test("text file BOM normalization stays documented in docs and skill references"
 });
 
 test("config masking and warnings stay documented in docs and skill references", () => {
-  assert.match(docsOverviewEn, /optional `warnings\[\]`/);
-  assert.match(docsOverviewCn, /可选 `warnings\[\]`/);
-  assert.match(matrixEn, /optional `warnings\[\]`/);
-  assert.match(matrixCn, /可选 `warnings\[\]`/);
+  assert.match(docsOverviewEn, /optional top-level `warnings\[\]`/);
+  assert.match(docsOverviewCn, /可选顶层 `warnings\[\]`/);
+  assert.match(matrixEn, /optional top-level `warnings\[\]`/);
+  assert.match(matrixCn, /可选顶层 `warnings\[\]`/);
 
   assert.match(docsOverviewEn, /\*\*\*encrypted\*\*\*/);
   assert.match(docsOverviewEn, /\*\*\*configured\*\*\*/);

@@ -8,7 +8,8 @@
 - 默认 API 基地址：`https://agentrade.info/api`
 - 云端网关示例基地址：`https://example.com/api`
 - 契约命名空间：来自 `packages/contracts` 的 `/v2/*`；运行时请求默认省略版本前缀
-- 成功输出：`stdout` JSON
+- 命令执行成功输出：`stdout` envelope JSON，顶层固定为 `{ ok, command, data, warnings? }`
+- 例外：`--help` 与 `--version` 会以零退出码返回 `stdout` 纯文本，不走 JSON success envelope
 - 失败输出：`stderr` 结构化 JSON
 - 命令风格：仅保留分组子命令（不再支持 `resource:action` 旧别名）
 - Help 探索：根命令与子命令的 `--help` 都会展示运行时/输出契约；子命令 help 还会展示继承的全局参数
@@ -52,12 +53,16 @@
 
 ## 4. 完整命令面
 
+成功 envelope 说明：
+- 除非某个字段被明确写成顶层 `warnings[]`，下面表格中的成功字段都位于 success envelope 的 `data.*` 下。
+- success envelope 只适用于命令执行结果，不适用于 `--help`、`--version` 这类发现型输出。
+
 ### 4.1 认证
 
 | 命令 | 鉴权 | 必填参数 | 可选参数 | 成功 JSON（关键字段） | 常见 API 错误 |
 | --- | --- | --- | --- | --- | --- |
 | `auth challenge` | 无 | `--address` | 无 | `nonce`、`message` | `INVALID_ADDRESS` |
-| `auth register` | 无 | 无 | `--show-private-key`、`--no-persist-token` | `wallet.address`、`wallet.privateKeyIncluded`、可选 `wallet.privateKey`、`auth.token`、`auth.expiresIn`、`persistence.walletPersisted`、`persistence.tokenPersisted`、`securityNotice.message` | `CHALLENGE_EXPIRED`、`INVALID_SIGNATURE` |
+| `auth register` | 无 | 无 | `--show-private-key`、`--no-persist-token` | `wallet.address`、`wallet.privateKeyIncluded`、可选 `wallet.privateKey`、`auth.token`、`auth.expiresIn`、`persistence.walletPersisted`、`persistence.tokenPersisted`、可选顶层 `warnings[].message` | `CHALLENGE_EXPIRED`、`INVALID_SIGNATURE` |
 | `auth login` | 无 | 无 | `--address`、`--private-key`、`--private-key-file`、`--no-persist-token` | `wallet.address`、`auth.token`、`auth.expiresIn`、`persistence.tokenPersisted`、`persistence.walletSource` | `CHALLENGE_EXPIRED`、`INVALID_SIGNATURE` |
 | `auth verify` | 无 | `--address`、`--nonce`、`--signature`、（`--message` 或 `--message-file`） | 无 | `token`、`expiresIn` | `INVALID_SIGNATURE`、`CHALLENGE_EXPIRED` |
 
@@ -178,13 +183,13 @@
 
 | 命令 | 鉴权 | 必填参数 | 可选参数 | 成功 JSON（关键字段） | 常见 API 错误 |
 | --- | --- | --- | --- | --- | --- |
-| `config show` | 无 | 无 | 无 | `path`、`exists`、`configured`、`effective`、可选 `warnings[]` | 无 |
-| `config set` | 无 | `<key>`，以及 `<value>` / `--value-file` 二选一 | 支持 `_` 形式 key 别名 | `action`、`key`、`configured`、`effective`、可选 `warnings[]` | 无 |
-| `config unset` | 无 | `<key>`（`base-url|token|admin-key|wallet-address|wallet-private-key|timeout-ms|retries|all`） | 无 | `action`、`key`、`exists`、`configured`、`effective`、可选 `warnings[]` | 无 |
+| `config show` | 无 | 无 | 无 | `path`、`exists`、`configured`、`effective`、可选顶层 `warnings[]` | 无 |
+| `config set` | 无 | `<key>`，以及 `<value>` / `--value-file` 二选一 | 支持 `_` 形式 key 别名 | `action`、`key`、`configured`、`effective`、可选顶层 `warnings[]` | 无 |
+| `config unset` | 无 | `<key>`（`base-url|token|admin-key|wallet-address|wallet-private-key|timeout-ms|retries|all`） | 无 | `action`、`key`、`exists`、`configured`、`effective`、可选顶层 `warnings[]` | 无 |
 
 Config 脱敏说明：
 - 当持久化值已加密落盘时，`configured.token` / `configured.adminKey` 会显示为 `***encrypted***`。
-- 当仍检测到历史遗留的明文值时，`configured.token` / `configured.adminKey` 会显示为 `***configured***`；此时 `warnings[]` 会提示如何安全改写。
+- 当仍检测到历史遗留的明文值时，`configured.token` / `configured.adminKey` 会显示为 `***configured***`；此时顶层 `warnings[]` 会提示如何安全改写。
 - `configured.walletPrivateKey` 在存在时始终显示为 `***encrypted***`；配置中的明文 wallet private key 会直接作为 `CONFIG_ERROR` 拒绝。
 
 ## 5. 本地预校验规则（发请求前）
@@ -205,7 +210,7 @@ CLI 在发起 HTTP 请求前会执行确定性护栏：
 - 非空校验：ID 与必填文本参数不允许纯空白。
 - 文本来源校验：`--xxx` 与 `--xxx-file` 互斥。
 - Config set 值来源校验：`config set <key> <value>` 与 `config set <key> --value-file <path>` 互斥。
-- Config 历史明文提示：如果本地配置里检测到历史遗留的明文 `token` 或 `admin-key`，`config show|set|unset` 会附带 `warnings[]`。
+- Config 历史明文提示：如果本地配置里检测到历史遗留的明文 `token` 或 `admin-key`，`config show|set|unset` 会附带顶层 `warnings[]`。
 - Profile patch 校验：`agents profile update` 至少包含一个可变字段。
 - Runtime settings patch 校验：`system settings update --patch-json|--patch-file` 必须能解析为 JSON 对象。
 - 权限修改校验：`system settings update|reset` 必须同时提供 `--token`/`--token-file` 与 `--admin-key`/`--admin-key-file`（或持久化等价配置）。

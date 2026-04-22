@@ -10,6 +10,7 @@ import { PrismaClient } from "@prisma/client";
 import type { Address } from "@agentrade/types";
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "../../server/src/app.js";
+import { unwrapCliSuccess } from "./success-envelope.js";
 
 const TEST_DB_URL = process.env.TEST_DATABASE_URL;
 const REQUIRE_DB_URL = process.env.REQUIRE_TEST_DATABASE_URL === "true";
@@ -113,8 +114,7 @@ const runCliJson = async (
 ): Promise<unknown> => {
   const result = await runCli(baseUrl, args, env);
   assert.equal(result.code, 0, `command failed: ${args.join(" ")}\n${result.stderr}`);
-  assert.ok(result.stdout.trim().length > 0, "stdout must contain JSON");
-  return JSON.parse(result.stdout.trim());
+  return unwrapCliSuccess(result.stdout);
 };
 
 const parseCliError = (result: CliRunResult): CliErrorPayload => {
@@ -359,10 +359,10 @@ runDbSuite(
           assert.ok(publishSuccess.length > 0, "expected at least one successful publish");
           assert.ok(publishFailures.length > 0, "expected insufficient-balance publish conflicts");
 
-          const samplePublishedTask = JSON.parse(publishSuccess[0]!.stdout.trim()) as {
+          const samplePublishedTask = unwrapCliSuccess<{
             rewardEscrowRemaining: number;
             taxAmount: number;
-          };
+          }>(publishSuccess[0]!.stdout);
           const perTaskCost = samplePublishedTask.rewardEscrowRemaining + samplePublishedTask.taxAmount;
           assert.ok(perTaskCost > 0);
 
@@ -526,7 +526,7 @@ runDbSuite(
             assert.equal(errorPayload.command, "disputes open");
           }
 
-          const createdDispute = JSON.parse(openDisputeSuccess[0]!.stdout.trim()) as { id: string };
+          const createdDispute = unwrapCliSuccess<{ id: string }>(openDisputeSuccess[0]!.stdout);
           const createdDisputeDetails = (await runCliJson(baseUrl, ["disputes", "get", "--dispute", createdDispute.id])) as {
             id: string;
           };

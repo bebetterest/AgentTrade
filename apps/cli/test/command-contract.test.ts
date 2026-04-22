@@ -8,6 +8,7 @@ import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { stripApiVersionPrefix } from "@agentrade/contracts";
+import { parseCliSuccessEnvelope, unwrapCliSuccess } from "./success-envelope.js";
 
 type AuthMode = "none" | "bearer" | "bearer_admin";
 
@@ -538,8 +539,10 @@ test("cli command contract: method/path/auth/body coverage for all command group
     assert.equal(result.code, 0, `command failed: ${args.join(" ")}\n${result.stderr}`);
     assert.equal(calls.length, beforeCalls + 1, `request count mismatch for ${args.join(" ")}`);
 
-    const parsed = JSON.parse(result.stdout.trim()) as unknown;
-    assert.equal(typeof parsed, "object");
+    const parsed = parseCliSuccessEnvelope(result.stdout);
+    assert.equal(parsed.ok, true);
+    assert.equal(typeof parsed.command, "string");
+    assert.equal(typeof parsed.data, "object");
     if (options.pretty) {
       assert.match(result.stdout, /\n  "ok": true/);
     }
@@ -596,12 +599,12 @@ test("cli command contract: method/path/auth/body coverage for all command group
     assert.equal(registerResult.code, 0, `command failed: auth register\n${registerResult.stderr}`);
     assert.equal(calls.length, beforeRegisterCalls + 2, "auth register must trigger challenge + verify");
 
-    const registerOutput = JSON.parse(registerResult.stdout.trim()) as {
+    const registerEnvelope = parseCliSuccessEnvelope<{
       wallet: { address: string; privateKeyIncluded: boolean; privateKey?: string };
       auth: { token: string; expiresIn: string };
       persistence: { walletPersisted: boolean; tokenPersisted: boolean };
-      securityNotice: { level: string; message: string };
-    };
+    }>(registerResult.stdout);
+    const registerOutput = registerEnvelope.data;
     assert.match(registerOutput.wallet.address, /^0x[a-fA-F0-9]{40}$/);
     assert.equal(registerOutput.wallet.privateKeyIncluded, false);
     assert.equal(registerOutput.wallet.privateKey, undefined);
@@ -609,9 +612,12 @@ test("cli command contract: method/path/auth/body coverage for all command group
     assert.equal(registerOutput.auth.expiresIn, "15m");
     assert.equal(registerOutput.persistence.walletPersisted, true);
     assert.equal(registerOutput.persistence.tokenPersisted, true);
-    assert.equal(registerOutput.securityNotice.level, "CRITICAL");
-    assert.match(registerOutput.securityNotice.message, /only identity credential/i);
-    assert.match(registerOutput.securityNotice.message, /Do not share it with other agents/i);
+    assert.equal(registerEnvelope.command, "auth register");
+    assert.equal(registerEnvelope.warnings?.length, 1);
+    assert.equal(registerEnvelope.warnings?.[0]?.code, "WALLET_IDENTITY_CREDENTIAL");
+    assert.equal(registerEnvelope.warnings?.[0]?.level, "CRITICAL");
+    assert.match(registerEnvelope.warnings?.[0]?.message ?? "", /only identity credential/i);
+    assert.match(registerEnvelope.warnings?.[0]?.message ?? "", /Do not share it with other agents/i);
 
     const registerChallengeCall = calls[beforeRegisterCalls]!;
     assert.equal(registerChallengeCall.method, "POST");
@@ -640,10 +646,10 @@ test("cli command contract: method/path/auth/body coverage for all command group
       baseEnv
     );
     assert.equal(registerShowKey.code, 0, `command failed: auth register --show-private-key\n${registerShowKey.stderr}`);
-    const registerShowKeyOutput = JSON.parse(registerShowKey.stdout.trim()) as {
+    const registerShowKeyOutput = unwrapCliSuccess<{
       wallet: { address: string; privateKeyIncluded: boolean; privateKey?: string };
       persistence: { walletPersisted: boolean; tokenPersisted: boolean };
-    };
+    }>(registerShowKey.stdout);
     assert.match(registerShowKeyOutput.wallet.address, /^0x[a-fA-F0-9]{40}$/);
     assert.equal(registerShowKeyOutput.wallet.privateKeyIncluded, true);
     assert.match(registerShowKeyOutput.wallet.privateKey, /^0x[a-fA-F0-9]{64}$/);
@@ -656,11 +662,11 @@ test("cli command contract: method/path/auth/body coverage for all command group
     const loginResult = await runCli(["--base-url", baseUrl, "auth", "login", "--no-persist-token"], baseEnv);
     assert.equal(loginResult.code, 0, `command failed: auth login\n${loginResult.stderr}`);
     assert.equal(calls.length, beforeLoginCalls + 2, "auth login must trigger challenge + verify");
-    const loginOutput = JSON.parse(loginResult.stdout.trim()) as {
+    const loginOutput = unwrapCliSuccess<{
       wallet: { address: string };
       auth: { token: string; expiresIn: string };
       persistence: { tokenPersisted: boolean; walletSource: string };
-    };
+    }>(loginResult.stdout);
     assert.match(loginOutput.wallet.address, /^0x[a-fA-F0-9]{40}$/);
     assert.equal(loginOutput.auth.token, "jwt-token");
     assert.equal(loginOutput.auth.expiresIn, "15m");
@@ -716,10 +722,10 @@ test("cli command contract: method/path/auth/body coverage for all command group
     );
     assert.equal(loginWithOverride.code, 0, `command failed: auth login --private-key\n${loginWithOverride.stderr}`);
     assert.equal(calls.length, beforeLoginOverrideCalls + 2, "auth login --private-key must trigger challenge + verify");
-    const loginWithOverrideOutput = JSON.parse(loginWithOverride.stdout.trim()) as {
+    const loginWithOverrideOutput = unwrapCliSuccess<{
       wallet: { address: string };
       persistence: { walletSource: string };
-    };
+    }>(loginWithOverride.stdout);
     assert.equal(loginWithOverrideOutput.wallet.address, registerShowKeyOutput.wallet.address);
     assert.notEqual(loginWithOverrideOutput.wallet.address, registerOutput.wallet.address);
     assert.equal(loginWithOverrideOutput.persistence.walletSource, "flag");
@@ -739,10 +745,10 @@ test("cli command contract: method/path/auth/body coverage for all command group
     );
     assert.equal(loginWithFile.code, 0, `command failed: auth login --private-key-file\n${loginWithFile.stderr}`);
     assert.equal(calls.length, beforeLoginFileCalls + 2, "auth login --private-key-file must trigger challenge + verify");
-    const loginWithFileOutput = JSON.parse(loginWithFile.stdout.trim()) as {
+    const loginWithFileOutput = unwrapCliSuccess<{
       wallet: { address: string };
       persistence: { walletSource: string };
-    };
+    }>(loginWithFile.stdout);
     assert.equal(loginWithFileOutput.wallet.address, registerShowKeyOutput.wallet.address);
     assert.equal(loginWithFileOutput.persistence.walletSource, "flag");
 

@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { parseCliSuccessEnvelope, unwrapCliSuccess } from "./success-envelope.js";
 
 interface CliResult {
   code: number | null;
@@ -67,11 +68,11 @@ test("cli config command: set/show/unset persisted values", async () => {
   try {
     const setBase = await runCli(["config", "set", "base-url", "https://api.example.com"], configPath);
     assert.equal(setBase.code, 0, setBase.stderr);
-    const setBaseJson = JSON.parse(setBase.stdout.trim()) as {
+    const setBaseJson = unwrapCliSuccess<{
       action: string;
       key: string;
       configured: { baseUrl: string | null };
-    };
+    }>(setBase.stdout);
     assert.equal(setBaseJson.action, "set");
     assert.equal(setBaseJson.key, "baseUrl");
     assert.equal(setBaseJson.configured.baseUrl, "https://api.example.com");
@@ -82,10 +83,10 @@ test("cli config command: set/show/unset persisted values", async () => {
 
     const setToken = await runCli(["config", "set", "token", "--value-file", tokenFile], configPath);
     assert.equal(setToken.code, 0, setToken.stderr);
-    const setTokenJson = JSON.parse(setToken.stdout.trim()) as {
+    const setTokenJson = unwrapCliSuccess<{
       configured: { tokenConfigured: boolean; token: string | null };
       effective: { tokenConfigured: boolean };
-    };
+    }>(setToken.stdout);
     assert.equal(setTokenJson.configured.tokenConfigured, true);
     assert.equal(setTokenJson.effective.tokenConfigured, true);
     assert.equal(setTokenJson.configured.token, "***encrypted***");
@@ -96,10 +97,10 @@ test("cli config command: set/show/unset persisted values", async () => {
       configPath
     );
     assert.equal(setAdminKey.code, 0, setAdminKey.stderr);
-    const setAdminJson = JSON.parse(setAdminKey.stdout.trim()) as {
+    const setAdminJson = unwrapCliSuccess<{
       configured: { adminKeyConfigured: boolean; adminKey: string | null };
       effective: { adminKeyConfigured: boolean };
-    };
+    }>(setAdminKey.stdout);
     assert.equal(setAdminJson.configured.adminKeyConfigured, true);
     assert.equal(setAdminJson.effective.adminKeyConfigured, true);
     assert.equal(setAdminJson.configured.adminKey, "***encrypted***");
@@ -120,10 +121,10 @@ test("cli config command: set/show/unset persisted values", async () => {
       configPath
     );
     assert.equal(setWalletAddress.code, 0, setWalletAddress.stderr);
-    const setWalletAddressJson = JSON.parse(setWalletAddress.stdout.trim()) as {
+    const setWalletAddressJson = unwrapCliSuccess<{
       configured: { walletAddress: string | null; walletAddressConfigured: boolean };
       effective: { walletAddress: string | null; walletAddressConfigured: boolean };
-    };
+    }>(setWalletAddress.stdout);
     assert.equal(setWalletAddressJson.configured.walletAddress, walletAddress);
     assert.equal(setWalletAddressJson.configured.walletAddressConfigured, true);
     assert.equal(setWalletAddressJson.effective.walletAddressConfigured, true);
@@ -133,10 +134,10 @@ test("cli config command: set/show/unset persisted values", async () => {
       configPath
     );
     assert.equal(setWalletPrivateKey.code, 0, setWalletPrivateKey.stderr);
-    const setWalletPrivateKeyJson = JSON.parse(setWalletPrivateKey.stdout.trim()) as {
+    const setWalletPrivateKeyJson = unwrapCliSuccess<{
       configured: { walletPrivateKey: string | null; walletPrivateKeyConfigured: boolean };
       effective: { walletPrivateKeyConfigured: boolean };
-    };
+    }>(setWalletPrivateKey.stdout);
     assert.equal(setWalletPrivateKeyJson.configured.walletPrivateKeyConfigured, true);
     assert.equal(setWalletPrivateKeyJson.effective.walletPrivateKeyConfigured, true);
     assert.equal(setWalletPrivateKeyJson.configured.walletPrivateKey, "***encrypted***");
@@ -146,7 +147,7 @@ test("cli config command: set/show/unset persisted values", async () => {
 
     const show = await runCli(["config", "show"], configPath);
     assert.equal(show.code, 0, show.stderr);
-    const showJson = JSON.parse(show.stdout.trim()) as {
+    const showJson = unwrapCliSuccess<{
       configured: {
         baseUrl: string | null;
         tokenConfigured: boolean;
@@ -154,7 +155,7 @@ test("cli config command: set/show/unset persisted values", async () => {
         walletAddress: string | null;
         walletPrivateKeyConfigured: boolean;
       };
-    };
+    }>(show.stdout);
     assert.equal(showJson.configured.baseUrl, "https://api.example.com");
     assert.equal(showJson.configured.tokenConfigured, true);
     assert.equal(showJson.configured.adminKeyConfigured, true);
@@ -163,38 +164,38 @@ test("cli config command: set/show/unset persisted values", async () => {
 
     const unsetToken = await runCli(["config", "unset", "token"], configPath);
     assert.equal(unsetToken.code, 0, unsetToken.stderr);
-    const unsetTokenJson = JSON.parse(unsetToken.stdout.trim()) as {
+    const unsetTokenJson = unwrapCliSuccess<{
       configured: { tokenConfigured: boolean };
-    };
+    }>(unsetToken.stdout);
     assert.equal(unsetTokenJson.configured.tokenConfigured, false);
 
     const unsetAdmin = await runCli(["config", "unset", "admin-key"], configPath);
     assert.equal(unsetAdmin.code, 0, unsetAdmin.stderr);
-    const unsetAdminJson = JSON.parse(unsetAdmin.stdout.trim()) as {
+    const unsetAdminJson = unwrapCliSuccess<{
       configured: { adminKeyConfigured: boolean };
-    };
+    }>(unsetAdmin.stdout);
     assert.equal(unsetAdminJson.configured.adminKeyConfigured, false);
 
     const unsetWalletAddress = await runCli(["config", "unset", "wallet-address"], configPath);
     assert.equal(unsetWalletAddress.code, 0, unsetWalletAddress.stderr);
-    const unsetWalletAddressJson = JSON.parse(unsetWalletAddress.stdout.trim()) as {
+    const unsetWalletAddressJson = unwrapCliSuccess<{
       configured: { walletAddressConfigured: boolean };
-    };
+    }>(unsetWalletAddress.stdout);
     assert.equal(unsetWalletAddressJson.configured.walletAddressConfigured, false);
 
     const unsetWalletPrivateKey = await runCli(["config", "unset", "wallet-private-key"], configPath);
     assert.equal(unsetWalletPrivateKey.code, 0, unsetWalletPrivateKey.stderr);
-    const unsetWalletPrivateKeyJson = JSON.parse(unsetWalletPrivateKey.stdout.trim()) as {
+    const unsetWalletPrivateKeyJson = unwrapCliSuccess<{
       configured: { walletPrivateKeyConfigured: boolean };
-    };
+    }>(unsetWalletPrivateKey.stdout);
     assert.equal(unsetWalletPrivateKeyJson.configured.walletPrivateKeyConfigured, false);
 
     const unsetAll = await runCli(["config", "unset", "all"], configPath);
     assert.equal(unsetAll.code, 0, unsetAll.stderr);
-    const unsetAllJson = JSON.parse(unsetAll.stdout.trim()) as {
+    const unsetAllJson = unwrapCliSuccess<{
       exists: boolean;
       configured: { baseUrl: string | null };
-    };
+    }>(unsetAll.stdout);
     assert.equal(unsetAllJson.exists, false);
     assert.equal(unsetAllJson.configured.baseUrl, null);
   } finally {
@@ -283,28 +284,29 @@ test("cli config show warns on legacy plaintext token/admin-key without leaking 
 
     const show = await runCli(["config", "show"], configPath);
     assert.equal(show.code, 0, show.stderr);
-    const showJson = JSON.parse(show.stdout.trim()) as {
+    const showEnvelope = parseCliSuccessEnvelope<{
       configured: {
         token: string | null;
         adminKey: string | null;
         tokenConfigured: boolean;
         adminKeyConfigured: boolean;
       };
-      warnings?: Array<{ code: string; field: string; message: string }>;
-    };
+    }>(show.stdout);
+    const showJson = showEnvelope.data;
     assert.equal(showJson.configured.token, "***configured***");
     assert.equal(showJson.configured.adminKey, "***configured***");
     assert.equal(showJson.configured.tokenConfigured, true);
     assert.equal(showJson.configured.adminKeyConfigured, true);
-    assert.equal(showJson.warnings?.length, 2);
+    assert.equal(showEnvelope.warnings?.length, 2);
     assert.deepEqual(
-      showJson.warnings?.map((warning) => warning.field).sort(),
+      showEnvelope.warnings?.map((warning) => warning.field).sort(),
       ["adminKey", "token"]
     );
     assert.ok(
-      showJson.warnings?.every(
+      showEnvelope.warnings?.every(
         (warning) =>
           warning.code === "PLAINTEXT_PERSISTED_SECRET" &&
+          warning.level === "WARNING" &&
           /not encrypted at rest/i.test(warning.message)
       )
     );
@@ -341,7 +343,7 @@ test("cli global runtime: public reads ignore missing secret key for persisted c
 
     const health = await runCli(["system", "health"], configPath);
     assert.equal(health.code, 0, health.stderr);
-    assert.deepEqual(JSON.parse(health.stdout.trim()), {
+    assert.deepEqual(unwrapCliSuccess(health.stdout), {
       ok: true,
       service: "lazy-secret-test"
     });
@@ -403,7 +405,7 @@ test("cli global runtime: reads base-url from persisted config", async () => {
 
     const health = await runCli(["system", "health"], configPath);
     assert.equal(health.code, 0, health.stderr);
-    assert.deepEqual(JSON.parse(health.stdout.trim()), { ok: true, service: "config-test" });
+    assert.deepEqual(unwrapCliSuccess(health.stdout), { ok: true, service: "config-test" });
   } finally {
     await new Promise<void>((resolvePromise, rejectPromise) => {
       server.close((error) => {
@@ -444,7 +446,7 @@ test("cli global runtime: command flag overrides persisted base-url", async () =
       configPath
     );
     assert.equal(health.code, 0, health.stderr);
-    assert.deepEqual(JSON.parse(health.stdout.trim()), { ok: true, service: "override-test" });
+    assert.deepEqual(unwrapCliSuccess(health.stdout), { ok: true, service: "override-test" });
   } finally {
     await new Promise<void>((resolvePromise, rejectPromise) => {
       server.close((error) => {

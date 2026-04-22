@@ -59,6 +59,8 @@ test("cli help includes global option and error contract guidance", async () => 
   assert.match(result.stdout, /--admin-key-file <path>/);
   assert.match(result.stdout, /prefer --token-file \/ --admin-key-file/i);
   assert.match(result.stdout, /Output contract:/);
+  assert.match(result.stdout, /success: command execution writes stdout JSON with \{ok,command,data,warnings\?\}/);
+  assert.match(result.stdout, /exception: --help and --version write plain text to stdout/i);
   assert.match(result.stdout, /Exit codes:/);
 });
 
@@ -71,6 +73,8 @@ test("cli subcommand help is self-contained for agent execution", async () => {
   assert.match(taskCreateHelp.stdout, /require one of --desc \/ --desc-file/i);
   assert.match(taskCreateHelp.stdout, /require one of --criteria \/ --criteria-file/i);
   assert.match(taskCreateHelp.stdout, /Output contract:/);
+  assert.match(taskCreateHelp.stdout, /success: command execution writes stdout JSON with \{ok,command,data,warnings\?\}/);
+  assert.match(taskCreateHelp.stdout, /exception: --help and --version write plain text to stdout/i);
   assert.match(taskCreateHelp.stdout, /Exit codes:/);
 
   const authVerifyHelp = await runCli(["auth", "verify", "--help"]);
@@ -89,7 +93,7 @@ test("cli subcommand help is self-contained for agent execution", async () => {
   assert.equal(systemHealthHelp.code, 0);
   assert.match(systemHealthHelp.stdout, /Global Options:/);
   assert.match(systemHealthHelp.stdout, /--base-url <url>/);
-  assert.match(systemHealthHelp.stdout, /success: stdout JSON/);
+  assert.match(systemHealthHelp.stdout, /success: command execution writes stdout JSON with \{ok,command,data,warnings\?\}/);
 
   const nestedHelp = await runCli(["help", "tasks", "create"]);
   assert.equal(nestedHelp.code, 0);

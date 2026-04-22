@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { unwrapCliSuccess } from "./success-envelope.js";
 
 interface CliResult {
   code: number | null;
@@ -80,7 +81,7 @@ test("cli retry: retries 5xx and then succeeds", async () => {
 
     assert.equal(result.code, 0, result.stderr);
     assert.equal(attempts, 2);
-    assert.deepEqual(JSON.parse(result.stdout.trim()), { items: [], nextCursor: null });
+    assert.deepEqual(unwrapCliSuccess(result.stdout), { items: [], nextCursor: null });
   } finally {
     await new Promise<void>((resolvePromise, rejectPromise) => {
       server.close((error) => {

@@ -9,6 +9,7 @@ import type { AddressInfo } from "node:net";
 import type { Address } from "@agentrade/types";
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "../../server/src/app.js";
+import { parseCliSuccessEnvelope, unwrapCliSuccess } from "./success-envelope.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -82,8 +83,17 @@ const runCliJson = async (
 ): Promise<unknown> => {
   const result = await runCli(baseUrl, args, env);
   assert.equal(result.code, 0, `command failed: ${args.join(" ")}\n${result.stderr}`);
-  assert.ok(result.stdout.trim().length > 0, "stdout must contain JSON");
-  return JSON.parse(result.stdout.trim());
+  return unwrapCliSuccess(result.stdout);
+};
+
+const runCliSuccessEnvelope = async <T>(
+  baseUrl: string,
+  args: string[],
+  env: NodeJS.ProcessEnv = {}
+) => {
+  const result = await runCli(baseUrl, args, env);
+  assert.equal(result.code, 0, `command failed: ${args.join(" ")}\n${result.stderr}`);
+  return parseCliSuccessEnvelope<T>(result.stdout);
 };
 
 const ensureServerRuntimeSecretsForCliTests = (): void => {
@@ -153,20 +163,23 @@ test("cli integration: covers lifecycle/read/system-operator command groups", as
     assert.equal(typeof challenge.nonce, "string");
     assert.equal(typeof challenge.message, "string");
 
-    const registered = (await runCliJson(baseUrl, ["auth", "register"])) as {
+    const registeredEnvelope = await runCliSuccessEnvelope<{
       wallet: { address: Address; privateKeyIncluded: boolean; privateKey?: string };
       auth: { token: string; expiresIn: string };
       persistence: { walletPersisted: boolean; tokenPersisted: boolean };
-      securityNotice: { level: string; message: string };
-    };
+    }>(baseUrl, ["auth", "register"]);
+    const registered = registeredEnvelope.data;
     assert.match(registered.wallet.address, /^0x[a-fA-F0-9]{40}$/);
     assert.equal(registered.wallet.privateKeyIncluded, false);
     assert.equal(registered.wallet.privateKey, undefined);
     assert.equal(registered.auth.expiresIn, "15m");
     assert.equal(registered.persistence.walletPersisted, true);
     assert.equal(registered.persistence.tokenPersisted, true);
-    assert.equal(registered.securityNotice.level, "CRITICAL");
-    assert.match(registered.securityNotice.message, /only identity credential/i);
+    assert.equal(registeredEnvelope.command, "auth register");
+    assert.equal(registeredEnvelope.warnings?.length, 1);
+    assert.equal(registeredEnvelope.warnings?.[0]?.code, "WALLET_IDENTITY_CREDENTIAL");
+    assert.equal(registeredEnvelope.warnings?.[0]?.level, "CRITICAL");
+    assert.match(registeredEnvelope.warnings?.[0]?.message ?? "", /only identity credential/i);
 
     const loginFromPersistedWallet = (await runCliJson(baseUrl, [
       "auth",

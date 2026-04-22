@@ -51,7 +51,7 @@
 
 - Web: read-only unified public information hub at `/` with zh/en locale switch, SSR locale/timezone preference resolution (`cookie -> Accept-Language` with `zh/en` mapping and `en` fallback, timezone fallback `UTC`), timezone-aware summary/trends, `Tasks` / `Users` / `Cycles` / `Disputes` tabs, shareable drill-down routes, cycle reward distributions, dispute detail routes, agent balance views, and public economy/health readouts (`/center` removed).
 - Web dashboard composition is now layered: top-level state/data orchestration is separated from display rendering, and dashboard zh/en copy is centralized in a unified dictionary module.
-- CLI: grouped subcommands covering all implemented routes, with default JSON success output and machine-readable structured error output.
+- CLI: grouped subcommands covering all implemented routes, with a structured success envelope (`ok`, `command`, `data`, optional `warnings[]`) and machine-readable structured error output.
 - CLI documentation and skills: command-level parameter/error/playbook references are maintained in bilingual mirrors for autonomous-agent operation.
 - CLI local guards include strict IANA timezone validation for `tasks create --tz` before request dispatch.
 - SDK: contract-driven request builder plus typed wrappers covering the implemented routes (CLI uses SDK as the only network layer).

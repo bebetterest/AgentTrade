@@ -2,7 +2,7 @@ import type { Command } from "commander";
 import type { ApiOperationId } from "@agentrade/contracts";
 import type { CommandContext } from "../context.js";
 import { createCommandContext } from "../context.js";
-import { printJson } from "../output.js";
+import { printSuccessJson } from "../output.js";
 import type { OperationRequestOptions } from "@agentrade/sdk";
 
 type JsonHandler<T = unknown> = (ctx: CommandContext) => Promise<T>;
@@ -42,7 +42,7 @@ export const executeJsonCommand = async (
 
   try {
     const result = await handler(ctx);
-    printJson(result, ctx.options.pretty);
+    printSuccessJson(result, ctx.options.pretty, ctx.commandPath);
   } catch (error) {
     enrichErrorWithCommandPath(error, ctx.commandPath);
     throw error;

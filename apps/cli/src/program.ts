@@ -52,7 +52,8 @@ Automation note:
   prefer --token-file / --admin-key-file for secrets to avoid argv exposure in logs and process lists
 
 Output contract:
-  success: stdout JSON
+  success: command execution writes stdout JSON with {ok,command,data,warnings?}
+  exception: --help and --version write plain text to stdout
   failure: stderr JSON with {type,message,httpStatus,apiError,issues,retryable,command}
 
 Exit codes:

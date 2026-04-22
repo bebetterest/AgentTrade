@@ -29,6 +29,11 @@ Use each row as a deterministic contract:
 Pagination rule:
 - Treat every `nextCursor` as opaque and pass it back verbatim via `--cursor`.
 
+Success envelope rule:
+- Treat every successful stdout payload as `{ ok, command, data, warnings? }`.
+- Unless a row explicitly mentions top-level `warnings[]`, each `Success Anchors` field below should be read from `data.*`.
+- Discovery output is the exception: `--help` and `--version` still write plain text to stdout.
+
 ## 2) Session Check and Authentication
 
 | Priority | Command | Auth | API Method/Path | Required Options | Optional Options | Key Local Guards | Success Anchors |
@@ -36,7 +41,7 @@ Pagination rule:
 | Core | `system health` | none | `GET /v2/system/health` | none | none | none | `ok=true`, `service` |
 | Core | `auth challenge` | none | `POST /v2/auth/challenge` | `--address` | none | EVM address | `nonce`, `message` |
 | Core | `auth verify` | none | `POST /v2/auth/verify` | `--address`, `--nonce`, `--signature`, one of `--message`/`--message-file` | none | non-empty nonce/signature/message, EVM address | `token`, `expiresIn` |
-| Optional | `auth register` | none | composite: `POST /v2/auth/challenge` -> `POST /v2/auth/verify` | none | `--show-private-key`, `--no-persist-token` | local key generation + SIWE signature flow | `wallet.address`, `wallet.privateKeyIncluded`, optional `wallet.privateKey`, `auth.token`, `auth.expiresIn`, `persistence.walletPersisted`, `persistence.tokenPersisted`, `securityNotice.message` |
+| Optional | `auth register` | none | composite: `POST /v2/auth/challenge` -> `POST /v2/auth/verify` | none | `--show-private-key`, `--no-persist-token` | local key generation + SIWE signature flow | `wallet.address`, `wallet.privateKeyIncluded`, optional `wallet.privateKey`, `auth.token`, `auth.expiresIn`, `persistence.walletPersisted`, `persistence.tokenPersisted`, optional top-level `warnings[].message` |
 | Core | `auth login` | none | composite: `POST /v2/auth/challenge` -> `POST /v2/auth/verify` | none | `--address`, `--private-key`, `--private-key-file`, `--no-persist-token` | resolve private key from flag/file/config, reject address mismatch | `wallet.address`, `auth.token`, `auth.expiresIn`, `persistence.tokenPersisted`, `persistence.walletSource` |
 
 Authentication safety note:
@@ -104,12 +109,12 @@ Operator note:
 
 | Priority | Command | Auth | API Method/Path | Required Options | Optional Options | Key Local Guards | Success Anchors |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Core | `config show` | none | none (local file only) | none | none | parse persisted JSON config | `path`, `exists`, `configured`, `effective`, optional `warnings[]` |
-| Core | `config set` | none | none (local file only) | `<key>`, and one of `<value>` / `--value-file` | key aliases with `_` accepted | key enum + value validation (`URL`/address/private-key/integer/non-empty), value/file exclusivity | `action=set`, `key`, updated config, optional `warnings[]` |
-| Core | `config unset` | none | none (local file only) | `<key>` or `all` | none | key enum guard (`base-url|token|admin-key|wallet-address|wallet-private-key|timeout-ms|retries|all`) | `action=unset`, updated config, optional `warnings[]` |
+| Core | `config show` | none | none (local file only) | none | none | parse persisted JSON config | `path`, `exists`, `configured`, `effective`, optional top-level `warnings[]` |
+| Core | `config set` | none | none (local file only) | `<key>`, and one of `<value>` / `--value-file` | key aliases with `_` accepted | key enum + value validation (`URL`/address/private-key/integer/non-empty), value/file exclusivity | `action=set`, `key`, updated config, optional top-level `warnings[]` |
+| Core | `config unset` | none | none (local file only) | `<key>` or `all` | none | key enum guard (`base-url|token|admin-key|wallet-address|wallet-private-key|timeout-ms|retries|all`) | `action=unset`, updated config, optional top-level `warnings[]` |
 
 Local config note:
-- `config show|set|unset` may emit `warnings[]` when legacy plaintext `token` or `admin-key` values are detected; rerun `config set` to rewrite them encrypted at rest.
+- `config show|set|unset` may emit top-level `warnings[]` when legacy plaintext `token` or `admin-key` values are detected; rerun `config set` to rewrite them encrypted at rest.
 - `configured.token` / `configured.adminKey` use `***encrypted***` for encrypted-at-rest values and `***configured***` for legacy plaintext values that still need migration.
 - `configured.walletPrivateKey` is always `***encrypted***` when present; plaintext wallet private keys are rejected as config errors.
 

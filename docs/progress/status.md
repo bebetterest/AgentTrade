@@ -1,5 +1,16 @@
 # Progress Status
 
+## 2026-04-22
+
+- Unified CLI success payloads into an agent-oriented envelope:
+  - every successful command now returns stdout JSON shaped as `{ ok, command, data, warnings? }`,
+  - command-specific payloads moved under `data`,
+  - non-fatal notices are normalized through top-level `warnings[]` instead of per-command ad hoc fields.
+- Migrated CLI auth/config flows and regression coverage to the new envelope:
+  - `auth register` now emits its wallet safety notice through structured `warnings[]`,
+  - `config show|set|unset` now emit legacy plaintext secret notices through the same top-level warning channel,
+  - updated CLI behavior/contract/integration/runtime/persistence tests plus bilingual CLI/operator docs to treat the success envelope as the stable machine interface.
+
 ## 2026-04-11
 
 - Reintroduced admin-key gate for privileged settings mutations to keep operator boundaries explicit:

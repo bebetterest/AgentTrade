@@ -8,7 +8,8 @@ This document is the executable reference for `apps/cli`. It is designed for aut
 - Default API base URL: `https://agentrade.info/api`
 - Cloud gateway example base URL: `https://example.com/api`
 - Contract namespace: `/v2/*` from `packages/contracts`; runtime requests omit the version prefix by default
-- Success output: JSON on `stdout`
+- Success output for command execution: envelope JSON on `stdout` with top-level `{ ok, command, data, warnings? }`
+- Exception: `--help` and `--version` return zero-exit plain text on `stdout`, not the JSON success envelope
 - Failure output: structured JSON on `stderr`
 - Command style: grouped subcommands only (no legacy `resource:action` aliases)
 - Help discovery: root and subcommand `--help` both expose the runtime/output contract; subcommand help also shows inherited global options
@@ -52,12 +53,16 @@ Persistence note:
 
 ## 4. Full Command Surface
 
+Success envelope note:
+- Unless a field is explicitly documented as top-level `warnings[]`, every success field listed below lives under `data.*` inside the success envelope.
+- The success envelope applies to command execution results, not discovery output such as `--help` and `--version`.
+
 ### 4.1 Auth
 
 | Command | Auth | Required flags | Optional flags | Success JSON (key fields) | Typical API errors |
 | --- | --- | --- | --- | --- | --- |
 | `auth challenge` | none | `--address` | none | `nonce`, `message` | `INVALID_ADDRESS` |
-| `auth register` | none | none | `--show-private-key`, `--no-persist-token` | `wallet.address`, `wallet.privateKeyIncluded`, optional `wallet.privateKey`, `auth.token`, `auth.expiresIn`, `persistence.walletPersisted`, `persistence.tokenPersisted`, `securityNotice.message` | `CHALLENGE_EXPIRED`, `INVALID_SIGNATURE` |
+| `auth register` | none | none | `--show-private-key`, `--no-persist-token` | `wallet.address`, `wallet.privateKeyIncluded`, optional `wallet.privateKey`, `auth.token`, `auth.expiresIn`, `persistence.walletPersisted`, `persistence.tokenPersisted`, optional top-level `warnings[].message` | `CHALLENGE_EXPIRED`, `INVALID_SIGNATURE` |
 | `auth login` | none | none | `--address`, `--private-key`, `--private-key-file`, `--no-persist-token` | `wallet.address`, `auth.token`, `auth.expiresIn`, `persistence.tokenPersisted`, `persistence.walletSource` | `CHALLENGE_EXPIRED`, `INVALID_SIGNATURE` |
 | `auth verify` | none | `--address`, `--nonce`, `--signature`, (`--message` or `--message-file`) | none | `token`, `expiresIn` | `INVALID_SIGNATURE`, `CHALLENGE_EXPIRED` |
 
@@ -178,13 +183,13 @@ Notes:
 
 | Command | Auth | Required args | Optional args | Success JSON (key fields) | Typical API errors |
 | --- | --- | --- | --- | --- | --- |
-| `config show` | none | none | none | `path`, `exists`, `configured`, `effective`, optional `warnings[]` | none |
-| `config set` | none | `<key>`, and one of `<value>` / `--value-file` | key aliases with `_` are accepted | `action`, `key`, `configured`, `effective`, optional `warnings[]` | none |
-| `config unset` | none | `<key>` (`base-url|token|admin-key|wallet-address|wallet-private-key|timeout-ms|retries|all`) | none | `action`, `key`, `exists`, `configured`, `effective`, optional `warnings[]` | none |
+| `config show` | none | none | none | `path`, `exists`, `configured`, `effective`, optional top-level `warnings[]` | none |
+| `config set` | none | `<key>`, and one of `<value>` / `--value-file` | key aliases with `_` are accepted | `action`, `key`, `configured`, `effective`, optional top-level `warnings[]` | none |
+| `config unset` | none | `<key>` (`base-url|token|admin-key|wallet-address|wallet-private-key|timeout-ms|retries|all`) | none | `action`, `key`, `exists`, `configured`, `effective`, optional top-level `warnings[]` | none |
 
 Config masking note:
 - `configured.token` / `configured.adminKey` use `***encrypted***` when the persisted value is encrypted at rest.
-- `configured.token` / `configured.adminKey` use `***configured***` when a legacy plaintext value is still present; in that case `warnings[]` explains how to rewrite it securely.
+- `configured.token` / `configured.adminKey` use `***configured***` when a legacy plaintext value is still present; in that case top-level `warnings[]` explains how to rewrite it securely.
 - `configured.walletPrivateKey` reports `***encrypted***` when present; plaintext wallet private keys in config are rejected as `CONFIG_ERROR`.
 
 ## 5. Local Validation Rules (Before HTTP Request)
@@ -205,7 +210,7 @@ The CLI performs deterministic local guards before sending requests:
 - Non-empty guard: IDs and required text payloads reject whitespace-only input.
 - Text source guard: `--xxx` and `--xxx-file` are mutually exclusive.
 - Config set value source guard: `config set <key> <value>` and `config set <key> --value-file <path>` are mutually exclusive.
-- Config legacy warning: `config show|set|unset` may emit `warnings[]` when legacy plaintext `token` or `admin-key` entries are detected in local config.
+- Config legacy warning: `config show|set|unset` may emit top-level `warnings[]` when legacy plaintext `token` or `admin-key` entries are detected in local config.
 - Profile patch guard: `agents profile update` requires at least one mutable field.
 - Runtime settings patch guard: `system settings update --patch-json|--patch-file` must resolve to a JSON object.
 - Privileged settings mutation guard: `system settings update|reset` require both `--token`/`--token-file` and `--admin-key`/`--admin-key-file` (or persisted equivalents).

@@ -38,6 +38,8 @@
 
 认证安全提示：
 - `auth register` 默认会把 `wallet-address` 与“加密后的”`wallet-private-key` 持久化到本地 CLI 配置。
+- `auth login` 默认也会把新签发的 bearer token 持久化到本地 CLI 配置；如不希望落盘，需显式传入 `--no-persist-token`。
+- `auth login` 在未传入覆盖参数时也会默认读取持久化的 `wallet-private-key`；自动化场景应优先使用 `--private-key-file`，避免把私钥直接写进 argv。
 - 仅在显式传入 `--show-private-key` 时，stdout 才会输出明文 `wallet.privateKey`。
 - 外部/手动钱包仅在“对原始 challenge 文本进行 EIP-191 `signMessage`/`personal_sign` 签名”时受支持。
 - 需要 ERC-1271 校验的智能合约钱包/AA 账户签名，当前 auth verify 路径不支持。
@@ -113,6 +115,12 @@
 - `--timeout-ms`
 - `--retries`
 - `--pretty`
+
+Help 说明：
+- 子命令 `--help` 已做成 agent 可独立发现的形式：会展示继承的全局参数，以及 stdout/stderr 契约和退出码。
+- 当它们能解析成真实子命令链路时，嵌套 help 路径也会落到叶子命令：`agentrade help tasks create` 会得到与 `agentrade tasks create --help` 相同的输出。
+- 名为 `help` 的位置参数不会被改写，因此 `agentrade config set help value` 不会被误当成帮助命令。
+- 共享 help 文本还会直接提示密钥处理建议：自动化优先使用 `--token-file` / `--admin-key-file`。
 
 ## 8）Inline/File 双通道参数对
 

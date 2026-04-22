@@ -57,18 +57,56 @@ test("cli help includes global option and error contract guidance", async () => 
   assert.match(result.stdout, /--base-url/);
   assert.match(result.stdout, /--token-file <path>/);
   assert.match(result.stdout, /--admin-key-file <path>/);
+  assert.match(result.stdout, /prefer --token-file \/ --admin-key-file/i);
   assert.match(result.stdout, /Output contract:/);
   assert.match(result.stdout, /Exit codes:/);
 });
 
-test("cli subcommand help surfaces auth requirements, list defaults, and file-backed inputs", async () => {
+test("cli subcommand help is self-contained for agent execution", async () => {
   const taskCreateHelp = await runCli(["tasks", "create", "--help"]);
   assert.equal(taskCreateHelp.code, 0);
   assert.match(taskCreateHelp.stdout, /Create a task \(token required\)/);
+  assert.match(taskCreateHelp.stdout, /Global Options:/);
+  assert.match(taskCreateHelp.stdout, /--token-file <path>/);
+  assert.match(taskCreateHelp.stdout, /Output contract:/);
+  assert.match(taskCreateHelp.stdout, /Exit codes:/);
 
   const authLoginHelp = await runCli(["auth", "login", "--help"]);
   assert.equal(authLoginHelp.code, 0);
   assert.match(authLoginHelp.stdout, /--private-key-file <path>/);
+  assert.match(authLoginHelp.stdout, /persist token\s+by default/i);
+  assert.match(authLoginHelp.stdout, /persisted wallet-private-key in CLI config/i);
+  assert.match(authLoginHelp.stdout, /prefer --private-key-file over inline --private-key/i);
+  assert.match(authLoginHelp.stdout, /pass --no-persist-token/i);
+
+  const systemHealthHelp = await runCli(["system", "health", "--help"]);
+  assert.equal(systemHealthHelp.code, 0);
+  assert.match(systemHealthHelp.stdout, /Global Options:/);
+  assert.match(systemHealthHelp.stdout, /--base-url <url>/);
+  assert.match(systemHealthHelp.stdout, /success: stdout JSON/);
+
+  const nestedHelp = await runCli(["help", "tasks", "create"]);
+  assert.equal(nestedHelp.code, 0);
+  assert.match(nestedHelp.stdout, /Usage: agentrade tasks create \[options\]/);
+  assert.match(nestedHelp.stdout, /Global Options:/);
+  assert.match(nestedHelp.stdout, /Exit codes:/);
+
+  const groupNestedHelp = await runCli(["tasks", "help", "create"]);
+  assert.equal(groupNestedHelp.code, 0);
+  assert.match(groupNestedHelp.stdout, /Usage: agentrade tasks create \[options\]/);
+  assert.match(groupNestedHelp.stdout, /Output contract:/);
+
+  const nestedHelpWithGlobals = await runCli([
+    "--pretty",
+    "--base-url",
+    "http://example.com",
+    "help",
+    "tasks",
+    "create"
+  ]);
+  assert.equal(nestedHelpWithGlobals.code, 0);
+  assert.match(nestedHelpWithGlobals.stdout, /Usage: agentrade tasks create \[options\]/);
+  assert.match(nestedHelpWithGlobals.stdout, /prefer --token-file \/ --admin-key-file/i);
 
   for (const commandArgs of [
     ["tasks", "list"],
@@ -110,6 +148,32 @@ test("cli subcommand help surfaces auth requirements, list defaults, and file-ba
   const settingsHistoryHelp = await runCli(["system", "settings", "history", "--help"]);
   assert.equal(settingsHistoryHelp.code, 0);
   assert.match(settingsHistoryHelp.stdout, /page size \(1-100, default: 20\)/);
+});
+
+test("cli nested help rewrite does not hijack positional arguments named help", async () => {
+  const configSetResult = await runCli(["config", "set", "help", "value"]);
+  assert.equal(configSetResult.code, 2);
+  assert.equal(configSetResult.stdout.trim(), "");
+  const configSetError = JSON.parse(configSetResult.stderr.trim()) as {
+    type: string;
+    command: string;
+    message: string;
+  };
+  assert.equal(configSetError.type, "VALIDATION_ERROR");
+  assert.equal(configSetError.command, "config set");
+  assert.match(configSetError.message, /invalid config key 'help'/i);
+
+  const configUnsetResult = await runCli(["config", "unset", "help"]);
+  assert.equal(configUnsetResult.code, 2);
+  assert.equal(configUnsetResult.stdout.trim(), "");
+  const configUnsetError = JSON.parse(configUnsetResult.stderr.trim()) as {
+    type: string;
+    command: string;
+    message: string;
+  };
+  assert.equal(configUnsetError.type, "VALIDATION_ERROR");
+  assert.equal(configUnsetError.command, "config unset");
+  assert.match(configUnsetError.message, /invalid config key 'help'/i);
 });
 
 test("cli system settings update requires patch input with a validation error", async () => {
@@ -230,6 +294,7 @@ test("cli auth login requires local wallet private key when no override is provi
   assert.equal(errorJson.type, "CONFIG_ERROR");
   assert.equal(errorJson.command, "auth login");
   assert.match(errorJson.message, /missing wallet private key/i);
+  assert.match(errorJson.message, /config set wallet-private-key/i);
 });
 
 test("cli auth login blocks mismatched --address and --private-key before network request", async () => {

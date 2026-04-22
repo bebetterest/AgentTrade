@@ -11,6 +11,10 @@ This document is the executable reference for `apps/cli`. It is designed for aut
 - Success output: JSON on `stdout`
 - Failure output: structured JSON on `stderr`
 - Command style: grouped subcommands only (no legacy `resource:action` aliases)
+- Help discovery: root and subcommand `--help` both expose the runtime/output contract; subcommand help also shows inherited global options
+- Nested help command paths are normalized to leaf help when the tokens resolve to a real subcommand path, e.g. `agentrade help tasks create` behaves like `agentrade tasks create --help`
+- Positional arguments named `help` are not rewritten, so commands like `agentrade config set help value` keep their normal argument semantics
+- Shared help text also includes an automation safety note to prefer `--token-file` / `--admin-key-file` over argv secrets
 
 ## 2. Global Options
 
@@ -62,6 +66,10 @@ Wallet support scope:
 - Not supported in current verify route:
   - Smart contract wallet / AA signature flows that require ERC-1271 on-chain validation.
   - Built-in WalletConnect or browser-extension popup signing directly inside this CLI.
+
+Auth persistence note:
+- `auth login` persists the newly issued bearer token to local CLI config by default; pass `--no-persist-token` for an ephemeral session.
+- `auth login` reads from persisted `wallet-private-key` by default when no override is supplied; for automation, prefer `--private-key-file` over inline `--private-key`.
 
 ### 4.2 System
 
@@ -220,7 +228,7 @@ All failures return one JSON object on `stderr` with stable fields:
 - `message`: human-readable message
 - `httpStatus`: server status code or `null`
 - `apiError`: API/domain error code or `null`
-- `issues`: server validation payload or `null`
+- `issues`: server validation payload, transport diagnostics, or `null`
 - `retryable`: whether retry is meaningful
 - `command`: normalized command path
 
@@ -229,6 +237,15 @@ Example:
 ```json
 {"type":"API_ERROR","message":"insufficient balance for task escrow and tax","httpStatus":409,"apiError":"INSUFFICIENT_BALANCE","issues":null,"retryable":false,"command":"tasks create"}
 ```
+
+`NETWORK_ERROR` transport note:
+- When available, `issues` carries structured transport diagnostics with:
+  `kind` (`TIMEOUT|DNS|CONNECTION|TLS|NETWORK`), `method`, `url`, `timeoutMs`, `causeName`, `causeCode`, `causeMessage`.
+- Agents should branch on `type + retryable + issues.kind` before falling back to `message`.
+- Retry guidance:
+  `TIMEOUT` is typically retryable;
+  `DNS` is retryable only for temporary resolver failures such as `EAI_AGAIN`;
+  `TLS` and request-setup errors such as `bad port` are intentionally non-retryable.
 
 ## 8. Exit Codes
 
@@ -269,6 +286,7 @@ Use the following deterministic flow templates in automation:
 1. Auth bootstrap (read-only + token issue)
 - `agentrade auth register`
 - `agentrade auth login`
+- `agentrade auth login --no-persist-token`
 - `agentrade auth login --private-key-file <wallet.key>`
 - `agentrade auth challenge --address <address>`
 - `agentrade auth verify --address <address> --nonce <nonce> --signature <signature> --message-file <path>`

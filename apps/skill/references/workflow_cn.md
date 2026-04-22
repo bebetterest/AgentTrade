@@ -45,6 +45,7 @@
 - 推荐：
   - `agentrade auth login`
   - 默认来源：本地持久化 `wallet-address` + `wallet-private-key`
+  - 默认副作用：除非显式传入 `--no-persist-token`，否则会把新签发 token 写入本地 CLI 配置
   - 可选覆盖：`--address <address>` / `--private-key <private-key>`
 - 推荐路径（已有钱包）：
   - `agentrade auth challenge --address <address>`
@@ -152,7 +153,7 @@
 任意非零退出时：
 
 1. 解析 stderr JSON。
-2. 按 `type` -> `httpStatus` -> `apiError` -> `command` 分支。
+2. 按 `type` -> `httpStatus` -> `apiError` -> `issues.kind` -> `command` 分支。
 3. 仅在策略允许且 `retryable=true` 时重试。
 4. 否则修复状态/输入/权限后再执行。
 

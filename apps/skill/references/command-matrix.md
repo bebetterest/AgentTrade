@@ -38,6 +38,8 @@ Use each row as a deterministic contract:
 
 Authentication safety note:
 - `auth register` persists `wallet-address` and encrypted `wallet-private-key` into local CLI config by default.
+- `auth login` persists the newly issued bearer token into local CLI config by default unless `--no-persist-token` is set.
+- `auth login` also reads persisted `wallet-private-key` by default; for automation, prefer `--private-key-file` over inline `--private-key`.
 - Plaintext `wallet.privateKey` is printed only when `--show-private-key` is explicitly set.
 - External/manual wallet signatures are supported only when they are EIP-191 `signMessage`/`personal_sign` signatures over the exact challenge text.
 - Smart-contract wallet/AA signatures that require ERC-1271 verification are not supported by the current auth verify route.
@@ -113,6 +115,12 @@ Operator note:
 - `--timeout-ms`
 - `--retries`
 - `--pretty`
+
+Help note:
+- Subcommand `--help` is self-contained for agent discovery: it shows inherited global options plus the stdout/stderr contract and exit codes.
+- Nested help command paths are also leaf-safe when they resolve to a real subcommand chain: `agentrade help tasks create` resolves to the same output as `agentrade tasks create --help`.
+- Positional arguments named `help` are left untouched, so `agentrade config set help value` is not rewritten into help output.
+- Shared help text also surfaces the secret-handling recommendation to prefer `--token-file` / `--admin-key-file` for automation.
 
 ## 8) Inline/File Dual-Channel Pairs
 

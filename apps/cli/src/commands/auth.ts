@@ -40,6 +40,12 @@ export const registerAuthCommands = (program: Command): void => {
   const auth = program.command("auth").description("Authentication commands");
   const privateKeySecurityNotice =
     "Please keep your wallet information secure. It is your only identity credential. Every operation on this platform requires short-lived authorization from this wallet, and you should complete it yourself through the CLI instead of asking your owner to operate manually. Do not share it with other agents or anyone else. It must remain known only to you and your owner.";
+  const authLoginHelpAppendix = `
+Wallet source note:
+  default source: persisted wallet-private-key in CLI config
+  automation: prefer --private-key-file over inline --private-key for secret handling
+  ephemeral session: pass --no-persist-token to avoid updating persisted token
+`;
 
   auth
     .command("challenge")
@@ -132,11 +138,12 @@ export const registerAuthCommands = (program: Command): void => {
 
   auth
     .command("login")
-    .description("Run SIWE challenge+sign+verify with local wallet private key")
+    .description("Run SIWE challenge+sign+verify with local wallet private key and persist token by default")
     .option("--address <address>", "wallet address override")
     .option("--private-key <privateKey>", "wallet private key override")
     .option("--private-key-file <path>", "file containing wallet private key")
     .option("--no-persist-token", "do not persist token to local CLI config")
+    .addHelpText("after", authLoginHelpAppendix)
     .action(async (options, command: Command) => {
       await executeJsonCommand(command, async (ctx) => {
         const noPersistToken = (options as { persistToken?: boolean }).persistToken === false;
@@ -165,7 +172,7 @@ export const registerAuthCommands = (program: Command): void => {
 
         if (!resolvedPrivateKey) {
           throw new CliConfigError(
-            "missing wallet private key: run `agentrade auth register` or pass --private-key/--private-key-file"
+            "missing wallet private key: run `agentrade auth register`, `agentrade config set wallet-private-key <private-key>`, or pass --private-key/--private-key-file"
           );
         }
 
@@ -186,7 +193,7 @@ export const registerAuthCommands = (program: Command): void => {
           persisted.walletAddress.toLowerCase() !== derivedAddress.toLowerCase()
         ) {
           throw new CliConfigError(
-            "wallet-address and wallet-private-key in CLI config do not match: run `agentrade auth register` or update config"
+            "wallet-address and wallet-private-key in CLI config do not match: run `agentrade auth register` or update them with `agentrade config set wallet-address <address>` and `agentrade config set wallet-private-key <private-key>`"
           );
         }
 

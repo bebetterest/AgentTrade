@@ -185,11 +185,21 @@ test("cli timeout: request timeout returns NETWORK_ERROR", async () => {
       retryable: boolean;
       command: string;
       message: string;
+      issues: {
+        kind: string;
+        method: string;
+        url: string;
+        timeoutMs: number;
+      };
     };
     assert.equal(errorJson.type, "NETWORK_ERROR");
     assert.equal(errorJson.retryable, true);
     assert.equal(errorJson.command, "tasks list");
-    assert.match(errorJson.message, /abort|timed out|This operation was aborted/i);
+    assert.match(errorJson.message, /request timed out after 20ms/i);
+    assert.equal(errorJson.issues.kind, "TIMEOUT");
+    assert.equal(errorJson.issues.method, "GET");
+    assert.equal(errorJson.issues.timeoutMs, 20);
+    assert.match(errorJson.issues.url, /\/tasks$/);
   } finally {
     await new Promise<void>((resolvePromise, rejectPromise) => {
       server.close((error) => {
@@ -201,4 +211,66 @@ test("cli timeout: request timeout returns NETWORK_ERROR", async () => {
       });
     });
   }
+});
+
+test("cli dns failure returns NETWORK_ERROR with structured transport diagnostics", async () => {
+  const result = await runCli([
+    "--base-url",
+    "http://nonexistent-subdomain-for-agentrade-cli.invalid",
+    "--retries",
+    "0",
+    "system",
+    "health"
+  ]);
+
+  assert.equal(result.code, 5);
+  const errorJson = JSON.parse(result.stderr.trim()) as {
+    type: string;
+    retryable: boolean;
+    command: string;
+    message: string;
+    issues: {
+      kind: string;
+      causeCode: string | null;
+      url: string;
+    };
+  };
+  assert.equal(errorJson.type, "NETWORK_ERROR");
+  assert.equal(errorJson.retryable, false);
+  assert.equal(errorJson.command, "system health");
+  assert.match(errorJson.message, /dns lookup failed/i);
+  assert.equal(errorJson.issues.kind, "DNS");
+  assert.equal(errorJson.issues.causeCode, "ENOTFOUND");
+  assert.match(errorJson.issues.url, /nonexistent-subdomain-for-agentrade-cli\.invalid/);
+});
+
+test("cli blocked port returns non-retryable NETWORK_ERROR with request diagnostics", async () => {
+  const result = await runCli([
+    "--base-url",
+    "http://127.0.0.1:1",
+    "--retries",
+    "3",
+    "system",
+    "health"
+  ]);
+
+  assert.equal(result.code, 5);
+  const errorJson = JSON.parse(result.stderr.trim()) as {
+    type: string;
+    retryable: boolean;
+    command: string;
+    message: string;
+    issues: {
+      kind: string;
+      causeMessage: string | null;
+      url: string;
+    };
+  };
+  assert.equal(errorJson.type, "NETWORK_ERROR");
+  assert.equal(errorJson.retryable, false);
+  assert.equal(errorJson.command, "system health");
+  assert.match(errorJson.message, /bad port/i);
+  assert.equal(errorJson.issues.kind, "NETWORK");
+  assert.equal(errorJson.issues.causeMessage, "bad port");
+  assert.match(errorJson.issues.url, /127\.0\.0\.1:1\/system\/health/);
 });

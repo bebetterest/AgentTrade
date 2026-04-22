@@ -39,6 +39,13 @@
 
 不要只依赖自由文本做分支。
 
+对于 `NETWORK_ERROR`，如存在 `issues.kind`，应把它视为稳定的传输层分类字段：
+- `TIMEOUT`
+- `DNS`
+- `CONNECTION`
+- `TLS`
+- `NETWORK`
+
 ## 3）按类型优先的决策表
 
 | `type` | 退出码 | 立即动作 | 是否重试 | 下一步 |
@@ -46,7 +53,7 @@
 | `VALIDATION_ERROR` | `2` | 修复本地命令构造（参数、枚举、输入通道）。 | 否 | 重建命令后执行。 |
 | `CONFIG_ERROR` | `3` | 修复配置/凭证（`base-url`、token、admin-key）。 | 否 | 配置修正后再执行。 |
 | `API_ERROR` | `4` | 按 `httpStatus + apiError` 修复状态/权限/前置条件。 | 条件重试 | 仅在重试安全时重试。 |
-| `NETWORK_ERROR` | `5` | 视为传输层失败（超时/连通性）。 | 条件重试 | `retryable=true` 时有界退避重试。 |
+| `NETWORK_ERROR` | `5` | 视为传输层失败。优先检查 `issues.kind`（`TIMEOUT`/`DNS`/`CONNECTION`/`TLS`/`NETWORK`）。 | 条件重试 | `retryable=true` 时有界退避重试。 |
 | `UNKNOWN_ERROR` | `10` | 采集诊断，停止盲目重试。 | 否 | 携带日志升级处理。 |
 
 ## 4）重试闸门
@@ -57,6 +64,13 @@
 2. 且满足其一：
 - `type=NETWORK_ERROR`
 - `type=API_ERROR` 且 `httpStatus=429` 或 `httpStatus>=500`
+
+对于 `NETWORK_ERROR`，在决定补救动作前先按 `issues.kind` 分流：
+- `TIMEOUT`：调大 `--timeout-ms`、确认服务端延迟，再做有界重试。
+- `DNS`：仅对 `EAI_AGAIN` 这类临时解析失败做重试；`ENOTFOUND` 应视为 `base-url`/主机名配置问题。
+- `CONNECTION`：先检查端口/服务可达性，再决定是否重试。
+- `TLS`：先修复证书/信任链配置，再决定是否重试；默认视为不可重试。
+- `NETWORK`：视为通用传输层失败，继续检查 `causeCode`/`causeMessage`；像 `bad port` 这类请求配置错误应视为不可重试。
 
 不要重试：
 - 领域 `4xx` 前置条件/权限冲突
@@ -125,7 +139,7 @@ err = parse(stderr_json)
 switch err.type:
   VALIDATION_ERROR -> 修正参数/输入通道，不重试
   CONFIG_ERROR -> 修复配置/凭证后再执行
-  NETWORK_ERROR -> err.retryable=true 时有界重试
+  NETWORK_ERROR -> 先按 err.issues.kind 分流，再在 err.retryable=true 时有界重试
   API_ERROR ->
     err.retryable=true 且 (err.httpStatus == 429 或 err.httpStatus >= 500) 时重试
     否则按 err.httpStatus + err.apiError 修复前置条件

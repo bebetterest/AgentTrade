@@ -31,7 +31,7 @@ const GLOBAL_OPTIONS_WITH_VALUE = new Set([
   "--retries"
 ]);
 const GLOBAL_BOOLEAN_OPTIONS = new Set(["--pretty"]);
-const HELP_APPENDIX = `
+const SHARED_HELP_APPENDIX = `
 CLI runtime setting precedence:
   1) command flags
   2) global config file (agentrade config set/show/unset)
@@ -48,6 +48,9 @@ Built-in defaults:
   --retries (default: ${CLI_DEFAULT_RETRIES})
   --token / --token-file / --admin-key / --admin-key-file remain optional unless required by command auth mode
 
+Automation note:
+  prefer --token-file / --admin-key-file for secrets to avoid argv exposure in logs and process lists
+
 Output contract:
   success: stdout JSON
   failure: stderr JSON with {type,message,httpStatus,apiError,issues,retryable,command}
@@ -55,6 +58,94 @@ Output contract:
 Exit codes:
   0 success | 2 validation | 3 config | 4 api | 5 network | 10 unknown
 `;
+
+const applySharedHelpConfiguration = (command: Command, isRoot = false): void => {
+  if (!isRoot) {
+    command.configureHelp({ showGlobalOptions: true });
+  }
+  command.addHelpText("after", SHARED_HELP_APPENDIX);
+  for (const child of command.commands) {
+    applySharedHelpConfiguration(child);
+  }
+};
+
+const findMatchingSubcommand = (command: Command, token: string): Command | null => {
+  return (
+    command.commands.find((candidate) => candidate.name() === token || candidate.aliases().includes(token)) ??
+    null
+  );
+};
+
+const resolveCommandPath = (command: Command, tokens: string[]): Command | null => {
+  let current: Command | null = command;
+  for (const token of tokens) {
+    if (token === "--" || token.startsWith("-")) {
+      return null;
+    }
+    current = current ? findMatchingSubcommand(current, token) : null;
+    if (!current) {
+      return null;
+    }
+  }
+  return current;
+};
+
+const rewriteNestedHelpArgv = (argv: string[], program: Command): string[] => {
+  const prefix = argv.slice(0, 2);
+  const tokens = argv.slice(2);
+  if (tokens.length <= 1) {
+    return argv;
+  }
+
+  const leadingGlobalTokens: string[] = [];
+  let commandStartIndex = 0;
+  while (commandStartIndex < tokens.length) {
+    const token = tokens[commandStartIndex];
+    if (token === "--") {
+      return argv;
+    }
+    if (GLOBAL_OPTIONS_WITH_VALUE.has(token) && commandStartIndex + 1 < tokens.length) {
+      leadingGlobalTokens.push(token, tokens[commandStartIndex + 1]!);
+      commandStartIndex += 2;
+      continue;
+    }
+    if ([...GLOBAL_OPTIONS_WITH_VALUE].some((option) => token.startsWith(`${option}=`))) {
+      leadingGlobalTokens.push(token);
+      commandStartIndex += 1;
+      continue;
+    }
+    if (GLOBAL_BOOLEAN_OPTIONS.has(token)) {
+      leadingGlobalTokens.push(token);
+      commandStartIndex += 1;
+      continue;
+    }
+    break;
+  }
+
+  const commandTokens = tokens.slice(commandStartIndex);
+  if (commandTokens.includes("--")) {
+    return argv;
+  }
+  const helpIndex = commandTokens.indexOf("help");
+  if (helpIndex === -1) {
+    return argv;
+  }
+
+  const beforeHelp = commandTokens.slice(0, helpIndex);
+  const afterHelp = commandTokens.slice(helpIndex + 1);
+  if (afterHelp.length <= 1) {
+    return argv;
+  }
+  const startCommand = beforeHelp.length === 0 ? program : resolveCommandPath(program, beforeHelp);
+  if (!startCommand) {
+    return argv;
+  }
+  if (!resolveCommandPath(startCommand, afterHelp)) {
+    return argv;
+  }
+
+  return [...prefix, ...leadingGlobalTokens, ...beforeHelp, ...afterHelp, "--help"];
+};
 
 const resolveCliVersion = (): string => {
   try {
@@ -128,7 +219,6 @@ export const buildProgram = (): Command => {
     .configureOutput({
       writeErr: () => undefined
     })
-    .addHelpText("after", HELP_APPENDIX)
     .exitOverride();
 
   registerAuthCommands(program);
@@ -143,19 +233,21 @@ export const buildProgram = (): Command => {
   registerLedgerCommands(program);
   registerCycleCommands(program);
   registerEconomyCommands(program);
+  applySharedHelpConfiguration(program, true);
 
   return program;
 };
 
 export const runCli = async (argv: string[] = process.argv): Promise<void> => {
   const program = buildProgram();
+  const normalizedArgv = rewriteNestedHelpArgv(argv, program);
   try {
-    await program.parseAsync(argv);
+    await program.parseAsync(normalizedArgv);
   } catch (error) {
     if (shouldSuppressCommanderError(error)) {
       return;
     }
-    const command = detectCommandFromArgv(argv);
+    const command = detectCommandFromArgv(normalizedArgv);
     const normalized = normalizeCliError(error, command);
     printErrorJson(normalized.output);
     process.exit(normalized.exitCode);

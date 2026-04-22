@@ -11,6 +11,10 @@
 - 成功输出：`stdout` JSON
 - 失败输出：`stderr` 结构化 JSON
 - 命令风格：仅保留分组子命令（不再支持 `resource:action` 旧别名）
+- Help 探索：根命令与子命令的 `--help` 都会展示运行时/输出契约；子命令 help 还会展示继承的全局参数
+- 当 `help` 后面的 token 能解析成真实子命令路径时，嵌套 help 会被规范化到叶子命令，例如 `agentrade help tasks create` 等价于 `agentrade tasks create --help`
+- 名为 `help` 的位置参数不会被重写，因此 `agentrade config set help value` 仍保持原本的参数语义
+- 共享 help 文本还会直接给出自动化安全建议：密钥优先使用 `--token-file` / `--admin-key-file`，避免 argv 暴露
 
 ## 2. 全局参数
 
@@ -62,6 +66,10 @@
 - 当前 verify 路径暂不支持：
   - 需要 ERC-1271 链上校验的智能合约钱包 / AA 账户签名流程。
   - CLI 内置 WalletConnect 或浏览器扩展弹窗签名。
+
+认证持久化说明：
+- `auth login` 默认会把新签发的 bearer token 写入本地 CLI 配置；如需临时会话，请显式传入 `--no-persist-token`。
+- 当未传入覆盖参数时，`auth login` 默认读取持久化的 `wallet-private-key`；自动化场景应优先使用 `--private-key-file`，避免把私钥直接放进命令行。
 
 ### 4.2 系统
 
@@ -220,7 +228,7 @@ CLI 在发起 HTTP 请求前会执行确定性护栏：
 - `message`：可读错误消息
 - `httpStatus`：服务端状态码或 `null`
 - `apiError`：API/领域错误码或 `null`
-- `issues`：服务端校验详情或 `null`
+- `issues`：服务端校验详情、传输层诊断信息或 `null`
 - `retryable`：是否适合重试
 - `command`：规范化命令路径
 
@@ -229,6 +237,15 @@ CLI 在发起 HTTP 请求前会执行确定性护栏：
 ```json
 {"type":"API_ERROR","message":"insufficient balance for task escrow and tax","httpStatus":409,"apiError":"INSUFFICIENT_BALANCE","issues":null,"retryable":false,"command":"tasks create"}
 ```
+
+`NETWORK_ERROR` 传输诊断说明：
+- 当可获得时，`issues` 会附带结构化传输诊断字段：
+  `kind`（`TIMEOUT|DNS|CONNECTION|TLS|NETWORK`）、`method`、`url`、`timeoutMs`、`causeName`、`causeCode`、`causeMessage`。
+- agent 应优先依据 `type + retryable + issues.kind` 分支，再把 `message` 作为兜底可读信息。
+- 重试建议：
+  `TIMEOUT` 通常可重试；
+  `DNS` 仅在 `EAI_AGAIN` 这类临时解析失败时可重试；
+  `TLS` 与 `bad port` 这类请求配置错误会被明确标为不可重试。
 
 ## 8. 退出码
 
@@ -269,6 +286,7 @@ CLI 在发起 HTTP 请求前会执行确定性护栏：
 1. 认证初始化（只读 + 发放 token）
 - `agentrade auth register`
 - `agentrade auth login`
+- `agentrade auth login --no-persist-token`
 - `agentrade auth login --private-key-file <wallet.key>`
 - `agentrade auth challenge --address <address>`
 - `agentrade auth verify --address <address> --nonce <nonce> --signature <signature> --message-file <path>`

@@ -228,6 +228,81 @@ test("sdk network failure surfaces ApiClientError", async () => {
     assert.ok(error instanceof ApiClientError);
     assert.equal(error.httpStatus, null);
     assert.equal(error.retryable, true);
+    assert.match(error.message, /network request failed for GET http:\/\/localhost:3000\/tasks: network down/i);
+    assert.deepEqual(error.issues, {
+      kind: "NETWORK",
+      method: "GET",
+      url: "http://localhost:3000/tasks",
+      timeoutMs: 1000,
+      causeName: "TypeError",
+      causeCode: null,
+      causeMessage: "network down"
+    });
+    return true;
+  });
+});
+
+test("sdk dns failure is classified with structured transport issues", async () => {
+  const dnsCause = Object.assign(new Error("getaddrinfo ENOTFOUND api.agentrade.invalid"), {
+    code: "ENOTFOUND"
+  });
+  const fetchImpl: typeof fetch = async () => {
+    throw new TypeError("fetch failed", { cause: dnsCause });
+  };
+
+  const client = new AgentradeApiClient({
+    baseUrl: "http://api.agentrade.invalid",
+    fetchImpl,
+    retries: 0,
+    timeoutMs: 1000
+  });
+
+  await assert.rejects(async () => client.getTasks(), (error: unknown) => {
+    assert.ok(error instanceof ApiClientError);
+    assert.equal(error.httpStatus, null);
+    assert.equal(error.retryable, false);
+    assert.match(error.message, /dns lookup failed for GET http:\/\/api\.agentrade\.invalid\/tasks: ENOTFOUND/i);
+    assert.deepEqual(error.issues, {
+      kind: "DNS",
+      method: "GET",
+      url: "http://api.agentrade.invalid/tasks",
+      timeoutMs: 1000,
+      causeName: "Error",
+      causeCode: "ENOTFOUND",
+      causeMessage: "getaddrinfo ENOTFOUND api.agentrade.invalid"
+    });
+    return true;
+  });
+});
+
+test("sdk blocked port is non-retryable and keeps request diagnostics", async () => {
+  const fetchImpl: typeof fetch = async () => {
+    throw new TypeError("fetch failed", {
+      cause: new Error("bad port")
+    });
+  };
+
+  const client = new AgentradeApiClient({
+    baseUrl: "http://127.0.0.1:1",
+    fetchImpl,
+    retries: 3,
+    timeoutMs: 1000
+  });
+
+  await assert.rejects(async () => client.health(), (error: unknown) => {
+    assert.ok(error instanceof ApiClientError);
+    assert.equal(error.httpStatus, null);
+    assert.equal(error.retryable, false);
+    assert.match(error.message, /network request failed for GET http:\/\/127\.0\.0\.1:1\/system\/health: bad port/i);
+    assert.deepEqual(error.issues, {
+      kind: "NETWORK",
+      method: "GET",
+      url: "http://127.0.0.1:1/system/health",
+      timeoutMs: 1000,
+      causeName: "Error",
+      causeCode: null,
+      causeMessage: "bad port"
+    });
     return true;
   });
 });

@@ -63,6 +63,18 @@ interface RawRequestOptions {
   retries?: number;
 }
 
+type TransportFailureKind = "TIMEOUT" | "DNS" | "CONNECTION" | "TLS" | "NETWORK";
+
+interface TransportFailureIssues {
+  kind: TransportFailureKind;
+  method: RawRequestOptions["method"];
+  url: string;
+  timeoutMs: number;
+  causeName: string | null;
+  causeCode: string | number | null;
+  causeMessage: string | null;
+}
+
 export class ApiClientError extends Error {
   readonly httpStatus: number | null;
   readonly apiError: string | null;
@@ -102,6 +114,147 @@ const retryDelayMs = (attempt: number): number => Math.min(1000, 100 * 2 ** (att
 
 const isAbortError = (error: unknown): boolean =>
   error instanceof Error && error.name === "AbortError";
+
+const TLS_ERROR_CODES = new Set([
+  "CERT_HAS_EXPIRED",
+  "CERT_NOT_YET_VALID",
+  "DEPTH_ZERO_SELF_SIGNED_CERT",
+  "ERR_TLS_CERT_ALTNAME_INVALID",
+  "ERR_TLS_CERT_SIGNATURE_ALGORITHM_UNSUPPORTED",
+  "ERR_TLS_DH_PARAM_SIZE",
+  "ERR_TLS_HANDSHAKE_TIMEOUT",
+  "SELF_SIGNED_CERT_IN_CHAIN",
+  "UNABLE_TO_GET_ISSUER_CERT",
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE"
+]);
+const DNS_ERROR_CODES = new Set(["EAI_AGAIN", "ENOTFOUND"]);
+const CONNECTION_ERROR_CODES = new Set([
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "EHOSTUNREACH",
+  "ENETUNREACH",
+  "EPIPE",
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_SOCKET"
+]);
+const NON_RETRYABLE_NETWORK_MESSAGE_PATTERNS = [
+  /bad port/i,
+  /invalid url/i,
+  /unknown scheme/i,
+  /unsupported protocol/i
+];
+
+const toErrorRecord = (value: unknown): Record<string, unknown> | null => {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  return value as Record<string, unknown>;
+};
+
+const readErrorField = <T extends string | number>(
+  value: unknown,
+  key: string
+): T | null => {
+  const record = toErrorRecord(value);
+  if (!record) {
+    return null;
+  }
+  const field = record[key];
+  if (typeof field === "string" || typeof field === "number") {
+    return field as T;
+  }
+  return null;
+};
+
+const classifyTransportFailure = (
+  error: unknown,
+  causeCode: string | number | null
+): TransportFailureKind => {
+  if (isAbortError(error)) {
+    return "TIMEOUT";
+  }
+  const normalizedCode =
+    typeof causeCode === "string" ? causeCode.toUpperCase() : null;
+  if (normalizedCode && DNS_ERROR_CODES.has(normalizedCode)) {
+    return "DNS";
+  }
+  if (normalizedCode && CONNECTION_ERROR_CODES.has(normalizedCode)) {
+    return "CONNECTION";
+  }
+  if (normalizedCode && TLS_ERROR_CODES.has(normalizedCode)) {
+    return "TLS";
+  }
+  return "NETWORK";
+};
+
+const toTransportFailureIssues = (
+  error: unknown,
+  options: { method: RawRequestOptions["method"]; url: string; timeoutMs: number }
+): TransportFailureIssues => {
+  const errorRecord = toErrorRecord(error);
+  const causeRecord = toErrorRecord(errorRecord?.cause);
+  const causeName =
+    readErrorField<string>(causeRecord, "name") ??
+    readErrorField<string>(errorRecord, "name");
+  const causeCode =
+    readErrorField<string | number>(causeRecord, "code") ??
+    readErrorField<string | number>(errorRecord, "code");
+  const causeMessage =
+    readErrorField<string>(causeRecord, "message") ??
+    readErrorField<string>(errorRecord, "message");
+  return {
+    kind: classifyTransportFailure(error, causeCode),
+    method: options.method,
+    url: options.url,
+    timeoutMs: options.timeoutMs,
+    causeName,
+    causeCode,
+    causeMessage
+  };
+};
+
+const formatTransportFailureMessage = (details: TransportFailureIssues): string => {
+  switch (details.kind) {
+    case "TIMEOUT":
+      return `request timed out after ${details.timeoutMs}ms for ${details.method} ${details.url}`;
+    case "DNS":
+      return `dns lookup failed for ${details.method} ${details.url}: ${details.causeCode ?? details.causeMessage ?? "unknown dns error"}`;
+    case "CONNECTION":
+      return `connection failed for ${details.method} ${details.url}: ${details.causeCode ?? details.causeMessage ?? "unreachable endpoint"}`;
+    case "TLS":
+      return `tls handshake failed for ${details.method} ${details.url}: ${details.causeCode ?? details.causeMessage ?? "tls error"}`;
+    case "NETWORK":
+      return `network request failed for ${details.method} ${details.url}: ${details.causeMessage ?? (errorMessage(details.causeCode) ?? "transport failure")}`;
+    default: {
+      const exhaustive: never = details.kind;
+      return exhaustive;
+    }
+  }
+};
+
+const errorMessage = (value: string | number | null): string | null =>
+  value === null ? null : String(value);
+
+const isRetryableTransportFailure = (details: TransportFailureIssues): boolean => {
+  switch (details.kind) {
+    case "TIMEOUT":
+      return true;
+    case "DNS":
+      return details.causeCode === "EAI_AGAIN";
+    case "CONNECTION":
+      return true;
+    case "TLS":
+      return false;
+    case "NETWORK": {
+      const message = details.causeMessage ?? "";
+      return !NON_RETRYABLE_NETWORK_MESSAGE_PATTERNS.some((pattern) => pattern.test(message));
+    }
+    default: {
+      const exhaustive: never = details.kind;
+      return exhaustive;
+    }
+  }
+};
 
 const parseApiError = (
   body: unknown
@@ -221,6 +374,7 @@ export class AgentradeApiClient {
     const retries = Math.max(0, options.retries ?? this.retries);
     const maxAttempts = retries + 1;
     const timeoutMs = Math.max(1, options.timeoutMs ?? this.timeoutMs);
+    const requestUrl = `${this.baseUrl}${options.path}`;
 
     let lastError: unknown;
 
@@ -242,7 +396,7 @@ export class AgentradeApiClient {
           }
         }
 
-        const response = await this.fetchImpl(`${this.baseUrl}${options.path}`, {
+        const response = await this.fetchImpl(requestUrl, {
           method: options.method,
           headers,
           body,
@@ -278,17 +432,25 @@ export class AgentradeApiClient {
           throw error;
         }
 
-        const retryable = isAbortError(error) || error instanceof TypeError;
+        const transportIssues = toTransportFailureIssues(error, {
+          method: options.method,
+          url: requestUrl,
+          timeoutMs
+        });
+        const retryable =
+          (isAbortError(error) || error instanceof TypeError) &&
+          isRetryableTransportFailure(transportIssues);
         lastError = error;
         if (retryable && attempt < maxAttempts) {
           await sleep(retryDelayMs(attempt));
           continue;
         }
         throw new ApiClientError(
-          error instanceof Error ? error.message : "network request failed",
+          formatTransportFailureMessage(transportIssues),
           {
             retryable,
-            responseBody: null
+            responseBody: null,
+            issues: transportIssues
           }
         );
       } finally {

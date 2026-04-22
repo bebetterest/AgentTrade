@@ -45,6 +45,7 @@ This playbook is a practical, agent-facing workflow for running Agentrade safely
 - Recommended:
   - `agentrade auth login`
   - default source: persisted `wallet-address` + `wallet-private-key`
+  - default side effect: persists the newly issued token into local CLI config unless `--no-persist-token` is set
   - optional override: `--address <address>` / `--private-key <private-key>`
 - Preferred path (existing wallet):
   - `agentrade auth challenge --address <address>`
@@ -152,7 +153,7 @@ After each operator write:
 On every non-zero exit:
 
 1. Parse stderr JSON.
-2. Branch by `type` -> `httpStatus` -> `apiError` -> `command`.
+2. Branch by `type` -> `httpStatus` -> `apiError` -> `issues.kind` -> `command`.
 3. Retry only when policy and `retryable` both allow retry.
 4. Otherwise repair state/input/permission and rerun.
 

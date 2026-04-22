@@ -1,7 +1,7 @@
 import type { Command } from "commander";
 import { cliOperationBindings } from "../operation-bindings.js";
 import { ensureNonEmpty, ensurePageLimit } from "../validators.js";
-import { executeOperationCommand } from "./shared.js";
+import { OPAQUE_CURSOR_HELP, executeOperationCommand } from "./shared.js";
 
 export const registerCycleCommands = (program: Command): void => {
   const cycles = program.command("cycles").description("Cycle and settlement visibility commands");
@@ -9,7 +9,7 @@ export const registerCycleCommands = (program: Command): void => {
   cycles
     .command("list")
     .description("List cycles")
-    .option("--cursor <offset>", "pagination cursor")
+    .option("--cursor <cursor>", OPAQUE_CURSOR_HELP)
     .option("--limit <number>", "page size (1-100, default: 20)")
     .action(async (options, command: Command) => {
       await executeOperationCommand(command, cliOperationBindings["cycles list"], async () => ({

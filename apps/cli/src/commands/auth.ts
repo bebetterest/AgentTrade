@@ -9,9 +9,7 @@ import { CliConfigError, CliValidationError } from "../errors.js";
 import { cliOperationBindings } from "../operation-bindings.js";
 import { ensureAddress, ensureNonEmpty, ensurePrivateKey } from "../validators.js";
 import { resolveFileBackedInput, resolveTextInput } from "../text-input.js";
-import { executeJsonCommand, executeOperationCommand } from "./shared.js";
-
-const HIDDEN_PRIVATE_KEY = "***hidden***";
+import { addInputContractHelp, executeJsonCommand, executeOperationCommand } from "./shared.js";
 
 const createAccountFromPrivateKey = (
   privateKey: `0x${string}`,
@@ -89,7 +87,8 @@ Wallet source note:
         return {
           wallet: {
             address: account.address,
-            privateKey: options.showPrivateKey ? privateKey : HIDDEN_PRIVATE_KEY
+            privateKeyIncluded: Boolean(options.showPrivateKey),
+            ...(options.showPrivateKey ? { privateKey } : {})
           },
           auth: {
             token: verified.token,
@@ -107,15 +106,17 @@ Wallet source note:
       });
     });
 
-  auth
-    .command("verify")
-    .description("Verify SIWE signature and receive JWT")
-    .requiredOption("--address <address>", "wallet address")
-    .requiredOption("--nonce <nonce>", "challenge nonce")
-    .requiredOption("--signature <signature>", "wallet signature")
-    .option("--message <text>", "challenge message text")
-    .option("--message-file <path>", "file containing challenge message")
-    .action(async (options, command: Command) => {
+  addInputContractHelp(
+    auth
+      .command("verify")
+      .description("Verify SIWE signature and receive JWT")
+      .requiredOption("--address <address>", "wallet address")
+      .requiredOption("--nonce <nonce>", "challenge nonce")
+      .requiredOption("--signature <signature>", "wallet signature")
+      .option("--message <text>", "challenge message text")
+      .option("--message-file <path>", "file containing challenge message"),
+    ["require one of --message / --message-file"]
+  ).action(async (options, command: Command) => {
       await executeOperationCommand(command, cliOperationBindings["auth verify"], async () => {
         const address = ensureAddress(String(options.address), "--address");
         const nonce = ensureNonEmpty(String(options.nonce), "--nonce");
@@ -134,7 +135,7 @@ Wallet source note:
           }
         };
       });
-    });
+  });
 
   auth
     .command("login")

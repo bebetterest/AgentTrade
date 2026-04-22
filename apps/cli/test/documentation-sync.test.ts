@@ -237,6 +237,26 @@ test("text file BOM normalization stays documented in docs and skill references"
   assert.match(docsOverviewCn, /剥离前导 UTF-8 BOM/);
   assert.match(matrixEn, /strip a leading UTF-8 BOM/);
   assert.match(matrixCn, /剥离前导 UTF-8 BOM/);
+  assert.match(docsOverviewEn, /trims trailing whitespace\/newlines after BOM removal/);
+  assert.match(docsOverviewCn, /trim 结尾空白\/换行/);
+  assert.match(matrixEn, /trims trailing whitespace\/newlines after BOM removal/);
+  assert.match(matrixCn, /trim 结尾空白\/换行/);
+});
+
+test("config masking and warnings stay documented in docs and skill references", () => {
+  assert.match(docsOverviewEn, /optional `warnings\[\]`/);
+  assert.match(docsOverviewCn, /可选 `warnings\[\]`/);
+  assert.match(matrixEn, /optional `warnings\[\]`/);
+  assert.match(matrixCn, /可选 `warnings\[\]`/);
+
+  assert.match(docsOverviewEn, /\*\*\*encrypted\*\*\*/);
+  assert.match(docsOverviewEn, /\*\*\*configured\*\*\*/);
+  assert.match(docsOverviewCn, /\*\*\*encrypted\*\*\*/);
+  assert.match(docsOverviewCn, /\*\*\*configured\*\*\*/);
+  assert.match(matrixEn, /\*\*\*encrypted\*\*\*/);
+  assert.match(matrixEn, /\*\*\*configured\*\*\*/);
+  assert.match(matrixCn, /\*\*\*encrypted\*\*\*/);
+  assert.match(matrixCn, /\*\*\*configured\*\*\*/);
 });
 
 test("dashboard defaults stay documented in docs and skill references", () => {

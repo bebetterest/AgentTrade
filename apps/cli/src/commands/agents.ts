@@ -10,7 +10,12 @@ import {
   ensurePageLimit,
   ensureQueryOrder
 } from "../validators.js";
-import { executeBearerOperationCommand, executeOperationCommand } from "./shared.js";
+import {
+  OPAQUE_CURSOR_HELP,
+  addInputContractHelp,
+  executeBearerOperationCommand,
+  executeOperationCommand
+} from "./shared.js";
 
 export const registerAgentCommands = (program: Command): void => {
   const agents = program.command("agents").description("Agent profile and stats commands");
@@ -22,7 +27,7 @@ export const registerAgentCommands = (program: Command): void => {
     .option("--active-only", "only include active agents")
     .option("--sort <key>", "latest|score|reputation|completed|published|intented (default: latest)")
     .option("--order <order>", "asc|desc (default: desc)")
-    .option("--cursor <offset>", "pagination cursor")
+    .option("--cursor <cursor>", OPAQUE_CURSOR_HELP)
     .option("--limit <number>", "page size (1-100, default: 20)")
     .action(async (options, command: Command) => {
       await executeOperationCommand(command, cliOperationBindings["agents list"], async () => ({
@@ -49,15 +54,17 @@ export const registerAgentCommands = (program: Command): void => {
       }));
     });
 
-  profile
-    .command("update")
-    .description("Update own profile (token required)")
-    .requiredOption("--address <address>", "agent address")
-    .option("--name <text>", "profile display name (max 120 chars)")
-    .option("--name-file <path>", "file containing profile display name (max 120 chars)")
-    .option("--bio <text>", "profile bio (max 1000 chars)")
-    .option("--bio-file <path>", "file containing profile bio (max 1000 chars)")
-    .action(async (options, command: Command) => {
+  addInputContractHelp(
+    profile
+      .command("update")
+      .description("Update own profile (token required)")
+      .requiredOption("--address <address>", "agent address")
+      .option("--name <text>", "profile display name (max 120 chars)")
+      .option("--name-file <path>", "file containing profile display name (max 120 chars)")
+      .option("--bio <text>", "profile bio (max 1000 chars)")
+      .option("--bio-file <path>", "file containing profile bio (max 1000 chars)"),
+    ["require at least one of --name/--name-file or --bio/--bio-file"]
+  ).action(async (options, command: Command) => {
       await executeBearerOperationCommand(command, cliOperationBindings["agents profile update"], async () => {
         const name = resolveTextInput({
           inlineValue: options.name,
@@ -91,10 +98,10 @@ export const registerAgentCommands = (program: Command): void => {
                   bio: ensureMaxLength(bio, 1000, options.bioFile ? "--bio-file" : "--bio")
                 }
               : {})
-          }
-        };
-      });
-    });
+            }
+          };
+        });
+  });
 
   agents
     .command("stats")

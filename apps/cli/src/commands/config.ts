@@ -1,9 +1,11 @@
+import { readFileSync } from "node:fs";
 import type { Command } from "commander";
 import {
   CLI_DEFAULT_BASE_URL,
   CLI_DEFAULT_RETRIES,
   CLI_DEFAULT_TIMEOUT_MS,
   clearCliPersistedConfig,
+  isStoredCliSecretEncrypted,
   loadCliPersistedConfig,
   setCliPersistedConfigValue,
   type CliPersistedConfig,
@@ -12,6 +14,7 @@ import {
 } from "../cli-config.js";
 import { CliValidationError } from "../errors.js";
 import { printJson } from "../output.js";
+import { addInputContractHelp } from "./shared.js";
 import {
   ensureAddress,
   ensureHttpUrl,
@@ -20,6 +23,12 @@ import {
   ensurePrivateKey,
   ensurePositiveInteger
 } from "../validators.js";
+
+type ConfigWarning = {
+  code: "PLAINTEXT_PERSISTED_SECRET";
+  field: "token" | "adminKey";
+  message: string;
+};
 
 type ConfigOutput = {
   path: string;
@@ -47,6 +56,7 @@ type ConfigOutput = {
     timeoutMs: number;
     retries: number;
   };
+  warnings?: ConfigWarning[];
 };
 
 const KEY_ALIASES: Record<string, CliPersistedConfigKey> = {
@@ -81,7 +91,10 @@ const resolvePretty = (command: Command): boolean => {
   return Boolean(raw.pretty);
 };
 
-const maskSecret = (value: string | undefined): string | null => {
+const stripLeadingBom = (value: string): string => value.replace(/^\uFEFF/, "");
+const normalizeConfigSetFileValue = (value: string): string => stripLeadingBom(value).trim();
+
+const maskConfiguredSecret = (value: string | undefined): string | null => {
   if (!value) {
     return null;
   }
@@ -89,10 +102,10 @@ const maskSecret = (value: string | undefined): string | null => {
   if (trimmed.length === 0) {
     return null;
   }
-  if (trimmed.length <= 8) {
-    return "***";
+  if (isStoredCliSecretEncrypted(trimmed)) {
+    return "***encrypted***";
   }
-  return `${trimmed.slice(0, 4)}...${trimmed.slice(-4)}`;
+  return "***configured***";
 };
 
 const maskEncryptedSecret = (value: string | undefined): string | null => {
@@ -102,19 +115,47 @@ const maskEncryptedSecret = (value: string | undefined): string | null => {
   return "***encrypted***";
 };
 
+const toPlaintextPersistedSecretWarnings = (values: CliPersistedConfig): ConfigWarning[] => {
+  const warnings: ConfigWarning[] = [];
+  const token = values.token?.trim();
+  const adminKey = values.adminKey?.trim();
+
+  if (token && !isStoredCliSecretEncrypted(token)) {
+    warnings.push({
+      code: "PLAINTEXT_PERSISTED_SECRET",
+      field: "token",
+      message:
+        "token in CLI config is plaintext and not encrypted at rest; rerun `agentrade config set token --value-file <path>` or `agentrade config set token <value>` to rewrite it securely"
+    });
+  }
+
+  if (adminKey && !isStoredCliSecretEncrypted(adminKey)) {
+    warnings.push({
+      code: "PLAINTEXT_PERSISTED_SECRET",
+      field: "adminKey",
+      message:
+        "admin-key in CLI config is plaintext and not encrypted at rest; rerun `agentrade config set admin-key --value-file <path>` or `agentrade config set admin-key <value>` to rewrite it securely"
+    });
+  }
+
+  return warnings;
+};
+
 const toConfigOutput = (
   path: string,
   exists: boolean,
   values: CliPersistedConfig
 ): ConfigOutput => {
+  const warnings = toPlaintextPersistedSecretWarnings(values);
+
   return {
     path,
     exists,
     configured: {
       baseUrl: values.baseUrl ?? null,
-      token: maskSecret(values.token),
+      token: maskConfiguredSecret(values.token),
       tokenConfigured: Boolean(values.token),
-      adminKey: maskSecret(values.adminKey),
+      adminKey: maskConfiguredSecret(values.adminKey),
       adminKeyConfigured: Boolean(values.adminKey),
       walletAddress: values.walletAddress ?? null,
       walletAddressConfigured: Boolean(values.walletAddress),
@@ -132,7 +173,8 @@ const toConfigOutput = (
       walletPrivateKeyConfigured: Boolean(values.walletPrivateKey),
       timeoutMs: values.timeoutMs ?? CLI_DEFAULT_TIMEOUT_MS,
       retries: values.retries ?? CLI_DEFAULT_RETRIES
-    }
+    },
+    ...(warnings.length > 0 ? { warnings } : {})
   };
 };
 
@@ -181,8 +223,38 @@ const parseSetValue = (
   }
 };
 
+const resolveConfigSetRawValue = (
+  inlineValue: string | undefined,
+  valueFile: string | undefined
+): string => {
+  if (inlineValue !== undefined && valueFile !== undefined) {
+    throw new CliValidationError("<value> and --value-file are mutually exclusive");
+  }
+
+  if (valueFile !== undefined) {
+    try {
+      return normalizeConfigSetFileValue(readFileSync(valueFile, "utf8"));
+    } catch (error) {
+      throw new CliValidationError(
+        `failed to read --value-file: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+
+  if (inlineValue === undefined) {
+    throw new CliValidationError("<value> or --value-file is required");
+  }
+
+  return stripLeadingBom(inlineValue);
+};
+
 export const registerConfigCommands = (program: Command): void => {
   const config = program.command("config").description("Manage global CLI runtime configuration");
+  const configSetHelpAppendix = `
+Config set note:
+  automation: prefer --value-file for token/admin-key/wallet-private-key to avoid argv exposure
+  persisted token/admin-key/wallet-private-key are encrypted at rest
+`;
 
   config
     .command("show")
@@ -203,15 +275,21 @@ export const registerConfigCommands = (program: Command): void => {
       }
     });
 
-  config
-    .command("set")
-    .description("Persist one global CLI setting (supports *_ aliases)")
-    .argument("<key>", `setting key (${VALID_SET_KEYS})`)
-    .argument("<value>", "setting value")
-    .action(function (this: Command, rawKey: string, rawValue: string) {
+  addInputContractHelp(
+    config
+      .command("set")
+      .description("Persist one global CLI setting (supports *_ aliases and file-backed values)")
+      .argument("<key>", `setting key (${VALID_SET_KEYS})`)
+      .argument("[value]", "setting value")
+      .option("--value-file <path>", "file containing setting value"),
+    ["require one of <value> / --value-file"]
+  )
+    .addHelpText("after", configSetHelpAppendix)
+    .action(function (this: Command, rawKey: string, rawValue?: string) {
       try {
+        const options = this.opts() as { valueFile?: string };
         const key = parseSetKey(rawKey);
-        const value = parseSetValue(key, rawValue);
+        const value = parseSetValue(key, resolveConfigSetRawValue(rawValue, options.valueFile));
         const snapshot = setCliPersistedConfigValue(key, value);
         printJson(
           {

@@ -76,7 +76,11 @@ test("cli config command: set/show/unset persisted values", async () => {
     assert.equal(setBaseJson.key, "baseUrl");
     assert.equal(setBaseJson.configured.baseUrl, "https://api.example.com");
 
-    const setToken = await runCli(["config", "set", "token", "token-1234567890"], configPath);
+    const tokenValue = "token-1234567890";
+    const tokenFile = join(dirname(configPath), "token.txt");
+    writeFileSync(tokenFile, `\uFEFF${tokenValue}\n`, "utf8");
+
+    const setToken = await runCli(["config", "set", "token", "--value-file", tokenFile], configPath);
     assert.equal(setToken.code, 0, setToken.stderr);
     const setTokenJson = JSON.parse(setToken.stdout.trim()) as {
       configured: { tokenConfigured: boolean; token: string | null };
@@ -84,10 +88,11 @@ test("cli config command: set/show/unset persisted values", async () => {
     };
     assert.equal(setTokenJson.configured.tokenConfigured, true);
     assert.equal(setTokenJson.effective.tokenConfigured, true);
-    assert.ok(setTokenJson.configured.token?.includes("..."));
+    assert.equal(setTokenJson.configured.token, "***encrypted***");
 
+    const adminKeyValue = "admin-key-1234567890";
     const setAdminKey = await runCli(
-      ["config", "set", "admin-key", "admin-key-1234567890"],
+      ["config", "set", "admin-key", adminKeyValue],
       configPath
     );
     assert.equal(setAdminKey.code, 0, setAdminKey.stderr);
@@ -97,10 +102,18 @@ test("cli config command: set/show/unset persisted values", async () => {
     };
     assert.equal(setAdminJson.configured.adminKeyConfigured, true);
     assert.equal(setAdminJson.effective.adminKeyConfigured, true);
-    assert.ok(setAdminJson.configured.adminKey?.includes("..."));
+    assert.equal(setAdminJson.configured.adminKey, "***encrypted***");
+
+    const persistedConfigTextAfterSecrets = readFileSync(configPath, "utf8");
+    assert.ok(!persistedConfigTextAfterSecrets.includes(tokenValue));
+    assert.ok(!persistedConfigTextAfterSecrets.includes(adminKeyValue));
+    assert.match(persistedConfigTextAfterSecrets, /"token":\s*"enc:v1:/);
+    assert.match(persistedConfigTextAfterSecrets, /"adminKey":\s*"enc:v1:/);
 
     const walletAddress = "0x1111111111111111111111111111111111111111";
     const walletPrivateKey = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const walletPrivateKeyFile = join(dirname(configPath), "wallet-private-key.txt");
+    writeFileSync(walletPrivateKeyFile, `\uFEFF${walletPrivateKey}\n`, "utf8");
 
     const setWalletAddress = await runCli(
       ["config", "set", "wallet-address", walletAddress],
@@ -116,7 +129,7 @@ test("cli config command: set/show/unset persisted values", async () => {
     assert.equal(setWalletAddressJson.effective.walletAddressConfigured, true);
 
     const setWalletPrivateKey = await runCli(
-      ["config", "set", "wallet-private-key", walletPrivateKey],
+      ["config", "set", "wallet-private-key", "--value-file", walletPrivateKeyFile],
       configPath
     );
     assert.equal(setWalletPrivateKey.code, 0, setWalletPrivateKey.stderr);
@@ -242,6 +255,129 @@ test("cli auth login fails fast when persisted wallet-private-key is plaintext",
         /"command":"auth login"/.test(combined) &&
         combined.includes("walletPrivateKey must not be plaintext")
     );
+  } finally {
+    cleanup();
+  }
+});
+
+test("cli config show warns on legacy plaintext token/admin-key without leaking them", async () => {
+  const { configPath, cleanup } = createConfigPath();
+
+  try {
+    const legacyToken = "legacy-plaintext-token-1234567890";
+    const legacyAdminKey = "legacy-plaintext-admin-key-1234567890";
+
+    writeFileSync(
+      configPath,
+      JSON.stringify(
+        {
+          baseUrl: "https://api.example.com",
+          token: legacyToken,
+          adminKey: legacyAdminKey
+        },
+        null,
+        2
+      ),
+      "utf8"
+    );
+
+    const show = await runCli(["config", "show"], configPath);
+    assert.equal(show.code, 0, show.stderr);
+    const showJson = JSON.parse(show.stdout.trim()) as {
+      configured: {
+        token: string | null;
+        adminKey: string | null;
+        tokenConfigured: boolean;
+        adminKeyConfigured: boolean;
+      };
+      warnings?: Array<{ code: string; field: string; message: string }>;
+    };
+    assert.equal(showJson.configured.token, "***configured***");
+    assert.equal(showJson.configured.adminKey, "***configured***");
+    assert.equal(showJson.configured.tokenConfigured, true);
+    assert.equal(showJson.configured.adminKeyConfigured, true);
+    assert.equal(showJson.warnings?.length, 2);
+    assert.deepEqual(
+      showJson.warnings?.map((warning) => warning.field).sort(),
+      ["adminKey", "token"]
+    );
+    assert.ok(
+      showJson.warnings?.every(
+        (warning) =>
+          warning.code === "PLAINTEXT_PERSISTED_SECRET" &&
+          /not encrypted at rest/i.test(warning.message)
+      )
+    );
+    assert.ok(!show.stdout.includes(legacyToken));
+    assert.ok(!show.stdout.includes(legacyAdminKey));
+  } finally {
+    cleanup();
+  }
+});
+
+test("cli global runtime: public reads ignore missing secret key for persisted creds", async () => {
+  const { configPath, cleanup } = createConfigPath();
+  const server = createServer((_request, response) => {
+    response.setHeader("content-type", "application/json");
+    response.end(JSON.stringify({ ok: true, service: "lazy-secret-test" }));
+  });
+
+  await new Promise<void>((resolvePromise) => {
+    server.listen(0, "127.0.0.1", () => resolvePromise());
+  });
+
+  try {
+    const serverAddress = server.address() as AddressInfo;
+    const baseUrl = `http://127.0.0.1:${serverAddress.port}`;
+
+    const setBaseUrl = await runCli(["config", "set", "base-url", baseUrl], configPath);
+    assert.equal(setBaseUrl.code, 0, setBaseUrl.stderr);
+    const setToken = await runCli(["config", "set", "token", "token-123"], configPath);
+    assert.equal(setToken.code, 0, setToken.stderr);
+    const setAdminKey = await runCli(["config", "set", "admin-key", "admin-key-123"], configPath);
+    assert.equal(setAdminKey.code, 0, setAdminKey.stderr);
+
+    rmSync(join(dirname(configPath), "wallet.key"), { force: true });
+
+    const health = await runCli(["system", "health"], configPath);
+    assert.equal(health.code, 0, health.stderr);
+    assert.deepEqual(JSON.parse(health.stdout.trim()), {
+      ok: true,
+      service: "lazy-secret-test"
+    });
+  } finally {
+    await new Promise<void>((resolvePromise, rejectPromise) => {
+      server.close((error) => {
+        if (error) {
+          rejectPromise(error);
+          return;
+        }
+        resolvePromise();
+      });
+    });
+    cleanup();
+  }
+});
+
+test("cli global runtime: authenticated commands still fail when persisted secret key is missing", async () => {
+  const { configPath, cleanup } = createConfigPath();
+
+  try {
+    const setToken = await runCli(["config", "set", "token", "token-123"], configPath);
+    assert.equal(setToken.code, 0, setToken.stderr);
+
+    rmSync(join(dirname(configPath), "wallet.key"), { force: true });
+
+    const result = await runCli(["system", "metrics"], configPath);
+    assert.equal(result.code, 3);
+    const errorJson = JSON.parse(result.stderr.trim()) as {
+      type: string;
+      command: string;
+      message: string;
+    };
+    assert.equal(errorJson.type, "CONFIG_ERROR");
+    assert.equal(errorJson.command, "system metrics");
+    assert.match(errorJson.message, /missing CLI secret key/i);
   } finally {
     cleanup();
   }

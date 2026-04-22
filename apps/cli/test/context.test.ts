@@ -87,6 +87,21 @@ test("context: merge persisted config with CLI overrides", () => {
   assert.equal(overridden.retries, 2);
 });
 
+test("context: encrypted persisted creds are not eagerly decrypted during option resolution", () => {
+  const options = resolveGlobalOptions(
+    mockCommand({}),
+    {
+      baseUrl: "https://persisted.example.com",
+      token: "enc:v1:not-a-real-token-payload",
+      adminKey: "enc:v1:not-a-real-admin-payload"
+    }
+  );
+
+  assert.equal(options.baseUrl, "https://persisted.example.com");
+  assert.equal(options.token, undefined);
+  assert.equal(options.adminKey, undefined);
+});
+
 test("context: token/admin key can be resolved from files", () => {
   const tmpDir = mkdtempSync(join(tmpdir(), "agentrade-cli-context-"));
   const tokenFile = join(tmpDir, "token.txt");

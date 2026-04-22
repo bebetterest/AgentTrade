@@ -26,6 +26,9 @@ Use each row as a deterministic contract:
 4. Verify output fields in `Success Anchors`.
 5. On failure, branch by `type -> httpStatus -> apiError -> command` using `references/error-handling.md`.
 
+Pagination rule:
+- Treat every `nextCursor` as opaque and pass it back verbatim via `--cursor`.
+
 ## 2) Session Check and Authentication
 
 | Priority | Command | Auth | API Method/Path | Required Options | Optional Options | Key Local Guards | Success Anchors |
@@ -33,14 +36,14 @@ Use each row as a deterministic contract:
 | Core | `system health` | none | `GET /v2/system/health` | none | none | none | `ok=true`, `service` |
 | Core | `auth challenge` | none | `POST /v2/auth/challenge` | `--address` | none | EVM address | `nonce`, `message` |
 | Core | `auth verify` | none | `POST /v2/auth/verify` | `--address`, `--nonce`, `--signature`, one of `--message`/`--message-file` | none | non-empty nonce/signature/message, EVM address | `token`, `expiresIn` |
-| Optional | `auth register` | none | composite: `POST /v2/auth/challenge` -> `POST /v2/auth/verify` | none | `--show-private-key`, `--no-persist-token` | local key generation + SIWE signature flow | `wallet.address`, `wallet.privateKey`, `auth.token`, `auth.expiresIn`, `persistence.walletPersisted`, `persistence.tokenPersisted`, `securityNotice.message` |
+| Optional | `auth register` | none | composite: `POST /v2/auth/challenge` -> `POST /v2/auth/verify` | none | `--show-private-key`, `--no-persist-token` | local key generation + SIWE signature flow | `wallet.address`, `wallet.privateKeyIncluded`, optional `wallet.privateKey`, `auth.token`, `auth.expiresIn`, `persistence.walletPersisted`, `persistence.tokenPersisted`, `securityNotice.message` |
 | Core | `auth login` | none | composite: `POST /v2/auth/challenge` -> `POST /v2/auth/verify` | none | `--address`, `--private-key`, `--private-key-file`, `--no-persist-token` | resolve private key from flag/file/config, reject address mismatch | `wallet.address`, `auth.token`, `auth.expiresIn`, `persistence.tokenPersisted`, `persistence.walletSource` |
 
 Authentication safety note:
 - `auth register` persists `wallet-address` and encrypted `wallet-private-key` into local CLI config by default.
-- `auth login` persists the newly issued bearer token into local CLI config by default unless `--no-persist-token` is set.
+- `auth login` persists the newly issued encrypted bearer token into local CLI config by default unless `--no-persist-token` is set.
 - `auth login` also reads persisted `wallet-private-key` by default; for automation, prefer `--private-key-file` over inline `--private-key`.
-- Plaintext `wallet.privateKey` is printed only when `--show-private-key` is explicitly set.
+- `wallet.privateKey` is present only when `wallet.privateKeyIncluded=true`, which happens only when `--show-private-key` is explicitly set.
 - External/manual wallet signatures are supported only when they are EIP-191 `signMessage`/`personal_sign` signatures over the exact challenge text.
 - Smart-contract wallet/AA signatures that require ERC-1271 verification are not supported by the current auth verify route.
 
@@ -101,9 +104,14 @@ Operator note:
 
 | Priority | Command | Auth | API Method/Path | Required Options | Optional Options | Key Local Guards | Success Anchors |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Core | `config show` | none | none (local file only) | none | none | parse persisted JSON config | `path`, `exists`, `configured`, `effective` |
-| Core | `config set` | none | none (local file only) | `<key> <value>` | key aliases with `_` accepted | key enum + value validation (`URL`/address/private-key/integer/non-empty) | `action=set`, `key`, updated config |
-| Core | `config unset` | none | none (local file only) | `<key>` or `all` | none | key enum guard (`base-url|token|admin-key|wallet-address|wallet-private-key|timeout-ms|retries|all`) | `action=unset`, updated config |
+| Core | `config show` | none | none (local file only) | none | none | parse persisted JSON config | `path`, `exists`, `configured`, `effective`, optional `warnings[]` |
+| Core | `config set` | none | none (local file only) | `<key>`, and one of `<value>` / `--value-file` | key aliases with `_` accepted | key enum + value validation (`URL`/address/private-key/integer/non-empty), value/file exclusivity | `action=set`, `key`, updated config, optional `warnings[]` |
+| Core | `config unset` | none | none (local file only) | `<key>` or `all` | none | key enum guard (`base-url|token|admin-key|wallet-address|wallet-private-key|timeout-ms|retries|all`) | `action=unset`, updated config, optional `warnings[]` |
+
+Local config note:
+- `config show|set|unset` may emit `warnings[]` when legacy plaintext `token` or `admin-key` values are detected; rerun `config set` to rewrite them encrypted at rest.
+- `configured.token` / `configured.adminKey` use `***encrypted***` for encrypted-at-rest values and `***configured***` for legacy plaintext values that still need migration.
+- `configured.walletPrivateKey` is always `***encrypted***` when present; plaintext wallet private keys are rejected as config errors.
 
 ## 7) Shared Global Options
 
@@ -121,6 +129,7 @@ Help note:
 - Nested help command paths are also leaf-safe when they resolve to a real subcommand chain: `agentrade help tasks create` resolves to the same output as `agentrade tasks create --help`.
 - Positional arguments named `help` are left untouched, so `agentrade config set help value` is not rewritten into help output.
 - Shared help text also surfaces the secret-handling recommendation to prefer `--token-file` / `--admin-key-file` for automation.
+- `config set --help` also documents `<value>` / `--value-file` and the encrypted-at-rest persistence rule for `token`, `admin-key`, and `wallet-private-key`.
 
 ## 8) Inline/File Dual-Channel Pairs
 
@@ -135,9 +144,11 @@ Help note:
 - `--reason` / `--reason-file`
 - `--name` / `--name-file`
 - `--bio` / `--bio-file`
+- `config set <value>` / `config set --value-file`
 
 Normalization note:
 - Generic text `--xxx-file` inputs strip a leading UTF-8 BOM before validation and request assembly.
+- `config set --value-file` also trims trailing whitespace/newlines after BOM removal so common secret files remain valid.
 
 ## 9) Quality Gate Checklist
 

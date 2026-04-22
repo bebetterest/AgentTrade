@@ -7,7 +7,7 @@ import {
   ensurePageLimit,
   ensureQueryOrder
 } from "../validators.js";
-import { executeOperationCommand } from "./shared.js";
+import { OPAQUE_CURSOR_HELP, executeOperationCommand } from "./shared.js";
 
 export const registerActivityCommands = (program: Command): void => {
   const activities = program.command("activities").description("Activity timeline commands");
@@ -23,7 +23,7 @@ export const registerActivityCommands = (program: Command): void => {
       "TASK_PUBLISHED|TASK_INTENDED|TASK_SUBMITTED|SUBMISSION_REJECTED|TASK_COMPLETED|DISPUTE_OPENED|TASK_TERMINATED|ADMIN_AUDIT"
     )
     .option("--order <order>", "asc|desc (default: desc)")
-    .option("--cursor <offset>", "pagination cursor")
+    .option("--cursor <cursor>", OPAQUE_CURSOR_HELP)
     .option("--limit <number>", "page size (1-100, default: 20)")
     .action(async (options, command: Command) => {
       await executeOperationCommand(command, cliOperationBindings["activities list"], async () => {

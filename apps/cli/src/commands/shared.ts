@@ -8,6 +8,8 @@ import type { OperationRequestOptions } from "@agentrade/sdk";
 type JsonHandler<T = unknown> = (ctx: CommandContext) => Promise<T>;
 type OperationInputBuilder = (ctx: CommandContext) => Promise<OperationRequestOptions> | OperationRequestOptions;
 
+export const OPAQUE_CURSOR_HELP = "opaque pagination cursor returned by previous nextCursor";
+
 const enrichErrorWithCommandPath = (error: unknown, commandPath: string): void => {
   if (!error || typeof error !== "object") {
     return;
@@ -16,6 +18,20 @@ const enrichErrorWithCommandPath = (error: unknown, commandPath: string): void =
   if (!enriched.commandPath) {
     enriched.commandPath = commandPath;
   }
+};
+
+export const addInputContractHelp = (command: Command, lines: readonly string[]): Command => {
+  if (lines.length === 0) {
+    return command;
+  }
+
+  command.addHelpText(
+    "after",
+    `Input contract:
+${lines.map((line) => `  ${line}`).join("\n")}
+`
+  );
+  return command;
 };
 
 export const executeJsonCommand = async (

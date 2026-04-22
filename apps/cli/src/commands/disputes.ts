@@ -10,7 +10,12 @@ import {
   ensureVoteChoice
 } from "../validators.js";
 import { resolveTextInput } from "../text-input.js";
-import { executeBearerOperationCommand, executeOperationCommand } from "./shared.js";
+import {
+  OPAQUE_CURSOR_HELP,
+  addInputContractHelp,
+  executeBearerOperationCommand,
+  executeOperationCommand
+} from "./shared.js";
 
 export const registerDisputeCommands = (program: Command): void => {
   const disputes = program.command("disputes").description("Dispute and supervision commands");
@@ -24,7 +29,7 @@ export const registerDisputeCommands = (program: Command): void => {
     .option("--q <text>", "search by ids/opener/dispute party reasons")
     .option("--sort <key>", "latest|created (default: latest)")
     .option("--order <order>", "asc|desc (default: desc)")
-    .option("--cursor <offset>", "pagination cursor")
+    .option("--cursor <cursor>", OPAQUE_CURSOR_HELP)
     .option("--limit <number>", "page size (1-100, default: 20)")
     .action(async (options, command: Command) => {
       await executeOperationCommand(command, cliOperationBindings["disputes list"], async () => ({
@@ -51,14 +56,16 @@ export const registerDisputeCommands = (program: Command): void => {
       }));
     });
 
-  disputes
-    .command("open")
-    .description("Open a dispute (token required)")
-    .requiredOption("--task <id>", "task id")
-    .requiredOption("--submission <id>", "submission id")
-    .option("--reason <markdown>", "reason markdown")
-    .option("--reason-file <path>", "file containing dispute reason markdown")
-    .action(async (options, command: Command) => {
+  addInputContractHelp(
+    disputes
+      .command("open")
+      .description("Open a dispute (token required)")
+      .requiredOption("--task <id>", "task id")
+      .requiredOption("--submission <id>", "submission id")
+      .option("--reason <markdown>", "reason markdown")
+      .option("--reason-file <path>", "file containing dispute reason markdown"),
+    ["require one of --reason / --reason-file"]
+  ).action(async (options, command: Command) => {
       await executeBearerOperationCommand(command, cliOperationBindings["disputes open"], async () => {
         const reasonMd = resolveTextInput({
           inlineValue: options.reason,
@@ -70,18 +77,20 @@ export const registerDisputeCommands = (program: Command): void => {
             taskId: ensureNonEmpty(String(options.task), "--task"),
             submissionId: ensureNonEmpty(String(options.submission), "--submission"),
             reasonMd: String(reasonMd)
-          }
-        };
-      });
-    });
+            }
+          };
+        });
+  });
 
-  disputes
-    .command("respond")
-    .description("Submit counterparty reason on an open dispute (token required)")
-    .requiredOption("--dispute <id>", "dispute id")
-    .option("--reason <markdown>", "reason markdown")
-    .option("--reason-file <path>", "file containing dispute reason markdown")
-    .action(async (options, command: Command) => {
+  addInputContractHelp(
+    disputes
+      .command("respond")
+      .description("Submit counterparty reason on an open dispute (token required)")
+      .requiredOption("--dispute <id>", "dispute id")
+      .option("--reason <markdown>", "reason markdown")
+      .option("--reason-file <path>", "file containing dispute reason markdown"),
+    ["require one of --reason / --reason-file"]
+  ).action(async (options, command: Command) => {
       await executeBearerOperationCommand(command, cliOperationBindings["disputes respond"], async () => {
         const reasonMd = resolveTextInput({
           inlineValue: options.reason,
@@ -92,10 +101,10 @@ export const registerDisputeCommands = (program: Command): void => {
           pathParams: { id: ensureNonEmpty(String(options.dispute), "--dispute") },
           body: {
             reasonMd: String(reasonMd)
-          }
-        };
-      });
-    });
+            }
+          };
+        });
+  });
 
   disputes
     .command("vote")

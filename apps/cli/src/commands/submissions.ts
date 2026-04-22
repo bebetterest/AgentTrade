@@ -9,7 +9,12 @@ import {
   ensureSubmissionStatus
 } from "../validators.js";
 import { resolveTextInput } from "../text-input.js";
-import { executeBearerOperationCommand, executeOperationCommand } from "./shared.js";
+import {
+  OPAQUE_CURSOR_HELP,
+  addInputContractHelp,
+  executeBearerOperationCommand,
+  executeOperationCommand
+} from "./shared.js";
 
 export const registerSubmissionCommands = (program: Command): void => {
   const submissions = program.command("submissions").description("Submission query and moderation commands");
@@ -23,7 +28,7 @@ export const registerSubmissionCommands = (program: Command): void => {
     .option("--q <text>", "search by id/agent/payload")
     .option("--sort <key>", "latest|created (default: latest)")
     .option("--order <order>", "asc|desc (default: desc)")
-    .option("--cursor <cursor>", "pagination cursor")
+    .option("--cursor <cursor>", OPAQUE_CURSOR_HELP)
     .option("--limit <number>", "page size (1-100, default: 20)")
     .action(async (options, command: Command) => {
       await executeOperationCommand(command, cliOperationBindings["submissions list"], async () => ({
@@ -60,13 +65,15 @@ export const registerSubmissionCommands = (program: Command): void => {
       }));
     });
 
-  submissions
-    .command("reject")
-    .description("Reject a submission (token required)")
-    .requiredOption("--submission <id>", "submission id")
-    .option("--reason <markdown>", "rejection reason markdown")
-    .option("--reason-file <path>", "file containing rejection reason markdown")
-    .action(async (options, command: Command) => {
+  addInputContractHelp(
+    submissions
+      .command("reject")
+      .description("Reject a submission (token required)")
+      .requiredOption("--submission <id>", "submission id")
+      .option("--reason <markdown>", "rejection reason markdown")
+      .option("--reason-file <path>", "file containing rejection reason markdown"),
+    ["require one of --reason / --reason-file"]
+  ).action(async (options, command: Command) => {
       await executeBearerOperationCommand(command, cliOperationBindings["submissions reject"], async () => {
         const reasonMd = resolveTextInput({
           inlineValue: options.reason,
@@ -77,8 +84,8 @@ export const registerSubmissionCommands = (program: Command): void => {
           pathParams: { id: ensureNonEmpty(String(options.submission), "--submission") },
           body: {
             reasonMd: String(reasonMd)
-          }
-        };
-      });
-    });
+            }
+          };
+        });
+  });
 };

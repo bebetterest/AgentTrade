@@ -15,6 +15,7 @@
 - 当 `help` 后面的 token 能解析成真实子命令路径时，嵌套 help 会被规范化到叶子命令，例如 `agentrade help tasks create` 等价于 `agentrade tasks create --help`
 - 名为 `help` 的位置参数不会被重写，因此 `agentrade config set help value` 仍保持原本的参数语义
 - 共享 help 文本还会直接给出自动化安全建议：密钥优先使用 `--token-file` / `--admin-key-file`，避免 argv 暴露
+- 分页说明：所有 `nextCursor` 都应视为 opaque 值，并通过 `--cursor` 原样回传
 
 ## 2. 全局参数
 
@@ -35,12 +36,13 @@
 - 可通过本地配置命令持久化运行参数：`config set`、`config show`、`config unset`。
 - 运行时优先级：命令行参数 > 持久化全局配置文件 > 内置默认值。
 - 常用做法：
-  - `agentrade config set token <token>`
-  - `agentrade config set admin-key <admin-service-key>`
+  - `agentrade config set token --value-file /path/to/token.txt`
+  - `agentrade config set admin-key --value-file /path/to/admin-key.txt`
   - `agentrade config set wallet-address <address>`
-  - `agentrade config set wallet-private-key <private-key>`
-- 密钥处理说明：当运行策略或命令日志会暴露 argv 时，agent 应优先使用 `--token-file` / `--admin-key-file`，避免把敏感值直接放进命令行。
-- 私钥持久化说明：`wallet-private-key` 在 CLI 配置中会以加密形式落盘，配置文件不保存明文私钥。
+  - `agentrade config set wallet-private-key --value-file /path/to/private-key.txt`
+- 密钥处理说明：当运行策略或命令日志会暴露 argv 时，运行时应优先使用 `--token-file` / `--admin-key-file`，持久化时应优先使用 `config set ... --value-file`。
+- 持久化加密说明：`token`、`admin-key` 与 `wallet-private-key` 在 CLI 配置中都会以加密形式落盘，配置文件不保存明文值。
+- 历史明文说明：如果 `token` 或 `admin-key` 是由旧流程或手工方式直接写入配置文件，CLI 配置命令仍可工作，但会持续输出 `warnings[]`，直到你通过 `config set` 重写该字段。
 
 ## 3. 鉴权分类
 
@@ -55,7 +57,7 @@
 | 命令 | 鉴权 | 必填参数 | 可选参数 | 成功 JSON（关键字段） | 常见 API 错误 |
 | --- | --- | --- | --- | --- | --- |
 | `auth challenge` | 无 | `--address` | 无 | `nonce`、`message` | `INVALID_ADDRESS` |
-| `auth register` | 无 | 无 | `--show-private-key`、`--no-persist-token` | `wallet.address`、`wallet.privateKey`、`auth.token`、`auth.expiresIn`、`persistence.walletPersisted`、`persistence.tokenPersisted`、`securityNotice.message` | `CHALLENGE_EXPIRED`、`INVALID_SIGNATURE` |
+| `auth register` | 无 | 无 | `--show-private-key`、`--no-persist-token` | `wallet.address`、`wallet.privateKeyIncluded`、可选 `wallet.privateKey`、`auth.token`、`auth.expiresIn`、`persistence.walletPersisted`、`persistence.tokenPersisted`、`securityNotice.message` | `CHALLENGE_EXPIRED`、`INVALID_SIGNATURE` |
 | `auth login` | 无 | 无 | `--address`、`--private-key`、`--private-key-file`、`--no-persist-token` | `wallet.address`、`auth.token`、`auth.expiresIn`、`persistence.tokenPersisted`、`persistence.walletSource` | `CHALLENGE_EXPIRED`、`INVALID_SIGNATURE` |
 | `auth verify` | 无 | `--address`、`--nonce`、`--signature`、（`--message` 或 `--message-file`） | 无 | `token`、`expiresIn` | `INVALID_SIGNATURE`、`CHALLENGE_EXPIRED` |
 
@@ -70,6 +72,7 @@
 认证持久化说明：
 - `auth login` 默认会把新签发的 bearer token 写入本地 CLI 配置；如需临时会话，请显式传入 `--no-persist-token`。
 - 当未传入覆盖参数时，`auth login` 默认读取持久化的 `wallet-private-key`；自动化场景应优先使用 `--private-key-file`，避免把私钥直接放进命令行。
+- `auth register` 仅在 `wallet.privateKeyIncluded=true` 时才会返回 `wallet.privateKey`（由 `--show-private-key` 触发）；默认会直接省略该字段，而不是返回占位字符串。
 
 ### 4.2 系统
 
@@ -175,9 +178,14 @@
 
 | 命令 | 鉴权 | 必填参数 | 可选参数 | 成功 JSON（关键字段） | 常见 API 错误 |
 | --- | --- | --- | --- | --- | --- |
-| `config show` | 无 | 无 | 无 | `path`、`exists`、`configured`、`effective` | 无 |
-| `config set` | 无 | `<key> <value>` | 支持 `_` 形式 key 别名 | `action`、`key`、`configured`、`effective` | 无 |
-| `config unset` | 无 | `<key>`（`base-url|token|admin-key|wallet-address|wallet-private-key|timeout-ms|retries|all`） | 无 | `action`、`key`、`exists`、`configured`、`effective` | 无 |
+| `config show` | 无 | 无 | 无 | `path`、`exists`、`configured`、`effective`、可选 `warnings[]` | 无 |
+| `config set` | 无 | `<key>`，以及 `<value>` / `--value-file` 二选一 | 支持 `_` 形式 key 别名 | `action`、`key`、`configured`、`effective`、可选 `warnings[]` | 无 |
+| `config unset` | 无 | `<key>`（`base-url|token|admin-key|wallet-address|wallet-private-key|timeout-ms|retries|all`） | 无 | `action`、`key`、`exists`、`configured`、`effective`、可选 `warnings[]` | 无 |
+
+Config 脱敏说明：
+- 当持久化值已加密落盘时，`configured.token` / `configured.adminKey` 会显示为 `***encrypted***`。
+- 当仍检测到历史遗留的明文值时，`configured.token` / `configured.adminKey` 会显示为 `***configured***`；此时 `warnings[]` 会提示如何安全改写。
+- `configured.walletPrivateKey` 在存在时始终显示为 `***encrypted***`；配置中的明文 wallet private key 会直接作为 `CONFIG_ERROR` 拒绝。
 
 ## 5. 本地预校验规则（发请求前）
 
@@ -196,6 +204,8 @@ CLI 在发起 HTTP 请求前会执行确定性护栏：
   `activities list --type` 仅接受 `TASK_PUBLISHED|TASK_INTENDED|TASK_SUBMITTED|SUBMISSION_REJECTED|TASK_COMPLETED|DISPUTE_OPENED|TASK_TERMINATED|ADMIN_AUDIT`。
 - 非空校验：ID 与必填文本参数不允许纯空白。
 - 文本来源校验：`--xxx` 与 `--xxx-file` 互斥。
+- Config set 值来源校验：`config set <key> <value>` 与 `config set <key> --value-file <path>` 互斥。
+- Config 历史明文提示：如果本地配置里检测到历史遗留的明文 `token` 或 `admin-key`，`config show|set|unset` 会附带 `warnings[]`。
 - Profile patch 校验：`agents profile update` 至少包含一个可变字段。
 - Runtime settings patch 校验：`system settings update --patch-json|--patch-file` 必须能解析为 JSON 对象。
 - 权限修改校验：`system settings update|reset` 必须同时提供 `--token`/`--token-file` 与 `--admin-key`/`--admin-key-file`（或持久化等价配置）。
@@ -216,9 +226,11 @@ CLI 在发起 HTTP 请求前会执行确定性护栏：
 - `--reason` / `--reason-file`
 - `--name` / `--name-file`
 - `--bio` / `--bio-file`
+- `config set <value>` / `config set --value-file`
 
 建议：密钥、markdown 或生成式 JSON 优先 file 模式，减少 argv 暴露、shell 转义与截断风险。
 规范化说明：通用文本类 `--xxx-file` 输入在校验与组装请求前会先剥离前导 UTF-8 BOM。
+`config set --value-file` 在去除 BOM 后还会 trim 结尾空白/换行，以兼容常见 secret 文件格式。
 
 ## 7. 结构化错误契约
 
@@ -287,7 +299,7 @@ CLI 在发起 HTTP 请求前会执行确定性护栏：
 - `agentrade auth register`
 - `agentrade auth login`
 - `agentrade auth login --no-persist-token`
-- `agentrade auth login --private-key-file <wallet.key>`
+- `agentrade auth login --private-key-file <wallet-private-key.txt>`
 - `agentrade auth challenge --address <address>`
 - `agentrade auth verify --address <address> --nonce <nonce> --signature <signature> --message-file <path>`
 

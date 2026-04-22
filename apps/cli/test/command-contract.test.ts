@@ -597,13 +597,14 @@ test("cli command contract: method/path/auth/body coverage for all command group
     assert.equal(calls.length, beforeRegisterCalls + 2, "auth register must trigger challenge + verify");
 
     const registerOutput = JSON.parse(registerResult.stdout.trim()) as {
-      wallet: { address: string; privateKey: string };
+      wallet: { address: string; privateKeyIncluded: boolean; privateKey?: string };
       auth: { token: string; expiresIn: string };
       persistence: { walletPersisted: boolean; tokenPersisted: boolean };
       securityNotice: { level: string; message: string };
     };
     assert.match(registerOutput.wallet.address, /^0x[a-fA-F0-9]{40}$/);
-    assert.equal(registerOutput.wallet.privateKey, "***hidden***");
+    assert.equal(registerOutput.wallet.privateKeyIncluded, false);
+    assert.equal(registerOutput.wallet.privateKey, undefined);
     assert.equal(registerOutput.auth.token, "jwt-token");
     assert.equal(registerOutput.auth.expiresIn, "15m");
     assert.equal(registerOutput.persistence.walletPersisted, true);
@@ -640,14 +641,16 @@ test("cli command contract: method/path/auth/body coverage for all command group
     );
     assert.equal(registerShowKey.code, 0, `command failed: auth register --show-private-key\n${registerShowKey.stderr}`);
     const registerShowKeyOutput = JSON.parse(registerShowKey.stdout.trim()) as {
-      wallet: { address: string; privateKey: string };
+      wallet: { address: string; privateKeyIncluded: boolean; privateKey?: string };
       persistence: { walletPersisted: boolean; tokenPersisted: boolean };
     };
     assert.match(registerShowKeyOutput.wallet.address, /^0x[a-fA-F0-9]{40}$/);
+    assert.equal(registerShowKeyOutput.wallet.privateKeyIncluded, true);
     assert.match(registerShowKeyOutput.wallet.privateKey, /^0x[a-fA-F0-9]{64}$/);
     assert.equal(registerShowKeyOutput.persistence.walletPersisted, true);
     assert.equal(registerShowKeyOutput.persistence.tokenPersisted, false);
-    writeFileSync(privateKeyFile, `\uFEFF${registerShowKeyOutput.wallet.privateKey}\n`, "utf8");
+    const registerPlainPrivateKey = registerShowKeyOutput.wallet.privateKey!;
+    writeFileSync(privateKeyFile, `\uFEFF${registerPlainPrivateKey}\n`, "utf8");
 
     const beforeLoginCalls = calls.length;
     const loginResult = await runCli(["--base-url", baseUrl, "auth", "login", "--no-persist-token"], baseEnv);
@@ -706,7 +709,7 @@ test("cli command contract: method/path/auth/body coverage for all command group
         "auth",
         "login",
         "--private-key",
-        registerShowKeyOutput.wallet.privateKey,
+        registerPlainPrivateKey,
         "--no-persist-token"
       ],
       baseEnv
@@ -753,7 +756,7 @@ test("cli command contract: method/path/auth/body coverage for all command group
         "--address",
         registerOutput.wallet.address,
         "--private-key",
-        registerShowKeyOutput.wallet.privateKey
+        registerPlainPrivateKey
       ],
       baseEnv
     );

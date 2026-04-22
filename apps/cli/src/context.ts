@@ -5,7 +5,9 @@ import {
   CLI_DEFAULT_BASE_URL,
   CLI_DEFAULT_RETRIES,
   CLI_DEFAULT_TIMEOUT_MS,
+  isStoredCliSecretEncrypted,
   loadCliPersistedConfig,
+  resolveStoredCliSecret,
   type CliPersistedConfig
 } from "./cli-config.js";
 import { resolveFileBackedInput } from "./text-input.js";
@@ -65,10 +67,9 @@ const parseNonNegativeInteger = (value: string | number, flag: string): number =
   return ensureNonNegativeInteger(String(value), flag);
 };
 
-const resolveOptionalCliSecret = (
+const resolveOptionalCliSecretInput = (
   inlineValue: unknown,
   filePath: unknown,
-  persistedValue: string | undefined,
   inlineFlag: string,
   fileFlag: string
 ): string | undefined => {
@@ -81,7 +82,21 @@ const resolveOptionalCliSecret = (
     normalize: (value) => value.replace(/^\uFEFF/, "").trim()
   });
 
-  return normalizeOptional(fromCli) ?? normalizeOptional(persistedValue);
+  return normalizeOptional(fromCli);
+};
+
+const resolvePersistedCliSecretPreview = (persistedValue: string | undefined): string | undefined => {
+  if (!persistedValue || isStoredCliSecretEncrypted(persistedValue)) {
+    return undefined;
+  }
+  return normalizeOptional(persistedValue);
+};
+
+const resolvePersistedCliSecret = (
+  persistedValue: string | undefined,
+  persistedConfigPath: string
+): string | undefined => {
+  return normalizeOptional(resolveStoredCliSecret(persistedValue, persistedConfigPath));
 };
 
 export const resolveGlobalOptions = (
@@ -93,20 +108,12 @@ export const resolveGlobalOptions = (
   const rawBaseUrl = raw.baseUrl === undefined ? persistedConfig.baseUrl : String(raw.baseUrl);
   const baseUrl = ensureHttpUrl(rawBaseUrl ?? CLI_DEFAULT_BASE_URL, "--base-url");
 
-  const token = resolveOptionalCliSecret(
-    raw.token,
-    raw.tokenFile,
-    persistedConfig.token,
-    "token",
-    "token-file"
-  );
-  const adminKey = resolveOptionalCliSecret(
-    raw.adminKey,
-    raw.adminKeyFile,
-    persistedConfig.adminKey,
-    "admin-key",
-    "admin-key-file"
-  );
+  const token =
+    resolveOptionalCliSecretInput(raw.token, raw.tokenFile, "token", "token-file") ??
+    resolvePersistedCliSecretPreview(persistedConfig.token);
+  const adminKey =
+    resolveOptionalCliSecretInput(raw.adminKey, raw.adminKeyFile, "admin-key", "admin-key-file") ??
+    resolvePersistedCliSecretPreview(persistedConfig.adminKey);
 
   const rawTimeoutMs =
     raw.timeoutMs === undefined ? persistedConfig.timeoutMs ?? CLI_DEFAULT_TIMEOUT_MS : raw.timeoutMs;
@@ -127,30 +134,46 @@ export const resolveGlobalOptions = (
 };
 
 export const createCommandContext = (command: Command): CommandContext => {
-  const options = resolveGlobalOptions(command);
+  const persistedConfigSnapshot = loadCliPersistedConfig();
+  const options = resolveGlobalOptions(command, persistedConfigSnapshot.values);
   const client = new AgentradeApiClient({
     baseUrl: options.baseUrl,
-    token: options.token,
-    adminKey: options.adminKey,
     timeoutMs: options.timeoutMs,
     retries: options.retries
   });
+
+  const resolveRequiredToken = (): string => {
+    const token =
+      options.token ??
+      resolvePersistedCliSecret(persistedConfigSnapshot.values.token, persistedConfigSnapshot.path);
+    if (!token) {
+      throw new CliConfigError("missing token: use --token or --token-file");
+    }
+    options.token = token;
+    client.setToken(token);
+    return token;
+  };
+
+  const resolveRequiredAdminKey = (): string => {
+    const adminKey =
+      options.adminKey ??
+      resolvePersistedCliSecret(
+        persistedConfigSnapshot.values.adminKey,
+        persistedConfigSnapshot.path
+      );
+    if (!adminKey) {
+      throw new CliConfigError("missing admin key: use --admin-key or --admin-key-file");
+    }
+    options.adminKey = adminKey;
+    client.setAdminKey(adminKey);
+    return adminKey;
+  };
 
   return {
     commandPath: resolveCommandPath(command),
     options,
     client,
-    requireToken: () => {
-      if (!options.token) {
-        throw new CliConfigError("missing token: use --token or --token-file");
-      }
-      return options.token;
-    },
-    requireAdminKey: () => {
-      if (!options.adminKey) {
-        throw new CliConfigError("missing admin key: use --admin-key or --admin-key-file");
-      }
-      return options.adminKey;
-    }
+    requireToken: resolveRequiredToken,
+    requireAdminKey: resolveRequiredAdminKey
   };
 };

@@ -12,7 +12,12 @@ import {
   ensureTaskStatus
 } from "../validators.js";
 import { resolveTextInput } from "../text-input.js";
-import { executeBearerOperationCommand, executeOperationCommand } from "./shared.js";
+import {
+  OPAQUE_CURSOR_HELP,
+  addInputContractHelp,
+  executeBearerOperationCommand,
+  executeOperationCommand
+} from "./shared.js";
 
 export const registerTaskCommands = (program: Command): void => {
   const tasks = program.command("tasks").description("Task lifecycle commands");
@@ -25,7 +30,7 @@ export const registerTaskCommands = (program: Command): void => {
     .option("--publisher <address>", "publisher address")
     .option("--sort <key>", "latest|created|deadline|reward (default: latest)")
     .option("--order <order>", "asc|desc (default: desc)")
-    .option("--cursor <offset>", "pagination cursor")
+    .option("--cursor <cursor>", OPAQUE_CURSOR_HELP)
     .option("--limit <number>", "page size (1-100, default: 20)")
     .action(async (options, command: Command) => {
       await executeOperationCommand(command, cliOperationBindings["tasks list"], async () => ({
@@ -51,20 +56,25 @@ export const registerTaskCommands = (program: Command): void => {
       }));
     });
 
-  tasks
-    .command("create")
-    .description("Create a task (token required)")
-    .requiredOption("--title <title>", "task title")
-    .option("--desc <markdown>", "task description markdown")
-    .option("--desc-file <path>", "file containing task description markdown")
-    .option("--criteria <markdown>", "task acceptance criteria markdown")
-    .option("--criteria-file <path>", "file containing task acceptance criteria markdown")
-    .requiredOption("--deadline <iso>", "deadline in ISO datetime format")
-    .requiredOption("--tz <timezone>", "display timezone")
-    .requiredOption("--slots <number>", "slot count")
-    .requiredOption("--reward <number>", "reward per slot")
-    .option("--allow-repeat", "allow repeat completions by same agent")
-    .action(async (options, command: Command) => {
+  addInputContractHelp(
+    tasks
+      .command("create")
+      .description("Create a task (token required)")
+      .requiredOption("--title <title>", "task title")
+      .option("--desc <markdown>", "task description markdown")
+      .option("--desc-file <path>", "file containing task description markdown")
+      .option("--criteria <markdown>", "task acceptance criteria markdown")
+      .option("--criteria-file <path>", "file containing task acceptance criteria markdown")
+      .requiredOption("--deadline <iso>", "deadline in ISO datetime format")
+      .requiredOption("--tz <timezone>", "display timezone")
+      .requiredOption("--slots <number>", "slot count")
+      .requiredOption("--reward <number>", "reward per slot")
+      .option("--allow-repeat", "allow repeat completions by same agent"),
+    [
+      "require one of --desc / --desc-file",
+      "require one of --criteria / --criteria-file"
+    ]
+  ).action(async (options, command: Command) => {
       await executeBearerOperationCommand(command, cliOperationBindings["tasks create"], async () => {
         const descriptionMd = resolveTextInput({
           inlineValue: options.desc,
@@ -86,10 +96,10 @@ export const registerTaskCommands = (program: Command): void => {
             slotsTotal: ensurePositiveInteger(String(options.slots), "--slots"),
             rewardPerSlot: ensurePositiveInteger(String(options.reward), "--reward"),
             allowRepeatCompletionsBySameAgent: Boolean(options.allowRepeat)
-          }
-        };
-      });
-    });
+            }
+          };
+        });
+  });
 
   tasks
     .command("intend")
@@ -105,7 +115,7 @@ export const registerTaskCommands = (program: Command): void => {
     .command("intentions")
     .description("List task intentions")
     .requiredOption("--task <id>", "task id")
-    .option("--cursor <token>", "pagination cursor")
+    .option("--cursor <cursor>", OPAQUE_CURSOR_HELP)
     .option("--limit <number>", "page size (1-100, default: 20)")
     .action(async (options, command: Command) => {
       await executeOperationCommand(command, cliOperationBindings["tasks intentions"], async () => ({
@@ -117,13 +127,15 @@ export const registerTaskCommands = (program: Command): void => {
       }));
     });
 
-  tasks
-    .command("submit")
-    .description("Submit task output (token required)")
-    .requiredOption("--task <id>", "task id")
-    .option("--payload <markdown>", "submission markdown payload")
-    .option("--payload-file <path>", "file containing submission markdown payload")
-    .action(async (options, command: Command) => {
+  addInputContractHelp(
+    tasks
+      .command("submit")
+      .description("Submit task output (token required)")
+      .requiredOption("--task <id>", "task id")
+      .option("--payload <markdown>", "submission markdown payload")
+      .option("--payload-file <path>", "file containing submission markdown payload"),
+    ["require one of --payload / --payload-file"]
+  ).action(async (options, command: Command) => {
       await executeBearerOperationCommand(command, cliOperationBindings["tasks submit"], async () => {
         const payloadMd = resolveTextInput({
           inlineValue: options.payload,
@@ -134,10 +146,10 @@ export const registerTaskCommands = (program: Command): void => {
           pathParams: { id: ensureNonEmpty(String(options.task), "--task") },
           body: {
             payloadMd: String(payloadMd)
-          }
-        };
-      });
-    });
+            }
+          };
+        });
+  });
 
   tasks
     .command("terminate")

@@ -68,8 +68,14 @@ test("cli subcommand help is self-contained for agent execution", async () => {
   assert.match(taskCreateHelp.stdout, /Create a task \(token required\)/);
   assert.match(taskCreateHelp.stdout, /Global Options:/);
   assert.match(taskCreateHelp.stdout, /--token-file <path>/);
+  assert.match(taskCreateHelp.stdout, /require one of --desc \/ --desc-file/i);
+  assert.match(taskCreateHelp.stdout, /require one of --criteria \/ --criteria-file/i);
   assert.match(taskCreateHelp.stdout, /Output contract:/);
   assert.match(taskCreateHelp.stdout, /Exit codes:/);
+
+  const authVerifyHelp = await runCli(["auth", "verify", "--help"]);
+  assert.equal(authVerifyHelp.code, 0);
+  assert.match(authVerifyHelp.stdout, /require one of --message \/ --message-file/i);
 
   const authLoginHelp = await runCli(["auth", "login", "--help"]);
   assert.equal(authLoginHelp.code, 0);
@@ -122,10 +128,12 @@ test("cli subcommand help is self-contained for agent execution", async () => {
 
   const tasksListHelp = await runCli(["tasks", "list", "--help"]);
   assert.equal(tasksListHelp.code, 0);
+  assert.match(tasksListHelp.stdout, /opaque pagination cursor returned by previous\s+nextCursor/i);
   assert.match(tasksListHelp.stdout, /page size \(1-100, default: 20\)/);
 
   const profileUpdateHelp = await runCli(["agents", "profile", "update", "--help"]);
   assert.equal(profileUpdateHelp.code, 0);
+  assert.match(profileUpdateHelp.stdout, /require at least one of --name\/--name-file or --bio\/--bio-file/i);
   assert.match(profileUpdateHelp.stdout, /max 120 chars/);
   assert.match(profileUpdateHelp.stdout, /max 1000 chars/);
 
@@ -143,11 +151,19 @@ test("cli subcommand help is self-contained for agent execution", async () => {
   assert.equal(settingsUpdateHelp.code, 0);
   assert.match(settingsUpdateHelp.stdout, /token \+ admin key required/i);
   assert.match(settingsUpdateHelp.stdout, /--patch-file <path>/);
+  assert.match(settingsUpdateHelp.stdout, /require one of --patch-json \/ --patch-file/i);
   assert.match(settingsUpdateHelp.stdout, /max 1000 chars/);
 
   const settingsHistoryHelp = await runCli(["system", "settings", "history", "--help"]);
   assert.equal(settingsHistoryHelp.code, 0);
+  assert.match(settingsHistoryHelp.stdout, /opaque pagination cursor returned by previous\s+nextCursor/i);
   assert.match(settingsHistoryHelp.stdout, /page size \(1-100, default: 20\)/);
+
+  const configSetHelp = await runCli(["config", "set", "--help"]);
+  assert.equal(configSetHelp.code, 0);
+  assert.match(configSetHelp.stdout, /--value-file <path>/);
+  assert.match(configSetHelp.stdout, /require one of <value> \/ --value-file/i);
+  assert.match(configSetHelp.stdout, /encrypted at rest/i);
 });
 
 test("cli nested help rewrite does not hijack positional arguments named help", async () => {

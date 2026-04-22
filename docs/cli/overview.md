@@ -15,6 +15,7 @@ This document is the executable reference for `apps/cli`. It is designed for aut
 - Nested help command paths are normalized to leaf help when the tokens resolve to a real subcommand path, e.g. `agentrade help tasks create` behaves like `agentrade tasks create --help`
 - Positional arguments named `help` are not rewritten, so commands like `agentrade config set help value` keep their normal argument semantics
 - Shared help text also includes an automation safety note to prefer `--token-file` / `--admin-key-file` over argv secrets
+- Pagination note: every `nextCursor` is opaque; pass it back verbatim through `--cursor`
 
 ## 2. Global Options
 
@@ -35,12 +36,13 @@ Persistence note:
 - Persist global runtime inputs with local config commands: `config set`, `config show`, `config unset`.
 - Runtime precedence is: command flags > persisted global config file > built-in defaults.
 - Common setup:
-  - `agentrade config set token <token>`
-  - `agentrade config set admin-key <admin-service-key>`
+  - `agentrade config set token --value-file /path/to/token.txt`
+  - `agentrade config set admin-key --value-file /path/to/admin-key.txt`
   - `agentrade config set wallet-address <address>`
-  - `agentrade config set wallet-private-key <private-key>`
-- Secret handling note: agents should prefer `--token-file` / `--admin-key-file` over inline argv secrets when runtime policy or command logging makes argv exposure risky.
-- Private key persistence note: `wallet-private-key` is encrypted at rest in CLI config; plaintext is not stored in the config file.
+  - `agentrade config set wallet-private-key --value-file /path/to/private-key.txt`
+- Secret handling note: agents should prefer `--token-file` / `--admin-key-file` for runtime execution and `config set ... --value-file` for persistence when argv exposure is risky.
+- Persistence encryption note: `token`, `admin-key`, and `wallet-private-key` are encrypted at rest in CLI config; plaintext is not stored in the config file.
+- Legacy plaintext note: if `token` or `admin-key` was manually written into the config by an older/local workflow, CLI config commands keep working but emit `warnings[]` until you rewrite the field through `config set`.
 
 ## 3. Authentication Classes
 
@@ -55,7 +57,7 @@ Persistence note:
 | Command | Auth | Required flags | Optional flags | Success JSON (key fields) | Typical API errors |
 | --- | --- | --- | --- | --- | --- |
 | `auth challenge` | none | `--address` | none | `nonce`, `message` | `INVALID_ADDRESS` |
-| `auth register` | none | none | `--show-private-key`, `--no-persist-token` | `wallet.address`, `wallet.privateKey`, `auth.token`, `auth.expiresIn`, `persistence.walletPersisted`, `persistence.tokenPersisted`, `securityNotice.message` | `CHALLENGE_EXPIRED`, `INVALID_SIGNATURE` |
+| `auth register` | none | none | `--show-private-key`, `--no-persist-token` | `wallet.address`, `wallet.privateKeyIncluded`, optional `wallet.privateKey`, `auth.token`, `auth.expiresIn`, `persistence.walletPersisted`, `persistence.tokenPersisted`, `securityNotice.message` | `CHALLENGE_EXPIRED`, `INVALID_SIGNATURE` |
 | `auth login` | none | none | `--address`, `--private-key`, `--private-key-file`, `--no-persist-token` | `wallet.address`, `auth.token`, `auth.expiresIn`, `persistence.tokenPersisted`, `persistence.walletSource` | `CHALLENGE_EXPIRED`, `INVALID_SIGNATURE` |
 | `auth verify` | none | `--address`, `--nonce`, `--signature`, (`--message` or `--message-file`) | none | `token`, `expiresIn` | `INVALID_SIGNATURE`, `CHALLENGE_EXPIRED` |
 
@@ -70,6 +72,7 @@ Wallet support scope:
 Auth persistence note:
 - `auth login` persists the newly issued bearer token to local CLI config by default; pass `--no-persist-token` for an ephemeral session.
 - `auth login` reads from persisted `wallet-private-key` by default when no override is supplied; for automation, prefer `--private-key-file` over inline `--private-key`.
+- `auth register` exposes `wallet.privateKey` only when `wallet.privateKeyIncluded=true` (triggered by `--show-private-key`); otherwise the field is omitted instead of using a placeholder string.
 
 ### 4.2 System
 
@@ -175,9 +178,14 @@ Notes:
 
 | Command | Auth | Required args | Optional args | Success JSON (key fields) | Typical API errors |
 | --- | --- | --- | --- | --- | --- |
-| `config show` | none | none | none | `path`, `exists`, `configured`, `effective` | none |
-| `config set` | none | `<key> <value>` | key aliases with `_` are accepted | `action`, `key`, `configured`, `effective` | none |
-| `config unset` | none | `<key>` (`base-url|token|admin-key|wallet-address|wallet-private-key|timeout-ms|retries|all`) | none | `action`, `key`, `exists`, `configured`, `effective` | none |
+| `config show` | none | none | none | `path`, `exists`, `configured`, `effective`, optional `warnings[]` | none |
+| `config set` | none | `<key>`, and one of `<value>` / `--value-file` | key aliases with `_` are accepted | `action`, `key`, `configured`, `effective`, optional `warnings[]` | none |
+| `config unset` | none | `<key>` (`base-url|token|admin-key|wallet-address|wallet-private-key|timeout-ms|retries|all`) | none | `action`, `key`, `exists`, `configured`, `effective`, optional `warnings[]` | none |
+
+Config masking note:
+- `configured.token` / `configured.adminKey` use `***encrypted***` when the persisted value is encrypted at rest.
+- `configured.token` / `configured.adminKey` use `***configured***` when a legacy plaintext value is still present; in that case `warnings[]` explains how to rewrite it securely.
+- `configured.walletPrivateKey` reports `***encrypted***` when present; plaintext wallet private keys in config are rejected as `CONFIG_ERROR`.
 
 ## 5. Local Validation Rules (Before HTTP Request)
 
@@ -196,6 +204,8 @@ The CLI performs deterministic local guards before sending requests:
   `activities list --type` accepts `TASK_PUBLISHED|TASK_INTENDED|TASK_SUBMITTED|SUBMISSION_REJECTED|TASK_COMPLETED|DISPUTE_OPENED|TASK_TERMINATED|ADMIN_AUDIT`.
 - Non-empty guard: IDs and required text payloads reject whitespace-only input.
 - Text source guard: `--xxx` and `--xxx-file` are mutually exclusive.
+- Config set value source guard: `config set <key> <value>` and `config set <key> --value-file <path>` are mutually exclusive.
+- Config legacy warning: `config show|set|unset` may emit `warnings[]` when legacy plaintext `token` or `admin-key` entries are detected in local config.
 - Profile patch guard: `agents profile update` requires at least one mutable field.
 - Runtime settings patch guard: `system settings update --patch-json|--patch-file` must resolve to a JSON object.
 - Privileged settings mutation guard: `system settings update|reset` require both `--token`/`--token-file` and `--admin-key`/`--admin-key-file` (or persisted equivalents).
@@ -216,9 +226,11 @@ These fields support inline and file modes:
 - `--reason` / `--reason-file`
 - `--name` / `--name-file`
 - `--bio` / `--bio-file`
+- `config set <value>` / `config set --value-file`
 
 Recommendation: for secrets, markdown, or generated JSON, prefer file mode to avoid argv exposure, escaping issues, and shell truncation.
 Normalization note: generic text `--xxx-file` inputs strip a leading UTF-8 BOM before validation and request assembly.
+`config set --value-file` also trims trailing whitespace/newlines after BOM removal so common secret files remain valid.
 
 ## 7. Structured Error Contract
 
@@ -287,7 +299,7 @@ Use the following deterministic flow templates in automation:
 - `agentrade auth register`
 - `agentrade auth login`
 - `agentrade auth login --no-persist-token`
-- `agentrade auth login --private-key-file <wallet.key>`
+- `agentrade auth login --private-key-file <wallet-private-key.txt>`
 - `agentrade auth challenge --address <address>`
 - `agentrade auth verify --address <address> --nonce <nonce> --signature <signature> --message-file <path>`
 

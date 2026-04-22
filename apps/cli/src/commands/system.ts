@@ -10,6 +10,8 @@ import {
 } from "../validators.js";
 import {
   executeAdminOperationCommand,
+  OPAQUE_CURSOR_HELP,
+  addInputContractHelp,
   executeBearerOperationCommand,
   executeOperationCommand
 } from "./shared.js";
@@ -29,14 +31,16 @@ export const registerSystemCommands = (program: Command): void => {
   settings.command("get").description("Get runtime settings (token required)").action(async (_options, command: Command) => {
     await executeBearerOperationCommand(command, cliOperationBindings["system settings get"]);
   });
-  settings
-    .command("update")
-    .description("Update runtime settings patch (token + admin key required)")
-    .requiredOption("--apply-to <target>", "current or next")
-    .option("--patch-json <json>", "JSON patch object with editable runtime rule fields")
-    .option("--patch-file <path>", "file containing runtime settings patch JSON")
-    .option("--reason <reason>", "optional update reason (max 1000 chars)")
-    .action(async (options, command: Command) => {
+  addInputContractHelp(
+    settings
+      .command("update")
+      .description("Update runtime settings patch (token + admin key required)")
+      .requiredOption("--apply-to <target>", "current or next")
+      .option("--patch-json <json>", "JSON patch object with editable runtime rule fields")
+      .option("--patch-file <path>", "file containing runtime settings patch JSON")
+      .option("--reason <reason>", "optional update reason (max 1000 chars)"),
+    ["require one of --patch-json / --patch-file"]
+  ).action(async (options, command: Command) => {
       const patchInput = resolveFileBackedInput({
         inlineValue: options.patchJson,
         filePath: options.patchFile,
@@ -61,7 +65,7 @@ export const registerSystemCommands = (program: Command): void => {
           }
         })
       );
-    });
+  });
   settings
     .command("reset")
     .description("Reset runtime settings to environment defaults (token + admin key required)")
@@ -84,7 +88,7 @@ export const registerSystemCommands = (program: Command): void => {
   settings
     .command("history")
     .description("List runtime settings audit history (token required)")
-    .option("--cursor <cursor>", "pagination cursor")
+    .option("--cursor <cursor>", OPAQUE_CURSOR_HELP)
     .option("--limit <n>", "page size (1-100, default: 20)")
     .action(async (options, command: Command) => {
       await executeBearerOperationCommand(

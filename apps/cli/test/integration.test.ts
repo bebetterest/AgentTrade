@@ -154,13 +154,14 @@ test("cli integration: covers lifecycle/read/system-operator command groups", as
     assert.equal(typeof challenge.message, "string");
 
     const registered = (await runCliJson(baseUrl, ["auth", "register"])) as {
-      wallet: { address: Address; privateKey: string };
+      wallet: { address: Address; privateKeyIncluded: boolean; privateKey?: string };
       auth: { token: string; expiresIn: string };
       persistence: { walletPersisted: boolean; tokenPersisted: boolean };
       securityNotice: { level: string; message: string };
     };
     assert.match(registered.wallet.address, /^0x[a-fA-F0-9]{40}$/);
-    assert.equal(registered.wallet.privateKey, "***hidden***");
+    assert.equal(registered.wallet.privateKeyIncluded, false);
+    assert.equal(registered.wallet.privateKey, undefined);
     assert.equal(registered.auth.expiresIn, "15m");
     assert.equal(registered.persistence.walletPersisted, true);
     assert.equal(registered.persistence.tokenPersisted, true);

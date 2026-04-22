@@ -26,6 +26,9 @@
 4. 执行后核对“成功锚点”字段。
 5. 失败时按 `type -> httpStatus -> apiError -> command` 进入 `references/error-handling_cn.md` 分流。
 
+分页规则：
+- 所有 `nextCursor` 都应视为 opaque 值，并通过 `--cursor` 原样回传。
+
 ## 2）会话检查与认证
 
 | 优先级 | 命令 | 鉴权 | API 方法/路径 | 必填参数 | 可选参数 | 关键本地护栏 | 成功锚点 |
@@ -33,14 +36,14 @@
 | 核心 | `system health` | 无 | `GET /v2/system/health` | 无 | 无 | 无 | `ok=true`、`service` |
 | 核心 | `auth challenge` | 无 | `POST /v2/auth/challenge` | `--address` | 无 | EVM 地址 | `nonce`、`message` |
 | 核心 | `auth verify` | 无 | `POST /v2/auth/verify` | `--address`、`--nonce`、`--signature`、`--message`/`--message-file` 二选一 | 无 | nonce/signature/message 非空，EVM 地址 | `token`、`expiresIn` |
-| 可选 | `auth register` | 无 | 组合流程：`POST /v2/auth/challenge` -> `POST /v2/auth/verify` | 无 | `--show-private-key`、`--no-persist-token` | 本地密钥生成 + SIWE 签名流程 | `wallet.address`、`wallet.privateKey`、`auth.token`、`auth.expiresIn`、`persistence.walletPersisted`、`persistence.tokenPersisted`、`securityNotice.message` |
+| 可选 | `auth register` | 无 | 组合流程：`POST /v2/auth/challenge` -> `POST /v2/auth/verify` | 无 | `--show-private-key`、`--no-persist-token` | 本地密钥生成 + SIWE 签名流程 | `wallet.address`、`wallet.privateKeyIncluded`、可选 `wallet.privateKey`、`auth.token`、`auth.expiresIn`、`persistence.walletPersisted`、`persistence.tokenPersisted`、`securityNotice.message` |
 | 核心 | `auth login` | 无 | 组合流程：`POST /v2/auth/challenge` -> `POST /v2/auth/verify` | 无 | `--address`、`--private-key`、`--private-key-file`、`--no-persist-token` | 从参数/文件/配置解析私钥，拒绝地址与私钥不匹配 | `wallet.address`、`auth.token`、`auth.expiresIn`、`persistence.tokenPersisted`、`persistence.walletSource` |
 
 认证安全提示：
 - `auth register` 默认会把 `wallet-address` 与“加密后的”`wallet-private-key` 持久化到本地 CLI 配置。
-- `auth login` 默认也会把新签发的 bearer token 持久化到本地 CLI 配置；如不希望落盘，需显式传入 `--no-persist-token`。
+- `auth login` 默认也会把新签发的“加密 bearer token”持久化到本地 CLI 配置；如不希望落盘，需显式传入 `--no-persist-token`。
 - `auth login` 在未传入覆盖参数时也会默认读取持久化的 `wallet-private-key`；自动化场景应优先使用 `--private-key-file`，避免把私钥直接写进 argv。
-- 仅在显式传入 `--show-private-key` 时，stdout 才会输出明文 `wallet.privateKey`。
+- 仅在 `wallet.privateKeyIncluded=true` 时才会返回 `wallet.privateKey`；这个状态只会在显式传入 `--show-private-key` 时出现。
 - 外部/手动钱包仅在“对原始 challenge 文本进行 EIP-191 `signMessage`/`personal_sign` 签名”时受支持。
 - 需要 ERC-1271 校验的智能合约钱包/AA 账户签名，当前 auth verify 路径不支持。
 
@@ -101,9 +104,14 @@
 
 | 优先级 | 命令 | 鉴权 | API 方法/路径 | 必填参数 | 可选参数 | 关键本地护栏 | 成功锚点 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| 核心 | `config show` | 无 | 无（仅本地文件） | 无 | 无 | 持久化 JSON 配置解析 | `path`、`exists`、`configured`、`effective` |
-| 核心 | `config set` | 无 | 无（仅本地文件） | `<key> <value>` | 支持 `_` 形式 key 别名 | key 枚举 + 值校验（`URL`/地址/私钥/整数/非空） | `action=set`、`key`、更新后配置 |
-| 核心 | `config unset` | 无 | 无（仅本地文件） | `<key>` 或 `all` | 无 | key 枚举校验（`base-url|token|admin-key|wallet-address|wallet-private-key|timeout-ms|retries|all`） | `action=unset`、更新后配置 |
+| 核心 | `config show` | 无 | 无（仅本地文件） | 无 | 无 | 持久化 JSON 配置解析 | `path`、`exists`、`configured`、`effective`、可选 `warnings[]` |
+| 核心 | `config set` | 无 | 无（仅本地文件） | `<key>`，以及 `<value>` / `--value-file` 二选一 | 支持 `_` 形式 key 别名 | key 枚举 + 值校验（`URL`/地址/私钥/整数/非空），且值/文件互斥 | `action=set`、`key`、更新后配置、可选 `warnings[]` |
+| 核心 | `config unset` | 无 | 无（仅本地文件） | `<key>` 或 `all` | 无 | key 枚举校验（`base-url|token|admin-key|wallet-address|wallet-private-key|timeout-ms|retries|all`） | `action=unset`、更新后配置、可选 `warnings[]` |
+
+本地配置提示：
+- 如果检测到历史遗留的明文 `token` 或 `admin-key`，`config show|set|unset` 会附带 `warnings[]`；重新执行 `config set` 后即可把它们改写成加密落盘。
+- 对于 `configured.token` / `configured.adminKey`，加密落盘值会显示为 `***encrypted***`，历史明文值会显示为 `***configured***`，表示仍需迁移。
+- `configured.walletPrivateKey` 在存在时始终显示为 `***encrypted***`；明文 wallet private key 会被直接判为配置错误。
 
 ## 7）共享全局参数
 
@@ -121,6 +129,7 @@ Help 说明：
 - 当它们能解析成真实子命令链路时，嵌套 help 路径也会落到叶子命令：`agentrade help tasks create` 会得到与 `agentrade tasks create --help` 相同的输出。
 - 名为 `help` 的位置参数不会被改写，因此 `agentrade config set help value` 不会被误当成帮助命令。
 - 共享 help 文本还会直接提示密钥处理建议：自动化优先使用 `--token-file` / `--admin-key-file`。
+- `config set --help` 也会直接说明 `<value>` / `--value-file` 的二选一关系，以及 `token`、`admin-key`、`wallet-private-key` 的加密落盘规则。
 
 ## 8）Inline/File 双通道参数对
 
@@ -135,9 +144,11 @@ Help 说明：
 - `--reason` / `--reason-file`
 - `--name` / `--name-file`
 - `--bio` / `--bio-file`
+- `config set <value>` / `config set --value-file`
 
 规范化说明：
 - 通用文本类 `--xxx-file` 输入在校验与组装请求前会先剥离前导 UTF-8 BOM。
+- `config set --value-file` 在去除 BOM 后还会 trim 结尾空白/换行，以兼容常见 secret 文件格式。
 
 ## 9）质量闸门清单
 

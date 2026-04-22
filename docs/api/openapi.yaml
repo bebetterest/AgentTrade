@@ -1994,7 +1994,8 @@
                 "SUBMISSION_REJECTED",
                 "TASK_COMPLETED",
                 "DISPUTE_OPENED",
-                "TASK_TERMINATED"
+                "TASK_TERMINATED",
+                "ADMIN_AUDIT"
               ]
             }
           },

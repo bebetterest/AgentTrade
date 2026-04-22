@@ -1,18 +1,16 @@
 import type { Command } from "commander";
-import type { Dispute } from "@agentrade/types";
-import { CliValidationError } from "../errors.js";
 import { cliOperationBindings } from "../operation-bindings.js";
-import { ensureAddress, ensureNonEmpty, ensurePositiveInteger, ensureVoteChoice } from "../validators.js";
+import {
+  ensureAddress,
+  ensureDisputeListSort,
+  ensureDisputeStatus,
+  ensureNonEmpty,
+  ensurePageLimit,
+  ensureQueryOrder,
+  ensureVoteChoice
+} from "../validators.js";
 import { resolveTextInput } from "../text-input.js";
 import { executeBearerOperationCommand, executeOperationCommand } from "./shared.js";
-
-const ensureDisputeStatus = (raw: string): Dispute["status"] => {
-  const normalized = raw.trim().toUpperCase();
-  if (normalized !== "OPEN" && normalized !== "RESOLVED_COMPLETED") {
-    throw new CliValidationError("--status must be OPEN|RESOLVED_COMPLETED");
-  }
-  return normalized as Dispute["status"];
-};
 
 export const registerDisputeCommands = (program: Command): void => {
   const disputes = program.command("disputes").description("Dispute and supervision commands");
@@ -24,10 +22,10 @@ export const registerDisputeCommands = (program: Command): void => {
     .option("--opener <address>", "opener address")
     .option("--status <status>", "OPEN|RESOLVED_COMPLETED")
     .option("--q <text>", "search by ids/opener/dispute party reasons")
-    .option("--sort <key>", "latest|created")
-    .option("--order <order>", "asc|desc")
+    .option("--sort <key>", "latest|created (default: latest)")
+    .option("--order <order>", "asc|desc (default: desc)")
     .option("--cursor <offset>", "pagination cursor")
-    .option("--limit <number>", "page size")
+    .option("--limit <number>", "page size (1-100, default: 20)")
     .action(async (options, command: Command) => {
       await executeOperationCommand(command, cliOperationBindings["disputes list"], async () => ({
         query: {
@@ -35,10 +33,10 @@ export const registerDisputeCommands = (program: Command): void => {
           opener: typeof options.opener === "string" ? ensureAddress(options.opener, "--opener") : undefined,
           status: typeof options.status === "string" ? ensureDisputeStatus(options.status) : undefined,
           q: typeof options.q === "string" ? ensureNonEmpty(options.q, "--q") : undefined,
-          sort: typeof options.sort === "string" ? options.sort.trim().toLowerCase() as "latest" | "created" : undefined,
-          order: typeof options.order === "string" ? options.order.trim().toLowerCase() as "asc" | "desc" : undefined,
+          sort: typeof options.sort === "string" ? ensureDisputeListSort(options.sort) : undefined,
+          order: typeof options.order === "string" ? ensureQueryOrder(options.order) : undefined,
           cursor: typeof options.cursor === "string" ? ensureNonEmpty(options.cursor, "--cursor") : undefined,
-          limit: typeof options.limit === "string" ? ensurePositiveInteger(options.limit, "--limit") : undefined
+          limit: typeof options.limit === "string" ? ensurePageLimit(options.limit, "--limit") : undefined
         }
       }));
     });
@@ -55,7 +53,7 @@ export const registerDisputeCommands = (program: Command): void => {
 
   disputes
     .command("open")
-    .description("Open a dispute")
+    .description("Open a dispute (token required)")
     .requiredOption("--task <id>", "task id")
     .requiredOption("--submission <id>", "submission id")
     .option("--reason <markdown>", "reason markdown")
@@ -79,7 +77,7 @@ export const registerDisputeCommands = (program: Command): void => {
 
   disputes
     .command("respond")
-    .description("Submit counterparty reason on an open dispute")
+    .description("Submit counterparty reason on an open dispute (token required)")
     .requiredOption("--dispute <id>", "dispute id")
     .option("--reason <markdown>", "reason markdown")
     .option("--reason-file <path>", "file containing dispute reason markdown")
@@ -101,7 +99,7 @@ export const registerDisputeCommands = (program: Command): void => {
 
   disputes
     .command("vote")
-    .description("Vote on a dispute")
+    .description("Vote on a dispute (token required)")
     .requiredOption("--dispute <id>", "dispute id")
     .requiredOption("--vote <choice>", "COMPLETED or NOT_COMPLETED")
     .action(async (options, command: Command) => {

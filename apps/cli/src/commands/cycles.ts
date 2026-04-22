@@ -1,6 +1,6 @@
 import type { Command } from "commander";
 import { cliOperationBindings } from "../operation-bindings.js";
-import { ensureNonEmpty, ensurePositiveInteger } from "../validators.js";
+import { ensureNonEmpty, ensurePageLimit } from "../validators.js";
 import { executeOperationCommand } from "./shared.js";
 
 export const registerCycleCommands = (program: Command): void => {
@@ -10,12 +10,12 @@ export const registerCycleCommands = (program: Command): void => {
     .command("list")
     .description("List cycles")
     .option("--cursor <offset>", "pagination cursor")
-    .option("--limit <number>", "page size")
+    .option("--limit <number>", "page size (1-100, default: 20)")
     .action(async (options, command: Command) => {
       await executeOperationCommand(command, cliOperationBindings["cycles list"], async () => ({
         query: {
           cursor: typeof options.cursor === "string" ? ensureNonEmpty(options.cursor, "--cursor") : undefined,
-          limit: typeof options.limit === "string" ? ensurePositiveInteger(options.limit, "--limit") : undefined
+          limit: typeof options.limit === "string" ? ensurePageLimit(options.limit, "--limit") : undefined
         }
       }));
     });

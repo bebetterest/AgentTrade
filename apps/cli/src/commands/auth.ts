@@ -8,7 +8,7 @@ import {
 import { CliConfigError, CliValidationError } from "../errors.js";
 import { cliOperationBindings } from "../operation-bindings.js";
 import { ensureAddress, ensureNonEmpty, ensurePrivateKey } from "../validators.js";
-import { resolveTextInput } from "../text-input.js";
+import { resolveFileBackedInput, resolveTextInput } from "../text-input.js";
 import { executeJsonCommand, executeOperationCommand } from "./shared.js";
 
 const HIDDEN_PRIVATE_KEY = "***hidden***";
@@ -135,6 +135,7 @@ export const registerAuthCommands = (program: Command): void => {
     .description("Run SIWE challenge+sign+verify with local wallet private key")
     .option("--address <address>", "wallet address override")
     .option("--private-key <privateKey>", "wallet private key override")
+    .option("--private-key-file <path>", "file containing wallet private key")
     .option("--no-persist-token", "do not persist token to local CLI config")
     .action(async (options, command: Command) => {
       await executeJsonCommand(command, async (ctx) => {
@@ -143,10 +144,19 @@ export const registerAuthCommands = (program: Command): void => {
         const persisted = persistedSnapshot.values;
         const providedAddress =
           options.address === undefined ? undefined : ensureAddress(String(options.address), "--address");
+        const providedPrivateKeyValue = resolveFileBackedInput({
+          inlineValue: options.privateKey,
+          filePath: options.privateKeyFile,
+          inlineFlag: "private-key",
+          fileFlag: "private-key-file",
+          required: false,
+          normalize: (value) => value.replace(/^\uFEFF/, "").trim()
+        });
+        const providedPrivateKeyFlag = options.privateKeyFile ? "--private-key-file" : "--private-key";
         const providedPrivateKey =
-          options.privateKey === undefined
+          providedPrivateKeyValue === undefined
             ? undefined
-            : ensurePrivateKey(String(options.privateKey), "--private-key");
+            : ensurePrivateKey(providedPrivateKeyValue, providedPrivateKeyFlag);
         const persistedPrivateKey = resolveStoredWalletPrivateKey(
           persisted.walletPrivateKey,
           persistedSnapshot.path
@@ -155,13 +165,13 @@ export const registerAuthCommands = (program: Command): void => {
 
         if (!resolvedPrivateKey) {
           throw new CliConfigError(
-            "missing wallet private key: run `agentrade auth register` or pass --private-key"
+            "missing wallet private key: run `agentrade auth register` or pass --private-key/--private-key-file"
           );
         }
 
         const account = createAccountFromPrivateKey(
           resolvedPrivateKey as `0x${string}`,
-          providedPrivateKey ? "--private-key" : "wallet-private-key in CLI config",
+          providedPrivateKey ? providedPrivateKeyFlag : "wallet-private-key in CLI config",
           providedPrivateKey ? "input" : "config"
         );
         const derivedAddress = account.address;

@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import type { Command } from "commander";
 import {
@@ -19,8 +22,8 @@ test("context: resolve global options from strings", () => {
   const options = resolveGlobalOptions(
     mockCommand({
       baseUrl: "https://api.example.com",
-      token: "token-1",
-      adminKey: "admin-1",
+      token: "  token-1  ",
+      adminKey: "  admin-1  ",
       timeoutMs: "2000",
       retries: "3",
       pretty: true
@@ -84,6 +87,25 @@ test("context: merge persisted config with CLI overrides", () => {
   assert.equal(overridden.retries, 2);
 });
 
+test("context: token/admin key can be resolved from files", () => {
+  const tmpDir = mkdtempSync(join(tmpdir(), "agentrade-cli-context-"));
+  const tokenFile = join(tmpDir, "token.txt");
+  const adminKeyFile = join(tmpDir, "admin-key.txt");
+  writeFileSync(tokenFile, "\uFEFFtoken-from-file\n", "utf8");
+  writeFileSync(adminKeyFile, "\uFEFFadmin-from-file\n", "utf8");
+
+  const options = resolveGlobalOptions(
+    mockCommand({
+      baseUrl: "https://api.example.com",
+      tokenFile,
+      adminKeyFile
+    })
+  );
+
+  assert.equal(options.token, "token-from-file");
+  assert.equal(options.adminKey, "admin-from-file");
+});
+
 test("context: defaults apply when CLI and persisted config are empty", () => {
   const options = resolveGlobalOptions(mockCommand({}), {});
   assert.equal(options.baseUrl, CLI_DEFAULT_BASE_URL);
@@ -108,6 +130,17 @@ test("context: base url and numeric guards are validated", () => {
   );
   assert.throws(
     () => resolveGlobalOptions(mockCommand({ baseUrl: "http://localhost:3000", retries: "-1" })),
+    CliValidationError
+  );
+  assert.throws(
+    () =>
+      resolveGlobalOptions(
+        mockCommand({
+          baseUrl: "http://localhost:3000",
+          token: "token-inline",
+          tokenFile: "/tmp/token.txt"
+        })
+      ),
     CliValidationError
   );
 });

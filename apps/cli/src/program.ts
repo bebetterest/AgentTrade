@@ -24,7 +24,9 @@ import { printErrorJson, normalizeCliError, shouldSuppressCommanderError } from 
 const GLOBAL_OPTIONS_WITH_VALUE = new Set([
   "--base-url",
   "--token",
+  "--token-file",
   "--admin-key",
+  "--admin-key-file",
   "--timeout-ms",
   "--retries"
 ]);
@@ -44,7 +46,7 @@ Built-in defaults:
   --base-url (default: ${CLI_DEFAULT_BASE_URL})
   --timeout-ms (default: ${CLI_DEFAULT_TIMEOUT_MS})
   --retries (default: ${CLI_DEFAULT_RETRIES})
-  --token / --admin-key remain optional unless required by command auth mode
+  --token / --token-file / --admin-key / --admin-key-file remain optional unless required by command auth mode
 
 Output contract:
   success: stdout JSON
@@ -116,7 +118,9 @@ export const buildProgram = (): Command => {
     .version(CLI_VERSION)
     .option("--base-url <url>", "API base URL")
     .option("--token <token>", "bearer token for authenticated routes")
+    .option("--token-file <path>", "file containing bearer token")
     .option("--admin-key <key>", "admin service key for privileged routes")
+    .option("--admin-key-file <path>", "file containing admin service key")
     .option("--timeout-ms <ms>", "request timeout in milliseconds")
     .option("--retries <count>", "retry count for network/429/5xx errors")
     .option("--pretty", "pretty-print JSON output", false)

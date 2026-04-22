@@ -5,6 +5,7 @@ import test from "node:test";
 import type { Command } from "commander";
 import { fileURLToPath } from "node:url";
 import { getApiOperation } from "@agentrade/contracts";
+import { ActivityEventType } from "@agentrade/types";
 import { buildProgram } from "../src/program.js";
 import { cliOperationBindings } from "../src/operation-bindings.js";
 
@@ -20,6 +21,19 @@ const errorHandlingEn = readFileSync(resolve(repoRoot, "apps/skill/references/er
 const errorHandlingCn = readFileSync(resolve(repoRoot, "apps/skill/references/error-handling_cn.md"), "utf8");
 
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const assertCommandRowContains = (
+  source: string,
+  sourceLabel: string,
+  commandPath: string,
+  requiredFragments: string[]
+): void => {
+  const lookaheads = requiredFragments
+    .map((fragment) => `(?=[^\\n]*${escapeRegExp(fragment)})`)
+    .join("");
+  const pattern = new RegExp(`\\|[^\\n]*\\\`${escapeRegExp(commandPath)}\\\`${lookaheads}[^\\n]*`);
+  assert.match(source, pattern, `missing documented fragments for ${commandPath} in ${sourceLabel}`);
+};
 
 const collectLeafCommands = (root: Command): Array<{ path: string; command: Command }> => {
   const leaves: Array<{ path: string; command: Command }> = [];
@@ -167,4 +181,79 @@ test("error contracts stay mirrored in docs and skill references", () => {
   assert.match(errorHandlingCn, /API_ERROR/);
   assert.match(errorHandlingCn, /NETWORK_ERROR/);
   assert.match(errorHandlingCn, /UNKNOWN_ERROR/);
+
+  assert.doesNotMatch(docsOverviewEn, /HTTP_ERROR/, "stale HTTP_ERROR alias found in docs/cli/overview.md");
+  assert.doesNotMatch(docsOverviewCn, /HTTP_ERROR/, "stale HTTP_ERROR alias found in docs/cli/overview_cn.md");
+});
+
+test("pagination limit guard stays documented in docs and skill references", () => {
+  assert.match(docsOverviewEn, /`--limit`.*`1-100`/);
+  assert.match(docsOverviewCn, /`--limit`.*`1-100`/);
+  assert.match(matrixEn, /`--limit` 1-100/);
+  assert.match(matrixCn, /`--limit` 1-100/);
+  assert.match(docsOverviewEn, /default `20`/);
+  assert.match(docsOverviewCn, /默认 `20`/);
+  assert.match(matrixEn, /default `20`/);
+  assert.match(matrixCn, /默认 `20`/);
+});
+
+test("list sort and order defaults stay documented in docs and skill references", () => {
+  for (const commandPath of ["tasks list", "submissions list", "disputes list", "agents list"]) {
+    assertCommandRowContains(docsOverviewEn, "docs/cli/overview.md", commandPath, ["default `latest`", "default `desc`"]);
+    assertCommandRowContains(docsOverviewCn, "docs/cli/overview_cn.md", commandPath, ["默认 `latest`", "默认 `desc`"]);
+    assertCommandRowContains(matrixEn, "apps/skill/references/command-matrix.md", commandPath, [
+      "default `latest`",
+      "default `desc`"
+    ]);
+    assertCommandRowContains(matrixCn, "apps/skill/references/command-matrix_cn.md", commandPath, [
+      "默认 `latest`",
+      "默认 `desc`"
+    ]);
+  }
+
+  assertCommandRowContains(docsOverviewEn, "docs/cli/overview.md", "activities list", ["default `desc`"]);
+  assertCommandRowContains(docsOverviewCn, "docs/cli/overview_cn.md", "activities list", ["默认 `desc`"]);
+  assertCommandRowContains(matrixEn, "apps/skill/references/command-matrix.md", "activities list", ["default `desc`"]);
+  assertCommandRowContains(matrixCn, "apps/skill/references/command-matrix_cn.md", "activities list", ["默认 `desc`"]);
+});
+
+test("text length guards stay documented in docs and skill references", () => {
+  assert.match(docsOverviewEn, /name <= 120/);
+  assert.match(docsOverviewEn, /bio <= 1000/);
+  assert.match(docsOverviewEn, /reason.*1000/);
+  assert.match(docsOverviewCn, /name <= 120/);
+  assert.match(docsOverviewCn, /bio <= 1000/);
+  assert.match(docsOverviewCn, /reason.*1000/);
+  assert.match(matrixEn, /name<=120/);
+  assert.match(matrixEn, /bio<=1000/);
+  assert.match(matrixEn, /reason<=1000/);
+  assert.match(matrixCn, /name<=120/);
+  assert.match(matrixCn, /bio<=1000/);
+  assert.match(matrixCn, /reason<=1000/);
+});
+
+test("text file BOM normalization stays documented in docs and skill references", () => {
+  assert.match(docsOverviewEn, /strip a leading UTF-8 BOM/);
+  assert.match(docsOverviewCn, /剥离前导 UTF-8 BOM/);
+  assert.match(matrixEn, /strip a leading UTF-8 BOM/);
+  assert.match(matrixCn, /剥离前导 UTF-8 BOM/);
+});
+
+test("dashboard defaults stay documented in docs and skill references", () => {
+  assert.match(docsOverviewEn, /dashboard summary.*default `UTC`/);
+  assert.match(docsOverviewEn, /dashboard trends.*default `UTC`.*default `7d`/);
+  assert.match(docsOverviewCn, /dashboard summary.*默认 `UTC`/);
+  assert.match(docsOverviewCn, /dashboard trends.*默认 `UTC`.*默认 `7d`/);
+  assert.match(matrixEn, /dashboard summary.*default `UTC`/);
+  assert.match(matrixEn, /dashboard trends.*default `UTC`.*default `7d`/);
+  assert.match(matrixCn, /dashboard summary.*默认 `UTC`/);
+  assert.match(matrixCn, /dashboard trends.*默认 `UTC`.*默认 `7d`/);
+});
+
+test("activity type notes stay aligned with the shared enum", () => {
+  for (const activityType of Object.values(ActivityEventType)) {
+    const pattern = new RegExp(escapeRegExp(activityType));
+    assert.match(docsOverviewEn, pattern, `missing ${activityType} in docs/cli/overview.md`);
+    assert.match(docsOverviewCn, pattern, `missing ${activityType} in docs/cli/overview_cn.md`);
+  }
 });

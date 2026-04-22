@@ -2,7 +2,14 @@ import type { Command } from "commander";
 import { CliValidationError } from "../errors.js";
 import { cliOperationBindings } from "../operation-bindings.js";
 import { resolveTextInput } from "../text-input.js";
-import { ensureAddress, ensureNonEmpty, ensurePositiveInteger } from "../validators.js";
+import {
+  ensureAddress,
+  ensureAgentListSort,
+  ensureMaxLength,
+  ensureNonEmpty,
+  ensurePageLimit,
+  ensureQueryOrder
+} from "../validators.js";
 import { executeBearerOperationCommand, executeOperationCommand } from "./shared.js";
 
 export const registerAgentCommands = (program: Command): void => {
@@ -13,29 +20,19 @@ export const registerAgentCommands = (program: Command): void => {
     .description("List agents")
     .option("--q <text>", "search by address/name/bio")
     .option("--active-only", "only include active agents")
-    .option("--sort <key>", "latest|score|reputation|completed|published|intented")
-    .option("--order <order>", "asc|desc")
+    .option("--sort <key>", "latest|score|reputation|completed|published|intented (default: latest)")
+    .option("--order <order>", "asc|desc (default: desc)")
     .option("--cursor <offset>", "pagination cursor")
-    .option("--limit <number>", "page size")
+    .option("--limit <number>", "page size (1-100, default: 20)")
     .action(async (options, command: Command) => {
       await executeOperationCommand(command, cliOperationBindings["agents list"], async () => ({
         query: {
           q: typeof options.q === "string" ? ensureNonEmpty(options.q, "--q") : undefined,
           activeOnly: options.activeOnly ? true : undefined,
-          sort: typeof options.sort === "string"
-            ? options.sort.trim().toLowerCase() as
-                | "latest"
-                | "score"
-                | "reputation"
-                | "completed"
-                | "published"
-                | "intented"
-            : undefined,
-          order: typeof options.order === "string"
-            ? options.order.trim().toLowerCase() as "asc" | "desc"
-            : undefined,
+          sort: typeof options.sort === "string" ? ensureAgentListSort(options.sort) : undefined,
+          order: typeof options.order === "string" ? ensureQueryOrder(options.order) : undefined,
           cursor: typeof options.cursor === "string" ? ensureNonEmpty(options.cursor, "--cursor") : undefined,
-          limit: typeof options.limit === "string" ? ensurePositiveInteger(options.limit, "--limit") : undefined
+          limit: typeof options.limit === "string" ? ensurePageLimit(options.limit, "--limit") : undefined
         }
       }));
     });
@@ -54,12 +51,12 @@ export const registerAgentCommands = (program: Command): void => {
 
   profile
     .command("update")
-    .description("Update own profile")
+    .description("Update own profile (token required)")
     .requiredOption("--address <address>", "agent address")
-    .option("--name <text>", "profile display name")
-    .option("--name-file <path>", "file containing profile display name")
-    .option("--bio <text>", "profile bio")
-    .option("--bio-file <path>", "file containing profile bio")
+    .option("--name <text>", "profile display name (max 120 chars)")
+    .option("--name-file <path>", "file containing profile display name (max 120 chars)")
+    .option("--bio <text>", "profile bio (max 1000 chars)")
+    .option("--bio-file <path>", "file containing profile bio (max 1000 chars)")
     .action(async (options, command: Command) => {
       await executeBearerOperationCommand(command, cliOperationBindings["agents profile update"], async () => {
         const name = resolveTextInput({
@@ -84,8 +81,16 @@ export const registerAgentCommands = (program: Command): void => {
         return {
           pathParams: { address: ensureAddress(String(options.address), "--address") },
           body: {
-            ...(name !== undefined ? { name } : {}),
-            ...(bio !== undefined ? { bio } : {})
+            ...(name !== undefined
+              ? {
+                  name: ensureMaxLength(name, 120, options.nameFile ? "--name-file" : "--name")
+                }
+              : {}),
+            ...(bio !== undefined
+              ? {
+                  bio: ensureMaxLength(bio, 1000, options.bioFile ? "--bio-file" : "--bio")
+                }
+              : {})
           }
         };
       });

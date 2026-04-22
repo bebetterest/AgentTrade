@@ -46,10 +46,10 @@ const hasOption = (args: string[], option: string): boolean =>
 
 const runCli = async (args: string[], env: NodeJS.ProcessEnv): Promise<CliResult> => {
   const globalArgs: string[] = [];
-  if (env.AGENTRADE_TOKEN && !hasOption(args, "--token")) {
+  if (env.AGENTRADE_TOKEN && !hasOption(args, "--token") && !hasOption(args, "--token-file")) {
     globalArgs.push("--token", env.AGENTRADE_TOKEN);
   }
-  if (env.AGENTRADE_ADMIN_KEY && !hasOption(args, "--admin-key")) {
+  if (env.AGENTRADE_ADMIN_KEY && !hasOption(args, "--admin-key") && !hasOption(args, "--admin-key-file")) {
     globalArgs.push("--admin-key", env.AGENTRADE_ADMIN_KEY);
   }
 
@@ -300,13 +300,20 @@ test("cli command contract: method/path/auth/body coverage for all command group
   const reasonFile = join(tmpDir, "reason.md");
   const reasonFileCounterparty = join(tmpDir, "reason-counterparty.md");
   const nameFile = join(tmpDir, "name.txt");
-  writeFileSync(messageFile, "message-from-file", "utf8");
-  writeFileSync(descFile, "desc-from-file", "utf8");
-  writeFileSync(criteriaFile, "criteria-from-file", "utf8");
-  writeFileSync(payloadFile, "payload-from-file", "utf8");
-  writeFileSync(reasonFile, "reason-from-file", "utf8");
-  writeFileSync(reasonFileCounterparty, "counterparty-reason-from-file", "utf8");
-  writeFileSync(nameFile, "name-from-file", "utf8");
+  const tokenFile = join(tmpDir, "token.txt");
+  const adminKeyFile = join(tmpDir, "admin-key.txt");
+  const patchFile = join(tmpDir, "patch.json");
+  const privateKeyFile = join(tmpDir, "private-key.txt");
+  writeFileSync(messageFile, "\uFEFFmessage-from-file", "utf8");
+  writeFileSync(descFile, "\uFEFFdesc-from-file", "utf8");
+  writeFileSync(criteriaFile, "\uFEFFcriteria-from-file", "utf8");
+  writeFileSync(payloadFile, "\uFEFFpayload-from-file", "utf8");
+  writeFileSync(reasonFile, "\uFEFFreason-from-file", "utf8");
+  writeFileSync(reasonFileCounterparty, "\uFEFFcounterparty-reason-from-file", "utf8");
+  writeFileSync(nameFile, "\uFEFFname-from-file", "utf8");
+  writeFileSync(tokenFile, `\uFEFF${token}\n`, "utf8");
+  writeFileSync(adminKeyFile, `\uFEFF${adminKey}\n`, "utf8");
+  writeFileSync(patchFile, '\uFEFF{"taxRateBps":600,"mintPerCycle":1200}', "utf8");
 
   const calls: RecordedRequest[] = [];
   const server = createServer(async (request, response) => {
@@ -444,6 +451,7 @@ test("cli command contract: method/path/auth/body coverage for all command group
       case `GET /v2/activities?taskId=task-1&disputeId=dispute-1&address=${addressA}&type=TASK_COMPLETED&order=asc&cursor=2&limit=4`:
       case "GET /v2/activities?type=TASK_SUBMITTED&order=desc&limit=5":
       case "GET /v2/activities?type=SUBMISSION_REJECTED&order=desc&limit=5":
+      case "GET /v2/activities?type=ADMIN_AUDIT&order=desc&limit=5":
         response.end(JSON.stringify({ items: [], nextCursor: null }));
         return;
       case "GET /v2/dashboard/summary?tz=Asia%2FShanghai":
@@ -523,10 +531,10 @@ test("cli command contract: method/path/auth/body coverage for all command group
   const runAndAssert = async (
     args: string[],
     expected: ExpectedRequest,
-    options: { pretty?: boolean } = {}
+    options: { pretty?: boolean; env?: NodeJS.ProcessEnv } = {}
   ): Promise<void> => {
     const beforeCalls = calls.length;
-    const result = await runCli(["--base-url", baseUrl, ...args], baseEnv);
+    const result = await runCli(["--base-url", baseUrl, ...args], { ...baseEnv, ...options.env });
     assert.equal(result.code, 0, `command failed: ${args.join(" ")}\n${result.stderr}`);
     assert.equal(calls.length, beforeCalls + 1, `request count mismatch for ${args.join(" ")}`);
 
@@ -639,6 +647,7 @@ test("cli command contract: method/path/auth/body coverage for all command group
     assert.match(registerShowKeyOutput.wallet.privateKey, /^0x[a-fA-F0-9]{64}$/);
     assert.equal(registerShowKeyOutput.persistence.walletPersisted, true);
     assert.equal(registerShowKeyOutput.persistence.tokenPersisted, false);
+    writeFileSync(privateKeyFile, `\uFEFF${registerShowKeyOutput.wallet.privateKey}\n`, "utf8");
 
     const beforeLoginCalls = calls.length;
     const loginResult = await runCli(["--base-url", baseUrl, "auth", "login", "--no-persist-token"], baseEnv);
@@ -711,6 +720,28 @@ test("cli command contract: method/path/auth/body coverage for all command group
     assert.equal(loginWithOverrideOutput.wallet.address, registerShowKeyOutput.wallet.address);
     assert.notEqual(loginWithOverrideOutput.wallet.address, registerOutput.wallet.address);
     assert.equal(loginWithOverrideOutput.persistence.walletSource, "flag");
+
+    const beforeLoginFileCalls = calls.length;
+    const loginWithFile = await runCli(
+      [
+        "--base-url",
+        baseUrl,
+        "auth",
+        "login",
+        "--private-key-file",
+        privateKeyFile,
+        "--no-persist-token"
+      ],
+      baseEnv
+    );
+    assert.equal(loginWithFile.code, 0, `command failed: auth login --private-key-file\n${loginWithFile.stderr}`);
+    assert.equal(calls.length, beforeLoginFileCalls + 2, "auth login --private-key-file must trigger challenge + verify");
+    const loginWithFileOutput = JSON.parse(loginWithFile.stdout.trim()) as {
+      wallet: { address: string };
+      persistence: { walletSource: string };
+    };
+    assert.equal(loginWithFileOutput.wallet.address, registerShowKeyOutput.wallet.address);
+    assert.equal(loginWithFileOutput.persistence.walletSource, "flag");
 
     const beforeMismatchCalls = calls.length;
     const loginMismatch = await runCli(
@@ -1068,6 +1099,14 @@ test("cli command contract: method/path/auth/body coverage for all command group
         auth: "none"
       }
     );
+    await runAndAssert(
+      ["activities", "list", "--type", "ADMIN_AUDIT", "--order", "desc", "--limit", "5"],
+      {
+        method: "GET",
+        url: "/v2/activities?type=ADMIN_AUDIT&order=desc&limit=5",
+        auth: "none"
+      }
+    );
     await runAndAssert(["dashboard", "summary", "--tz", "Asia/Shanghai"], {
       method: "GET",
       url: "/v2/dashboard/summary?tz=Asia%2FShanghai",
@@ -1079,11 +1118,19 @@ test("cli command contract: method/path/auth/body coverage for all command group
       auth: "none"
     });
 
-    await runAndAssert(["system", "metrics"], {
-      method: "GET",
-      url: "/v2/system/metrics",
-      auth: "bearer"
-    });
+    await runAndAssert(
+      ["--token-file", tokenFile, "system", "metrics"],
+      {
+        method: "GET",
+        url: "/v2/system/metrics",
+        auth: "bearer"
+      },
+      {
+        env: {
+          AGENTRADE_TOKEN: undefined
+        }
+      }
+    );
     await runAndAssert(["system", "settings", "get"], {
       method: "GET",
       url: "/v2/system/settings",
@@ -1091,13 +1138,17 @@ test("cli command contract: method/path/auth/body coverage for all command group
     });
     await runAndAssert(
       [
+        "--token-file",
+        tokenFile,
+        "--admin-key-file",
+        adminKeyFile,
         "system",
         "settings",
         "update",
         "--apply-to",
         "next",
-        "--patch-json",
-        '{"taxRateBps":600,"mintPerCycle":1200}',
+        "--patch-file",
+        patchFile,
         "--reason",
         "planned-tuning"
       ],
@@ -1109,6 +1160,12 @@ test("cli command contract: method/path/auth/body coverage for all command group
           applyTo: "next",
           patch: { taxRateBps: 600, mintPerCycle: 1200 },
           reason: "planned-tuning"
+        }
+      },
+      {
+        env: {
+          AGENTRADE_TOKEN: undefined,
+          AGENTRADE_ADMIN_KEY: undefined
         }
       }
     );

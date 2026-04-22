@@ -1,10 +1,12 @@
 import type { Command } from "commander";
 import { cliOperationBindings } from "../operation-bindings.js";
+import { resolveFileBackedInput } from "../text-input.js";
 import {
   ensureNonEmpty,
-  ensurePositiveInteger,
+  ensurePageLimit,
   ensureRuntimeSettingsApplyTo,
-  ensureRuntimeSettingsPatchJson
+  ensureRuntimeSettingsPatchJson,
+  ensureTrimmedNonEmptyMaxLength
 } from "../validators.js";
 import {
   executeAdminOperationCommand,
@@ -24,33 +26,47 @@ export const registerSystemCommands = (program: Command): void => {
   });
 
   const settings = system.command("settings").description("Runtime settings commands");
-  settings.command("get").description("Get runtime settings").action(async (_options, command: Command) => {
+  settings.command("get").description("Get runtime settings (token required)").action(async (_options, command: Command) => {
     await executeBearerOperationCommand(command, cliOperationBindings["system settings get"]);
   });
   settings
     .command("update")
-    .description("Update runtime settings patch")
+    .description("Update runtime settings patch (token + admin key required)")
     .requiredOption("--apply-to <target>", "current or next")
-    .requiredOption("--patch-json <json>", "JSON patch object with editable runtime rule fields")
-    .option("--reason <reason>", "optional update reason")
+    .option("--patch-json <json>", "JSON patch object with editable runtime rule fields")
+    .option("--patch-file <path>", "file containing runtime settings patch JSON")
+    .option("--reason <reason>", "optional update reason (max 1000 chars)")
     .action(async (options, command: Command) => {
+      const patchInput = resolveFileBackedInput({
+        inlineValue: options.patchJson,
+        filePath: options.patchFile,
+        inlineFlag: "patch-json",
+        fileFlag: "patch-file",
+        normalize: (value) => value.replace(/^\uFEFF/, "")
+      });
+
       await executeAdminOperationCommand(
         command,
         cliOperationBindings["system settings update"],
         async () => ({
           body: {
             applyTo: ensureRuntimeSettingsApplyTo(String(options.applyTo), "--apply-to"),
-            patch: ensureRuntimeSettingsPatchJson(String(options.patchJson), "--patch-json"),
-            ...(options.reason ? { reason: ensureNonEmpty(String(options.reason), "--reason") } : {})
+            patch: ensureRuntimeSettingsPatchJson(
+              patchInput,
+              options.patchFile ? "--patch-file" : "--patch-json"
+            ),
+            ...(options.reason
+              ? { reason: ensureTrimmedNonEmptyMaxLength(String(options.reason), 1000, "--reason") }
+              : {})
           }
         })
       );
     });
   settings
     .command("reset")
-    .description("Reset runtime settings to environment defaults")
+    .description("Reset runtime settings to environment defaults (token + admin key required)")
     .requiredOption("--apply-to <target>", "current or next")
-    .option("--reason <reason>", "optional reset reason")
+    .option("--reason <reason>", "optional reset reason (max 1000 chars)")
     .action(async (options, command: Command) => {
       await executeAdminOperationCommand(
         command,
@@ -58,16 +74,18 @@ export const registerSystemCommands = (program: Command): void => {
         async () => ({
           body: {
             applyTo: ensureRuntimeSettingsApplyTo(String(options.applyTo), "--apply-to"),
-            ...(options.reason ? { reason: ensureNonEmpty(String(options.reason), "--reason") } : {})
+            ...(options.reason
+              ? { reason: ensureTrimmedNonEmptyMaxLength(String(options.reason), 1000, "--reason") }
+              : {})
           }
         })
       );
     });
   settings
     .command("history")
-    .description("List runtime settings audit history")
+    .description("List runtime settings audit history (token required)")
     .option("--cursor <cursor>", "pagination cursor")
-    .option("--limit <n>", "page size (1-100)")
+    .option("--limit <n>", "page size (1-100, default: 20)")
     .action(async (options, command: Command) => {
       await executeBearerOperationCommand(
         command,
@@ -75,7 +93,7 @@ export const registerSystemCommands = (program: Command): void => {
         async () => ({
           query: {
             ...(options.cursor ? { cursor: ensureNonEmpty(String(options.cursor), "--cursor") } : {}),
-            ...(options.limit ? { limit: ensurePositiveInteger(String(options.limit), "--limit") } : {})
+            ...(options.limit ? { limit: ensurePageLimit(String(options.limit), "--limit") } : {})
           }
         })
       );

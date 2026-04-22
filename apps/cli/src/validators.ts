@@ -1,4 +1,10 @@
-import { VoteChoice } from "@agentrade/types";
+import {
+  ActivityEventType,
+  DisputeStatus,
+  SubmissionStatus,
+  TaskStatus,
+  VoteChoice
+} from "@agentrade/types";
 import type { Address, RuntimeEditableRulesPatch } from "@agentrade/types";
 import { CliValidationError } from "./errors.js";
 
@@ -35,6 +41,41 @@ const parseInteger = (raw: string, flag: string): number => {
   return parsed;
 };
 
+const ensureEnumValue = <T extends string>(
+  raw: string,
+  flag: string,
+  values: readonly T[],
+  normalize: "none" | "upper" | "lower" = "none"
+): T => {
+  const trimmed = raw.trim();
+  const normalized =
+    normalize === "upper" ? trimmed.toUpperCase() : normalize === "lower" ? trimmed.toLowerCase() : trimmed;
+
+  if (!values.includes(normalized as T)) {
+    throw new CliValidationError(`${flag} must be ${values.join("|")}`);
+  }
+
+  return normalized as T;
+};
+
+const TASK_STATUS_VALUES = Object.values(TaskStatus) as TaskStatus[];
+const SUBMISSION_STATUS_VALUES = Object.values(SubmissionStatus) as SubmissionStatus[];
+const DISPUTE_STATUS_VALUES = Object.values(DisputeStatus) as DisputeStatus[];
+const ACTIVITY_EVENT_TYPE_VALUES = Object.values(ActivityEventType) as ActivityEventType[];
+const TASK_LIST_SORT_VALUES = ["latest", "created", "deadline", "reward"] as const;
+const SUBMISSION_LIST_SORT_VALUES = ["latest", "created"] as const;
+const DISPUTE_LIST_SORT_VALUES = ["latest", "created"] as const;
+const AGENT_LIST_SORT_VALUES = [
+  "latest",
+  "score",
+  "reputation",
+  "completed",
+  "published",
+  "intented"
+] as const;
+const QUERY_ORDER_VALUES = ["asc", "desc"] as const;
+const TREND_WINDOW_VALUES = ["7d", "30d"] as const;
+
 export const ensureAddress = (raw: string, flag: string): Address => {
   if (!ADDRESS_REGEX.test(raw)) {
     throw new CliValidationError(`${flag} must be a valid EVM address`);
@@ -54,6 +95,24 @@ export const ensureNonEmpty = (raw: string, flag: string): string => {
     throw new CliValidationError(`${flag} must be non-empty`);
   }
   return raw;
+};
+
+export const ensureMaxLength = (raw: string, max: number, flag: string): string => {
+  if (raw.length > max) {
+    throw new CliValidationError(`${flag} must be <= ${max} characters`);
+  }
+  return raw;
+};
+
+export const ensureTrimmedNonEmptyMaxLength = (raw: string, max: number, flag: string): string => {
+  const value = raw.trim();
+  if (value.length === 0) {
+    throw new CliValidationError(`${flag} must be non-empty`);
+  }
+  if (value.length > max) {
+    throw new CliValidationError(`${flag} must be <= ${max} characters`);
+  }
+  return value;
 };
 
 export const ensureIsoDate = (raw: string, flag: string): string => {
@@ -106,6 +165,14 @@ export const ensurePositiveInteger = (raw: string, flag: string): number => {
   return value;
 };
 
+export const ensurePageLimit = (raw: string, flag = "--limit"): number => {
+  const value = ensurePositiveInteger(raw, flag);
+  if (value > 100) {
+    throw new CliValidationError(`${flag} must be <= 100`);
+  }
+  return value;
+};
+
 export const ensureNonNegativeInteger = (raw: string, flag: string): number => {
   const value = parseInteger(raw, flag);
   if (value < 0) {
@@ -115,27 +182,73 @@ export const ensureNonNegativeInteger = (raw: string, flag: string): number => {
 };
 
 export const ensureVoteChoice = (raw: string): VoteChoice => {
-  const normalized = raw.trim().toUpperCase();
-  if (normalized !== VoteChoice.COMPLETED && normalized !== VoteChoice.NOT_COMPLETED) {
-    throw new CliValidationError("--vote must be COMPLETED or NOT_COMPLETED");
-  }
-  return normalized as VoteChoice;
+  return ensureEnumValue(raw, "--vote", Object.values(VoteChoice) as VoteChoice[], "upper");
 };
 
 export const ensureOverrideResult = (raw: string): "COMPLETED" | "NOT_COMPLETED" => {
-  const normalized = raw.trim().toUpperCase();
-  if (normalized !== "COMPLETED" && normalized !== "NOT_COMPLETED") {
-    throw new CliValidationError("--result must be COMPLETED or NOT_COMPLETED");
-  }
-  return normalized;
+  return ensureEnumValue(raw, "--result", ["COMPLETED", "NOT_COMPLETED"], "upper");
+};
+
+export const ensureTaskStatus = (raw: string, flag = "--status"): TaskStatus => {
+  return ensureEnumValue(raw, flag, TASK_STATUS_VALUES, "upper");
+};
+
+export const ensureSubmissionStatus = (raw: string, flag = "--status"): SubmissionStatus => {
+  return ensureEnumValue(raw, flag, SUBMISSION_STATUS_VALUES, "upper");
+};
+
+export const ensureDisputeStatus = (raw: string, flag = "--status"): DisputeStatus => {
+  return ensureEnumValue(raw, flag, DISPUTE_STATUS_VALUES, "upper");
+};
+
+export const ensureActivityType = (raw: string, flag = "--type"): ActivityEventType => {
+  return ensureEnumValue(raw, flag, ACTIVITY_EVENT_TYPE_VALUES, "upper");
+};
+
+export const ensureTaskListSort = (
+  raw: string,
+  flag = "--sort"
+): (typeof TASK_LIST_SORT_VALUES)[number] => {
+  return ensureEnumValue(raw, flag, TASK_LIST_SORT_VALUES, "lower");
+};
+
+export const ensureSubmissionListSort = (
+  raw: string,
+  flag = "--sort"
+): (typeof SUBMISSION_LIST_SORT_VALUES)[number] => {
+  return ensureEnumValue(raw, flag, SUBMISSION_LIST_SORT_VALUES, "lower");
+};
+
+export const ensureDisputeListSort = (
+  raw: string,
+  flag = "--sort"
+): (typeof DISPUTE_LIST_SORT_VALUES)[number] => {
+  return ensureEnumValue(raw, flag, DISPUTE_LIST_SORT_VALUES, "lower");
+};
+
+export const ensureAgentListSort = (
+  raw: string,
+  flag = "--sort"
+): (typeof AGENT_LIST_SORT_VALUES)[number] => {
+  return ensureEnumValue(raw, flag, AGENT_LIST_SORT_VALUES, "lower");
+};
+
+export const ensureQueryOrder = (
+  raw: string,
+  flag = "--order"
+): (typeof QUERY_ORDER_VALUES)[number] => {
+  return ensureEnumValue(raw, flag, QUERY_ORDER_VALUES, "lower");
+};
+
+export const ensureTrendWindow = (
+  raw: string,
+  flag = "--window"
+): (typeof TREND_WINDOW_VALUES)[number] => {
+  return ensureEnumValue(raw, flag, TREND_WINDOW_VALUES, "lower");
 };
 
 export const ensureRuntimeSettingsApplyTo = (raw: string, flag = "--apply-to"): "current" | "next" => {
-  const normalized = raw.trim().toLowerCase();
-  if (normalized !== "current" && normalized !== "next") {
-    throw new CliValidationError(`${flag} must be current or next`);
-  }
-  return normalized;
+  return ensureEnumValue(raw, flag, ["current", "next"], "lower");
 };
 
 export const ensureRuntimeSettingsPatchJson = (

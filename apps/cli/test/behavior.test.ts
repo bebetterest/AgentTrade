@@ -55,8 +55,87 @@ test("cli help includes global option and error contract guidance", async () => 
   assert.match(result.stdout, /CLI runtime setting precedence:/);
   assert.match(result.stdout, /agentrade config set\/show\/unset/);
   assert.match(result.stdout, /--base-url/);
+  assert.match(result.stdout, /--token-file <path>/);
+  assert.match(result.stdout, /--admin-key-file <path>/);
   assert.match(result.stdout, /Output contract:/);
   assert.match(result.stdout, /Exit codes:/);
+});
+
+test("cli subcommand help surfaces auth requirements, list defaults, and file-backed inputs", async () => {
+  const taskCreateHelp = await runCli(["tasks", "create", "--help"]);
+  assert.equal(taskCreateHelp.code, 0);
+  assert.match(taskCreateHelp.stdout, /Create a task \(token required\)/);
+
+  const authLoginHelp = await runCli(["auth", "login", "--help"]);
+  assert.equal(authLoginHelp.code, 0);
+  assert.match(authLoginHelp.stdout, /--private-key-file <path>/);
+
+  for (const commandArgs of [
+    ["tasks", "list"],
+    ["submissions", "list"],
+    ["disputes", "list"],
+    ["agents", "list"]
+  ]) {
+    const help = await runCli([...commandArgs, "--help"]);
+    assert.equal(help.code, 0);
+    assert.match(help.stdout, /default: latest/);
+    assert.match(help.stdout, /default: desc/);
+  }
+
+  const tasksListHelp = await runCli(["tasks", "list", "--help"]);
+  assert.equal(tasksListHelp.code, 0);
+  assert.match(tasksListHelp.stdout, /page size \(1-100, default: 20\)/);
+
+  const profileUpdateHelp = await runCli(["agents", "profile", "update", "--help"]);
+  assert.equal(profileUpdateHelp.code, 0);
+  assert.match(profileUpdateHelp.stdout, /max 120 chars/);
+  assert.match(profileUpdateHelp.stdout, /max 1000 chars/);
+
+  const dashboardTrendsHelp = await runCli(["dashboard", "trends", "--help"]);
+  assert.equal(dashboardTrendsHelp.code, 0);
+  assert.match(dashboardTrendsHelp.stdout, /default: UTC/);
+  assert.match(dashboardTrendsHelp.stdout, /default: 7d/);
+
+  const activitiesListHelp = await runCli(["activities", "list", "--help"]);
+  assert.equal(activitiesListHelp.code, 0);
+  assert.match(activitiesListHelp.stdout, /ADMIN_AUDIT/);
+  assert.match(activitiesListHelp.stdout, /default: desc/);
+
+  const settingsUpdateHelp = await runCli(["system", "settings", "update", "--help"]);
+  assert.equal(settingsUpdateHelp.code, 0);
+  assert.match(settingsUpdateHelp.stdout, /token \+ admin key required/i);
+  assert.match(settingsUpdateHelp.stdout, /--patch-file <path>/);
+  assert.match(settingsUpdateHelp.stdout, /max 1000 chars/);
+
+  const settingsHistoryHelp = await runCli(["system", "settings", "history", "--help"]);
+  assert.equal(settingsHistoryHelp.code, 0);
+  assert.match(settingsHistoryHelp.stdout, /page size \(1-100, default: 20\)/);
+});
+
+test("cli system settings update requires patch input with a validation error", async () => {
+  const result = await runCli([
+    "--base-url",
+    "http://127.0.0.1:1",
+    "--token",
+    "token-1",
+    "--admin-key",
+    "admin-1",
+    "system",
+    "settings",
+    "update",
+    "--apply-to",
+    "next"
+  ]);
+
+  assert.equal(result.code, 2);
+  const errorJson = JSON.parse(result.stderr.trim()) as {
+    type: string;
+    command: string;
+    message: string;
+  };
+  assert.equal(errorJson.type, "VALIDATION_ERROR");
+  assert.equal(errorJson.command, "system settings update");
+  assert.match(errorJson.message, /--patch-json or --patch-file is required/);
 });
 
 test("cli --version matches package version", async () => {
@@ -211,6 +290,98 @@ test("cli tasks create blocks invalid timezone before network request", async ()
   assert.match(errorJson.message, /--tz must be a valid IANA timezone/);
 });
 
+test("cli tasks list blocks invalid status enum before network request", async () => {
+  const result = await runCli([
+    "--base-url",
+    "http://127.0.0.1:1",
+    "tasks",
+    "list",
+    "--status",
+    "DONE"
+  ]);
+  assert.equal(result.code, 2);
+  const errorJson = JSON.parse(result.stderr.trim()) as {
+    type: string;
+    command: string;
+    message: string;
+  };
+  assert.equal(errorJson.type, "VALIDATION_ERROR");
+  assert.equal(errorJson.command, "tasks list");
+  assert.match(errorJson.message, /--status must be OPEN\|IN_PROGRESS\|TERMINATED\|CLOSED/);
+});
+
+test("cli tasks list blocks limit above pagination cap before network request", async () => {
+  const result = await runCli([
+    "--base-url",
+    "http://127.0.0.1:1",
+    "tasks",
+    "list",
+    "--limit",
+    "101"
+  ]);
+  assert.equal(result.code, 2);
+  const errorJson = JSON.parse(result.stderr.trim()) as {
+    type: string;
+    command: string;
+    message: string;
+  };
+  assert.equal(errorJson.type, "VALIDATION_ERROR");
+  assert.equal(errorJson.command, "tasks list");
+  assert.match(errorJson.message, /--limit must be <= 100/);
+});
+
+test("cli agents profile update blocks overlong name before network request", async () => {
+  const result = await runCli([
+    "--base-url",
+    "http://127.0.0.1:1",
+    "--token",
+    "token-1",
+    "agents",
+    "profile",
+    "update",
+    "--address",
+    "0x1111111111111111111111111111111111111111",
+    "--name",
+    "x".repeat(121)
+  ]);
+  assert.equal(result.code, 2);
+  const errorJson = JSON.parse(result.stderr.trim()) as {
+    type: string;
+    command: string;
+    message: string;
+  };
+  assert.equal(errorJson.type, "VALIDATION_ERROR");
+  assert.equal(errorJson.command, "agents profile update");
+  assert.match(errorJson.message, /--name must be <= 120 characters/);
+});
+
+test("cli system settings reset blocks overlong reason before network request", async () => {
+  const result = await runCli([
+    "--base-url",
+    "http://127.0.0.1:1",
+    "--token",
+    "token-1",
+    "--admin-key",
+    "admin-1",
+    "system",
+    "settings",
+    "reset",
+    "--apply-to",
+    "current",
+    "--reason",
+    "x".repeat(1001)
+  ]);
+  assert.equal(result.code, 2);
+  const errorJson = JSON.parse(result.stderr.trim()) as {
+    type: string;
+    command: string;
+    message: string;
+  };
+  assert.equal(errorJson.type, "VALIDATION_ERROR");
+  assert.equal(errorJson.command, "system settings reset");
+  assert.match(errorJson.message, /--reason must be <= 1000 characters/);
+});
+
 test("cli disputes list blocks removed status enum before network request", async () => {
   const result = await runCli([
     "--base-url",
@@ -231,8 +402,8 @@ test("cli disputes list blocks removed status enum before network request", asyn
   assert.match(errorJson.message, /--status must be OPEN\|RESOLVED_COMPLETED/);
 });
 
-test("cli activities list accepts TASK_SUBMITTED and SUBMISSION_REJECTED enum values", async () => {
-  for (const activityType of ["TASK_SUBMITTED", "SUBMISSION_REJECTED"] as const) {
+test("cli activities list accepts TASK_SUBMITTED, SUBMISSION_REJECTED, and ADMIN_AUDIT enum values", async () => {
+  for (const activityType of ["TASK_SUBMITTED", "SUBMISSION_REJECTED", "ADMIN_AUDIT"] as const) {
     const result = await runCli([
       "--base-url",
       "http://127.0.0.1:1",

@@ -1,12 +1,15 @@
 import type { Command } from "commander";
-import type { Task } from "@agentrade/types";
 import { cliOperationBindings } from "../operation-bindings.js";
 import {
   ensureAddress,
   ensureIanaTimeZone,
   ensureIsoDate,
   ensureNonEmpty,
-  ensurePositiveInteger
+  ensurePageLimit,
+  ensurePositiveInteger,
+  ensureQueryOrder,
+  ensureTaskListSort,
+  ensureTaskStatus
 } from "../validators.js";
 import { resolveTextInput } from "../text-input.js";
 import { executeBearerOperationCommand, executeOperationCommand } from "./shared.js";
@@ -20,20 +23,20 @@ export const registerTaskCommands = (program: Command): void => {
     .option("--q <text>", "search by id/title/description/criteria/publisher")
     .option("--status <status>", "OPEN|IN_PROGRESS|TERMINATED|CLOSED")
     .option("--publisher <address>", "publisher address")
-    .option("--sort <key>", "latest|created|deadline|reward")
-    .option("--order <order>", "asc|desc")
+    .option("--sort <key>", "latest|created|deadline|reward (default: latest)")
+    .option("--order <order>", "asc|desc (default: desc)")
     .option("--cursor <offset>", "pagination cursor")
-    .option("--limit <number>", "page size")
+    .option("--limit <number>", "page size (1-100, default: 20)")
     .action(async (options, command: Command) => {
       await executeOperationCommand(command, cliOperationBindings["tasks list"], async () => ({
         query: {
           q: typeof options.q === "string" ? ensureNonEmpty(options.q, "--q") : undefined,
-          status: typeof options.status === "string" ? options.status.trim().toUpperCase() as Task["status"] : undefined,
+          status: typeof options.status === "string" ? ensureTaskStatus(options.status) : undefined,
           publisher: typeof options.publisher === "string" ? ensureAddress(options.publisher, "--publisher") : undefined,
-          sort: typeof options.sort === "string" ? options.sort.trim().toLowerCase() as "latest" | "created" | "deadline" | "reward" : undefined,
-          order: typeof options.order === "string" ? options.order.trim().toLowerCase() as "asc" | "desc" : undefined,
+          sort: typeof options.sort === "string" ? ensureTaskListSort(options.sort) : undefined,
+          order: typeof options.order === "string" ? ensureQueryOrder(options.order) : undefined,
           cursor: typeof options.cursor === "string" ? ensureNonEmpty(options.cursor, "--cursor") : undefined,
-          limit: typeof options.limit === "string" ? ensurePositiveInteger(options.limit, "--limit") : undefined
+          limit: typeof options.limit === "string" ? ensurePageLimit(options.limit, "--limit") : undefined
         }
       }));
     });
@@ -50,7 +53,7 @@ export const registerTaskCommands = (program: Command): void => {
 
   tasks
     .command("create")
-    .description("Create a task")
+    .description("Create a task (token required)")
     .requiredOption("--title <title>", "task title")
     .option("--desc <markdown>", "task description markdown")
     .option("--desc-file <path>", "file containing task description markdown")
@@ -90,7 +93,7 @@ export const registerTaskCommands = (program: Command): void => {
 
   tasks
     .command("intend")
-    .description("Add intention for a task")
+    .description("Add intention for a task (token required)")
     .requiredOption("--task <id>", "task id")
     .action(async (options, command: Command) => {
       await executeBearerOperationCommand(command, cliOperationBindings["tasks intend"], async () => ({
@@ -103,20 +106,20 @@ export const registerTaskCommands = (program: Command): void => {
     .description("List task intentions")
     .requiredOption("--task <id>", "task id")
     .option("--cursor <token>", "pagination cursor")
-    .option("--limit <number>", "page size")
+    .option("--limit <number>", "page size (1-100, default: 20)")
     .action(async (options, command: Command) => {
       await executeOperationCommand(command, cliOperationBindings["tasks intentions"], async () => ({
         pathParams: { id: ensureNonEmpty(String(options.task), "--task") },
         query: {
           cursor: typeof options.cursor === "string" ? ensureNonEmpty(options.cursor, "--cursor") : undefined,
-          limit: typeof options.limit === "string" ? ensurePositiveInteger(options.limit, "--limit") : undefined
+          limit: typeof options.limit === "string" ? ensurePageLimit(options.limit, "--limit") : undefined
         }
       }));
     });
 
   tasks
     .command("submit")
-    .description("Submit task output")
+    .description("Submit task output (token required)")
     .requiredOption("--task <id>", "task id")
     .option("--payload <markdown>", "submission markdown payload")
     .option("--payload-file <path>", "file containing submission markdown payload")
@@ -138,7 +141,7 @@ export const registerTaskCommands = (program: Command): void => {
 
   tasks
     .command("terminate")
-    .description("Terminate a task")
+    .description("Terminate a task (token required)")
     .requiredOption("--task <id>", "task id")
     .action(async (options, command: Command) => {
       await executeBearerOperationCommand(command, cliOperationBindings["tasks terminate"], async () => ({

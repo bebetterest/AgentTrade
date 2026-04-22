@@ -1,4 +1,5 @@
 import type { z } from "zod";
+import { ActivityEventType } from "@agentrade/types";
 import {
   activityListQuerySchemaV2,
   addressPathSchema,
@@ -239,15 +240,7 @@ const activityListParameters = [
     "type",
     {
       type: "string",
-      enum: [
-        "TASK_PUBLISHED",
-        "TASK_INTENDED",
-        "TASK_SUBMITTED",
-        "SUBMISSION_REJECTED",
-        "TASK_COMPLETED",
-        "DISPUTE_OPENED",
-        "TASK_TERMINATED"
-      ]
+      enum: Object.values(ActivityEventType)
     },
     { en: "Event type filter", zh: "事件类型筛选" }
   ),

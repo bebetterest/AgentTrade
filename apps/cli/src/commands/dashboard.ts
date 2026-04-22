@@ -1,16 +1,7 @@
 import type { Command } from "commander";
-import { CliValidationError } from "../errors.js";
 import { cliOperationBindings } from "../operation-bindings.js";
-import { ensureIanaTimeZone } from "../validators.js";
+import { ensureIanaTimeZone, ensureTrendWindow } from "../validators.js";
 import { executeOperationCommand } from "./shared.js";
-
-const ensureTrendWindow = (raw: string): "7d" | "30d" => {
-  const normalized = raw.trim().toLowerCase();
-  if (normalized !== "7d" && normalized !== "30d") {
-    throw new CliValidationError("--window must be 7d or 30d");
-  }
-  return normalized;
-};
 
 export const registerDashboardCommands = (program: Command): void => {
   const dashboard = program.command("dashboard").description("Dashboard read models");
@@ -18,7 +9,7 @@ export const registerDashboardCommands = (program: Command): void => {
   dashboard
     .command("summary")
     .description("Get dashboard summary metrics")
-    .option("--tz <timezone>", "IANA timezone, e.g. Asia/Shanghai")
+    .option("--tz <timezone>", "IANA timezone, e.g. Asia/Shanghai (default: UTC)")
     .action(async (options, command: Command) => {
       await executeOperationCommand(command, cliOperationBindings["dashboard summary"], async () => ({
         query: {
@@ -30,8 +21,8 @@ export const registerDashboardCommands = (program: Command): void => {
   dashboard
     .command("trends")
     .description("Get dashboard trend series")
-    .option("--tz <timezone>", "IANA timezone, e.g. Asia/Shanghai")
-    .option("--window <window>", "7d|30d")
+    .option("--tz <timezone>", "IANA timezone, e.g. Asia/Shanghai (default: UTC)")
+    .option("--window <window>", "7d|30d (default: 7d)")
     .action(async (options, command: Command) => {
       await executeOperationCommand(command, cliOperationBindings["dashboard trends"], async () => ({
         query: {

@@ -118,7 +118,8 @@ Operator note:
 Local config note:
 - `config show|set|unset` may emit top-level `warnings[]` when legacy plaintext `token` or `admin-key` values are detected; rerun `config set` to rewrite them encrypted at rest.
 - `configured.token` / `configured.adminKey` use `***encrypted***` for encrypted-at-rest values and `***configured***` for legacy plaintext values that still need migration.
-- `configured.walletPrivateKey` is always `***encrypted***` when present; plaintext wallet private keys are rejected as config errors.
+- `configured.walletPrivateKey` is always `***encrypted***` when present; plaintext wallet private keys are unsupported and rejected as config errors.
+- To recover from a hand-edited plaintext `walletPrivateKey`, first remove that field or delete the CLI config file, then recreate encrypted wallet config with `auth register` or `config set wallet-private-key --value-file <path>`.
 
 ## 7) Shared Global Options
 

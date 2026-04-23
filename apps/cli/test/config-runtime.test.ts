@@ -225,7 +225,8 @@ test("cli config command: plaintext wallet-private-key in persisted config fails
     assert.ok(
       /"type":"CONFIG_ERROR"/.test(combined) &&
         /"command":"config show"/.test(combined) &&
-        combined.includes("walletPrivateKey must not be plaintext")
+        combined.includes("plaintext walletPrivateKey is unsupported") &&
+        combined.includes("remove the walletPrivateKey field or delete the CLI config file, then")
     );
   } finally {
     cleanup();
@@ -254,7 +255,8 @@ test("cli auth login fails fast when persisted wallet-private-key is plaintext",
     assert.ok(
       /"type":"CONFIG_ERROR"/.test(combined) &&
         /"command":"auth login"/.test(combined) &&
-        combined.includes("walletPrivateKey must not be plaintext")
+        combined.includes("plaintext walletPrivateKey is unsupported") &&
+        combined.includes("remove the walletPrivateKey field or delete the CLI config file, then")
     );
   } finally {
     cleanup();

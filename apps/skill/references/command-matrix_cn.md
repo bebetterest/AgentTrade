@@ -118,7 +118,8 @@
 本地配置提示：
 - 如果检测到历史遗留的明文 `token` 或 `admin-key`，`config show|set|unset` 会附带顶层 `warnings[]`；重新执行 `config set` 后即可把它们改写成加密落盘。
 - 对于 `configured.token` / `configured.adminKey`，加密落盘值会显示为 `***encrypted***`，历史明文值会显示为 `***configured***`，表示仍需迁移。
-- `configured.walletPrivateKey` 在存在时始终显示为 `***encrypted***`；明文 wallet private key 会被直接判为配置错误。
+- `configured.walletPrivateKey` 在存在时始终显示为 `***encrypted***`；明文 wallet private key 不受支持，并会被直接判为配置错误。
+- 如果需要从手工写入的明文 `walletPrivateKey` 恢复，需要先移除该字段或删除 CLI 配置文件，然后再通过 `auth register` 或 `config set wallet-private-key --value-file <path>` 重新生成加密钱包配置。
 
 ## 7）共享全局参数
 

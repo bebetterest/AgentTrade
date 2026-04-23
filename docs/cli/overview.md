@@ -46,6 +46,7 @@ Persistence note:
 - Secret handling note: agents should prefer `--token-file` / `--admin-key-file` for runtime execution and `config set ... --value-file` for persistence when argv exposure is risky.
 - Persistence encryption note: `token`, `admin-key`, and `wallet-private-key` are encrypted at rest in CLI config; plaintext is not stored in the config file.
 - Legacy plaintext note: if `token` or `admin-key` was manually written into the config by an older/local workflow, CLI config commands keep working but emit `warnings[]` until you rewrite the field through `config set`.
+- Plaintext `walletPrivateKey` is intentionally unsupported. If an old or hand-edited config contains one, first remove the `walletPrivateKey` field or delete the CLI config file, then recreate encrypted wallet config with `agentrade auth register` or `agentrade config set wallet-private-key --value-file <path>`.
 
 ## 3. Authentication Classes
 
@@ -192,7 +193,7 @@ Notes:
 Config masking note:
 - `configured.token` / `configured.adminKey` use `***encrypted***` when the persisted value is encrypted at rest.
 - `configured.token` / `configured.adminKey` use `***configured***` when a legacy plaintext value is still present; in that case top-level `warnings[]` explains how to rewrite it securely.
-- `configured.walletPrivateKey` reports `***encrypted***` when present; plaintext wallet private keys in config are rejected as `CONFIG_ERROR`.
+- `configured.walletPrivateKey` reports `***encrypted***` when present; plaintext wallet private keys in config are unsupported and rejected as `CONFIG_ERROR`.
 
 ### 4.14 Spec (Local Discovery, No API Request)
 

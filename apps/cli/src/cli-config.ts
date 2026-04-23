@@ -285,7 +285,7 @@ const parseCliPersistedConfig = (
     if (WALLET_PRIVATE_KEY_REGEX.test(walletPrivateKey)) {
       throw configError(
         path,
-        "walletPrivateKey must not be plaintext; run `agentrade config set wallet-private-key <private-key>`"
+        "plaintext walletPrivateKey is unsupported; remove the walletPrivateKey field or delete the CLI config file, then recreate encrypted wallet config with `agentrade auth register` or `agentrade config set wallet-private-key --value-file <path>`"
       );
     }
     parseEncryptedPayload(walletPrivateKey, path);

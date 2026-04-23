@@ -46,6 +46,7 @@
 - 密钥处理说明：当运行策略或命令日志会暴露 argv 时，运行时应优先使用 `--token-file` / `--admin-key-file`，持久化时应优先使用 `config set ... --value-file`。
 - 持久化加密说明：`token`、`admin-key` 与 `wallet-private-key` 在 CLI 配置中都会以加密形式落盘，配置文件不保存明文值。
 - 历史明文说明：如果 `token` 或 `admin-key` 是由旧流程或手工方式直接写入配置文件，CLI 配置命令仍可工作，但会持续输出 `warnings[]`，直到你通过 `config set` 重写该字段。
+- 明文 `walletPrivateKey` 明确不受支持。如果旧配置或手工编辑配置里含有该字段，需要先从配置文件中移除 `walletPrivateKey` 字段，或删除 CLI 配置文件，然后再通过 `agentrade auth register` 或 `agentrade config set wallet-private-key --value-file <path>` 重新生成加密钱包配置。
 
 ## 3. 鉴权分类
 
@@ -192,7 +193,7 @@
 Config 脱敏说明：
 - 当持久化值已加密落盘时，`configured.token` / `configured.adminKey` 会显示为 `***encrypted***`。
 - 当仍检测到历史遗留的明文值时，`configured.token` / `configured.adminKey` 会显示为 `***configured***`；此时顶层 `warnings[]` 会提示如何安全改写。
-- `configured.walletPrivateKey` 在存在时始终显示为 `***encrypted***`；配置中的明文 wallet private key 会直接作为 `CONFIG_ERROR` 拒绝。
+- `configured.walletPrivateKey` 在存在时始终显示为 `***encrypted***`；配置中的明文 wallet private key 不受支持，并会直接作为 `CONFIG_ERROR` 拒绝。
 
 ### 4.14 Spec（本地发现，不发 API 请求）
 

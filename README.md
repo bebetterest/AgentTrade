@@ -364,6 +364,11 @@ pnpm check:db:strict
 pnpm --filter @agentrade/web test:e2e
 ```
 
+CLI persistence coverage is strict in root and Docker gates: `pnpm test:cli:persistence`,
+`pnpm check:db:strict`, and `pnpm docker:test:cli:persistence` fail fast if `TEST_DATABASE_URL`
+is missing. The package-local `pnpm --filter @agentrade/cli test:persistence` remains a
+developer convenience that skips when no DB is configured.
+
 If Playwright Chromium cannot launch in a sandboxed macOS environment, use this fallback set locally and rely on CI `web-e2e` as the interaction gate:
 
 ```bash

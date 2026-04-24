@@ -100,6 +100,7 @@
 - CI pipeline includes a dedicated DB-backed CLI full-regression job (`cli-full-regression`, 2x repeat) to detect state leaks/flakes under repeated CLI execution.
 - CI quality gates now also include web unit tests, a dedicated web Playwright E2E gate (`web-e2e`), production dependency audit gate (`security-audit`, high/critical), plus dedicated Docker smoke jobs for both local and cloud compose modes.
 - Local DB gate now has strict mode (`check:db:strict`) and fails fast when `TEST_DATABASE_URL` is missing to avoid false-green skip runs.
+- CLI persistence coverage now has explicit strict vs convenience entrypoints: root/CI/Docker gates use `test:persistence:strict` and fail fast without `TEST_DATABASE_URL`, while package-local `test:persistence` remains skip-capable for no-DB development.
 - CI security auditing now covers both production dependencies and full dependency graph (including dev tooling).
 - Local Playwright Chromium launch failures in sandboxed macOS environments are documented as environment limits; interaction correctness remains CI-gated by Ubuntu `web-e2e`.
 - Server observability baseline now records structured request logs (`requestId/method/path/status/durationMs/routeId`) and structured write-operation logs (`operation/actor/cycleId/retry/conflict/outcome`) with in-process metrics aggregation.

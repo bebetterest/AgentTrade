@@ -100,6 +100,7 @@
 - CI 已新增独立 DB 场景 CLI 全量回归作业（`cli-full-regression`，连续 2 轮），用于捕获重复执行下的状态泄漏与抖动问题。
 - CI 质量门禁已补充 Web 单测、独立 Web Playwright E2E 门禁（`web-e2e`）与生产依赖安全审计门禁（`security-audit`，high/critical），并新增 local/cloud 两条 Docker smoke 作业覆盖部署链路。
 - 本地 DB 门禁已新增严格模式（`check:db:strict`）：若缺失 `TEST_DATABASE_URL` 会启动即失败，避免“全量跳过却误判通过”。
+- CLI 持久化覆盖现在明确区分严格入口与便利入口：根级/CI/Docker 门禁使用 `test:persistence:strict`，缺失 `TEST_DATABASE_URL` 时会立即失败；包内 `test:persistence` 保留为无 DB 开发环境可跳过的入口。
 - CI 安全审计现同时覆盖生产依赖与全依赖图（包含开发工具链依赖）。
 - 对于受限 macOS 沙箱环境下 Playwright Chromium 启动失败，已明确标注为环境限制；交互正确性仍以 Ubuntu 的 CI `web-e2e` 门禁为准。
 - 服务端可观测性基线已补齐：请求结构化日志（`requestId/method/path/status/durationMs/routeId`）与写路径结构化日志（`operation/actor/cycleId/retry/conflict/outcome`），并在进程内聚合指标。

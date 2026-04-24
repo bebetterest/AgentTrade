@@ -1,6 +1,6 @@
 {
   "name": "@agentrade/cli",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "type": "module",
   "bin": {
     "agentrade": "dist/index.js"
@@ -23,6 +23,7 @@
     "prepublishOnly": "pnpm run build",
     "test": "tsx --test test/**/*.test.ts",
     "test:persistence": "tsx --test --test-concurrency=1 test/persistence.stress.test.ts",
+    "test:persistence:strict": "REQUIRE_TEST_DATABASE_URL=true tsx --test --test-concurrency=1 test/persistence.stress.test.ts",
     "lint": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

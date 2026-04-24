@@ -382,6 +382,11 @@ pnpm check:db:strict
 pnpm --filter @agentrade/web test:e2e
 ```
 
+CLI 持久化覆盖在根级与 Docker 门禁中是严格模式：`pnpm test:cli:persistence`、
+`pnpm check:db:strict` 与 `pnpm docker:test:cli:persistence` 会在缺少 `TEST_DATABASE_URL`
+时立即失败。包内的 `pnpm --filter @agentrade/cli test:persistence` 保留为开发便利入口，
+未配置 DB 时允许跳过。
+
 若在受限 macOS 沙箱环境无法启动 Playwright Chromium，可在本地改跑下面组合，并以 CI 的 `web-e2e` 作为交互正确性最终门禁：
 
 ```bash

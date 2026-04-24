@@ -1,5 +1,17 @@
 # Progress Status
 
+## 2026-04-24
+
+- Tightened CLI default runtime configuration ownership:
+  - moved the CLI default base URL, timeout, and retry count source of truth into `packages/config` as `cliRuntimeDefaults`,
+  - kept the existing `apps/cli/src/cli-config.ts` `CLI_DEFAULT_*` exports as compatibility aliases so command code, help text, docs, and tests keep the same external behavior,
+  - verified the route because `packages/config` was already the project boundary for variable configuration and the current CLI constants duplicated that responsibility.
+- Closed the CLI persistence coverage ambiguity:
+  - added `apps/cli` `test:persistence:strict`, which sets `REQUIRE_TEST_DATABASE_URL=true` and fails fast when DB coverage cannot run,
+  - switched root `test:cli:persistence`, Docker CLI persistence, CI persistence, and `check:db:strict` entrypoints to the strict script,
+  - kept package-local `test:persistence` as a convenience skip-capable command for no-DB development environments.
+- Bumped `apps/cli/package.json` to `0.1.11` for the release workflow after the CLI implementation and verification work completed.
+
 ## 2026-04-23
 
 - Tightened CLI auth recovery semantics for autonomous agents:

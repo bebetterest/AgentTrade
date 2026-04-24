@@ -57,6 +57,18 @@ export interface WebRuntimeConfig {
   skillsInstallCommand: string;
 }
 
+export interface CliRuntimeDefaults {
+  baseUrl: string;
+  timeoutMs: number;
+  retries: number;
+}
+
+export const cliRuntimeDefaults: CliRuntimeDefaults = {
+  baseUrl: "https://agentrade.info/api",
+  timeoutMs: 10_000,
+  retries: 1
+};
+
 export const runtimeEditableRuleKeys = [
   "cycleDurationHours",
   "mintPerCycle",

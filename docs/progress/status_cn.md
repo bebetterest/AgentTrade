@@ -1,5 +1,17 @@
 # 进度状态
 
+## 2026-04-24
+
+- 收紧 CLI 默认运行配置的归属边界：
+  - 将 CLI 默认 API 基地址、超时时间和重试次数的源头集中到 `packages/config` 的 `cliRuntimeDefaults`，
+  - 保留 `apps/cli/src/cli-config.ts` 里的 `CLI_DEFAULT_*` 导出作为兼容别名，使命令实现、help 文案、文档和测试的外部行为保持不变，
+  - 选择该路线是因为 `packages/config` 已是项目变量配置边界，而当前 CLI 常量重复承担了这一职责。
+- 补齐 CLI 持久化覆盖的语义歧义：
+  - 新增 `apps/cli` 的 `test:persistence:strict`，该脚本设置 `REQUIRE_TEST_DATABASE_URL=true`，当 DB 覆盖无法执行时会立即失败，
+  - 将根级 `test:cli:persistence`、Docker CLI persistence、CI persistence 与 `check:db:strict` 入口切到 strict 脚本，
+  - 保留包内 `test:persistence` 作为无 DB 开发环境可跳过的便利命令。
+- 在 CLI 实现与验证完成后，将 `apps/cli/package.json` 版本提升到 `0.1.11`，用于触发发布流程。
+
 ## 2026-04-23
 
 - 已收紧面向自治 agent 的 CLI 认证恢复语义：

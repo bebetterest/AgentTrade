@@ -18,7 +18,7 @@
     "dev:server": "pnpm --filter @agentrade/server dev",
     "dev:cli": "pnpm --filter @agentrade/cli dev",
     "test:cli": "pnpm --filter @agentrade/cli test",
-    "test:cli:persistence": "pnpm --filter @agentrade/cli test:persistence",
+    "test:cli:persistence": "pnpm --filter @agentrade/cli test:persistence:strict",
     "test": "pnpm --filter @agentrade/server test",
     "test:db": "pnpm --filter @agentrade/server test:db",
     "docker:up": "sh scripts/compose-stack.sh local up -d postgres redis",
@@ -35,7 +35,7 @@
     "db:test:prepare:open-dispute-guard:local": "DATABASE_URL='postgresql://postgres:postgres@localhost:5432/agentrade?schema=test' pnpm exec prisma db execute --schema prisma/schema.prisma --file prisma/pre_migrations/20260409_dispute_open_unique_guard.sql",
     "docker:test:db": "pnpm docker:up && pnpm db:test:schema:push:local && pnpm db:test:prepare:open-dispute-guard:local && DATABASE_URL=postgresql://postgres:postgres@localhost:5432/agentrade TEST_DATABASE_URL='postgresql://postgres:postgres@localhost:5432/agentrade?schema=test' ENABLE_PERSISTENCE=true ENABLE_REDIS_RATE_LIMIT=false pnpm --filter @agentrade/server test:db",
     "docker:test:stress": "pnpm docker:up && pnpm db:test:schema:push:local && pnpm db:test:prepare:open-dispute-guard:local && DATABASE_URL=postgresql://postgres:postgres@localhost:5432/agentrade TEST_DATABASE_URL='postgresql://postgres:postgres@localhost:5432/agentrade?schema=test' ENABLE_PERSISTENCE=true ENABLE_REDIS_RATE_LIMIT=false pnpm --filter @agentrade/server test:stress",
-    "docker:test:cli:persistence": "pnpm docker:up && pnpm db:test:schema:push:local && pnpm db:test:prepare:open-dispute-guard:local && DATABASE_URL=postgresql://postgres:postgres@localhost:5432/agentrade TEST_DATABASE_URL='postgresql://postgres:postgres@localhost:5432/agentrade?schema=test' ENABLE_PERSISTENCE=true ENABLE_REDIS_RATE_LIMIT=false pnpm --filter @agentrade/cli test:persistence",
+    "docker:test:cli:persistence": "pnpm docker:up && pnpm db:test:schema:push:local && pnpm db:test:prepare:open-dispute-guard:local && DATABASE_URL=postgresql://postgres:postgres@localhost:5432/agentrade TEST_DATABASE_URL='postgresql://postgres:postgres@localhost:5432/agentrade?schema=test' ENABLE_PERSISTENCE=true ENABLE_REDIS_RATE_LIMIT=false pnpm --filter @agentrade/cli test:persistence:strict",
     "docker:test:full": "pnpm docker:test:db && pnpm docker:test:stress && pnpm docker:test:cli:persistence",
     "lint": "pnpm -r lint",
     "demo:web:large-cases": "pnpm --filter @agentrade/cli exec tsx ../../scripts/populate-web-large-task-cases.ts",
@@ -44,7 +44,7 @@
     "db:prepare:open-dispute-guard": "pnpm exec prisma db execute --schema prisma/schema.prisma --file prisma/pre_migrations/20260409_dispute_open_unique_guard.sql",
     "check:fast": "pnpm toolchain:check && pnpm -r lint && pnpm --filter @agentrade/server test:non-db && pnpm --filter @agentrade/web test:unit && pnpm --filter @agentrade/cli test",
     "check:db": "pnpm check:db:strict",
-    "check:db:strict": "REQUIRE_TEST_DATABASE_URL=true pnpm toolchain:check && REQUIRE_TEST_DATABASE_URL=true pnpm --filter @agentrade/server test:db && REQUIRE_TEST_DATABASE_URL=true pnpm --filter @agentrade/server test:stress && REQUIRE_TEST_DATABASE_URL=true pnpm --filter @agentrade/cli test:persistence",
+    "check:db:strict": "REQUIRE_TEST_DATABASE_URL=true pnpm toolchain:check && REQUIRE_TEST_DATABASE_URL=true pnpm --filter @agentrade/server test:db && REQUIRE_TEST_DATABASE_URL=true pnpm --filter @agentrade/server test:stress && pnpm --filter @agentrade/cli test:persistence:strict",
     "docs:api:generate": "pnpm --filter @agentrade/cli exec tsx ../../scripts/generate-openapi.mjs"
   },
   "devDependencies": {

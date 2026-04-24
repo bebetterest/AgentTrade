@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type { Command } from "commander";
+import { cliRuntimeDefaults } from "@agentrade/config";
 import {
   CLI_DEFAULT_BASE_URL,
   CLI_DEFAULT_RETRIES,
@@ -17,6 +18,12 @@ const mockCommand = (options: Record<string, unknown>): Command => {
     optsWithGlobals: () => options
   } as unknown as Command;
 };
+
+test("context: cli defaults are sourced from shared config", () => {
+  assert.equal(CLI_DEFAULT_BASE_URL, cliRuntimeDefaults.baseUrl);
+  assert.equal(CLI_DEFAULT_TIMEOUT_MS, cliRuntimeDefaults.timeoutMs);
+  assert.equal(CLI_DEFAULT_RETRIES, cliRuntimeDefaults.retries);
+});
 
 test("context: resolve global options from strings", () => {
   const options = resolveGlobalOptions(

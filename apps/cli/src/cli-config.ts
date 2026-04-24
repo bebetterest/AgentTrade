@@ -2,11 +2,12 @@ import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
+import { cliRuntimeDefaults } from "@agentrade/config";
 import { CliConfigError } from "./errors.js";
 
-export const CLI_DEFAULT_BASE_URL = "https://agentrade.info/api";
-export const CLI_DEFAULT_TIMEOUT_MS = 10000;
-export const CLI_DEFAULT_RETRIES = 1;
+export const CLI_DEFAULT_BASE_URL = cliRuntimeDefaults.baseUrl;
+export const CLI_DEFAULT_TIMEOUT_MS = cliRuntimeDefaults.timeoutMs;
+export const CLI_DEFAULT_RETRIES = cliRuntimeDefaults.retries;
 
 export interface CliPersistedConfig {
   baseUrl?: string;

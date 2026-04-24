@@ -9,7 +9,8 @@
 - Closed the CLI persistence coverage ambiguity:
   - added `apps/cli` `test:persistence:strict`, which sets `REQUIRE_TEST_DATABASE_URL=true` and fails fast when DB coverage cannot run,
   - switched root `test:cli:persistence`, Docker CLI persistence, CI persistence, and `check:db:strict` entrypoints to the strict script,
-  - kept package-local `test:persistence` as a convenience skip-capable command for no-DB development environments.
+  - kept package-local `test:persistence` as a convenience skip-capable command for no-DB development environments,
+  - made the CLI `test` script build `dist` before running tests so dist smoke coverage no longer depends on stale local artifacts or a prior build step.
 - Bumped `apps/cli/package.json` to `0.1.11` for the release workflow after the CLI implementation and verification work completed.
 
 ## 2026-04-23

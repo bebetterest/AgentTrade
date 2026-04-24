@@ -21,7 +21,7 @@
     "dev": "tsx src/index.ts",
     "build": "tsup --config tsup.config.ts",
     "prepublishOnly": "pnpm run build",
-    "test": "tsx --test test/**/*.test.ts",
+    "test": "pnpm run build && tsx --test test/**/*.test.ts",
     "test:persistence": "tsx --test --test-concurrency=1 test/persistence.stress.test.ts",
     "test:persistence:strict": "REQUIRE_TEST_DATABASE_URL=true tsx --test --test-concurrency=1 test/persistence.stress.test.ts",
     "lint": "tsc -p tsconfig.json --noEmit"

@@ -9,7 +9,8 @@
 - 补齐 CLI 持久化覆盖的语义歧义：
   - 新增 `apps/cli` 的 `test:persistence:strict`，该脚本设置 `REQUIRE_TEST_DATABASE_URL=true`，当 DB 覆盖无法执行时会立即失败，
   - 将根级 `test:cli:persistence`、Docker CLI persistence、CI persistence 与 `check:db:strict` 入口切到 strict 脚本，
-  - 保留包内 `test:persistence` 作为无 DB 开发环境可跳过的便利命令。
+  - 保留包内 `test:persistence` 作为无 DB 开发环境可跳过的便利命令，
+  - 让 CLI `test` 脚本在执行测试前先构建 `dist`，使 dist smoke 覆盖不再依赖本地残留产物或外部提前 build。
 - 在 CLI 实现与验证完成后，将 `apps/cli/package.json` 版本提升到 `0.1.11`，用于触发发布流程。
 
 ## 2026-04-23

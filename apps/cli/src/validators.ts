@@ -10,6 +10,7 @@ import { CliValidationError } from "./errors.js";
 
 const ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/;
 const PRIVATE_KEY_REGEX = /^0x[a-fA-F0-9]{64}$/;
+const EIP191_SIGNATURE_REGEX = /^0x[a-fA-F0-9]{130}$/;
 const ISO_DATETIME_REGEX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/;
 const RUNTIME_EDITABLE_KEYS = new Set<keyof RuntimeEditableRulesPatch>([
   "cycleDurationHours",
@@ -86,6 +87,13 @@ export const ensureAddress = (raw: string, flag: string): Address => {
 export const ensurePrivateKey = (raw: string, flag: string): `0x${string}` => {
   if (!PRIVATE_KEY_REGEX.test(raw)) {
     throw new CliValidationError(`${flag} must be a valid hex private key`);
+  }
+  return raw as `0x${string}`;
+};
+
+export const ensureEip191Signature = (raw: string, flag: string): `0x${string}` => {
+  if (!EIP191_SIGNATURE_REGEX.test(raw)) {
+    throw new CliValidationError(`${flag} must be a 65-byte 0x-prefixed EIP-191 signature`);
   }
   return raw as `0x${string}`;
 };

@@ -119,7 +119,7 @@ const toPlaintextPersistedSecretWarnings = (values: CliPersistedConfig): Structu
       level: "WARNING",
       field: "token",
       message:
-        "token in CLI config is plaintext and not encrypted at rest; rerun `agentrade config set token --value-file <path>` or `agentrade config set token <value>` to rewrite it securely"
+        "token in CLI config is plaintext and not encrypted at rest; rerun `agentrade config set token --value-file <path>` to rewrite it securely without exposing the secret in argv"
     });
   }
 
@@ -129,7 +129,7 @@ const toPlaintextPersistedSecretWarnings = (values: CliPersistedConfig): Structu
       level: "WARNING",
       field: "adminKey",
       message:
-        "admin-key in CLI config is plaintext and not encrypted at rest; rerun `agentrade config set admin-key --value-file <path>` or `agentrade config set admin-key <value>` to rewrite it securely"
+        "admin-key in CLI config is plaintext and not encrypted at rest; rerun `agentrade config set admin-key --value-file <path>` to rewrite it securely without exposing the secret in argv"
     });
   }
 
@@ -191,23 +191,24 @@ const parseUnsetKey = (raw: string): CliPersistedConfigKey | "all" => {
 
 const parseSetValue = (
   key: CliPersistedConfigKey,
-  rawValue: string
+  rawValue: string,
+  sourceLabel: "[value]" | "--value-file"
 ): string | number => {
   switch (key) {
     case "baseUrl":
-      return ensureHttpUrl(rawValue, "<value>");
+      return ensureHttpUrl(rawValue, sourceLabel);
     case "token":
-      return ensureNonEmpty(rawValue, "<value>");
+      return ensureNonEmpty(rawValue, sourceLabel);
     case "adminKey":
-      return ensureNonEmpty(rawValue, "<value>");
+      return ensureNonEmpty(rawValue, sourceLabel);
     case "walletAddress":
-      return ensureAddress(rawValue, "<value>");
+      return ensureAddress(rawValue, sourceLabel);
     case "walletPrivateKey":
-      return ensurePrivateKey(rawValue, "<value>");
+      return ensurePrivateKey(rawValue, sourceLabel);
     case "timeoutMs":
-      return ensurePositiveInteger(rawValue, "<value>");
+      return ensurePositiveInteger(rawValue, sourceLabel);
     case "retries":
-      return ensureNonNegativeInteger(rawValue, "<value>");
+      return ensureNonNegativeInteger(rawValue, sourceLabel);
     default: {
       const exhaustive: never = key;
       return exhaustive;
@@ -218,20 +219,26 @@ const parseSetValue = (
 const resolveConfigSetRawValue = (
   inlineValue: string | undefined,
   valueFile: string | undefined
-): string => {
+): { value: string; sourceLabel: "[value]" | "--value-file" } => {
   if (inlineValue !== undefined && valueFile !== undefined) {
-    throw new CliValidationError("<value> and --value-file are mutually exclusive");
+    throw new CliValidationError("[value] and --value-file are mutually exclusive");
   }
 
   if (valueFile !== undefined) {
-    return normalizeConfigSetFileValue(readFileBackedUtf8(valueFile, "value-file"));
+    return {
+      value: normalizeConfigSetFileValue(readFileBackedUtf8(valueFile, "value-file")),
+      sourceLabel: "--value-file"
+    };
   }
 
   if (inlineValue === undefined) {
-    throw new CliValidationError("<value> or --value-file is required");
+    throw new CliValidationError("[value] or --value-file is required");
   }
 
-  return stripLeadingBom(inlineValue);
+  return {
+    value: stripLeadingBom(inlineValue),
+    sourceLabel: "[value]"
+  };
 };
 
 export const registerConfigCommands = (program: Command): void => {
@@ -270,14 +277,15 @@ Config set note:
       .argument("<key>", `setting key (${VALID_SET_KEYS})`)
       .argument("[value]", "setting value")
       .option("--value-file <path>", "file containing setting value"),
-    ["require one of <value> / --value-file"]
+    ["require one of [value] / --value-file"]
   )
     .addHelpText("after", configSetHelpAppendix)
     .action(function (this: Command, rawKey: string, rawValue?: string) {
       try {
         const options = this.opts() as { valueFile?: string };
         const key = parseSetKey(rawKey);
-        const value = parseSetValue(key, resolveConfigSetRawValue(rawValue, options.valueFile));
+        const resolvedValue = resolveConfigSetRawValue(rawValue, options.valueFile);
+        const value = parseSetValue(key, resolvedValue.value, resolvedValue.sourceLabel);
         const snapshot = setCliPersistedConfigValue(key, value);
         printSuccessJson(
           withSuccessMeta(

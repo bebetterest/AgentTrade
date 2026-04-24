@@ -11,6 +11,7 @@ import {
   toServerRoutePath,
   validateOperationResponse
 } from "./services.js";
+import { DomainError } from "../domain/errors.js";
 import { HttpError } from "../utils/http-error.js";
 
 const authChallengeOperation = getApiOperation("authChallengeV2");
@@ -117,20 +118,20 @@ const registerAuthVerifyRoute = (
       signature: string;
     }>(operation, request);
     if (!isAddress(body.address)) {
-      throw new HttpError(400, "invalid address");
+      throw new DomainError("INVALID_ADDRESS", "invalid address", 400);
     }
     const addressKey = body.address.toLowerCase();
     const nowMs = Date.now();
     const challenge = services.challenges.get(addressKey);
     if (!challenge) {
-      throw new HttpError(401, "challenge not found");
+      throw new DomainError("CHALLENGE_NOT_FOUND", "challenge not found", 401);
     }
     if (nowMs - challenge.createdAt >= maintenance.ttlMs) {
       services.challenges.delete(addressKey);
-      throw new HttpError(401, "challenge expired");
+      throw new DomainError("CHALLENGE_EXPIRED", "challenge expired", 401);
     }
     if (challenge.nonce !== body.nonce || challenge.message !== body.message) {
-      throw new HttpError(401, "challenge mismatch");
+      throw new DomainError("CHALLENGE_MISMATCH", "challenge mismatch", 401);
     }
     const valid = await verifyMessage({
       address: body.address as Address,
@@ -138,7 +139,7 @@ const registerAuthVerifyRoute = (
       signature: body.signature as `0x${string}`
     }).catch(() => false);
     if (!valid) {
-      throw new HttpError(401, "invalid signature");
+      throw new DomainError("INVALID_SIGNATURE", "invalid signature", 401);
     }
     const token = jwt.sign({ sub: body.address }, services.config.jwtSecret, { expiresIn: "15m" });
     services.challenges.delete(addressKey);

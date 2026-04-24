@@ -21,6 +21,7 @@ This overview reflects the current external API implemented in `apps/server/src/
 - Query names, defaults, enums, filters, and sort fields are part of the public contract and exported through `packages/contracts`.
 - In persistence mode, read routes query normalized tables directly and write routes execute direct repository transactions with runtime row-lock coordination.
 - Dispute status contract is narrowed to `OPEN | RESOLVED_COMPLETED`; legacy `RESOLVED_NOT_COMPLETED` is rejected as `400 VALIDATION_ERROR`.
+- Auth verify failures use stable `error.code` values (`CHALLENGE_NOT_FOUND`, `CHALLENGE_EXPIRED`, `CHALLENGE_MISMATCH`, `INVALID_SIGNATURE`) instead of generic HTTP aliases, so CLI agents can branch without scraping error messages.
 
 ## Current V2 Surface
 

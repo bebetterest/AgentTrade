@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
@@ -21,6 +21,22 @@ const cliPackageVersion = (
   JSON.parse(readFileSync(resolve(repoRoot, "apps/cli/package.json"), "utf8")) as { version: string }
 ).version;
 const testConfigPath = join(tmpdir(), `agentrade-cli-behavior-${process.pid}.json`);
+
+const listSourceFiles = (dir: string): string[] => {
+  const files: string[] = [];
+  for (const entry of readdirSync(dir)) {
+    const path = join(dir, entry);
+    const stat = statSync(path);
+    if (stat.isDirectory()) {
+      files.push(...listSourceFiles(path));
+      continue;
+    }
+    if (path.endsWith(".ts")) {
+      files.push(path);
+    }
+  }
+  return files;
+};
 
 const runCli = async (
   args: string[],
@@ -77,7 +93,7 @@ interface SpecEntityHints {
 interface SpecHandoffSelectionCondition {
   path: string;
   operator: string;
-  value?: string | number | boolean;
+  value?: string | number | boolean | Array<string | number | boolean>;
 }
 
 interface SpecHandoffBinding {
@@ -171,14 +187,34 @@ test("cli help includes global option and error contract guidance", async () => 
   assert.match(result.stdout, /CLI runtime setting precedence:/);
   assert.match(result.stdout, /agentrade config set\/show\/unset/);
   assert.match(result.stdout, /--base-url/);
+  assert.match(result.stdout, /--token <token>[^\n]*inline bearer token/i);
   assert.match(result.stdout, /--token-file <path>/);
+  assert.match(result.stdout, /--admin-key <key>[^\n]*inline admin service key/i);
   assert.match(result.stdout, /--admin-key-file <path>/);
   assert.match(result.stdout, /prefer --token-file \/ --admin-key-file/i);
+  assert.match(result.stdout, /prefer file-backed text\/JSON flags/i);
+  assert.match(result.stdout, /file-backed credential\/text\/JSON\/value flags accept '-'/i);
   assert.match(result.stdout, /accept '-' to read UTF-8 from stdin/i);
   assert.match(result.stdout, /Output contract:/);
   assert.match(result.stdout, /success: command execution writes stdout JSON with \{ok,command,data,warnings\?\}/);
   assert.match(result.stdout, /exception: --help and --version write plain text to stdout/i);
   assert.match(result.stdout, /Exit codes:/);
+});
+
+test("cli source remains non-interactive for agent execution", () => {
+  const sourceDir = resolve(repoRoot, "apps/cli/src");
+  const forbiddenPatterns = [
+    { label: "readline import", pattern: /from\s+["'](?:node:)?readline(?:\/promises)?["']|require\(["'](?:node:)?readline(?:\/promises)?["']\)/ },
+    { label: "prompt library import", pattern: /from\s+["'](?:inquirer|prompts|enquirer)["']|require\(["'](?:inquirer|prompts|enquirer)["']\)/ },
+    { label: "interactive prompt call", pattern: /\b(?:createInterface|prompt|confirm)\s*\(/ }
+  ];
+
+  for (const file of listSourceFiles(sourceDir)) {
+    const source = readFileSync(file, "utf8");
+    for (const { label, pattern } of forbiddenPatterns) {
+      assert.doesNotMatch(source, pattern, `${label} is not agent-friendly in ${file}`);
+    }
+  }
 });
 
 test("cli subcommand help is self-contained for agent execution", async () => {
@@ -187,7 +223,9 @@ test("cli subcommand help is self-contained for agent execution", async () => {
   assert.match(taskCreateHelp.stdout, /Create a task \(token required\)/);
   assert.match(taskCreateHelp.stdout, /Global Options:/);
   assert.match(taskCreateHelp.stdout, /--token-file <path>/);
+  assert.match(taskCreateHelp.stdout, /--title-file <path>/);
   assert.match(taskCreateHelp.stdout, /deadline in ISO datetime format with timezone/i);
+  assert.match(taskCreateHelp.stdout, /require one of --title \/ --title-file/i);
   assert.match(taskCreateHelp.stdout, /require one of --desc \/ --desc-file/i);
   assert.match(taskCreateHelp.stdout, /require one of --criteria \/ --criteria-file/i);
   assert.match(taskCreateHelp.stdout, /Output contract:/);
@@ -197,13 +235,18 @@ test("cli subcommand help is self-contained for agent execution", async () => {
 
   const authVerifyHelp = await runCli(["auth", "verify", "--help"]);
   assert.equal(authVerifyHelp.code, 0);
+  assert.match(authVerifyHelp.stdout, /--signature-file <path>/);
+  assert.match(authVerifyHelp.stdout, /require one of --signature \/ --signature-file/i);
+  assert.match(authVerifyHelp.stdout, /signature must be a 65-byte 0x-prefixed EIP-191 signature/i);
   assert.match(authVerifyHelp.stdout, /require one of --message \/ --message-file/i);
 
   const authLoginHelp = await runCli(["auth", "login", "--help"]);
   assert.equal(authLoginHelp.code, 0);
+  assert.match(authLoginHelp.stdout, /--private-key <privateKey>[\s\S]*?prefer[\s\S]*?--private-key-file/i);
   assert.match(authLoginHelp.stdout, /--private-key-file <path>/);
   assert.match(authLoginHelp.stdout, /persist token\s+by default/i);
   assert.match(authLoginHelp.stdout, /persisted wallet-private-key in CLI config/i);
+  assert.match(authLoginHelp.stdout, /bypass persisted wallet-private-key decryption/i);
   assert.match(authLoginHelp.stdout, /prefer --private-key-file over inline --private-key/i);
   assert.match(authLoginHelp.stdout, /pass --no-persist-token/i);
 
@@ -276,8 +319,15 @@ test("cli subcommand help is self-contained for agent execution", async () => {
   assert.equal(settingsUpdateHelp.code, 0);
   assert.match(settingsUpdateHelp.stdout, /token \+ admin key required/i);
   assert.match(settingsUpdateHelp.stdout, /--patch-file <path>/);
+  assert.match(settingsUpdateHelp.stdout, /--reason-file <path>/);
   assert.match(settingsUpdateHelp.stdout, /require one of --patch-json \/ --patch-file/i);
+  assert.match(settingsUpdateHelp.stdout, /--reason and --reason-file are mutually exclusive/i);
   assert.match(settingsUpdateHelp.stdout, /max 1000 chars/);
+
+  const settingsResetHelp = await runCli(["system", "settings", "reset", "--help"]);
+  assert.equal(settingsResetHelp.code, 0);
+  assert.match(settingsResetHelp.stdout, /--reason-file <path>/);
+  assert.match(settingsResetHelp.stdout, /--reason and --reason-file are mutually exclusive/i);
 
   const settingsHistoryHelp = await runCli(["system", "settings", "history", "--help"]);
   assert.equal(settingsHistoryHelp.code, 0);
@@ -287,7 +337,7 @@ test("cli subcommand help is self-contained for agent execution", async () => {
   const configSetHelp = await runCli(["config", "set", "--help"]);
   assert.equal(configSetHelp.code, 0);
   assert.match(configSetHelp.stdout, /--value-file <path>/);
-  assert.match(configSetHelp.stdout, /require one of <value> \/ --value-file/i);
+  assert.match(configSetHelp.stdout, /require one of \[value\] \/ --value-file/i);
   assert.match(configSetHelp.stdout, /--value-file - reads UTF-8 from stdin/i);
   assert.match(configSetHelp.stdout, /encrypted at rest/i);
 });
@@ -369,13 +419,44 @@ test("cli spec emits machine-readable discovery output without loading runtime c
       discovery: {
         preferredCommand: string;
       };
-      globalOptions: Array<{ longFlag?: string }>;
+      agentExecution: {
+        humanOutOfLoop: boolean;
+        interactivePrompts: boolean;
+        humanApprovalRequiredForLifecycleWrites: boolean;
+        retryModeMeanings: Record<string, string>;
+        failureStrategyMeanings: Record<string, string>;
+        workflowActorRoleMeanings: Record<string, string>;
+      };
+      globalOptions: Array<{
+        flags: string;
+        longFlag?: string;
+        description: string;
+        takesValue: boolean;
+        valueRequired: boolean;
+        required: boolean;
+        secretKind?: string;
+        argvValueContainsSecret?: boolean;
+        preferredFileFlag?: string;
+        fileBackedSecretFor?: string;
+      }>;
+      dualChannelInputs: Array<{
+        inline: string;
+        file: string;
+        stdinAlias: string;
+        valueKind?: string;
+        preferredInput?: string;
+        secretKind?: string;
+      }>;
       commands: Array<{
         path: string;
         auth: string;
         authRequirements: Array<{
           kind: string;
           sources: string[];
+          preferredSources: string[];
+          argvSecretSources: string[];
+          fileBackedSources: string[];
+          persistedSources: string[];
         }>;
         requestBindings: Array<{
           location: string;
@@ -452,7 +533,7 @@ test("cli spec emits machine-readable discovery output without loading runtime c
           selectionConditions?: Array<{
             path: string;
             operator: string;
-            value?: string | number | boolean;
+            value?: string | number | boolean | Array<string | number | boolean>;
           }>;
           note?: string;
         }>;
@@ -480,18 +561,141 @@ test("cli spec emits machine-readable discovery output without loading runtime c
   assert.equal(envelope.data.discovery.preferredCommand, "agentrade spec");
   assert.equal(envelope.data.discovery.stdinFileAlias, "-");
   assert.equal(envelope.data.discovery.stdinSingleConsumerPerInvocation, true);
-  assert.ok(envelope.data.globalOptions.some((option) => option.longFlag === "--token-file"));
+  assert.equal(envelope.data.discovery.credentialFileInputsResolveBeforeCommandFileInputs, true);
+  assert.equal(envelope.data.agentExecution.humanOutOfLoop, true);
+  assert.equal(envelope.data.agentExecution.interactivePrompts, false);
+  assert.equal(envelope.data.agentExecution.humanApprovalRequiredForLifecycleWrites, false);
+  assert.match(envelope.data.agentExecution.retryModeMeanings.manual, /No human approval is implied/i);
+  assert.match(envelope.data.agentExecution.failureStrategyMeanings.manualRetry, /do not auto-replay/i);
+  assert.match(envelope.data.agentExecution.workflowActorRoleMeanings.owner, /not a human owner approval gate/i);
+  assert.deepEqual(
+    envelope.data.globalOptions.find((option) => option.longFlag === "--token"),
+    {
+      longFlag: "--token",
+      flags: "--token <token>",
+      description: "inline bearer token; prefer --token-file when argv exposure is unacceptable",
+      takesValue: true,
+      valueRequired: true,
+      required: false,
+      secretKind: "bearerToken",
+      argvValueContainsSecret: true,
+      preferredFileFlag: "--token-file"
+    }
+  );
+  assert.deepEqual(
+    envelope.data.globalOptions.find((option) => option.longFlag === "--token-file"),
+    {
+      longFlag: "--token-file",
+      flags: "--token-file <path>",
+      description: "file containing bearer token",
+      takesValue: true,
+      valueRequired: true,
+      required: false,
+      secretKind: "bearerToken",
+      argvValueContainsSecret: false,
+      fileBackedSecretFor: "--token"
+    }
+  );
   assert.ok(envelope.data.dualChannelInputs.every((item) => item.stdinAlias === "-"));
+  assert.deepEqual(
+    envelope.data.dualChannelInputs.find((item) => item.inline === "--token"),
+    {
+      inline: "--token",
+      file: "--token-file",
+      stdinAlias: "-",
+      valueKind: "secret",
+      preferredInput: "file",
+      secretKind: "bearerToken"
+    }
+  );
+  assert.deepEqual(
+    envelope.data.dualChannelInputs.find((item) => item.inline === "--message"),
+    {
+      inline: "--message",
+      file: "--message-file",
+      stdinAlias: "-",
+      valueKind: "text",
+      preferredInput: "file"
+    }
+  );
+  assert.deepEqual(
+    envelope.data.dualChannelInputs.find((item) => item.inline === "--title"),
+    {
+      inline: "--title",
+      file: "--title-file",
+      stdinAlias: "-",
+      valueKind: "text",
+      preferredInput: "file"
+    }
+  );
+  assert.deepEqual(
+    envelope.data.dualChannelInputs.find((item) => item.inline === "--signature"),
+    {
+      inline: "--signature",
+      file: "--signature-file",
+      stdinAlias: "-",
+      valueKind: "secret",
+      preferredInput: "file",
+      secretKind: "authSignature"
+    }
+  );
+  assert.deepEqual(
+    envelope.data.dualChannelInputs.find((item) => item.inline === "--patch-json"),
+    {
+      inline: "--patch-json",
+      file: "--patch-file",
+      stdinAlias: "-",
+      valueKind: "json",
+      preferredInput: "file"
+    }
+  );
+  assert.deepEqual(
+    envelope.data.dualChannelInputs.find((item) => item.inline === "--bio"),
+    {
+      inline: "--bio",
+      file: "--bio-file",
+      stdinAlias: "-",
+      valueKind: "text",
+      preferredInput: "file"
+    }
+  );
+  assert.deepEqual(
+    envelope.data.dualChannelInputs.find((item) => item.inline === "--name"),
+    {
+      inline: "--name",
+      file: "--name-file",
+      stdinAlias: "-",
+      valueKind: "text",
+      preferredInput: "file"
+    }
+  );
   assert.equal(envelope.data.commands.length, 1);
   assert.equal(envelope.data.commands[0]?.path, "tasks create");
   assert.equal(envelope.data.commands[0]?.auth, "bearer");
   assert.deepEqual(envelope.data.commands[0]?.authRequirements, [
     {
       kind: "token",
-      sources: ["--token", "--token-file", "persistedConfig.token"]
+      sources: ["--token", "--token-file", "persistedConfig.token"],
+      preferredSources: ["--token-file", "persistedConfig.token"],
+      argvSecretSources: ["--token"],
+      fileBackedSources: ["--token-file"],
+      persistedSources: ["persistedConfig.token"]
     }
   ]);
   assert.equal(envelope.data.commands[0]?.requestBindings.length, 8);
+  const titleBinding = envelope.data.commands[0]?.requestBindings.find(
+    (binding) => binding.field === "title"
+  );
+  assert.deepEqual(titleBinding, {
+    location: "body",
+    field: "title",
+    sources: ["--title", "--title-file"],
+    required: true,
+    schema: {
+      type: "string",
+      minLength: 1
+    }
+  });
   const deadlineBinding = envelope.data.commands[0]?.requestBindings.find(
     (binding) => binding.field === "deadlineUtc"
   );
@@ -674,11 +878,211 @@ test("cli spec emits machine-readable discovery output without loading runtime c
   });
   assert.equal(envelope.data.commands[0]?.executionMode, "api");
   assert.deepEqual(envelope.data.commands[0]?.inputContract, [
+    "require one of --title / --title-file",
     "require one of --desc / --desc-file",
     "require one of --criteria / --criteria-file"
   ]);
   assert.equal(envelope.data.commands[0]?.operation?.method, "POST");
   assert.equal(envelope.data.commands[0]?.operation?.pathTemplate, "/v2/tasks");
+});
+
+test("cli spec references only registered agent-facing inputs", async () => {
+  const result = await runCli(["spec"]);
+  assert.equal(result.code, 0);
+  const envelope = JSON.parse(result.stdout) as {
+    ok: boolean;
+    data: {
+      globalOptions: Array<{
+        longFlag?: string;
+        preferredFileFlag?: string;
+        fileBackedSecretFor?: string;
+      }>;
+      dualChannelInputs: Array<{
+        inline: string;
+        file: string;
+        valueKind?: string;
+      }>;
+      commands: Array<{
+        path: string;
+        arguments: Array<{
+          syntax: string;
+        }>;
+        options: Array<{
+          longFlag?: string;
+          preferredFileFlag?: string;
+          fileBackedSecretFor?: string;
+        }>;
+        requestBindings: Array<{
+          field: string;
+          sources: string[];
+        }>;
+      }>;
+    };
+  };
+
+  assert.equal(envelope.ok, true);
+
+  const dualByInline = new Map(envelope.data.dualChannelInputs.map((input) => [input.inline, input]));
+  const dualByFile = new Map(envelope.data.dualChannelInputs.map((input) => [input.file, input]));
+  const globalOptions = new Set(
+    envelope.data.globalOptions.flatMap((option) => option.longFlag ? [option.longFlag] : [])
+  );
+  const allOptions = new Set(globalOptions);
+  const allArguments = new Set<string>();
+
+  for (const command of envelope.data.commands) {
+    for (const option of command.options) {
+      if (option.longFlag) {
+        allOptions.add(option.longFlag);
+      }
+    }
+    for (const argument of command.arguments) {
+      allArguments.add(argument.syntax);
+    }
+  }
+
+  for (const input of envelope.data.dualChannelInputs) {
+    if (input.inline.startsWith("--")) {
+      assert.ok(allOptions.has(input.inline), `dualChannelInputs.inline is not registered: ${input.inline}`);
+    } else {
+      assert.ok(allArguments.has(input.inline), `dualChannelInputs.inline is not registered: ${input.inline}`);
+    }
+    assert.ok(allOptions.has(input.file), `dualChannelInputs.file is not registered: ${input.file}`);
+  }
+
+  for (const option of envelope.data.globalOptions) {
+    if (option.longFlag?.endsWith("-file")) {
+      const pair = dualByFile.get(option.longFlag);
+      assert.ok(pair, `global file-backed option is missing from dualChannelInputs: ${option.longFlag}`);
+      assert.ok(globalOptions.has(pair.inline), `global file-backed option ${option.longFlag} has unregistered inline partner ${pair.inline}`);
+    }
+  }
+
+  for (const option of envelope.data.globalOptions) {
+    if (option.preferredFileFlag) {
+      assert.ok(
+        globalOptions.has(option.preferredFileFlag),
+        `global preferredFileFlag is not registered: ${option.preferredFileFlag}`
+      );
+    }
+    if (option.fileBackedSecretFor) {
+      assert.ok(
+        globalOptions.has(option.fileBackedSecretFor),
+        `global fileBackedSecretFor is not registered: ${option.fileBackedSecretFor}`
+      );
+    }
+  }
+
+  for (const command of envelope.data.commands) {
+    const commandOptions = new Set(command.options.flatMap((option) => option.longFlag ? [option.longFlag] : []));
+    const commandInputs = new Set([...commandOptions, ...globalOptions]);
+    const commandArguments = new Set(command.arguments.map((argument) => argument.syntax));
+
+    for (const option of command.options) {
+      if (!option.longFlag?.endsWith("-file")) {
+        continue;
+      }
+      const pair = dualByFile.get(option.longFlag);
+      assert.ok(pair, `${command.path} file-backed option is missing from dualChannelInputs: ${option.longFlag}`);
+      if (pair.inline.startsWith("--")) {
+        assert.ok(
+          commandInputs.has(pair.inline),
+          `${command.path} file-backed option ${option.longFlag} has unregistered inline partner ${pair.inline}`
+        );
+      } else {
+        assert.ok(
+          commandArguments.has(pair.inline),
+          `${command.path} file-backed option ${option.longFlag} has unregistered argument partner ${pair.inline}`
+        );
+      }
+    }
+
+    for (const binding of command.requestBindings) {
+      for (const source of binding.sources) {
+        if (source.startsWith("--")) {
+          assert.ok(
+            commandInputs.has(source),
+            `${command.path} request binding '${binding.field}' references unregistered option ${source}`
+          );
+        } else if (source.startsWith("<") || source.startsWith("[")) {
+          assert.ok(
+            commandArguments.has(source),
+            `${command.path} request binding '${binding.field}' references unregistered argument ${source}`
+          );
+        }
+      }
+
+      for (const source of binding.sources) {
+        const pair = dualByInline.get(source) ?? dualByFile.get(source);
+        if (!pair) {
+          continue;
+        }
+        const commandHasInline = pair.inline.startsWith("--")
+          ? commandInputs.has(pair.inline)
+          : commandArguments.has(pair.inline);
+        const commandHasFile = commandInputs.has(pair.file);
+        if (!commandHasInline || !commandHasFile) {
+          continue;
+        }
+        assert.ok(
+          binding.sources.includes(pair.inline),
+          `${command.path} request binding '${binding.field}' is missing inline partner ${pair.inline}`
+        );
+        assert.ok(
+          binding.sources.includes(pair.file),
+          `${command.path} request binding '${binding.field}' is missing file partner ${pair.file}`
+        );
+      }
+    }
+
+    for (const option of command.options) {
+      if (option.preferredFileFlag) {
+        assert.ok(
+          commandInputs.has(option.preferredFileFlag),
+          `${command.path} preferredFileFlag is not registered: ${option.preferredFileFlag}`
+        );
+      }
+      if (option.fileBackedSecretFor) {
+        assert.ok(
+          commandInputs.has(option.fileBackedSecretFor),
+          `${command.path} fileBackedSecretFor is not registered: ${option.fileBackedSecretFor}`
+        );
+      }
+    }
+  }
+});
+
+test("cli help mirrors every spec input contract line", async () => {
+  const result = await runCli(["spec"]);
+  assert.equal(result.code, 0);
+  const envelope = JSON.parse(result.stdout) as {
+    ok: boolean;
+    data: {
+      commands: Array<{
+        path: string;
+        inputContract: string[];
+      }>;
+    };
+  };
+
+  assert.equal(envelope.ok, true);
+
+  for (const command of envelope.data.commands) {
+    if (command.inputContract.length === 0) {
+      continue;
+    }
+
+    const help = await runCli([...command.path.split(" "), "--help"]);
+    assert.equal(help.code, 0, `${command.path} --help failed: ${help.stderr}`);
+    assert.match(help.stdout, /Input contract:/, `${command.path} help is missing Input contract section`);
+    for (const line of command.inputContract) {
+      assert.match(
+        help.stdout,
+        new RegExp(line.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+        `${command.path} help is missing input contract line: ${line}`
+      );
+    }
+  }
 });
 
 test("cli spec exposes structured success fields for API responses including arrays and sensitive fields", async () => {
@@ -731,7 +1135,7 @@ test("cli spec exposes structured success fields for API responses including arr
           selectionConditions?: Array<{
             path: string;
             operator: string;
-            value?: string | number | boolean;
+            value?: string | number | boolean | Array<string | number | boolean>;
           }>;
           note?: string;
         }>;
@@ -824,7 +1228,14 @@ test("cli spec exposes structured success fields for API responses including arr
           targetInputs: ["--task"]
         }
       ],
-      selectionMode: "currentPageItem"
+      selectionMode: "currentPageItem",
+      selectionConditions: [
+        {
+          path: "data.items[].status",
+          operator: "equals",
+          value: "OPEN"
+        }
+      ]
     },
     {
       targetCommand: "tasks submit",
@@ -835,6 +1246,13 @@ test("cli spec exposes structured success fields for API responses including arr
         }
       ],
       selectionMode: "currentPageItem",
+      selectionConditions: [
+        {
+          path: "data.items[].status",
+          operator: "equals",
+          value: "OPEN"
+        }
+      ],
       note: "submission also requires payload input and usually a prior intention"
     },
     {
@@ -845,7 +1263,14 @@ test("cli spec exposes structured success fields for API responses including arr
           targetInputs: ["--task"]
         }
       ],
-      selectionMode: "currentPageItem"
+      selectionMode: "currentPageItem",
+      selectionConditions: [
+        {
+          path: "data.items[].status",
+          operator: "in",
+          value: ["OPEN", "IN_PROGRESS"]
+        }
+      ]
     },
     {
       targetCommand: "submissions list",
@@ -966,6 +1391,25 @@ test("cli spec exposes structured success fields for API responses including arr
     ok: boolean;
     data: {
       commands: Array<{
+        inputContract: string[];
+        requestBindings: Array<{
+          field: string;
+          schema?: {
+            type?: string;
+            minLength?: number;
+            pattern?: string;
+          };
+        }>;
+        failureHints: Array<{
+          match: {
+            type: string;
+            apiError?: string;
+          };
+          strategy: string;
+          retryGate: string;
+          summary: string;
+          suggestedCommands: string[];
+        }>;
         successFields: Array<{
           path: string;
           description: string;
@@ -980,6 +1424,49 @@ test("cli spec exposes structured success fields for API responses including arr
   };
 
   assert.equal(authVerifyEnvelope.ok, true);
+  assert.deepEqual(authVerifyEnvelope.data.commands[0]?.inputContract, [
+    "require one of --signature / --signature-file",
+    "signature must be a 65-byte 0x-prefixed EIP-191 signature",
+    "require one of --message / --message-file"
+  ]);
+  assert.deepEqual(
+    authVerifyEnvelope.data.commands[0]?.requestBindings.find((binding) => binding.field === "signature")?.schema,
+    {
+      type: "string",
+      minLength: 1,
+      pattern: "^0x[a-fA-F0-9]{130}$"
+    }
+  );
+  assert.deepEqual(
+    authVerifyEnvelope.data.commands[0]?.failureHints.find(
+      (hint) => hint.match.type === "API_ERROR" && hint.match.apiError === "CHALLENGE_NOT_FOUND"
+    ),
+    {
+      match: {
+        type: "API_ERROR",
+        apiError: "CHALLENGE_NOT_FOUND"
+      },
+      strategy: "manualRetry",
+      retryGate: "afterStateVerification",
+      summary: "request a fresh challenge before rerunning verify because the nonce is no longer pending",
+      suggestedCommands: ["auth challenge"]
+    }
+  );
+  assert.deepEqual(
+    authVerifyEnvelope.data.commands[0]?.failureHints.find(
+      (hint) => hint.match.type === "API_ERROR" && hint.match.apiError === "CHALLENGE_MISMATCH"
+    ),
+    {
+      match: {
+        type: "API_ERROR",
+        apiError: "CHALLENGE_MISMATCH"
+      },
+      strategy: "fixInputs",
+      retryGate: "afterInputRepair",
+      summary: "use the exact nonce and message returned by the same challenge before rerunning verify",
+      suggestedCommands: ["auth challenge"]
+    }
+  );
   assert.deepEqual(
     authVerifyEnvelope.data.commands[0]?.successFields.find((field) => field.path === "data.token"),
     {
@@ -990,6 +1477,13 @@ test("cli spec exposes structured success fields for API responses including arr
       schema: {
         type: "string"
       }
+    }
+  );
+  assert.deepEqual(
+    authVerifyEnvelope.data.commands[0]?.successFields.find((field) => field.path === "warnings[]"),
+    {
+      path: "warnings[]",
+      description: "bearer token stdout secrecy warning emitted with successful verification"
     }
   );
 });
@@ -1014,8 +1508,8 @@ test("cli spec exposes auth bootstrap handoff bindings", async () => {
         },
         {
           sourcePath: "data.message",
-          targetInputs: ["--message", "--message-file"],
-          note: "pass the returned SIWE message inline or through a file"
+          targetInputs: ["--message-file", "--message"],
+          note: "prefer writing the returned SIWE message to a file and passing --message-file so exact newlines and spacing survive shell invocation; use --message only when inline escaping is safe"
         }
       ],
       note: "auth verify still needs a signature over the exact challenge message"
@@ -1034,8 +1528,8 @@ test("cli spec exposes auth bootstrap handoff bindings", async () => {
       bindings: [
         {
           sourcePath: "data.token",
-          targetInputs: ["--token", "--token-file"],
-          note: "pass the verified bearer token inline or through a file"
+          targetInputs: ["--token-file", "--token"],
+          note: "prefer writing the verified bearer token to a secure temporary file and passing --token-file; use --token only when argv secret exposure is acceptable"
         }
       ],
       note: "task publication still requires title, description, criteria, deadline, slots, and reward inputs"
@@ -1049,13 +1543,134 @@ test("cli spec exposes auth bootstrap handoff bindings", async () => {
         },
         {
           sourcePath: "data.token",
-          targetInputs: ["[value]"],
-          note: "persist the verified token inline only when argv secret exposure is acceptable"
+          targetInputs: ["--value-file", "[value]"],
+          note: "prefer writing the verified token to a secure temporary file and passing --value-file; use [value] only when argv secret exposure is acceptable"
         }
       ],
       note: "config set writes the verified bearer token into local CLI config"
+    },
+    {
+      targetCommand: "agents profile get",
+      bindings: [
+        {
+          sourceInput: "--address",
+          targetInputs: ["--address"]
+        }
+      ]
+    },
+    {
+      targetCommand: "agents stats",
+      bindings: [
+        {
+          sourceInput: "--address",
+          targetInputs: ["--address"]
+        }
+      ]
+    },
+    {
+      targetCommand: "ledger get",
+      bindings: [
+        {
+          sourceInput: "--address",
+          targetInputs: ["--address"]
+        }
+      ]
+    },
+    {
+      targetCommand: "tasks list",
+      bindings: [
+        {
+          sourceInput: "--address",
+          targetInputs: ["--publisher"]
+        }
+      ],
+      note: "rerun the task list scoped to the verified agent as publisher"
+    },
+    {
+      targetCommand: "submissions list",
+      bindings: [
+        {
+          sourceInput: "--address",
+          targetInputs: ["--agent"]
+        }
+      ],
+      note: "rerun the submission list scoped to the verified agent"
+    },
+    {
+      targetCommand: "disputes list",
+      bindings: [
+        {
+          sourceInput: "--address",
+          targetInputs: ["--opener"]
+        }
+      ],
+      note: "rerun the dispute list scoped to the verified agent as opener"
+    },
+    {
+      targetCommand: "activities list",
+      bindings: [
+        {
+          sourceInput: "--address",
+          targetInputs: ["--address"]
+        }
+      ],
+      note: "rerun the activity list scoped to the verified agent"
     }
   ]);
+});
+
+test("cli spec marks options that reveal sensitive stdout fields", async () => {
+  const result = await runCli(["spec", "--command", "auth register"]);
+  assert.equal(result.code, 0);
+  const envelope = JSON.parse(result.stdout) as {
+    ok: boolean;
+    data: {
+      commands: Array<{
+        options: Array<{
+          flags: string;
+          longFlag?: string;
+          description: string;
+          takesValue: boolean;
+          valueRequired: boolean;
+          required: boolean;
+          defaultValue?: boolean;
+          revealsSensitiveOutput?: boolean;
+          sensitiveOutputPaths?: string[];
+        }>;
+        successFields: Array<{
+          path: string;
+          description: string;
+          sensitive?: boolean;
+          condition?: string;
+        }>;
+      }>;
+    };
+  };
+
+  assert.equal(envelope.ok, true);
+  assert.deepEqual(
+    envelope.data.commands[0]?.options.find((option) => option.longFlag === "--show-private-key"),
+    {
+      flags: "--show-private-key",
+      longFlag: "--show-private-key",
+      description: "print plaintext private key in output",
+      takesValue: false,
+      valueRequired: false,
+      required: false,
+      revealsSensitiveOutput: true,
+      sensitiveOutputPaths: ["data.wallet.privateKey"],
+      defaultValue: false
+    }
+  );
+  assert.deepEqual(
+    envelope.data.commands[0]?.successFields.find((field) => field.path === "data.wallet.privateKey"),
+    {
+      path: "data.wallet.privateKey",
+      description: "generated plaintext private key",
+      sensitive: true,
+      condition: "only when --show-private-key is set"
+    }
+  );
 });
 
 test("cli spec exposes discovery and agent directory handoff bindings", async () => {
@@ -1348,6 +1963,58 @@ test("cli spec exposes task lifecycle handoff bindings", async () => {
     ],
     note: "rerun the task list scoped to this publisher"
   });
+  assertSpecHandoff(tasksGet, "tasks intend", {
+    targetCommand: "tasks intend",
+    bindings: [
+      {
+        sourcePath: "data.id",
+        targetInputs: ["--task"]
+      }
+    ],
+    selectionMode: "currentResult",
+    selectionConditions: [
+      {
+        path: "data.status",
+        operator: "equals",
+        value: "OPEN"
+      }
+    ]
+  });
+  assertSpecHandoff(tasksGet, "tasks submit", {
+    targetCommand: "tasks submit",
+    bindings: [
+      {
+        sourcePath: "data.id",
+        targetInputs: ["--task"]
+      }
+    ],
+    selectionMode: "currentResult",
+    selectionConditions: [
+      {
+        path: "data.status",
+        operator: "equals",
+        value: "OPEN"
+      }
+    ],
+    note: "submission also requires payload input and usually a prior intention"
+  });
+  assertSpecHandoff(tasksGet, "tasks terminate", {
+    targetCommand: "tasks terminate",
+    bindings: [
+      {
+        sourcePath: "data.id",
+        targetInputs: ["--task"]
+      }
+    ],
+    selectionMode: "currentResult",
+    selectionConditions: [
+      {
+        path: "data.status",
+        operator: "in",
+        value: ["OPEN", "IN_PROGRESS"]
+      }
+    ]
+  });
   assertSpecHandoff(tasksGet, "activities list", {
     targetCommand: "activities list",
     bindings: [
@@ -1554,6 +2221,63 @@ test("cli spec exposes submission lifecycle handoff bindings", async () => {
       }
     ],
     note: "rerun the submission list scoped to this agent"
+  });
+  assertSpecHandoff(submissionsGet, "submissions confirm", {
+    targetCommand: "submissions confirm",
+    bindings: [
+      {
+        sourcePath: "data.id",
+        targetInputs: ["--submission"]
+      }
+    ],
+    selectionMode: "currentResult",
+    selectionConditions: [
+      {
+        path: "data.status",
+        operator: "equals",
+        value: "SUBMITTED"
+      }
+    ]
+  });
+  assertSpecHandoff(submissionsGet, "submissions reject", {
+    targetCommand: "submissions reject",
+    bindings: [
+      {
+        sourcePath: "data.id",
+        targetInputs: ["--submission"]
+      }
+    ],
+    selectionMode: "currentResult",
+    selectionConditions: [
+      {
+        path: "data.status",
+        operator: "equals",
+        value: "SUBMITTED"
+      }
+    ],
+    note: "submission rejection still requires --reason or --reason-file"
+  });
+  assertSpecHandoff(submissionsGet, "disputes open", {
+    targetCommand: "disputes open",
+    bindings: [
+      {
+        sourcePath: "data.taskId",
+        targetInputs: ["--task"]
+      },
+      {
+        sourcePath: "data.id",
+        targetInputs: ["--submission"]
+      }
+    ],
+    selectionMode: "currentResult",
+    selectionConditions: [
+      {
+        path: "data.status",
+        operator: "equals",
+        value: "REJECTED"
+      }
+    ],
+    note: "dispute opening still requires --reason or --reason-file"
   });
   assertSpecHandoff(submissionsGet, "activities list", {
     targetCommand: "activities list",
@@ -1796,6 +2520,45 @@ test("cli spec exposes dispute lifecycle handoff bindings", async () => {
     ],
     note: "rerun the dispute list scoped to the opening agent"
   });
+  assertSpecHandoff(disputesGet, "disputes respond", {
+    targetCommand: "disputes respond",
+    bindings: [
+      {
+        sourcePath: "data.id",
+        targetInputs: ["--dispute"]
+      }
+    ],
+    selectionMode: "currentResult",
+    selectionConditions: [
+      {
+        path: "data.status",
+        operator: "equals",
+        value: "OPEN"
+      },
+      {
+        path: "data.counterpartyResponder",
+        operator: "isNull"
+      }
+    ],
+    note: "counterparty response still requires --reason or --reason-file"
+  });
+  assertSpecHandoff(disputesGet, "disputes vote", {
+    targetCommand: "disputes vote",
+    bindings: [
+      {
+        sourcePath: "data.id",
+        targetInputs: ["--dispute"]
+      }
+    ],
+    selectionMode: "currentResult",
+    selectionConditions: [
+      {
+        path: "data.status",
+        operator: "equals",
+        value: "OPEN"
+      }
+    ]
+  });
   assertSpecHandoff(disputesGet, "activities list", {
     targetCommand: "activities list",
     bindings: [
@@ -2034,6 +2797,27 @@ test("cli config set accepts --value-file - from stdin", async () => {
   assert.equal(envelope.data.effective.baseUrl, "http://localhost:3000");
 });
 
+test("cli config set reports invalid file-backed values with the file source label", async () => {
+  const isolatedConfigPath = join(tmpdir(), `agentrade-cli-invalid-config-${process.pid}-${Date.now()}.json`);
+  const valueFile = join(tmpdir(), `agentrade-cli-invalid-config-value-${process.pid}-${Date.now()}.txt`);
+  writeFileSync(valueFile, "not-an-integer\n", "utf8");
+
+  const result = await runCli(
+    ["config", "set", "retries", "--value-file", valueFile],
+    { AGENTRADE_CLI_CONFIG_PATH: isolatedConfigPath }
+  );
+
+  assert.equal(result.code, 2);
+  const errorJson = JSON.parse(result.stderr.trim()) as {
+    type: string;
+    command: string;
+    message: string;
+  };
+  assert.equal(errorJson.type, "VALIDATION_ERROR");
+  assert.equal(errorJson.command, "config set");
+  assert.match(errorJson.message, /--value-file must be an integer/);
+});
+
 test("cli spec sorts prefix matches, omits discovery-only globals, and preserves documented defaults", async () => {
   const result = await runCli(["spec", "--command", "tasks"]);
   assert.equal(result.code, 0);
@@ -2082,6 +2866,10 @@ test("cli spec exposes structured auth requirement sources for privileged comman
         authRequirements: Array<{
           kind: string;
           sources: string[];
+          preferredSources: string[];
+          argvSecretSources: string[];
+          fileBackedSources: string[];
+          persistedSources: string[];
         }>;
         requestBindings: Array<{
           location: string;
@@ -2108,11 +2896,19 @@ test("cli spec exposes structured auth requirement sources for privileged comman
   assert.deepEqual(envelope.data.commands[0]?.authRequirements, [
     {
       kind: "token",
-      sources: ["--token", "--token-file", "persistedConfig.token"]
+      sources: ["--token", "--token-file", "persistedConfig.token"],
+      preferredSources: ["--token-file", "persistedConfig.token"],
+      argvSecretSources: ["--token"],
+      fileBackedSources: ["--token-file"],
+      persistedSources: ["persistedConfig.token"]
     },
     {
       kind: "adminKey",
-      sources: ["--admin-key", "--admin-key-file", "persistedConfig.adminKey"]
+      sources: ["--admin-key", "--admin-key-file", "persistedConfig.adminKey"],
+      preferredSources: ["--admin-key-file", "persistedConfig.adminKey"],
+      argvSecretSources: ["--admin-key"],
+      fileBackedSources: ["--admin-key-file"],
+      persistedSources: ["persistedConfig.adminKey"]
     }
   ]);
   assert.deepEqual(envelope.data.commands[0]?.requestBindings, [
@@ -2138,7 +2934,7 @@ test("cli spec exposes structured auth requirement sources for privileged comman
     {
       location: "body",
       field: "reason",
-      sources: ["--reason"],
+      sources: ["--reason", "--reason-file"],
       required: false,
       schema: {
         type: "string",
@@ -2213,7 +3009,7 @@ test("cli spec exposes structured execution steps and side effects for composite
           selectionConditions?: Array<{
             path: string;
             operator: string;
-            value?: string | number | boolean;
+            value?: string | number | boolean | Array<string | number | boolean>;
           }>;
           note?: string;
         }>;
@@ -2229,6 +3025,18 @@ test("cli spec exposes structured execution steps and side effects for composite
           sensitive?: boolean;
           condition?: string;
         }>;
+        options: Array<{
+          flags: string;
+          longFlag?: string;
+          description: string;
+          takesValue: boolean;
+          valueRequired: boolean;
+          required: boolean;
+          secretKind?: string;
+          argvValueContainsSecret?: boolean;
+          preferredFileFlag?: string;
+          fileBackedSecretFor?: string;
+        }>;
       }>;
     };
   };
@@ -2238,6 +3046,34 @@ test("cli spec exposes structured execution steps and side effects for composite
   assert.equal(authLoginEnvelope.data.commands[0]?.path, "auth login");
   assert.equal(authLoginEnvelope.data.commands[0]?.executionMode, "composite");
   assert.deepEqual(
+    authLoginEnvelope.data.commands[0]?.options.find((option) => option.longFlag === "--private-key"),
+    {
+      flags: "--private-key <privateKey>",
+      longFlag: "--private-key",
+      description: "inline wallet private key override; prefer --private-key-file",
+      takesValue: true,
+      valueRequired: true,
+      required: false,
+      secretKind: "walletPrivateKey",
+      argvValueContainsSecret: true,
+      preferredFileFlag: "--private-key-file"
+    }
+  );
+  assert.deepEqual(
+    authLoginEnvelope.data.commands[0]?.options.find((option) => option.longFlag === "--private-key-file"),
+    {
+      flags: "--private-key-file <path>",
+      longFlag: "--private-key-file",
+      description: "file containing wallet private key",
+      takesValue: true,
+      valueRequired: true,
+      required: false,
+      secretKind: "walletPrivateKey",
+      argvValueContainsSecret: false,
+      fileBackedSecretFor: "--private-key"
+    }
+  );
+  assert.deepEqual(
     authLoginEnvelope.data.commands[0]?.operations?.map((item) => item.operationId),
     ["authChallengeV2", "authVerifyV2"]
   );
@@ -2245,7 +3081,7 @@ test("cli spec exposes structured execution steps and side effects for composite
     {
       kind: "local",
       summary:
-        "resolve wallet private key from --private-key/--private-key-file or persisted CLI config, then derive and validate the effective address",
+        "resolve wallet private key from --private-key/--private-key-file or, when no override is supplied, persisted CLI config, then derive and validate the effective address",
       inputSources: [
         "--address",
         "--private-key",
@@ -2371,8 +3207,8 @@ test("cli spec exposes structured execution steps and side effects for composite
       bindings: [
         {
           sourcePath: "data.auth.token",
-          targetInputs: ["--token", "--token-file"],
-          note: "pass the verified bearer token inline or through a file"
+          targetInputs: ["--token-file", "--token"],
+          note: "prefer writing the verified bearer token to a secure temporary file and passing --token-file; use --token only when argv secret exposure is acceptable"
         }
       ],
       note: "task publication still requires title, description, criteria, deadline, slots, and reward inputs"
@@ -2386,8 +3222,8 @@ test("cli spec exposes structured execution steps and side effects for composite
         },
         {
           sourcePath: "data.auth.token",
-          targetInputs: ["[value]"],
-          note: "persist the verified token inline only when argv secret exposure is acceptable"
+          targetInputs: ["--value-file", "[value]"],
+          note: "prefer writing the verified token to a secure temporary file and passing --value-file; use [value] only when argv secret exposure is acceptable"
         }
       ],
       note: "config set writes the verified bearer token into local CLI config"
@@ -2463,6 +3299,10 @@ test("cli spec exposes structured execution steps and side effects for composite
     {
       path: "data.persistence.walletSource",
       description: "whether the wallet private key came from flags or persisted config"
+    },
+    {
+      path: "warnings[]",
+      description: "bearer token stdout secrecy warning emitted with successful login"
     }
   ]);
 
@@ -2523,7 +3363,7 @@ test("cli spec exposes structured execution steps and side effects for composite
           selectionConditions?: Array<{
             path: string;
             operator: string;
-            value?: string | number | boolean;
+            value?: string | number | boolean | Array<string | number | boolean>;
           }>;
           note?: string;
         }>;
@@ -2538,6 +3378,17 @@ test("cli spec exposes structured execution steps and side effects for composite
           description: string;
           condition?: string;
         }>;
+        configKeyHints?: Array<{
+          key: string;
+          acceptedArguments: string[];
+          valueKind: string;
+          validation: string;
+          encryptedAtRest: boolean;
+          preferredInput?: string;
+          inlineInput?: string;
+          argvValueContainsSecretWhenInline?: boolean;
+          secretKind?: string;
+        }>;
       }>;
     };
   };
@@ -2549,8 +3400,8 @@ test("cli spec exposes structured execution steps and side effects for composite
   assert.deepEqual(configSetEnvelope.data.commands[0]?.executionSteps, [
     {
       kind: "local",
-      summary: "resolve the config key alias and resolve the value from <value>, --value-file, or --value-file -",
-      inputSources: ["<key>", "<value>", "--value-file", "stdin(-)"],
+      summary: "resolve the config key alias and resolve the value from [value], --value-file, or --value-file -",
+      inputSources: ["<key>", "[value]", "--value-file", "stdin(-)"],
       outputs: ["resolvedConfigKey", "rawConfigValue"]
     },
     {
@@ -2635,6 +3486,36 @@ test("cli spec exposes structured execution steps and side effects for composite
     ]
   });
   assert.deepEqual(configSetEnvelope.data.commands[0]?.handoffHints, []);
+  assert.deepEqual(
+    configSetEnvelope.data.commands[0]?.configKeyHints?.find((hint) => hint.key === "token"),
+    {
+      key: "token",
+      acceptedArguments: ["token"],
+      valueKind: "secret",
+      validation: "non-empty string",
+      encryptedAtRest: true,
+      preferredInput: "--value-file",
+      inlineInput: "[value]",
+      argvValueContainsSecretWhenInline: true,
+      secretKind: "bearerToken"
+    }
+  );
+  assert.deepEqual(
+    configSetEnvelope.data.commands[0]?.configKeyHints?.find(
+      (hint) => hint.key === "walletPrivateKey"
+    ),
+    {
+      key: "walletPrivateKey",
+      acceptedArguments: ["wallet-private-key", "wallet_private_key"],
+      valueKind: "secret",
+      validation: "0x-prefixed 64-hex-character private key",
+      encryptedAtRest: true,
+      preferredInput: "--value-file",
+      inlineInput: "[value]",
+      argvValueContainsSecretWhenInline: true,
+      secretKind: "walletPrivateKey"
+    }
+  );
   assert.deepEqual(configSetEnvelope.data.commands[0]?.successFields, [
     {
       path: "data.action",
@@ -2697,7 +3578,7 @@ test("cli spec exposes structured execution steps and side effects for composite
           selectionConditions?: Array<{
             path: string;
             operator: string;
-            value?: string | number | boolean;
+            value?: string | number | boolean | Array<string | number | boolean>;
           }>;
           note?: string;
         }>;
@@ -2812,6 +3693,7 @@ test("cli fallback command detection keeps command path when global options are 
 
 test("cli auth verify blocks empty nonce/signature before network request", async () => {
   const address = "0x1111111111111111111111111111111111111111";
+  const validSignature = `0x${"11".repeat(65)}`;
 
   const emptyNonce = await runCli([
     "--base-url",
@@ -2823,7 +3705,7 @@ test("cli auth verify blocks empty nonce/signature before network request", asyn
     "--nonce",
     "   ",
     "--signature",
-    "sig",
+    validSignature,
     "--message",
     "message"
   ]);
@@ -2860,6 +3742,81 @@ test("cli auth verify blocks empty nonce/signature before network request", asyn
   assert.equal(emptySignatureError.type, "VALIDATION_ERROR");
   assert.equal(emptySignatureError.command, "auth verify");
   assert.match(emptySignatureError.message, /--signature must be non-empty/);
+
+  const missingSignature = await runCli([
+    "--base-url",
+    "http://127.0.0.1:1",
+    "auth",
+    "verify",
+    "--address",
+    address,
+    "--nonce",
+    "nonce-1",
+    "--message",
+    "message"
+  ]);
+  assert.equal(missingSignature.code, 2);
+  const missingSignatureError = JSON.parse(missingSignature.stderr.trim()) as {
+    type: string;
+    command: string;
+    message: string;
+  };
+  assert.equal(missingSignatureError.type, "VALIDATION_ERROR");
+  assert.equal(missingSignatureError.command, "auth verify");
+  assert.match(missingSignatureError.message, /--signature or --signature-file is required/);
+
+  const invalidSignature = await runCli([
+    "--base-url",
+    "http://127.0.0.1:1",
+    "auth",
+    "verify",
+    "--address",
+    address,
+    "--nonce",
+    "nonce-1",
+    "--signature",
+    "sig",
+    "--message",
+    "message"
+  ]);
+  assert.equal(invalidSignature.code, 2);
+  const invalidSignatureError = JSON.parse(invalidSignature.stderr.trim()) as {
+    type: string;
+    command: string;
+    message: string;
+  };
+  assert.equal(invalidSignatureError.type, "VALIDATION_ERROR");
+  assert.equal(invalidSignatureError.command, "auth verify");
+  assert.match(invalidSignatureError.message, /--signature must be a 65-byte 0x-prefixed EIP-191 signature/);
+
+  const invalidSignatureFile = join(
+    tmpdir(),
+    `agentrade-cli-invalid-signature-${process.pid}-${Date.now()}.txt`
+  );
+  writeFileSync(invalidSignatureFile, "sig\n", "utf8");
+  const invalidFileSignature = await runCli([
+    "--base-url",
+    "http://127.0.0.1:1",
+    "auth",
+    "verify",
+    "--address",
+    address,
+    "--nonce",
+    "nonce-1",
+    "--signature-file",
+    invalidSignatureFile,
+    "--message",
+    "message"
+  ]);
+  assert.equal(invalidFileSignature.code, 2);
+  const invalidFileSignatureError = JSON.parse(invalidFileSignature.stderr.trim()) as {
+    type: string;
+    command: string;
+    message: string;
+  };
+  assert.equal(invalidFileSignatureError.type, "VALIDATION_ERROR");
+  assert.equal(invalidFileSignatureError.command, "auth verify");
+  assert.match(invalidFileSignatureError.message, /--signature-file must be a 65-byte 0x-prefixed EIP-191 signature/);
 });
 
 test("cli auth login requires local wallet private key when no override is provided", async () => {
@@ -2878,6 +3835,49 @@ test("cli auth login requires local wallet private key when no override is provi
   assert.equal(errorJson.command, "auth login");
   assert.match(errorJson.message, /missing wallet private key/i);
   assert.match(errorJson.message, /config set wallet-private-key/i);
+});
+
+test("cli auth login private-key override does not decrypt persisted wallet-private-key", async () => {
+  const isolatedConfigPath = join(tmpdir(), `agentrade-cli-login-override-${process.pid}-${Date.now()}.json`);
+  writeFileSync(
+    isolatedConfigPath,
+    `${JSON.stringify(
+      {
+        walletAddress: "0x1111111111111111111111111111111111111111",
+        walletPrivateKey: `enc:v1:${Buffer.alloc(29).toString("base64")}`
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+
+  const result = await runCli(
+    [
+      "--base-url",
+      "http://127.0.0.1:1",
+      "--timeout-ms",
+      "200",
+      "--retries",
+      "0",
+      "auth",
+      "login",
+      "--private-key",
+      "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "--no-persist-token"
+    ],
+    { AGENTRADE_CLI_CONFIG_PATH: isolatedConfigPath }
+  );
+
+  assert.equal(result.code, 5);
+  const errorJson = JSON.parse(result.stderr.trim()) as {
+    type: string;
+    command: string;
+    message: string;
+  };
+  assert.equal(errorJson.type, "NETWORK_ERROR");
+  assert.equal(errorJson.command, "auth login");
+  assert.doesNotMatch(errorJson.message, /decrypt|secret key/i);
 });
 
 test("cli auth login blocks mismatched --address and --private-key before network request", async () => {
@@ -3088,6 +4088,71 @@ test("cli stdin alias allows only one file-backed input per invocation", async (
   assert.equal(errorJson.type, "VALIDATION_ERROR");
   assert.equal(errorJson.command, "tasks create");
   assert.match(errorJson.message, /stdin is already reserved by --desc-file/i);
+});
+
+test("cli system settings update resolves credential stdin before patch stdin", async () => {
+  const result = await runCli(
+    [
+      "--base-url",
+      "http://127.0.0.1:1",
+      "--token-file",
+      "-",
+      "--admin-key",
+      "admin-1",
+      "system",
+      "settings",
+      "update",
+      "--apply-to",
+      "next",
+      "--patch-file",
+      "-"
+    ],
+    {},
+    "token-or-patch"
+  );
+  assert.equal(result.code, 2);
+  const errorJson = JSON.parse(result.stderr.trim()) as {
+    type: string;
+    command: string;
+    message: string;
+  };
+  assert.equal(errorJson.type, "VALIDATION_ERROR");
+  assert.equal(errorJson.command, "system settings update");
+  assert.match(errorJson.message, /stdin is already reserved by --token-file/i);
+});
+
+test("cli system settings update rejects duplicate reason sources before network request", async () => {
+  const reasonFile = join(tmpdir(), `agentrade-cli-reason-${process.pid}-${Date.now()}.txt`);
+  writeFileSync(reasonFile, "reason-from-file", "utf8");
+
+  const result = await runCli([
+    "--base-url",
+    "http://127.0.0.1:1",
+    "--token",
+    "token-1",
+    "--admin-key",
+    "admin-1",
+    "system",
+    "settings",
+    "update",
+    "--apply-to",
+    "next",
+    "--patch-json",
+    "{}",
+    "--reason",
+    "reason-inline",
+    "--reason-file",
+    reasonFile
+  ]);
+  assert.equal(result.code, 2);
+  const errorJson = JSON.parse(result.stderr.trim()) as {
+    type: string;
+    command: string;
+    message: string;
+  };
+  assert.equal(errorJson.type, "VALIDATION_ERROR");
+  assert.equal(errorJson.command, "system settings update");
+  assert.match(errorJson.message, /--reason and --reason-file are mutually exclusive/);
 });
 
 test("cli system settings reset blocks overlong reason before network request", async () => {

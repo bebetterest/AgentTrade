@@ -44,6 +44,12 @@ interface CliSpecOption {
   valueRequired: boolean;
   required: boolean;
   defaultValue?: unknown;
+  secretKind?: "bearerToken" | "adminServiceKey" | "walletPrivateKey" | "authSignature";
+  argvValueContainsSecret?: boolean;
+  preferredFileFlag?: string;
+  fileBackedSecretFor?: string;
+  revealsSensitiveOutput?: boolean;
+  sensitiveOutputPaths?: string[];
 }
 
 interface CliSpecOperation {
@@ -58,6 +64,10 @@ interface CliSpecOperation {
 interface CliSpecAuthRequirement {
   kind: "token" | "adminKey";
   sources: string[];
+  preferredSources: string[];
+  argvSecretSources: string[];
+  fileBackedSources: string[];
+  persistedSources: string[];
 }
 
 interface CliSpecExecutionStep {
@@ -206,12 +216,12 @@ interface CliSpecEntityHints {
 }
 
 type CliSpecHandoffSelectionMode = "currentPageItem" | "currentResult";
-type CliSpecHandoffSelectionOperator = "equals" | "nonNull";
+type CliSpecHandoffSelectionOperator = "equals" | "nonNull" | "isNull" | "in";
 
 interface CliSpecHandoffSelectionCondition {
   path: string;
   operator: CliSpecHandoffSelectionOperator;
-  value?: string | number | boolean;
+  value?: string | number | boolean | Array<string | number | boolean>;
 }
 
 interface CliSpecHandoffBinding {
@@ -237,6 +247,18 @@ interface CliSpecAutomationHints {
   verificationCommands: string[];
 }
 
+interface CliSpecConfigKeyHint {
+  key: string;
+  acceptedArguments: string[];
+  valueKind: "url" | "secret" | "evmAddress" | "positiveInteger" | "nonNegativeInteger";
+  validation: string;
+  encryptedAtRest: boolean;
+  preferredInput?: "--value-file";
+  inlineInput?: "[value]";
+  argvValueContainsSecretWhenInline?: boolean;
+  secretKind?: "bearerToken" | "adminServiceKey" | "walletPrivateKey" | "authSignature";
+}
+
 interface CliSpecCommand {
   path: string;
   description: string;
@@ -254,6 +276,7 @@ interface CliSpecCommand {
   executionMode: CliExecutionMode;
   arguments: CliSpecArgument[];
   options: CliSpecOption[];
+  configKeyHints?: CliSpecConfigKeyHint[];
   inputContract: string[];
   operation?: CliSpecOperation;
   operations?: CliSpecOperation[];
@@ -272,6 +295,7 @@ interface CliDiscoverySpec {
     opaquePaginationCursor: true;
     stdinFileAlias: "-";
     stdinSingleConsumerPerInvocation: true;
+    credentialFileInputsResolveBeforeCommandFileInputs: true;
   };
   runtimeConfig: {
     precedence: [
@@ -310,11 +334,22 @@ interface CliDiscoverySpec {
       unknown: 10;
     };
   };
+  agentExecution: {
+    humanOutOfLoop: true;
+    interactivePrompts: false;
+    humanApprovalRequiredForLifecycleWrites: false;
+    retryModeMeanings: Record<CliSpecAutomationHints["retryMode"], string>;
+    failureStrategyMeanings: Record<CliSpecFailureStrategy, string>;
+    workflowActorRoleMeanings: Record<CliSpecWorkflowActorRole, string>;
+  };
   globalOptions: CliSpecOption[];
   dualChannelInputs: Array<{
     inline: string;
     file: string;
     stdinAlias: "-";
+    valueKind?: "secret" | "text" | "json" | "configValue";
+    preferredInput?: "file";
+    secretKind?: "bearerToken" | "adminServiceKey" | "walletPrivateKey" | "authSignature";
   }>;
   commands: CliSpecCommand[];
 }
@@ -332,6 +367,40 @@ interface LocalCommandMetadata {
   handoffHints: CliSpecHandoffHint[];
 }
 
+const AGENT_EXECUTION_MODEL: CliDiscoverySpec["agentExecution"] = {
+  humanOutOfLoop: true,
+  interactivePrompts: false,
+  humanApprovalRequiredForLifecycleWrites: false,
+  retryModeMeanings: {
+    manual:
+      "agent must not blindly replay this command; repair inputs or verify source-of-truth state first. No human approval is implied.",
+    retryableErrorsOnly:
+      "agent may retry only when the structured stderr envelope marks the failure retryable.",
+    retryableAfterVerification:
+      "agent may retry retryable failures only after running the listed preflight or verification commands."
+  },
+  failureStrategyMeanings: {
+    fixInputs: "repair CLI arguments, file inputs, enum values, or payload shape before rerun.",
+    repairConfig: "repair local CLI config, credential files, base URL, or trust settings before rerun.",
+    switchCredential: "authenticate with an agent identity that satisfies the required role or resource ownership.",
+    reReadState: "read source-of-truth state before deciding whether the branch is still valid.",
+    boundedRetry: "retry only under retryable signals and bounded retry policy.",
+    manualRetry: "do not auto-replay without an explicit agent decision after input or state verification.",
+    stopDuplicateBranch: "treat duplicate or already-completed transitions as terminal for that branch.",
+    escalate: "capture diagnostics and surface the failure to the supervising agent or orchestration layer."
+  },
+  workflowActorRoleMeanings: {
+    any: "any authenticated or unauthenticated reader allowed by the command auth mode.",
+    anonymous: "no prior agent authentication is required.",
+    owner: "agent identity that owns or controls the target resource; not a human owner approval gate.",
+    publisher: "agent identity that published the task.",
+    worker: "agent identity performing or submitting task work.",
+    party: "publisher or worker identity that is party to the task/submission/dispute.",
+    supervisor: "third-party supervisor agent identity, distinct from task parties.",
+    operator: "restricted system operator agent identity with bearer and admin-key authorization."
+  }
+};
+
 const LOCAL_COMMANDS: Record<string, LocalCommandMetadata> = {
   "auth login": {
     auth: "none",
@@ -340,7 +409,7 @@ const LOCAL_COMMANDS: Record<string, LocalCommandMetadata> = {
     executionSteps: [
       {
         kind: "local",
-        summary: "resolve wallet private key from --private-key/--private-key-file or persisted CLI config, then derive and validate the effective address",
+        summary: "resolve wallet private key from --private-key/--private-key-file or, when no override is supplied, persisted CLI config, then derive and validate the effective address",
         inputSources: [
           "--address",
           "--private-key",
@@ -414,6 +483,10 @@ const LOCAL_COMMANDS: Record<string, LocalCommandMetadata> = {
       {
         path: "data.persistence.walletSource",
         description: "whether the wallet private key came from flags or persisted config"
+      },
+      {
+        path: "warnings[]",
+        description: "bearer token stdout secrecy warning emitted with successful login"
       }
     ],
     automationHints: {
@@ -474,8 +547,8 @@ const LOCAL_COMMANDS: Record<string, LocalCommandMetadata> = {
         bindings: [
           {
             sourcePath: "data.auth.token",
-            targetInputs: ["--token", "--token-file"],
-            note: "pass the verified bearer token inline or through a file"
+            targetInputs: ["--token-file", "--token"],
+            note: "prefer writing the verified bearer token to a secure temporary file and passing --token-file; use --token only when argv secret exposure is acceptable"
           }
         ],
         note: "task publication still requires title, description, criteria, deadline, slots, and reward inputs"
@@ -489,8 +562,8 @@ const LOCAL_COMMANDS: Record<string, LocalCommandMetadata> = {
           },
           {
             sourcePath: "data.auth.token",
-            targetInputs: ["[value]"],
-            note: "persist the verified token inline only when argv secret exposure is acceptable"
+            targetInputs: ["--value-file", "[value]"],
+            note: "prefer writing the verified token to a secure temporary file and passing --value-file; use [value] only when argv secret exposure is acceptable"
           }
         ],
         note: "config set writes the verified bearer token into local CLI config"
@@ -650,7 +723,7 @@ const LOCAL_COMMANDS: Record<string, LocalCommandMetadata> = {
       },
       {
         path: "warnings[]",
-        description: "wallet handling and secrecy warning emitted with successful registration"
+        description: "wallet and token handling secrecy warning emitted with successful registration"
       }
     ],
     automationHints: {
@@ -704,8 +777,8 @@ const LOCAL_COMMANDS: Record<string, LocalCommandMetadata> = {
         bindings: [
           {
             sourcePath: "data.auth.token",
-            targetInputs: ["--token", "--token-file"],
-            note: "pass the verified bearer token inline or through a file"
+            targetInputs: ["--token-file", "--token"],
+            note: "prefer writing the verified bearer token to a secure temporary file and passing --token-file; use --token only when argv secret exposure is acceptable"
           }
         ],
         note: "task publication still requires title, description, criteria, deadline, slots, and reward inputs"
@@ -719,8 +792,8 @@ const LOCAL_COMMANDS: Record<string, LocalCommandMetadata> = {
           },
           {
             sourcePath: "data.auth.token",
-            targetInputs: ["[value]"],
-            note: "persist the verified token inline only when argv secret exposure is acceptable"
+            targetInputs: ["--value-file", "[value]"],
+            note: "prefer writing the verified token to a secure temporary file and passing --value-file; use [value] only when argv secret exposure is acceptable"
           }
         ],
         note: "config set writes the verified bearer token into local CLI config"
@@ -782,8 +855,8 @@ const LOCAL_COMMANDS: Record<string, LocalCommandMetadata> = {
     executionSteps: [
       {
         kind: "local",
-        summary: "resolve the config key alias and resolve the value from <value>, --value-file, or --value-file -",
-        inputSources: ["<key>", "<value>", "--value-file", "stdin(-)"],
+        summary: "resolve the config key alias and resolve the value from [value], --value-file, or --value-file -",
+        inputSources: ["<key>", "[value]", "--value-file", "stdin(-)"],
         outputs: ["resolvedConfigKey", "rawConfigValue"]
       },
       {
@@ -1544,6 +1617,20 @@ const API_FAILURE_HINTS: Partial<Record<keyof typeof cliOperationBindings, reado
   ],
   "auth verify": [
     {
+      match: { type: "API_ERROR", apiError: "CHALLENGE_NOT_FOUND" },
+      strategy: "manualRetry",
+      retryGate: "afterStateVerification",
+      summary: "request a fresh challenge before rerunning verify because the nonce is no longer pending",
+      suggestedCommands: ["auth challenge"]
+    },
+    {
+      match: { type: "API_ERROR", apiError: "CHALLENGE_MISMATCH" },
+      strategy: "fixInputs",
+      retryGate: "afterInputRepair",
+      summary: "use the exact nonce and message returned by the same challenge before rerunning verify",
+      suggestedCommands: ["auth challenge"]
+    },
+    {
       match: { type: "API_ERROR", apiError: "INVALID_SIGNATURE" },
       strategy: "fixInputs",
       retryGate: "afterInputRepair",
@@ -1885,6 +1972,97 @@ const isHelpOption = (option: Option): boolean => option.long === "--help" || op
 const isDiscoveryOnlyOption = (option: Option): boolean =>
   isHelpOption(option) || option.long === "--version" || option.short === "-V";
 
+const INLINE_SECRET_OPTIONS: Record<
+  string,
+  { secretKind: NonNullable<CliSpecOption["secretKind"]>; preferredFileFlag: string }
+> = {
+  "--token": { secretKind: "bearerToken", preferredFileFlag: "--token-file" },
+  "--admin-key": { secretKind: "adminServiceKey", preferredFileFlag: "--admin-key-file" },
+  "--private-key": { secretKind: "walletPrivateKey", preferredFileFlag: "--private-key-file" },
+  "--signature": { secretKind: "authSignature", preferredFileFlag: "--signature-file" }
+};
+
+const FILE_BACKED_SECRET_OPTIONS: Record<
+  string,
+  { secretKind: NonNullable<CliSpecOption["secretKind"]>; fileBackedSecretFor: string }
+> = {
+  "--token-file": { secretKind: "bearerToken", fileBackedSecretFor: "--token" },
+  "--admin-key-file": { secretKind: "adminServiceKey", fileBackedSecretFor: "--admin-key" },
+  "--private-key-file": { secretKind: "walletPrivateKey", fileBackedSecretFor: "--private-key" },
+  "--signature-file": { secretKind: "authSignature", fileBackedSecretFor: "--signature" }
+};
+
+const SENSITIVE_OUTPUT_OPTIONS: Record<string, { sensitiveOutputPaths: string[] }> = {
+  "--show-private-key": { sensitiveOutputPaths: ["data.wallet.privateKey"] }
+};
+
+const CONFIG_SET_KEY_HINTS: CliSpecConfigKeyHint[] = [
+  {
+    key: "baseUrl",
+    acceptedArguments: ["base-url", "base_url"],
+    valueKind: "url",
+    validation: "http:// or https:// URL",
+    encryptedAtRest: false
+  },
+  {
+    key: "token",
+    acceptedArguments: ["token"],
+    valueKind: "secret",
+    validation: "non-empty string",
+    encryptedAtRest: true,
+    preferredInput: "--value-file",
+    inlineInput: "[value]",
+    argvValueContainsSecretWhenInline: true,
+    secretKind: "bearerToken"
+  },
+  {
+    key: "adminKey",
+    acceptedArguments: ["admin-key", "admin_key"],
+    valueKind: "secret",
+    validation: "non-empty string",
+    encryptedAtRest: true,
+    preferredInput: "--value-file",
+    inlineInput: "[value]",
+    argvValueContainsSecretWhenInline: true,
+    secretKind: "adminServiceKey"
+  },
+  {
+    key: "walletAddress",
+    acceptedArguments: ["wallet-address", "wallet_address"],
+    valueKind: "evmAddress",
+    validation: "0x-prefixed 40-hex-character EVM address",
+    encryptedAtRest: false
+  },
+  {
+    key: "walletPrivateKey",
+    acceptedArguments: ["wallet-private-key", "wallet_private_key"],
+    valueKind: "secret",
+    validation: "0x-prefixed 64-hex-character private key",
+    encryptedAtRest: true,
+    preferredInput: "--value-file",
+    inlineInput: "[value]",
+    argvValueContainsSecretWhenInline: true,
+    secretKind: "walletPrivateKey"
+  },
+  {
+    key: "timeoutMs",
+    acceptedArguments: ["timeout-ms", "timeout_ms"],
+    valueKind: "positiveInteger",
+    validation: "safe integer > 0",
+    encryptedAtRest: false
+  },
+  {
+    key: "retries",
+    acceptedArguments: ["retries"],
+    valueKind: "nonNegativeInteger",
+    validation: "safe integer >= 0",
+    encryptedAtRest: false
+  }
+];
+
+const getConfigKeyHints = (path: string): CliSpecConfigKeyHint[] | undefined =>
+  path === "config set" ? CONFIG_SET_KEY_HINTS.map((item) => ({ ...item })) : undefined;
+
 const parseDefaultFromDescription = (description: string): string | undefined => {
   const match = /default:\s*([^)]+)/i.exec(description);
   return match?.[1]?.trim();
@@ -1893,6 +2071,9 @@ const parseDefaultFromDescription = (description: string): string | undefined =>
 const toOptionSpec = (option: Option): CliSpecOption => {
   const description = option.description ?? "";
   const defaultValue = option.defaultValue ?? parseDefaultFromDescription(description);
+  const inlineSecret = option.long ? INLINE_SECRET_OPTIONS[option.long] : undefined;
+  const fileBackedSecret = option.long ? FILE_BACKED_SECRET_OPTIONS[option.long] : undefined;
+  const sensitiveOutput = option.long ? SENSITIVE_OUTPUT_OPTIONS[option.long] : undefined;
   return {
     flags: option.flags,
     ...(option.long ? { longFlag: option.long } : {}),
@@ -1901,6 +2082,26 @@ const toOptionSpec = (option: Option): CliSpecOption => {
     takesValue: option.required || option.optional,
     valueRequired: option.required,
     required: Boolean(option.mandatory),
+    ...(inlineSecret
+      ? {
+          secretKind: inlineSecret.secretKind,
+          argvValueContainsSecret: true,
+          preferredFileFlag: inlineSecret.preferredFileFlag
+        }
+      : {}),
+    ...(fileBackedSecret
+      ? {
+          secretKind: fileBackedSecret.secretKind,
+          argvValueContainsSecret: false,
+          fileBackedSecretFor: fileBackedSecret.fileBackedSecretFor
+        }
+      : {}),
+    ...(sensitiveOutput
+      ? {
+          revealsSensitiveOutput: true,
+          sensitiveOutputPaths: [...sensitiveOutput.sensitiveOutputPaths]
+        }
+      : {}),
     ...(defaultValue !== undefined ? { defaultValue } : {})
   };
 };
@@ -1948,18 +2149,30 @@ const toAuthRequirements = (auth: ApiAuthMode): CliSpecAuthRequirement[] => {
       return [
         {
           kind: "token",
-          sources: ["--token", "--token-file", "persistedConfig.token"]
+          sources: ["--token", "--token-file", "persistedConfig.token"],
+          preferredSources: ["--token-file", "persistedConfig.token"],
+          argvSecretSources: ["--token"],
+          fileBackedSources: ["--token-file"],
+          persistedSources: ["persistedConfig.token"]
         }
       ];
     case "bearer_admin":
       return [
         {
           kind: "token",
-          sources: ["--token", "--token-file", "persistedConfig.token"]
+          sources: ["--token", "--token-file", "persistedConfig.token"],
+          preferredSources: ["--token-file", "persistedConfig.token"],
+          argvSecretSources: ["--token"],
+          fileBackedSources: ["--token-file"],
+          persistedSources: ["persistedConfig.token"]
         },
         {
           kind: "adminKey",
-          sources: ["--admin-key", "--admin-key-file", "persistedConfig.adminKey"]
+          sources: ["--admin-key", "--admin-key-file", "persistedConfig.adminKey"],
+          preferredSources: ["--admin-key-file", "persistedConfig.adminKey"],
+          argvSecretSources: ["--admin-key"],
+          fileBackedSources: ["--admin-key-file"],
+          persistedSources: ["persistedConfig.adminKey"]
         }
       ];
     default: {
@@ -2118,6 +2331,20 @@ const getApiSuccessFields = (operation: ApiOperationDefinition): CliSpecSuccessF
   return fields;
 };
 
+const getCommandSuccessFields = (
+  path: string,
+  operation: ApiOperationDefinition
+): CliSpecSuccessField[] => {
+  const fields = getApiSuccessFields(operation);
+  if (path === "auth verify") {
+    fields.push({
+      path: "warnings[]",
+      description: "bearer token stdout secrecy warning emitted with successful verification"
+    });
+  }
+  return fields;
+};
+
 const enrichParameterBinding = (
   binding: CliRequestBindingDefinition,
   parameter: OpenApiParameterObject
@@ -2175,6 +2402,23 @@ const enrichRequestBinding = (
   return enrichParameterBinding(binding, parameter);
 };
 
+const applyCliRequestBindingOverrides = (
+  path: string,
+  binding: CliRequestBindingDefinition,
+  spec: CliSpecRequestBinding
+): CliSpecRequestBinding => {
+  if (path === "auth verify" && binding.field === "signature" && spec.schema) {
+    return {
+      ...spec,
+      schema: {
+        ...spec.schema,
+        pattern: "^0x[a-fA-F0-9]{130}$"
+      }
+    };
+  }
+  return spec;
+};
+
 const getRequestBindings = (
   path: string,
   operation?: ApiOperationDefinition
@@ -2186,7 +2430,9 @@ const getRequestBindings = (
   if (!operation) {
     return [...bindings];
   }
-  return bindings.map((binding) => enrichRequestBinding(binding, operation));
+  return bindings.map((binding) =>
+    applyCliRequestBindingOverrides(path, binding, enrichRequestBinding(binding, operation))
+  );
 };
 
 const cloneEntityHints = (hints: CliSpecEntityHints): CliSpecEntityHints => ({
@@ -2272,12 +2518,26 @@ const nonNullSelectionCondition = (path: string): CliSpecHandoffSelectionConditi
   operator: "nonNull"
 });
 
+const isNullSelectionCondition = (path: string): CliSpecHandoffSelectionCondition => ({
+  path,
+  operator: "isNull"
+});
+
 const equalsSelectionCondition = (
   path: string,
   value: string | number | boolean
 ): CliSpecHandoffSelectionCondition => ({
   path,
   operator: "equals",
+  value
+});
+
+const inSelectionCondition = (
+  path: string,
+  value: Array<string | number | boolean>
+): CliSpecHandoffSelectionCondition => ({
+  path,
+  operator: "in",
   value
 });
 
@@ -3229,8 +3489,8 @@ const getHandoffHints = (
             handoffFromPath("data.nonce", ["--nonce"]),
             handoffFromPath(
               "data.message",
-              ["--message", "--message-file"],
-              "pass the returned SIWE message inline or through a file"
+              ["--message-file", "--message"],
+              "prefer writing the returned SIWE message to a file and passing --message-file so exact newlines and spacing survive shell invocation; use --message only when inline escaping is safe"
             )
           ],
           note: "auth verify still needs a signature over the exact challenge message"
@@ -3243,8 +3503,8 @@ const getHandoffHints = (
           bindings: [
             handoffFromPath(
               "data.token",
-              ["--token", "--token-file"],
-              "pass the verified bearer token inline or through a file"
+              ["--token-file", "--token"],
+              "prefer writing the verified bearer token to a secure temporary file and passing --token-file; use --token only when argv secret exposure is acceptable"
             )
           ],
           note: "task publication still requires title, description, criteria, deadline, slots, and reward inputs"
@@ -3255,11 +3515,43 @@ const getHandoffHints = (
             handoffFromLiteral("token", ["<key>"]),
             handoffFromPath(
               "data.token",
-              ["[value]"],
-              "persist the verified token inline only when argv secret exposure is acceptable"
+              ["--value-file", "[value]"],
+              "prefer writing the verified token to a secure temporary file and passing --value-file; use [value] only when argv secret exposure is acceptable"
             )
           ],
           note: "config set writes the verified bearer token into local CLI config"
+        },
+        {
+          targetCommand: "agents profile get",
+          bindings: [handoffFromInput("--address", ["--address"])]
+        },
+        {
+          targetCommand: "agents stats",
+          bindings: [handoffFromInput("--address", ["--address"])]
+        },
+        {
+          targetCommand: "ledger get",
+          bindings: [handoffFromInput("--address", ["--address"])]
+        },
+        {
+          targetCommand: "tasks list",
+          bindings: [handoffFromInput("--address", ["--publisher"])],
+          note: "rerun the task list scoped to the verified agent as publisher"
+        },
+        {
+          targetCommand: "submissions list",
+          bindings: [handoffFromInput("--address", ["--agent"])],
+          note: "rerun the submission list scoped to the verified agent"
+        },
+        {
+          targetCommand: "disputes list",
+          bindings: [handoffFromInput("--address", ["--opener"])],
+          note: "rerun the dispute list scoped to the verified agent as opener"
+        },
+        {
+          targetCommand: "activities list",
+          bindings: [handoffFromInput("--address", ["--address"])],
+          note: "rerun the activity list scoped to the verified agent"
         }
       ]);
     case "cycles active":
@@ -3386,6 +3678,10 @@ const getHandoffHints = (
               targetInputs: ["--dispute"]
             }
           ],
+          ...currentResultSelection(
+            equalsSelectionCondition("data.status", "OPEN"),
+            isNullSelectionCondition("data.counterpartyResponder")
+          ),
           note: "counterparty response still requires --reason or --reason-file"
         },
         {
@@ -3395,7 +3691,8 @@ const getHandoffHints = (
               sourcePath: "data.id",
               targetInputs: ["--dispute"]
             }
-          ]
+          ],
+          ...currentResultSelection(equalsSelectionCondition("data.status", "OPEN"))
         },
         {
           targetCommand: "tasks get",
@@ -3532,6 +3829,10 @@ const getHandoffHints = (
               targetInputs: ["--dispute"]
             }
           ],
+          ...currentResultSelection(
+            equalsSelectionCondition("data.status", "OPEN"),
+            isNullSelectionCondition("data.counterpartyResponder")
+          ),
           note: "counterparty response still requires --reason or --reason-file"
         },
         {
@@ -3541,7 +3842,8 @@ const getHandoffHints = (
               sourcePath: "data.id",
               targetInputs: ["--dispute"]
             }
-          ]
+          ],
+          ...currentResultSelection(equalsSelectionCondition("data.status", "OPEN"))
         },
         {
           targetCommand: "tasks get",
@@ -3602,7 +3904,8 @@ const getHandoffHints = (
               sourcePath: "data.id",
               targetInputs: ["--dispute"]
             }
-          ]
+          ],
+          ...currentResultSelection(equalsSelectionCondition("data.status", "OPEN"))
         },
         {
           targetCommand: "tasks get",
@@ -3751,7 +4054,8 @@ const getHandoffHints = (
               sourcePath: "data.id",
               targetInputs: ["--submission"]
             }
-          ]
+          ],
+          ...currentResultSelection(equalsSelectionCondition("data.status", "SUBMITTED"))
         },
         {
           targetCommand: "submissions reject",
@@ -3761,6 +4065,7 @@ const getHandoffHints = (
               targetInputs: ["--submission"]
             }
           ],
+          ...currentResultSelection(equalsSelectionCondition("data.status", "SUBMITTED")),
           note: "submission rejection still requires --reason or --reason-file"
         },
         {
@@ -3775,6 +4080,7 @@ const getHandoffHints = (
               targetInputs: ["--submission"]
             }
           ],
+          ...currentResultSelection(equalsSelectionCondition("data.status", "REJECTED")),
           note: "dispute opening still requires --reason or --reason-file"
         },
         {
@@ -4041,7 +4347,8 @@ const getHandoffHints = (
               sourcePath: "data.id",
               targetInputs: ["--task"]
             }
-          ]
+          ],
+          ...currentResultSelection(equalsSelectionCondition("data.status", "OPEN"))
         },
         {
           targetCommand: "tasks intentions",
@@ -4060,6 +4367,7 @@ const getHandoffHints = (
               targetInputs: ["--task"]
             }
           ],
+          ...currentResultSelection(equalsSelectionCondition("data.status", "OPEN")),
           note: "submission also requires payload input and usually a prior intention"
         },
         {
@@ -4069,7 +4377,8 @@ const getHandoffHints = (
               sourcePath: "data.id",
               targetInputs: ["--task"]
             }
-          ]
+          ],
+          ...currentResultSelection(inSelectionCondition("data.status", ["OPEN", "IN_PROGRESS"]))
         },
         {
           targetCommand: "submissions list",
@@ -4210,18 +4519,20 @@ const getHandoffHints = (
         {
           targetCommand: "tasks intend",
           bindings: [handoffFromPath("data.items[].id", ["--task"])],
-          ...currentPageSelection()
+          ...currentPageSelection(equalsSelectionCondition("data.items[].status", "OPEN"))
         },
         {
           targetCommand: "tasks submit",
           bindings: [handoffFromPath("data.items[].id", ["--task"])],
-          ...currentPageSelection(),
+          ...currentPageSelection(equalsSelectionCondition("data.items[].status", "OPEN")),
           note: "submission also requires payload input and usually a prior intention"
         },
         {
           targetCommand: "tasks terminate",
           bindings: [handoffFromPath("data.items[].id", ["--task"])],
-          ...currentPageSelection()
+          ...currentPageSelection(
+            inSelectionCondition("data.items[].status", ["OPEN", "IN_PROGRESS"])
+          )
         },
         {
           targetCommand: "submissions list",
@@ -4785,6 +5096,7 @@ const toCommandSpec = (path: string, command: Command): CliSpecCommand => {
       executionMode: localMetadata.executionMode,
       arguments: getRegisteredArguments(command),
       options: command.options.filter((option) => !isHelpOption(option)).map(toOptionSpec),
+      ...(getConfigKeyHints(path) ? { configKeyHints: getConfigKeyHints(path) } : {}),
       inputContract: [...getInputContractLines(command)],
       ...(localMetadata.operations
         ? { operations: localMetadata.operations.map(toOperationSpec) }
@@ -4819,7 +5131,7 @@ const resolveCommandSpec = (path: string, command: Command): CliSpecCommand => {
     authRequirements: toAuthRequirements(operation.auth),
     executionSteps: [],
     sideEffects: [],
-    successFields: getApiSuccessFields(apiOperation),
+    successFields: getCommandSuccessFields(path, apiOperation),
     requestBindings: getRequestBindings(path, apiOperation),
     failureHints: getFailureHints(path, "api", operation.auth, automationHints),
     workflowHints,
@@ -4864,7 +5176,8 @@ const toDiscoverySpec = async (command: Command, commandQuery?: string): Promise
       positionalHelpArgumentsUnaffected: true,
       opaquePaginationCursor: true,
       stdinFileAlias: STDIN_FILE_ALIAS,
-      stdinSingleConsumerPerInvocation: true
+      stdinSingleConsumerPerInvocation: true,
+      credentialFileInputsResolveBeforeCommandFileInputs: true
     },
     runtimeConfig: {
       precedence: ["command flags", "persisted global config file", "built-in defaults"],
@@ -4899,20 +5212,105 @@ const toDiscoverySpec = async (command: Command, commandQuery?: string): Promise
         unknown: 10
       }
     },
+    agentExecution: AGENT_EXECUTION_MODEL,
     globalOptions: root.options.filter((option) => !isDiscoveryOnlyOption(option)).map(toOptionSpec),
     dualChannelInputs: [
-      { inline: "--token", file: "--token-file", stdinAlias: STDIN_FILE_ALIAS },
-      { inline: "--admin-key", file: "--admin-key-file", stdinAlias: STDIN_FILE_ALIAS },
-      { inline: "--private-key", file: "--private-key-file", stdinAlias: STDIN_FILE_ALIAS },
-      { inline: "--message", file: "--message-file", stdinAlias: STDIN_FILE_ALIAS },
-      { inline: "--desc", file: "--desc-file", stdinAlias: STDIN_FILE_ALIAS },
-      { inline: "--criteria", file: "--criteria-file", stdinAlias: STDIN_FILE_ALIAS },
-      { inline: "--payload", file: "--payload-file", stdinAlias: STDIN_FILE_ALIAS },
-      { inline: "--patch-json", file: "--patch-file", stdinAlias: STDIN_FILE_ALIAS },
-      { inline: "--reason", file: "--reason-file", stdinAlias: STDIN_FILE_ALIAS },
-      { inline: "--name", file: "--name-file", stdinAlias: STDIN_FILE_ALIAS },
-      { inline: "--bio", file: "--bio-file", stdinAlias: STDIN_FILE_ALIAS },
-      { inline: "<value>", file: "--value-file", stdinAlias: STDIN_FILE_ALIAS }
+      {
+        inline: "--token",
+        file: "--token-file",
+        stdinAlias: STDIN_FILE_ALIAS,
+        valueKind: "secret",
+        preferredInput: "file",
+        secretKind: "bearerToken"
+      },
+      {
+        inline: "--admin-key",
+        file: "--admin-key-file",
+        stdinAlias: STDIN_FILE_ALIAS,
+        valueKind: "secret",
+        preferredInput: "file",
+        secretKind: "adminServiceKey"
+      },
+      {
+        inline: "--private-key",
+        file: "--private-key-file",
+        stdinAlias: STDIN_FILE_ALIAS,
+        valueKind: "secret",
+        preferredInput: "file",
+        secretKind: "walletPrivateKey"
+      },
+      {
+        inline: "--signature",
+        file: "--signature-file",
+        stdinAlias: STDIN_FILE_ALIAS,
+        valueKind: "secret",
+        preferredInput: "file",
+        secretKind: "authSignature"
+      },
+      {
+        inline: "--message",
+        file: "--message-file",
+        stdinAlias: STDIN_FILE_ALIAS,
+        valueKind: "text",
+        preferredInput: "file"
+      },
+      {
+        inline: "--title",
+        file: "--title-file",
+        stdinAlias: STDIN_FILE_ALIAS,
+        valueKind: "text",
+        preferredInput: "file"
+      },
+      {
+        inline: "--desc",
+        file: "--desc-file",
+        stdinAlias: STDIN_FILE_ALIAS,
+        valueKind: "text",
+        preferredInput: "file"
+      },
+      {
+        inline: "--criteria",
+        file: "--criteria-file",
+        stdinAlias: STDIN_FILE_ALIAS,
+        valueKind: "text",
+        preferredInput: "file"
+      },
+      {
+        inline: "--payload",
+        file: "--payload-file",
+        stdinAlias: STDIN_FILE_ALIAS,
+        valueKind: "text",
+        preferredInput: "file"
+      },
+      {
+        inline: "--patch-json",
+        file: "--patch-file",
+        stdinAlias: STDIN_FILE_ALIAS,
+        valueKind: "json",
+        preferredInput: "file"
+      },
+      {
+        inline: "--reason",
+        file: "--reason-file",
+        stdinAlias: STDIN_FILE_ALIAS,
+        valueKind: "text",
+        preferredInput: "file"
+      },
+      {
+        inline: "--name",
+        file: "--name-file",
+        stdinAlias: STDIN_FILE_ALIAS,
+        valueKind: "text",
+        preferredInput: "file"
+      },
+      {
+        inline: "--bio",
+        file: "--bio-file",
+        stdinAlias: STDIN_FILE_ALIAS,
+        valueKind: "text",
+        preferredInput: "file"
+      },
+      { inline: "[value]", file: "--value-file", stdinAlias: STDIN_FILE_ALIAS, valueKind: "configValue" }
     ],
     commands: filteredCommands
   };

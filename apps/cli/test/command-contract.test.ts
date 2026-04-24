@@ -102,6 +102,7 @@ const readRequestBody = async (request: import("node:http").IncomingMessage): Pr
 test("cli command contract: method/path/auth/body coverage for all command groups", async () => {
   const token = "cli-contract-token";
   const adminKey = "cli-contract-admin-key";
+  const manualSignature = `0x${"11".repeat(65)}`;
   const addressA = "0x1111111111111111111111111111111111111111";
   const addressB = "0x2222222222222222222222222222222222222222";
   const deadline = "2027-01-01T00:00:00.000Z";
@@ -300,6 +301,8 @@ test("cli command contract: method/path/auth/body coverage for all command group
 
   const tmpDir = mkdtempSync(join(tmpdir(), "agentrade-cli-contract-"));
   const messageFile = join(tmpDir, "message.md");
+  const signatureFile = join(tmpDir, "signature.txt");
+  const titleFile = join(tmpDir, "title.txt");
   const descFile = join(tmpDir, "desc.md");
   const criteriaFile = join(tmpDir, "criteria.md");
   const payloadFile = join(tmpDir, "payload.md");
@@ -311,6 +314,8 @@ test("cli command contract: method/path/auth/body coverage for all command group
   const patchFile = join(tmpDir, "patch.json");
   const privateKeyFile = join(tmpDir, "private-key.txt");
   writeFileSync(messageFile, "\uFEFFmessage-from-file", "utf8");
+  writeFileSync(signatureFile, `\uFEFF${manualSignature}\n`, "utf8");
+  writeFileSync(titleFile, "\uFEFFcontract-task-from-file", "utf8");
   writeFileSync(descFile, "\uFEFFdesc-from-file", "utf8");
   writeFileSync(criteriaFile, "\uFEFFcriteria-from-file", "utf8");
   writeFileSync(payloadFile, "\uFEFFpayload-from-file", "utf8");
@@ -585,8 +590,8 @@ test("cli command contract: method/path/auth/body coverage for all command group
         addressA,
         "--nonce",
         "nonce-1",
-        "--signature",
-        "sig-1",
+        "--signature-file",
+        signatureFile,
         "--message-file",
         messageFile
       ],
@@ -597,7 +602,7 @@ test("cli command contract: method/path/auth/body coverage for all command group
         body: {
           address: addressA,
           nonce: "nonce-1",
-          signature: "sig-1",
+          signature: manualSignature,
           message: "message-from-file"
         }
       }
@@ -818,8 +823,8 @@ test("cli command contract: method/path/auth/body coverage for all command group
       [
         "tasks",
         "create",
-        "--title",
-        "contract-task",
+        "--title-file",
+        titleFile,
         "--desc-file",
         descFile,
         "--criteria-file",
@@ -839,7 +844,7 @@ test("cli command contract: method/path/auth/body coverage for all command group
         url: "/v2/tasks",
         auth: "bearer",
         body: {
-          title: "contract-task",
+          title: "contract-task-from-file",
           descriptionMd: "desc-from-file",
           acceptanceCriteria: "criteria-from-file",
           deadlineUtc: deadline,
@@ -1186,8 +1191,8 @@ test("cli command contract: method/path/auth/body coverage for all command group
         "next",
         "--patch-file",
         patchFile,
-        "--reason",
-        "planned-tuning"
+        "--reason-file",
+        reasonFile
       ],
       {
         method: "PATCH",
@@ -1196,7 +1201,7 @@ test("cli command contract: method/path/auth/body coverage for all command group
         body: {
           applyTo: "next",
           patch: { taxRateBps: 600, mintPerCycle: 1200 },
-          reason: "planned-tuning"
+          reason: "reason-from-file"
         }
       },
       {
@@ -1206,11 +1211,11 @@ test("cli command contract: method/path/auth/body coverage for all command group
         }
       }
     );
-    await runAndAssert(["system", "settings", "reset", "--apply-to", "current"], {
+    await runAndAssert(["system", "settings", "reset", "--apply-to", "current", "--reason-file", reasonFile], {
       method: "POST",
       url: "/v2/system/settings/reset",
       auth: "bearer_admin",
-      body: { applyTo: "current" }
+      body: { applyTo: "current", reason: "reason-from-file" }
     });
     await runAndAssert(["system", "settings", "history", "--cursor", "7", "--limit", "9"], {
       method: "GET",
@@ -1263,7 +1268,7 @@ test("cli spec handoff contract: targets and bindings stay executable", async ()
           selectionConditions?: Array<{
             path: string;
             operator: string;
-            value?: string | number | boolean;
+            value?: string | number | boolean | Array<string | number | boolean>;
           }>;
         }>;
       }>;
@@ -1363,7 +1368,10 @@ test("cli spec handoff contract: targets and bindings stay executable", async ()
           `handoff selection condition path '${condition.path}' on '${command.path}' must be present in successFields[]`
         );
         assert.ok(
-          condition.operator === "equals" || condition.operator === "nonNull",
+          condition.operator === "equals" ||
+            condition.operator === "nonNull" ||
+            condition.operator === "isNull" ||
+            condition.operator === "in",
           `handoff selection condition operator '${condition.operator}' on '${command.path}' must use a supported enum`
         );
 
@@ -1380,6 +1388,27 @@ test("cli spec handoff contract: targets and bindings stay executable", async ()
             condition.value,
             undefined,
             `handoff nonNull condition '${condition.path}' on '${command.path}' must not declare a comparison value`
+          );
+        }
+
+        if (condition.operator === "isNull") {
+          assert.equal(
+            condition.value,
+            undefined,
+            `handoff isNull condition '${condition.path}' on '${command.path}' must not declare a comparison value`
+          );
+        }
+
+        if (condition.operator === "in") {
+          assert.ok(
+            Array.isArray(condition.value) && condition.value.length > 0,
+            `handoff in condition '${condition.path}' on '${command.path}' must declare a non-empty comparison array`
+          );
+          assert.ok(
+            (condition.value as unknown[]).every((item) =>
+              ["string", "number", "boolean"].includes(typeof item)
+            ),
+            `handoff in condition '${condition.path}' on '${command.path}' must contain only JSON scalar values`
           );
         }
       }

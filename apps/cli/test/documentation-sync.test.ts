@@ -16,6 +16,8 @@ const repoRoot = resolve(__dirname, "../../..");
 
 const docsOverviewEn = readFileSync(resolve(repoRoot, "docs/cli/overview.md"), "utf8");
 const docsOverviewCn = readFileSync(resolve(repoRoot, "docs/cli/overview_cn.md"), "utf8");
+const skillRootEn = readFileSync(resolve(repoRoot, "apps/skill/SKILL.md"), "utf8");
+const skillRootCn = readFileSync(resolve(repoRoot, "apps/skill/SKILL_cn.md"), "utf8");
 const matrixEn = readFileSync(resolve(repoRoot, "apps/skill/references/command-matrix.md"), "utf8");
 const matrixCn = readFileSync(resolve(repoRoot, "apps/skill/references/command-matrix_cn.md"), "utf8");
 const errorHandlingEn = readFileSync(resolve(repoRoot, "apps/skill/references/error-handling.md"), "utf8");
@@ -215,25 +217,105 @@ test("pagination limit guard stays documented in docs and skill references", () 
 test("stdin alias contract stays documented in docs and skill references", () => {
   assert.match(docsOverviewEn, /accept `-` to read UTF-8 from stdin/i);
   assert.match(docsOverviewCn, /接受 `-` 表示从 stdin 读取 UTF-8/);
+  assert.match(docsOverviewEn, /credential\/text\/JSON\/value inputs accept `-`/i);
+  assert.match(docsOverviewCn, /凭证\/文本\/JSON\/值输入都接受 `-`/);
   assert.match(docsOverviewEn, /only one stdin-backed input consumer/i);
   assert.match(docsOverviewCn, /只允许一个 stdin-backed 输入消费者/);
   assert.match(docsOverviewEn, /stdinFileAlias/);
   assert.match(docsOverviewCn, /stdinFileAlias/);
+  assert.match(docsOverviewEn, /credentialFileInputsResolveBeforeCommandFileInputs/);
+  assert.match(docsOverviewCn, /credentialFileInputsResolveBeforeCommandFileInputs/);
   assert.match(matrixEn, /accepts `-` to read UTF-8 from stdin/i);
   assert.match(matrixCn, /接受 `-` 表示从 stdin 读取 UTF-8/);
+  assert.match(matrixEn, /credential\/text\/JSON\/value input.*accepts `-`/i);
+  assert.match(matrixCn, /凭证\/文本\/JSON\/值输入.*接受 `-`/);
   assert.match(matrixEn, /Only one stdin-backed file input is allowed/i);
   assert.match(matrixCn, /只允许一个 stdin-backed 文件输入/);
+  assert.match(matrixEn, /credentialFileInputsResolveBeforeCommandFileInputs/);
+  assert.match(matrixCn, /credentialFileInputsResolveBeforeCommandFileInputs/);
+});
+
+test("secret input guidance stays file-backed in agent-facing docs", () => {
+  const agentFacingDocs = [
+    ["apps/skill/SKILL.md", skillRootEn],
+    ["apps/skill/SKILL_cn.md", skillRootCn],
+    ["apps/skill/references/workflow.md", readFileSync(resolve(repoRoot, "apps/skill/references/workflow.md"), "utf8")],
+    ["apps/skill/references/workflow_cn.md", readFileSync(resolve(repoRoot, "apps/skill/references/workflow_cn.md"), "utf8")]
+  ] as const;
+
+  for (const [label, source] of agentFacingDocs) {
+    assert.match(source, /config set token --value-file/, `missing token --value-file guidance in ${label}`);
+    assert.match(source, /config set admin-key --value-file/, `missing admin-key --value-file guidance in ${label}`);
+    assert.match(
+      source,
+      /config set wallet-private-key --value-file|--private-key-file/,
+      `missing private-key file-backed guidance in ${label}`
+    );
+    assert.match(source, /--signature-file/, `missing signature-file guidance in ${label}`);
+    assert.match(source, /65-byte/, `missing 65-byte signature guidance in ${label}`);
+    assert.doesNotMatch(source, /config set token <token>/, `stale inline token persistence in ${label}`);
+    assert.doesNotMatch(source, /config set admin-key <admin-service-key>/, `stale inline admin-key persistence in ${label}`);
+    assert.doesNotMatch(source, /config set wallet-private-key <private-key>/, `stale inline wallet key persistence in ${label}`);
+  }
+});
+
+test("auth token stdout warnings stay documented", () => {
+  assert.match(docsOverviewEn, /auth login.*warnings\[\]\.message/);
+  assert.match(docsOverviewCn, /auth login.*warnings\[\]\.message/);
+  assert.match(docsOverviewEn, /auth verify.*warnings\[\]\.message/);
+  assert.match(docsOverviewCn, /auth verify.*warnings\[\]\.message/);
+  assert.match(docsOverviewEn, /data\.token.*data\.auth\.token.*secret/i);
+  assert.match(docsOverviewCn, /data\.token.*data\.auth\.token.*密钥/);
+  assert.match(docsOverviewEn, /--signature-file/);
+  assert.match(docsOverviewCn, /--signature-file/);
+  assert.match(docsOverviewEn, /65-byte.*EIP-191/i);
+  assert.match(docsOverviewCn, /65-byte.*EIP-191/i);
+  assert.match(matrixEn, /auth login.*warnings\[\]\.message/);
+  assert.match(matrixCn, /auth login.*warnings\[\]\.message/);
+  assert.match(matrixEn, /auth verify.*warnings\[\]\.message/);
+  assert.match(matrixCn, /auth verify.*warnings\[\]\.message/);
+  assert.match(matrixEn, /data\.token.*data\.auth\.token.*secret/i);
+  assert.match(matrixCn, /data\.token.*data\.auth\.token.*密钥/);
+  assert.match(matrixEn, /--signature-file/);
+  assert.match(matrixCn, /--signature-file/);
+  assert.match(matrixEn, /65-byte.*EIP-191/i);
+  assert.match(matrixCn, /65-byte.*EIP-191/i);
+});
+
+test("audit logging guidance requires redacted stdout and command records", () => {
+  assert.match(docsOverviewEn, /redacted command string/i);
+  assert.match(docsOverviewCn, /脱敏后的 command/);
+  assert.match(docsOverviewEn, /redacted stdout\/stderr JSON summaries/i);
+  assert.match(docsOverviewCn, /脱敏后的 stdout\/stderr JSON 摘要/);
+  assert.match(docsOverviewEn, /Do not store raw stdout.*data\.token.*data\.auth\.token.*data\.wallet\.privateKey/i);
+  assert.match(docsOverviewCn, /不要.*data\.token.*data\.auth\.token.*data\.wallet\.privateKey.*原始 stdout/);
+  assert.match(errorHandlingEn, /redacted stdout JSON summary/i);
+  assert.match(errorHandlingCn, /脱敏后的 stdout JSON 摘要/);
+  assert.match(errorHandlingEn, /never include raw `data\.token`, `data\.auth\.token`, or `data\.wallet\.privateKey`/);
+  assert.match(errorHandlingCn, /不得包含原始 `data\.token`、`data\.auth\.token` 或 `data\.wallet\.privateKey`/);
 });
 
 test("spec auth requirement discovery stays documented in docs and skill references", () => {
   assert.match(docsOverviewEn, /authRequirements\[\]/);
   assert.match(docsOverviewCn, /authRequirements\[\]/);
+  assert.match(docsOverviewEn, /preferredSources\[\]/);
+  assert.match(docsOverviewCn, /preferredSources\[\]/);
+  assert.match(docsOverviewEn, /argvSecretSources\[\]/);
+  assert.match(docsOverviewCn, /argvSecretSources\[\]/);
+  assert.match(docsOverviewEn, /fileBackedSources\[\]/);
+  assert.match(docsOverviewCn, /fileBackedSources\[\]/);
+  assert.match(docsOverviewEn, /persistedSources\[\]/);
+  assert.match(docsOverviewCn, /persistedSources\[\]/);
   assert.match(docsOverviewEn, /persistedConfig\.token/);
   assert.match(docsOverviewCn, /persistedConfig\.token/);
   assert.match(docsOverviewEn, /persistedConfig\.adminKey/);
   assert.match(docsOverviewCn, /persistedConfig\.adminKey/);
   assert.match(matrixEn, /commands\[\]\.authRequirements\[\]/);
   assert.match(matrixCn, /commands\[\]\.authRequirements\[\]/);
+  assert.match(matrixEn, /preferredSources\[\]/);
+  assert.match(matrixCn, /preferredSources\[\]/);
+  assert.match(matrixEn, /argvSecretSources\[\]/);
+  assert.match(matrixCn, /argvSecretSources\[\]/);
 });
 
 test("spec local and composite execution discovery stays documented in docs and skill references", () => {
@@ -263,6 +345,16 @@ test("spec local and composite execution discovery stays documented in docs and 
   assert.match(matrixCn, /successFields\[\].*响应 schema/);
   assert.match(docsOverviewEn, /automationHints/);
   assert.match(docsOverviewCn, /automationHints/);
+  assert.match(docsOverviewEn, /agentExecution/);
+  assert.match(docsOverviewCn, /agentExecution/);
+  assert.match(docsOverviewEn, /humanOutOfLoop=true/);
+  assert.match(docsOverviewCn, /humanOutOfLoop=true/);
+  assert.match(docsOverviewEn, /interactivePrompts=false/);
+  assert.match(docsOverviewCn, /interactivePrompts=false/);
+  assert.match(docsOverviewEn, /humanApprovalRequiredForLifecycleWrites=false/);
+  assert.match(docsOverviewCn, /humanApprovalRequiredForLifecycleWrites=false/);
+  assert.match(docsOverviewEn, /not human approval/i);
+  assert.match(docsOverviewCn, /不是人类审批/);
   assert.match(docsOverviewEn, /failureHints\[\]/);
   assert.match(docsOverviewCn, /failureHints\[\]/);
   assert.match(docsOverviewEn, /workflowHints/);
@@ -305,8 +397,38 @@ test("spec local and composite execution discovery stays documented in docs and 
   assert.match(docsOverviewCn, /nonNull/);
   assert.match(docsOverviewEn, /equals/);
   assert.match(docsOverviewCn, /equals/);
+  assert.match(docsOverviewEn, /isNull/);
+  assert.match(docsOverviewCn, /isNull/);
+  assert.match(docsOverviewEn, /`in`/);
+  assert.match(docsOverviewCn, /`in`/);
   assert.match(docsOverviewEn, /targetInputs\[\]/);
   assert.match(docsOverviewCn, /targetInputs\[\]/);
+  assert.match(docsOverviewEn, /argvValueContainsSecret/);
+  assert.match(docsOverviewCn, /argvValueContainsSecret/);
+  assert.match(docsOverviewEn, /preferredFileFlag/);
+  assert.match(docsOverviewCn, /preferredFileFlag/);
+  assert.match(docsOverviewEn, /fileBackedSecretFor/);
+  assert.match(docsOverviewCn, /fileBackedSecretFor/);
+  assert.match(docsOverviewEn, /revealsSensitiveOutput/);
+  assert.match(docsOverviewCn, /revealsSensitiveOutput/);
+  assert.match(docsOverviewEn, /sensitiveOutputPaths\[\]/);
+  assert.match(docsOverviewCn, /sensitiveOutputPaths\[\]/);
+  assert.match(docsOverviewEn, /preferredInput=file/);
+  assert.match(docsOverviewCn, /preferredInput=file/);
+  assert.match(docsOverviewEn, /--show-private-key.*data\.wallet\.privateKey/s);
+  assert.match(docsOverviewCn, /--show-private-key.*data\.wallet\.privateKey/s);
+  assert.match(docsOverviewEn, /--signature.*argvValueContainsSecret|--signature-file/s);
+  assert.match(docsOverviewCn, /--signature.*argvValueContainsSecret|--signature-file/s);
+  assert.match(docsOverviewEn, /--message.*--title.*--desc.*--criteria.*--payload.*--patch-json.*--reason.*--name.*--bio/s);
+  assert.match(docsOverviewCn, /--message.*--title.*--desc.*--criteria.*--payload.*--patch-json.*--reason.*--name.*--bio/s);
+  assert.match(docsOverviewEn, /--message-file.*before `--message`/);
+  assert.match(docsOverviewCn, /--message-file.*排在 `--message` 前面/);
+  assert.match(docsOverviewEn, /Shared help text.*file-backed text\/JSON flags/i);
+  assert.match(docsOverviewCn, /共享 help 文本.*生成型.*text\/JSON/);
+  assert.match(docsOverviewEn, /configKeyHints\[\]/);
+  assert.match(docsOverviewCn, /configKeyHints\[\]/);
+  assert.match(docsOverviewEn, /argvValueContainsSecretWhenInline/);
+  assert.match(docsOverviewCn, /argvValueContainsSecretWhenInline/);
   assert.match(docsOverviewEn, /prerequisiteCommands\[\]/);
   assert.match(docsOverviewCn, /prerequisiteCommands\[\]/);
   assert.match(docsOverviewEn, /nextCommands\[\]/);
@@ -339,8 +461,38 @@ test("spec local and composite execution discovery stays documented in docs and 
   assert.match(matrixCn, /nonNull/);
   assert.match(matrixEn, /equals/);
   assert.match(matrixCn, /equals/);
+  assert.match(matrixEn, /isNull/);
+  assert.match(matrixCn, /isNull/);
+  assert.match(matrixEn, /`in`/);
+  assert.match(matrixCn, /`in`/);
   assert.match(matrixEn, /commands\[\]\.automationHints/);
   assert.match(matrixCn, /commands\[\]\.automationHints/);
+  assert.match(matrixEn, /agentExecution/);
+  assert.match(matrixCn, /agentExecution/);
+  assert.match(matrixEn, /human-out-of-loop/);
+  assert.match(matrixCn, /human-out-of-loop/);
+  assert.match(matrixEn, /not a human approval gate/);
+  assert.match(matrixCn, /不是人类审批门/);
+  assert.match(matrixEn, /options\[\]\.argvValueContainsSecret/);
+  assert.match(matrixCn, /options\[\]\.argvValueContainsSecret/);
+  assert.match(matrixEn, /options\[\]\.preferredFileFlag/);
+  assert.match(matrixCn, /options\[\]\.preferredFileFlag/);
+  assert.match(matrixEn, /options\[\]\.fileBackedSecretFor/);
+  assert.match(matrixCn, /options\[\]\.fileBackedSecretFor/);
+  assert.match(matrixEn, /options\[\]\.revealsSensitiveOutput/);
+  assert.match(matrixCn, /options\[\]\.revealsSensitiveOutput/);
+  assert.match(matrixEn, /--show-private-key.*data\.wallet\.privateKey/s);
+  assert.match(matrixCn, /--show-private-key.*data\.wallet\.privateKey/s);
+  assert.match(matrixEn, /--signature-file/);
+  assert.match(matrixCn, /--signature-file/);
+  assert.match(matrixEn, /--message.*--desc.*--criteria.*--payload.*--patch-json.*--reason.*--name.*--bio/s);
+  assert.match(matrixCn, /--message.*--desc.*--criteria.*--payload.*--patch-json.*--reason.*--name.*--bio/s);
+  assert.match(matrixEn, /--message-file.*before `--message`/);
+  assert.match(matrixCn, /--message-file.*排在 `--message` 前面/);
+  assert.match(matrixEn, /Shared help text.*file-backed text\/JSON flags/i);
+  assert.match(matrixCn, /共享 help 文本.*生成型\/多行/);
+  assert.match(matrixEn, /commands\[\]\.configKeyHints\[\]/);
+  assert.match(matrixCn, /commands\[\]\.configKeyHints\[\]/);
 });
 
 test("request binding discovery stays documented in docs and skill references", () => {
@@ -382,15 +534,23 @@ test("text length guards stay documented in docs and skill references", () => {
   assert.match(docsOverviewEn, /name <= 120/);
   assert.match(docsOverviewEn, /bio <= 1000/);
   assert.match(docsOverviewEn, /reason.*1000/);
+  assertCommandRowContains(docsOverviewEn, "docs/cli/overview.md", "system settings update", ["--reason-file"]);
+  assertCommandRowContains(docsOverviewEn, "docs/cli/overview.md", "system settings reset", ["--reason-file"]);
   assert.match(docsOverviewCn, /name <= 120/);
   assert.match(docsOverviewCn, /bio <= 1000/);
   assert.match(docsOverviewCn, /reason.*1000/);
+  assertCommandRowContains(docsOverviewCn, "docs/cli/overview_cn.md", "system settings update", ["--reason-file"]);
+  assertCommandRowContains(docsOverviewCn, "docs/cli/overview_cn.md", "system settings reset", ["--reason-file"]);
   assert.match(matrixEn, /name<=120/);
   assert.match(matrixEn, /bio<=1000/);
   assert.match(matrixEn, /reason<=1000/);
+  assertCommandRowContains(matrixEn, "apps/skill/references/command-matrix.md", "system settings update", ["--reason-file"]);
+  assertCommandRowContains(matrixEn, "apps/skill/references/command-matrix.md", "system settings reset", ["--reason-file"]);
   assert.match(matrixCn, /name<=120/);
   assert.match(matrixCn, /bio<=1000/);
   assert.match(matrixCn, /reason<=1000/);
+  assertCommandRowContains(matrixCn, "apps/skill/references/command-matrix_cn.md", "system settings update", ["--reason-file"]);
+  assertCommandRowContains(matrixCn, "apps/skill/references/command-matrix_cn.md", "system settings reset", ["--reason-file"]);
 });
 
 test("text file BOM normalization stays documented in docs and skill references", () => {

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -215,14 +216,38 @@ test("cli timeout: request timeout returns NETWORK_ERROR", async () => {
 });
 
 test("cli dns failure returns NETWORK_ERROR with structured transport diagnostics", async () => {
-  const result = await runCli([
-    "--base-url",
-    "http://nonexistent-subdomain-for-agentrade-cli.invalid",
-    "--retries",
-    "0",
-    "system",
-    "health"
-  ]);
+  const fetchPreloadPath = join(
+    tmpdir(),
+    `agentrade-cli-dns-fetch-${process.pid}-${Date.now()}.mjs`
+  );
+  writeFileSync(
+    fetchPreloadPath,
+    `
+const dnsCause = Object.assign(new Error("getaddrinfo ENOTFOUND api.agentrade.invalid"), {
+  code: "ENOTFOUND"
+});
+globalThis.fetch = async () => {
+  throw new TypeError("fetch failed", { cause: dnsCause });
+};
+`,
+    "utf8"
+  );
+
+  const result = await runCli(
+    [
+      "--base-url",
+      "http://api.agentrade.invalid",
+      "--retries",
+      "0",
+      "system",
+      "health"
+    ],
+    {
+      NODE_OPTIONS: [process.env.NODE_OPTIONS, `--import=${fetchPreloadPath}`]
+        .filter(Boolean)
+        .join(" ")
+    }
+  );
 
   assert.equal(result.code, 5);
   const errorJson = JSON.parse(result.stderr.trim()) as {
@@ -242,7 +267,7 @@ test("cli dns failure returns NETWORK_ERROR with structured transport diagnostic
   assert.match(errorJson.message, /dns lookup failed/i);
   assert.equal(errorJson.issues.kind, "DNS");
   assert.equal(errorJson.issues.causeCode, "ENOTFOUND");
-  assert.match(errorJson.issues.url, /nonexistent-subdomain-for-agentrade-cli\.invalid/);
+  assert.match(errorJson.issues.url, /api\.agentrade\.invalid/);
 });
 
 test("cli blocked port returns non-retryable NETWORK_ERROR with request diagnostics", async () => {

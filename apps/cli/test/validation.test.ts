@@ -11,6 +11,7 @@ import {
   ensureAgentListSort,
   ensureDisputeListSort,
   ensureDisputeStatus,
+  ensureEip191Signature,
   ensureHttpUrl,
   ensureIanaTimeZone,
   ensureIsoDate,
@@ -53,6 +54,9 @@ test("validators: address and integer parsing", () => {
     "0x1111111111111111111111111111111111111111111111111111111111111111"
   );
   assert.throws(() => ensurePrivateKey("0x1234", "--private-key"), CliValidationError);
+
+  assert.equal(ensureEip191Signature(`0x${"11".repeat(65)}`, "--signature"), `0x${"11".repeat(65)}`);
+  assert.throws(() => ensureEip191Signature("0x1234", "--signature"), CliValidationError);
 });
 
 test("validators: datetime and enum parsing", () => {

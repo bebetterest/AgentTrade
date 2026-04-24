@@ -8,7 +8,7 @@ import {
 import { CliConfigError, CliValidationError } from "../errors.js";
 import { cliOperationBindings } from "../operation-bindings.js";
 import { withSuccessMeta, type StructuredCliWarning } from "../output.js";
-import { ensureAddress, ensureNonEmpty, ensurePrivateKey } from "../validators.js";
+import { ensureAddress, ensureEip191Signature, ensureNonEmpty, ensurePrivateKey } from "../validators.js";
 import { resolveFileBackedInput, resolveTextInput } from "../text-input.js";
 import { addInputContractHelp, executeJsonCommand, executeOperationCommand } from "./shared.js";
 
@@ -38,7 +38,7 @@ const persistToken = (token: string, noPersistToken: boolean): boolean => {
 export const registerAuthCommands = (program: Command): void => {
   const auth = program.command("auth").description("Authentication commands");
   const privateKeySecurityNotice =
-    "Please keep your wallet information secure. It is your only identity credential. Every operation on this platform requires short-lived authorization from this wallet, and you should complete it yourself through the CLI instead of asking your owner to operate manually. Do not share it with other agents or anyone else. It must remain known only to you and your owner.";
+    "Please keep your wallet information secure. It is your only identity credential. Platform writes require short-lived authorization derived from this wallet. Complete authentication through the CLI or an approved secret manager flow; do not paste wallet or token secrets into chats, logs, screenshots, commits, tickets, or hand them to another operator. Do not share it with other agents or anyone else. Keep it in encrypted local CLI config or an approved secret store.";
   const authRegisterWarnings: StructuredCliWarning[] = [
     {
       code: "WALLET_IDENTITY_CREDENTIAL",
@@ -46,9 +46,18 @@ export const registerAuthCommands = (program: Command): void => {
       message: privateKeySecurityNotice
     }
   ];
+  const authTokenOutputWarnings: StructuredCliWarning[] = [
+    {
+      code: "AUTH_TOKEN_SECRET",
+      level: "WARNING",
+      message:
+        "Bearer token is returned in stdout. Treat data.token or data.auth.token as secret; prefer --token-file handoff or encrypted config persistence, and keep command output out of logs."
+    }
+  ];
   const authLoginHelpAppendix = `
 Wallet source note:
   default source: persisted wallet-private-key in CLI config
+  override source: --private-key / --private-key-file bypass persisted wallet-private-key decryption
   automation: prefer --private-key-file over inline --private-key for secret handling
   ephemeral session: pass --no-persist-token to avoid updating persisted token
 `;
@@ -119,15 +128,34 @@ Wallet source note:
       .description("Verify SIWE signature and receive JWT")
       .requiredOption("--address <address>", "wallet address")
       .requiredOption("--nonce <nonce>", "challenge nonce")
-      .requiredOption("--signature <signature>", "wallet signature")
+      .option("--signature <signature>", "65-byte 0x-prefixed EIP-191 wallet signature; prefer --signature-file when argv exposure is unacceptable")
+      .option("--signature-file <path>", "file containing 65-byte 0x-prefixed EIP-191 wallet signature")
       .option("--message <text>", "challenge message text")
       .option("--message-file <path>", "file containing challenge message"),
-    ["require one of --message / --message-file"]
+    [
+      "require one of --signature / --signature-file",
+      "signature must be a 65-byte 0x-prefixed EIP-191 signature",
+      "require one of --message / --message-file"
+    ]
   ).action(async (options, command: Command) => {
-      await executeOperationCommand(command, cliOperationBindings["auth verify"], async () => {
+    await executeOperationCommand(
+      command,
+      cliOperationBindings["auth verify"],
+      async () => {
         const address = ensureAddress(String(options.address), "--address");
         const nonce = ensureNonEmpty(String(options.nonce), "--nonce");
-        const signature = ensureNonEmpty(String(options.signature), "--signature");
+        const signatureInput = resolveFileBackedInput({
+          inlineValue: options.signature,
+          filePath: options.signatureFile,
+          inlineFlag: "signature",
+          fileFlag: "signature-file",
+          normalize: (value) => value.replace(/^\uFEFF/, "").trim()
+        });
+        const signatureSource = options.signatureFile ? "--signature-file" : "--signature";
+        const signature = ensureEip191Signature(
+          ensureNonEmpty(signatureInput, signatureSource),
+          signatureSource
+        );
         const message = resolveTextInput({
           inlineValue: options.message,
           filePath: options.messageFile,
@@ -141,14 +169,16 @@ Wallet source note:
             message: String(message)
           }
         };
-      });
+      },
+      authTokenOutputWarnings
+    );
   });
 
   auth
     .command("login")
     .description("Run SIWE challenge+sign+verify with local wallet private key and persist token by default")
     .option("--address <address>", "wallet address override")
-    .option("--private-key <privateKey>", "wallet private key override")
+    .option("--private-key <privateKey>", "inline wallet private key override; prefer --private-key-file")
     .option("--private-key-file <path>", "file containing wallet private key")
     .option("--no-persist-token", "do not persist token to local CLI config")
     .addHelpText("after", authLoginHelpAppendix)
@@ -172,15 +202,15 @@ Wallet source note:
           providedPrivateKeyValue === undefined
             ? undefined
             : ensurePrivateKey(providedPrivateKeyValue, providedPrivateKeyFlag);
-        const persistedPrivateKey = resolveStoredWalletPrivateKey(
-          persisted.walletPrivateKey,
-          persistedSnapshot.path
-        );
+        const persistedPrivateKey =
+          providedPrivateKey === undefined
+            ? resolveStoredWalletPrivateKey(persisted.walletPrivateKey, persistedSnapshot.path)
+            : undefined;
         const resolvedPrivateKey = providedPrivateKey ?? persistedPrivateKey;
 
         if (!resolvedPrivateKey) {
           throw new CliConfigError(
-            "missing wallet private key: run `agentrade auth register`, `agentrade config set wallet-private-key <private-key>`, or pass --private-key/--private-key-file"
+            "missing wallet private key: run `agentrade auth register`, `agentrade config set wallet-private-key --value-file <path>`, or pass --private-key/--private-key-file"
           );
         }
 
@@ -201,7 +231,7 @@ Wallet source note:
           persisted.walletAddress.toLowerCase() !== derivedAddress.toLowerCase()
         ) {
           throw new CliConfigError(
-            "wallet-address and wallet-private-key in CLI config do not match: run `agentrade auth register` or update them with `agentrade config set wallet-address <address>` and `agentrade config set wallet-private-key <private-key>`"
+            "wallet-address and wallet-private-key in CLI config do not match: run `agentrade auth register` or update them with `agentrade config set wallet-address <address>` and `agentrade config set wallet-private-key --value-file <path>`"
           );
         }
 
@@ -221,19 +251,22 @@ Wallet source note:
         });
         const tokenPersisted = persistToken(verified.token, noPersistToken);
 
-        return {
-          wallet: {
-            address
+        return withSuccessMeta(
+          {
+            wallet: {
+              address
+            },
+            auth: {
+              token: verified.token,
+              expiresIn: verified.expiresIn
+            },
+            persistence: {
+              tokenPersisted,
+              walletSource: providedPrivateKey ? "flag" : "config"
+            }
           },
-          auth: {
-            token: verified.token,
-            expiresIn: verified.expiresIn
-          },
-          persistence: {
-            tokenPersisted,
-            walletSource: providedPrivateKey ? "flag" : "config"
-          }
-        };
+          authTokenOutputWarnings
+        );
       });
     });
 };

@@ -181,19 +181,22 @@ test("cli integration: covers lifecycle/read/system-operator command groups", as
     assert.equal(registeredEnvelope.warnings?.[0]?.level, "CRITICAL");
     assert.match(registeredEnvelope.warnings?.[0]?.message ?? "", /only identity credential/i);
 
-    const loginFromPersistedWallet = (await runCliJson(baseUrl, [
-      "auth",
-      "login",
-      "--no-persist-token"
-    ])) as {
+    const loginFromPersistedWalletEnvelope = await runCliSuccessEnvelope<{
       wallet: { address: Address };
       auth: { token: string; expiresIn: string };
       persistence: { tokenPersisted: boolean; walletSource: string };
-    };
+    }>(baseUrl, [
+      "auth",
+      "login",
+      "--no-persist-token"
+    ]);
+    const loginFromPersistedWallet = loginFromPersistedWalletEnvelope.data;
     assert.equal(loginFromPersistedWallet.wallet.address, registered.wallet.address);
     assert.equal(loginFromPersistedWallet.auth.expiresIn, "15m");
     assert.equal(loginFromPersistedWallet.persistence.tokenPersisted, false);
     assert.equal(loginFromPersistedWallet.persistence.walletSource, "config");
+    assert.equal(loginFromPersistedWalletEnvelope.warnings?.[0]?.code, "AUTH_TOKEN_SECRET");
+    assert.equal(loginFromPersistedWalletEnvelope.warnings?.[0]?.level, "WARNING");
 
     await runCliJson(
       baseUrl,
@@ -590,6 +593,7 @@ test("cli integration: structured error output", async () => {
     assert.equal(missingTokenErr.command, "tasks intend");
     assert.equal(missingTokenErr.httpStatus, null);
     assert.equal(missingTokenErr.apiError, null);
+    assert.match(missingTokenErr.message, /config set token --value-file/i);
 
     const operator = addr("missing-admin-operator");
     const operatorToken = signToken(operator, jwtSecret);
@@ -621,6 +625,7 @@ test("cli integration: structured error output", async () => {
     assert.equal(missingAdminKeyErr.apiError, null);
     assert.equal(missingAdminKeyErr.retryable, false);
     assert.match(missingAdminKeyErr.message, /missing admin key/i);
+    assert.match(missingAdminKeyErr.message, /config set admin-key --value-file/i);
 
     const badVoteToken = signToken(addr("bad-voter"), jwtSecret);
     const badVote = await runCli(
@@ -654,7 +659,7 @@ test("cli integration: structured error output", async () => {
         "--message",
         challenge.message,
         "--signature",
-        "0xdeadbeef"
+        `0x${"11".repeat(65)}`
       ],
       isolatedConfigEnv
     );
@@ -663,10 +668,12 @@ test("cli integration: structured error output", async () => {
     const verifyErr = JSON.parse(verifyFail.stderr.trim()) as {
       type: string;
       httpStatus: number | null;
+      apiError: string | null;
       command: string;
     };
     assert.equal(verifyErr.type, "API_ERROR");
     assert.equal(verifyErr.httpStatus, 401);
+    assert.equal(verifyErr.apiError, "INVALID_SIGNATURE");
     assert.equal(verifyErr.command, "auth verify");
   } finally {
     if (app) {

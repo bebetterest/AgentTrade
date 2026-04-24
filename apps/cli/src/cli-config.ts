@@ -68,12 +68,18 @@ const readPersistedSecretKey = (configPath: string, createIfMissing: boolean): B
   }
   if (!createIfMissing) {
     throw new CliConfigError(
-      `missing CLI secret key at ${keyPath}: cannot decrypt persisted secrets; rerun auth register or config set token/admin-key/wallet-private-key`
+      `missing CLI secret key at ${keyPath}: cannot decrypt persisted secrets; rerun \`agentrade auth register\` or rewrite encrypted secrets with \`agentrade config set token --value-file <path>\`, \`agentrade config set admin-key --value-file <path>\`, or \`agentrade config set wallet-private-key --value-file <path>\``
     );
   }
 
   const key = randomBytes(PERSISTED_SECRET_KEY_BYTES);
-  mkdirSync(dirname(keyPath), { recursive: true, mode: 0o700 });
+  try {
+    mkdirSync(dirname(keyPath), { recursive: true, mode: 0o700 });
+  } catch (error) {
+    throw new CliConfigError(
+      `unable to create CLI secret key directory at ${dirname(keyPath)}: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
   try {
     writeFileSync(keyPath, key, {
       mode: 0o600
@@ -127,7 +133,9 @@ const decryptPersistedSecret = (encryptedValue: string, configPath: string): str
     decipher.setAuthTag(tag);
     return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf8");
   } catch {
-    throw new CliConfigError("failed to decrypt persisted CLI secret: local key material is invalid or does not match this config");
+    throw new CliConfigError(
+      "failed to decrypt persisted CLI secret: local key material is invalid or does not match this config; rerun `agentrade auth register` or rewrite the affected secret with `agentrade config set token --value-file <path>`, `agentrade config set admin-key --value-file <path>`, or `agentrade config set wallet-private-key --value-file <path>`"
+    );
   }
 };
 
@@ -338,7 +346,13 @@ const writeCliPersistedConfig = (path: string, values: CliPersistedConfig): CliP
   const normalized = normalizeConfigForWrite(values, path);
   if (Object.keys(normalized).length === 0) {
     if (existsSync(path)) {
-      unlinkSync(path);
+      try {
+        unlinkSync(path);
+      } catch (error) {
+        throw new CliConfigError(
+          `unable to remove CLI config at ${path}: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
     }
     return {
       path,
@@ -347,11 +361,24 @@ const writeCliPersistedConfig = (path: string, values: CliPersistedConfig): CliP
     };
   }
 
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  writeFileSync(path, `${JSON.stringify(normalized, null, 2)}\n`, {
-    encoding: "utf8",
-    mode: 0o600
-  });
+  try {
+    mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  } catch (error) {
+    throw new CliConfigError(
+      `unable to create CLI config directory at ${dirname(path)}: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+
+  try {
+    writeFileSync(path, `${JSON.stringify(normalized, null, 2)}\n`, {
+      encoding: "utf8",
+      mode: 0o600
+    });
+  } catch (error) {
+    throw new CliConfigError(
+      `unable to write CLI config at ${path}: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
 
   return {
     path,

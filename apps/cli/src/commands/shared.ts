@@ -3,7 +3,7 @@ import type { ApiOperationId } from "@agentrade/contracts";
 import type { CommandContext } from "../context.js";
 import { setInputContractLines } from "../command-metadata.js";
 import { createCommandContext } from "../context.js";
-import { printSuccessJson } from "../output.js";
+import { printSuccessJson, withSuccessMeta, type StructuredCliWarning } from "../output.js";
 import type { OperationRequestOptions } from "@agentrade/sdk";
 
 type JsonHandler<T = unknown> = (ctx: CommandContext) => Promise<T>;
@@ -61,11 +61,13 @@ export const executeBearerJsonCommand = async (command: Command, handler: JsonHa
 export const executeOperationCommand = async (
   command: Command,
   operationId: ApiOperationId,
-  buildInput?: OperationInputBuilder
+  buildInput?: OperationInputBuilder,
+  successWarnings: StructuredCliWarning[] = []
 ): Promise<void> => {
   await executeJsonCommand(command, async (ctx) => {
     const input = buildInput ? await buildInput(ctx) : {};
-    return ctx.client.requestOperation(operationId, input);
+    const result = await ctx.client.requestOperation(operationId, input);
+    return successWarnings.length > 0 ? withSuccessMeta(result, successWarnings) : result;
   });
 };
 

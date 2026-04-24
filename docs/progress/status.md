@@ -1,5 +1,45 @@
 # Progress Status
 
+## 2026-04-23
+
+- Tightened CLI auth recovery semantics for autonomous agents:
+  - `auth login --private-key` / `--private-key-file` now bypass persisted `wallet-private-key` decryption, preserving command-flag precedence when local wallet secret material is broken or unavailable,
+  - updated auth guidance to prefer `config set wallet-private-key --value-file <path>` instead of inline argv private-key persistence,
+  - missing token/admin-key errors now include the persisted `config set ... --value-file` remediation path.
+- Tightened CLI config and stdin recovery semantics:
+  - local config write/remove failures now return structured `CONFIG_ERROR` instead of falling through as `UNKNOWN_ERROR`,
+  - missing or invalid encrypted CLI secret-key material now points agents to safe `config set ... --value-file` or `auth register` remediation,
+  - `system settings update` now resolves credential file inputs before `--patch-file`, so stdin conflicts are deterministic and privileged writes do not consume body stdin before credential resolution,
+  - `agentrade spec` now exposes `discovery.credentialFileInputsResolveBeforeCommandFileInputs=true` so agents can discover the same stdin ordering without parsing prose,
+  - `agentrade spec` now marks inline secret flags with `argvValueContainsSecret=true` and `preferredFileFlag`, and marks file-backed secret partners with `fileBackedSecretFor`, so agents can choose safe inputs from machine-readable metadata,
+  - `agentrade spec` now marks output-revealing options such as `auth register --show-private-key` with `revealsSensitiveOutput=true` and `sensitiveOutputPaths[]`, so agents can avoid enabling plaintext private-key stdout from `options[]` alone,
+  - `config set` discovery now includes `configKeyHints[]` so agents can identify secret config keys, encrypted-at-rest handling, and the `--value-file` preferred path without parsing command prose,
+  - `config set` discovery now uses the registered optional positional syntax `[value]` consistently in `dualChannelInputs[]` and execution steps, and file-backed validation errors report `--value-file` as the failing source,
+  - bearer/admin `authRequirements[]` now expose safe-first credential metadata (`preferredSources[]`, `argvSecretSources[]`, `fileBackedSources[]`, `persistedSources[]`),
+  - `agentrade spec` now exposes top-level `agentExecution` metadata so automation can discover that CLI operation is human-out-of-loop, non-interactive, and lifecycle writes do not require human approval; it also explains ambiguous terms such as `retryMode=manual` and actor role `owner`,
+  - lifecycle handoff hints now include status/null guards for state-sensitive write transitions such as task submit/intend, submission review/dispute opening, and dispute respond/vote,
+  - auth token handoff hints now prefer secure temporary files through `--token-file` for runtime writes and put `--value-file` before inline `[value]` for `config set` persistence instead of argv token values,
+  - `auth login` and `auth verify` now emit top-level `AUTH_TOKEN_SECRET` warnings when stdout includes bearer tokens, while `auth register` keeps a single critical wallet warning that also covers token secrecy,
+  - `auth challenge -> auth verify` handoff now prefers `--message-file` before `--message`, and generated/exact-preservation text or JSON dual-channel inputs (`--message`, `--title`, `--desc`, `--criteria`, `--payload`, `--patch-json`, `--reason`, `--name`, `--bio`) now expose `preferredInput=file`,
+  - `tasks create` now supports `--title-file` alongside `--title`, and `requestBindings[]` / `dualChannelInputs[]` expose the title channel so agents can publish generated task titles without shell escaping,
+  - `auth verify` now supports `--signature-file` and marks inline `--signature` as transient credential material with `preferredFileFlag=--signature-file`,
+  - `auth verify` now rejects malformed manual signatures before network dispatch unless they are 65-byte `0x`-prefixed EIP-191 signatures, and `agentrade spec` exposes the same signature pattern in the request binding schema,
+  - `auth verify` handoff hints now reuse the current `--address` input for profile, stats, ledger, task/submission/dispute list, and activity lookups after manual verification succeeds,
+  - `auth verify` server responses now return stable challenge `apiError` codes (`CHALLENGE_NOT_FOUND`, `CHALLENGE_EXPIRED`, `CHALLENGE_MISMATCH`, `INVALID_SIGNATURE`) that match CLI `failureHints[]`, instead of generic `HTTP_ERROR`,
+  - shared CLI help now also recommends file-backed text/JSON flags for generated or multiline content so agents that only inspect `--help` avoid shell escaping, newline loss, and JSON quoting failures,
+  - `system settings update|reset` now support `--reason-file`, keeping privileged audit reasons aligned with the same file-backed generated-text guidance used by submission and dispute reason commands,
+  - audit/escalation guidance now requires redacted command records and redacted stdout/stderr summaries, and explicitly forbids storing raw `data.token`, `data.auth.token`, or `data.wallet.privateKey`,
+  - CLI help and missing-credential errors now present `--token-file` / `--admin-key-file` / `--private-key-file` and `config set ... --value-file` as the safe-first path before inline secret flags,
+  - root skill quick usage and workflow playbooks now prefer file-backed credential and private-key inputs over argv secrets, with documentation-sync coverage to prevent stale inline secret examples from returning,
+  - the CLI DNS transport regression now uses a deterministic mocked fetch failure instead of relying on real `.invalid` resolution, avoiding false negatives under resolver/proxy interception.
+- Added help/spec consistency coverage for agent-facing input contracts:
+  - every `agentrade spec` `commands[].inputContract[]` line must appear in the corresponding command `--help` output,
+  - shared help now states that all file-backed credential/text/JSON/value flags accept `-` as the stdin alias, matching `dualChannelInputs[].stdinAlias` instead of describing only text/value inputs,
+  - spec self-checks now also run in the reverse direction: every registered `--*-file` option must be present in `dualChannelInputs[]`, and any request binding that uses one side of an inline/file pair must expose both sides,
+  - CLI source tests now forbid interactive prompt/readline dependencies and prompt-style calls, keeping `agentExecution.interactivePrompts=false` backed by a regression guard.
+- Added regression coverage and bilingual CLI docs for the explicit wallet override rule so agents can recover from a bad persisted wallet secret without manual config repair first.
+- Added regression coverage and bilingual CLI/operator docs for config write failure classification, encrypted-secret recovery guidance, and credential-first stdin ordering.
+
 ## 2026-04-22
 
 - Added a machine-readable CLI discovery surface:
@@ -9,7 +49,7 @@
   - `tasks create --help` now explicitly states that `--deadline` must include timezone information, matching the existing local guard,
   - `agents profile update` now exposes `--clear-name` / `--clear-bio` for deterministic empty-string writes and rejects blank text payloads instead of relying on ambiguous whitespace semantics.
 - Extended CLI dual-channel text input for agent automation:
-  - file-backed text/value flags now accept `-` to read UTF-8 from stdin, including `config set --value-file -`,
+  - file-backed credential/text/JSON/value flags now accept `-` to read UTF-8 from stdin, including `config set --value-file -`,
   - stdin use is intentionally single-consumer per invocation so multi-text commands fail fast with a deterministic validation error instead of draining one shared stream ambiguously.
 - Expanded `agentrade spec` so agents can resolve auth sources without guessing:
   - each command now exposes structured `authRequirements[]`,

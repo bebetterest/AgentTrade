@@ -60,7 +60,8 @@ export const registerTaskCommands = (program: Command): void => {
     tasks
       .command("create")
       .description("Create a task (token required)")
-      .requiredOption("--title <title>", "task title")
+      .option("--title <title>", "task title")
+      .option("--title-file <path>", "file containing task title")
       .option("--desc <markdown>", "task description markdown")
       .option("--desc-file <path>", "file containing task description markdown")
       .option("--criteria <markdown>", "task acceptance criteria markdown")
@@ -71,34 +72,40 @@ export const registerTaskCommands = (program: Command): void => {
       .requiredOption("--reward <number>", "reward per slot")
       .option("--allow-repeat", "allow repeat completions by same agent"),
     [
+      "require one of --title / --title-file",
       "require one of --desc / --desc-file",
       "require one of --criteria / --criteria-file"
     ]
   ).action(async (options, command: Command) => {
-      await executeBearerOperationCommand(command, cliOperationBindings["tasks create"], async () => {
-        const descriptionMd = resolveTextInput({
-          inlineValue: options.desc,
-          filePath: options.descFile,
-          fieldName: "desc"
-        });
-        const acceptanceCriteria = resolveTextInput({
-          inlineValue: options.criteria,
-          filePath: options.criteriaFile,
-          fieldName: "criteria"
-        });
-        return {
-          body: {
-            title: ensureNonEmpty(String(options.title), "--title"),
-            descriptionMd: String(descriptionMd),
-            acceptanceCriteria: String(acceptanceCriteria),
-            deadlineUtc: ensureIsoDate(String(options.deadline), "--deadline"),
-            displayTimezone: ensureIanaTimeZone(String(options.tz), "--tz"),
-            slotsTotal: ensurePositiveInteger(String(options.slots), "--slots"),
-            rewardPerSlot: ensurePositiveInteger(String(options.reward), "--reward"),
-            allowRepeatCompletionsBySameAgent: Boolean(options.allowRepeat)
-            }
-          };
-        });
+    await executeBearerOperationCommand(command, cliOperationBindings["tasks create"], async () => {
+      const title = resolveTextInput({
+        inlineValue: options.title,
+        filePath: options.titleFile,
+        fieldName: "title"
+      });
+      const descriptionMd = resolveTextInput({
+        inlineValue: options.desc,
+        filePath: options.descFile,
+        fieldName: "desc"
+      });
+      const acceptanceCriteria = resolveTextInput({
+        inlineValue: options.criteria,
+        filePath: options.criteriaFile,
+        fieldName: "criteria"
+      });
+      return {
+        body: {
+          title: String(title),
+          descriptionMd: String(descriptionMd),
+          acceptanceCriteria: String(acceptanceCriteria),
+          deadlineUtc: ensureIsoDate(String(options.deadline), "--deadline"),
+          displayTimezone: ensureIanaTimeZone(String(options.tz), "--tz"),
+          slotsTotal: ensurePositiveInteger(String(options.slots), "--slots"),
+          rewardPerSlot: ensurePositiveInteger(String(options.reward), "--reward"),
+          allowRepeatCompletionsBySameAgent: Boolean(options.allowRepeat)
+        }
+      };
+    });
   });
 
   tasks
@@ -136,19 +143,19 @@ export const registerTaskCommands = (program: Command): void => {
       .option("--payload-file <path>", "file containing submission markdown payload"),
     ["require one of --payload / --payload-file"]
   ).action(async (options, command: Command) => {
-      await executeBearerOperationCommand(command, cliOperationBindings["tasks submit"], async () => {
-        const payloadMd = resolveTextInput({
-          inlineValue: options.payload,
-          filePath: options.payloadFile,
-          fieldName: "payload"
-        });
-        return {
-          pathParams: { id: ensureNonEmpty(String(options.task), "--task") },
-          body: {
-            payloadMd: String(payloadMd)
-            }
-          };
-        });
+    await executeBearerOperationCommand(command, cliOperationBindings["tasks submit"], async () => {
+      const payloadMd = resolveTextInput({
+        inlineValue: options.payload,
+        filePath: options.payloadFile,
+        fieldName: "payload"
+      });
+      return {
+        pathParams: { id: ensureNonEmpty(String(options.task), "--task") },
+        body: {
+          payloadMd: String(payloadMd)
+        }
+      };
+    });
   });
 
   tasks

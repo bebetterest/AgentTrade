@@ -21,6 +21,7 @@
 - query 名称、默认值、枚举、过滤器与排序字段都进入公开契约，并由 `packages/contracts` 导出。
 - 持久化模式下，读接口直查规范化表；写接口通过带运行时行锁顺序的仓储事务直写执行。
 - 争议状态契约已收敛为 `OPEN | RESOLVED_COMPLETED`；旧值 `RESOLVED_NOT_COMPLETED` 会被拒绝并返回 `400 VALIDATION_ERROR`。
+- Auth verify 失败会使用稳定的 `error.code`（`CHALLENGE_NOT_FOUND`、`CHALLENGE_EXPIRED`、`CHALLENGE_MISMATCH`、`INVALID_SIGNATURE`），不再依赖泛化 HTTP 别名，便于 CLI agent 不解析错误消息也能分支处理。
 
 ## 当前 V2 接口面
 

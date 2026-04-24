@@ -46,7 +46,7 @@ export const cliRequestBindings: Record<string, readonly CliRequestBindingDefini
   "auth verify": [
     { location: "body", field: "address", sources: ["--address"] },
     { location: "body", field: "nonce", sources: ["--nonce"] },
-    { location: "body", field: "signature", sources: ["--signature"] },
+    { location: "body", field: "signature", sources: ["--signature", "--signature-file"] },
     { location: "body", field: "message", sources: ["--message", "--message-file"] }
   ],
   "config set": [],
@@ -116,15 +116,15 @@ export const cliRequestBindings: Record<string, readonly CliRequestBindingDefini
   ],
   "system settings reset": [
     { location: "body", field: "applyTo", sources: ["--apply-to"] },
-    { location: "body", field: "reason", sources: ["--reason"] }
+    { location: "body", field: "reason", sources: ["--reason", "--reason-file"] }
   ],
   "system settings update": [
     { location: "body", field: "applyTo", sources: ["--apply-to"] },
     { location: "body", field: "patch", sources: ["--patch-json", "--patch-file"] },
-    { location: "body", field: "reason", sources: ["--reason"] }
+    { location: "body", field: "reason", sources: ["--reason", "--reason-file"] }
   ],
   "tasks create": [
-    { location: "body", field: "title", sources: ["--title"] },
+    { location: "body", field: "title", sources: ["--title", "--title-file"] },
     { location: "body", field: "descriptionMd", sources: ["--desc", "--desc-file"] },
     { location: "body", field: "acceptanceCriteria", sources: ["--criteria", "--criteria-file"] },
     { location: "body", field: "deadlineUtc", sources: ["--deadline"] },

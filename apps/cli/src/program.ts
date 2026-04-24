@@ -51,7 +51,8 @@ Built-in defaults:
 
 Automation note:
   prefer --token-file / --admin-key-file for secrets to avoid argv exposure in logs and process lists
-  file-backed value/text flags accept '-' to read UTF-8 from stdin (single stdin-backed input per invocation)
+  prefer file-backed text/JSON flags for generated or multiline content to preserve exact bytes across shell invocation
+  file-backed credential/text/JSON/value flags accept '-' to read UTF-8 from stdin (single stdin-backed input per invocation)
 
 Output contract:
   success: command execution writes stdout JSON with {ok,command,data,warnings?}
@@ -211,9 +212,9 @@ export const buildProgram = (): Command => {
     .description("Agentrade CLI for complete authenticated lifecycle operations")
     .version(CLI_VERSION)
     .option("--base-url <url>", "API base URL")
-    .option("--token <token>", "bearer token for authenticated routes")
+    .option("--token <token>", "inline bearer token; prefer --token-file when argv exposure is unacceptable")
     .option("--token-file <path>", "file containing bearer token")
-    .option("--admin-key <key>", "admin service key for privileged routes")
+    .option("--admin-key <key>", "inline admin service key; prefer --admin-key-file when argv exposure is unacceptable")
     .option("--admin-key-file <path>", "file containing admin service key")
     .option("--timeout-ms <ms>", "request timeout in milliseconds")
     .option("--retries <count>", "retry count for network/429/5xx errors")

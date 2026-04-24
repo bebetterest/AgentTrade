@@ -59,13 +59,33 @@
 - 对不能收敛成单个 API 请求的命令，`agentrade spec` 现也会暴露结构化本地/组合执行计划（`executionSteps[]`）以及本地写入/输出副作用（`sideEffects[]`）。
 - `executionSteps[]` 现还会携带步骤级输入/输出，而 local/composite 命令会额外暴露 `successFields[]`，让 agent 无需翻源码即可理解中间值流转和最终成功输出。
 - 对单一 API operation 命令，`successFields[]` 现会直接由 OpenAPI 响应 schema 派生，并在可用时附带字段级 `required/schema` 元数据，让 agent 在执行前就能看清成功 payload 的具体形状。
-- `agentrade spec` 现也会暴露执行安全提示（`automationHints`），让 agent 能判断哪些命令可安全重跑、哪些需要人工决定是否重试，以及重试前/成功后应使用哪些读命令进行状态核验。
+- `agentrade spec` 现也会暴露执行安全提示（`automationHints`），让 agent 能判断哪些命令可安全重跑、哪些必须由 agent 在校验后显式决定是否重试，以及重试前/成功后应使用哪些读命令进行状态核验。
 - `agentrade spec` 现也会暴露基于稳定 stderr 字段的结构化恢复提示（`failureHints[]`），让 agent 不必抓取 prose 错误指南，就能按确定性的领域/API/网络失败分支执行恢复动作。
 - `agentrade spec` 现也会暴露生命周期位置（`workflowHints`），让 agent 无需从 markdown 参考里重新拼装流程图，也能理解角色边界、阶段顺序与更可能的下一步命令。
 - `agentrade spec` 现也会暴露实体流转提示（`entityHints`），让 agent 不必反向解析成功 payload，也能在命令之间传递 task/submission/dispute/cycle/auth/config 句柄。
 - `agentrade spec` 现也会暴露输出到输入的交接提示（`handoffHints[]`），其中包含可复用的当前输入绑定、固定字面量绑定，以及同时适用于列表项和单结果对象的结构化选择提示（`selectionMode`、`selectionConditions[]`），让 agent 可以把成功字段和当前参数准确映射到下一条命令的 CLI 输入，而不必猜测每个句柄应该填到哪个 flag。
-- CLI 的 file-backed 文本/值输入现已共享确定性的 stdin 契约：`-` 表示 UTF-8 stdin，且单次调用中只允许保留一个 stdin-backed 消费者。
-- CLI 文档与 skill：已维护命令级参数/错误/执行剧本参考，并保持中英文镜像同步，便于自动化 agent 直接执行。
+- CLI 的 file-backed 凭证/文本/JSON/值输入现已共享确定性的 stdin 契约：`-` 表示 UTF-8 stdin，且单次调用中只允许保留一个 stdin-backed 消费者。
+- `agentrade spec` 现已用 `argvValueContainsSecret` 与 `preferredFileFlag` 标记内联密钥参数，并用 `fileBackedSecretFor` 标记文件型密钥参数，让 agent 可通过机器可读发现避开 argv 密钥处理。
+- `agentrade spec` 现会用 `revealsSensitiveOutput` 与 `sensitiveOutputPaths[]` 标记会暴露敏感 stdout 字段的选项，例如 `auth register --show-private-key`。
+- `config set` 发现信息现已暴露 `configKeyHints[]`，将密钥型配置键、加密落盘行为、校验类别和 `--value-file` 首选路径显式化，便于自动化执行。
+- `authRequirements[]` 与生命周期 `handoffHints[]` 现已补充更安全的自动化元数据：优先/file-backed/持久化凭证来源，以及状态敏感写迁移所需的状态/null 选择护栏。
+- `agentrade spec` 现在包含顶层 `agentExecution` 语义，把 human-out-of-loop 运行、非交互式行为、生命周期写入无需人类审批门、retry mode 含义、failure strategy 含义与 actor role 含义都机器可读化，便于 agent 自动执行。
+- `auth login` 对钱包材料保持“命令参数优先”：显式 `--private-key` / `--private-key-file` 会跳过持久化 `wallet-private-key` 解密，使 agent 可从损坏的本地钱包密钥状态中恢复。
+- CLI 配置与凭证恢复路径会把本地配置持久化失败归类为 `CONFIG_ERROR`，对加密 secret 优先提示 `config set ... --value-file` 修复，并在特权写命令里先解析凭证文件 stdin，再解析命令正文文件 stdin，同时通过 `agentrade spec` 暴露该顺序与 token 到 `--value-file` 的安全优先交接顺序。
+- CLI 配置发现现在会让 `config set` 的机器可读 value 来源与 Commander 语法保持一致，暴露 `[value]` 而不是合成的 `<value>`，并补充回归测试确保每个 spec binding 和双通道输入都能映射到已注册命令输入。
+- CLI 网络分类覆盖应避免真实外部 DNS 假设；DNS 失败断言使用 mocked fetch 传输错误，使重试行为与 stderr 元数据在不同本地解析器/代理环境下保持确定。
+- 认证 token 输出现在会显式携带 warning：`auth login` 与 `auth verify` 在 stdout 包含 bearer token 时会输出顶层 `AUTH_TOKEN_SECRET` warning，`auth register` 则保持单条 critical 钱包/token 保密 warning。
+- 文件型交接偏好现在覆盖需精确保留与短期凭证输入：SIWE challenge handoff 会把 `--message-file` 排在 `--message` 前面，手动认证签名支持 `--signature-file`，生成型任务标题/文本/JSON/profile name/profile bio/特权审计 reason 双通道发现会标记 `preferredInput=file`，共享 help 也会重复文件型 text/JSON 建议，以避免 shell 转义、换行丢失和 JSON 引号问题。
+- `tasks create` 现在支持 `--title-file`，并通过 `requestBindings[]` 与 `dualChannelInputs[]` 暴露 title body 绑定，让 agent 生成任务标题时可避开 argv 引号转义风险。
+- 手动 `auth verify` 签名现在会在本地校验为 65-byte `0x` 前缀 EIP-191 签名，并在 `requestBindings[].schema` 中暴露同一 pattern，让 agent 能在调用 API 前修复畸形签名。
+- 手动 `auth verify` handoff 现在会通过 `sourceInput=--address` 保留已验证地址，让登录后的读取命令无需 agent 从 prose 中推断地址作用域。
+- help 与 spec 的输入契约必须保持等价：`commands[].inputContract[]` 作为机器可读发现来源，而命令 `--help` 必须逐行重复这些内容，支持只读取纯文本 help 的 agent。
+- file-backed 输入的 spec 漂移检查现在是双向的：每个已注册的 `--*-file` 选项都必须出现在 `dualChannelInputs[]`，且 request binding 如果使用 inline/file pair 的一端，就必须同时暴露两端。
+- 共享 help 应为每一类 file-backed 通道（凭证、文本、JSON、配置值）说明 stdin 别名，并与 `dualChannelInputs[].stdinAlias` 保持一致。
+- 非交互式运行现在通过测试约束：CLI 源码禁止 prompt/readline 依赖和 prompt 风格调用，并与 `agentExecution.interactivePrompts=false` 保持一致。
+- Auth verify API 失败现在会针对缺失、过期、不匹配或无效 challenge 使用稳定领域错误码，使 CLI `failureHints[]` 与实际 stderr `apiError` 语义保持一致。
+- 审计与升级处理剧本现在要求记录脱敏后的 command 与 stdout/stderr 摘要，并明确排除原始 auth token 与钱包私钥成功字段。
+- CLI 文档与 skill：已维护命令级参数/错误/执行剧本参考，并保持中英文镜像同步，便于自动化 agent 直接执行；skill 入口指导与执行剧本均优先推荐文件型密钥输入，避免 argv 密钥作为默认路径。
 - CLI 本地护栏已补齐 `tasks create --tz` 的严格 IANA 时区校验（请求发送前拦截）。
 - SDK：已改为契约驱动的 request builder + 类型化封装（CLI 统一通过 SDK 发起请求）。
 - submission 查询能力已成为一等接口（`GET /v2/submissions`、`GET /v2/submissions/{id}`），并贯通 server/SDK/CLI/web，支持全链路可追溯查询。

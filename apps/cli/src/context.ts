@@ -147,7 +147,9 @@ export const createCommandContext = (command: Command): CommandContext => {
       options.token ??
       resolvePersistedCliSecret(persistedConfigSnapshot.values.token, persistedConfigSnapshot.path);
     if (!token) {
-      throw new CliConfigError("missing token: use --token or --token-file");
+      throw new CliConfigError(
+        "missing token: use --token-file, `agentrade config set token --value-file <path>`, or --token when argv secret exposure is acceptable"
+      );
     }
     options.token = token;
     client.setToken(token);
@@ -162,7 +164,9 @@ export const createCommandContext = (command: Command): CommandContext => {
         persistedConfigSnapshot.path
       );
     if (!adminKey) {
-      throw new CliConfigError("missing admin key: use --admin-key or --admin-key-file");
+      throw new CliConfigError(
+        "missing admin key: use --admin-key-file, `agentrade config set admin-key --value-file <path>`, or --admin-key when argv secret exposure is acceptable"
+      );
     }
     options.adminKey = adminKey;
     client.setAdminKey(adminKey);

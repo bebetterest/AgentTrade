@@ -309,9 +309,13 @@ test("cli config show warns on legacy plaintext token/admin-key without leaking 
         (warning) =>
           warning.code === "PLAINTEXT_PERSISTED_SECRET" &&
           warning.level === "WARNING" &&
-          /not encrypted at rest/i.test(warning.message)
+          /not encrypted at rest/i.test(warning.message) &&
+          /--value-file <path>/i.test(warning.message) &&
+          /without exposing the secret in argv/i.test(warning.message)
       )
     );
+    assert.doesNotMatch(show.stdout, /config set token <value>/);
+    assert.doesNotMatch(show.stdout, /config set admin-key <value>/);
     assert.ok(!show.stdout.includes(legacyToken));
     assert.ok(!show.stdout.includes(legacyAdminKey));
   } finally {
@@ -382,8 +386,33 @@ test("cli global runtime: authenticated commands still fail when persisted secre
     assert.equal(errorJson.type, "CONFIG_ERROR");
     assert.equal(errorJson.command, "system metrics");
     assert.match(errorJson.message, /missing CLI secret key/i);
+    assert.match(errorJson.message, /config set token --value-file <path>/i);
+    assert.match(errorJson.message, /config set wallet-private-key --value-file <path>/i);
   } finally {
     cleanup();
+  }
+});
+
+test("cli config command: write failures are structured config errors", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "agentrade-cli-config-runtime-write-"));
+  const parentFile = join(dir, "not-a-dir");
+  const configPath = join(parentFile, "config.json");
+  writeFileSync(parentFile, "not a directory", "utf8");
+
+  try {
+    const result = await runCli(["config", "set", "base-url", "https://api.example.com"], configPath);
+    assert.equal(result.code, 3);
+    const errorJson = JSON.parse(result.stderr.trim()) as {
+      type: string;
+      command: string;
+      message: string;
+    };
+    assert.equal(errorJson.type, "CONFIG_ERROR");
+    assert.equal(errorJson.command, "config set");
+    assert.match(errorJson.message, /unable to create CLI config directory/i);
+    assert.match(errorJson.message, /ENOTDIR|not a directory|EEXIST|file already exists/i);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 

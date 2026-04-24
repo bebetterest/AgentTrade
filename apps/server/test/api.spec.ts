@@ -354,6 +354,31 @@ describe("API integration", () => {
       }
     });
     expect(verify.statusCode).toBe(401);
+    expect(errorCode(verify.json())).toBe("CHALLENGE_MISMATCH");
+  });
+
+  it("rejects auth verify with stable invalid signature code", async () => {
+    const address = addr("auth-invalid-signature");
+    const challenge = await app!.inject({
+      method: "POST",
+      url: "/v2/auth/challenge",
+      payload: { address }
+    });
+    expect(challenge.statusCode).toBe(200);
+    const payload = challenge.json() as { nonce: string; message: string };
+
+    const verify = await app!.inject({
+      method: "POST",
+      url: "/v2/auth/verify",
+      payload: {
+        address,
+        nonce: payload.nonce,
+        message: payload.message,
+        signature: `0x${"11".repeat(65)}`
+      }
+    });
+    expect(verify.statusCode).toBe(401);
+    expect(errorCode(verify.json())).toBe("INVALID_SIGNATURE");
   });
 
   it("returns sanitized public economy params without runtime secrets", async () => {
@@ -442,6 +467,7 @@ describe("API integration", () => {
         }
       });
       expect(verify.statusCode).toBe(401);
+      expect(errorCode(verify.json())).toBe("CHALLENGE_EXPIRED");
       expect((verify.json() as { error: { message: string } }).error.message).toMatch(/expired/i);
     } finally {
       delete process.env.AUTH_CHALLENGE_TTL_MINUTES;

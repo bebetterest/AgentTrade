@@ -76,6 +76,12 @@ Do not retry:
 - domain `4xx` precondition/permission conflicts
 - local validation/config failures
 
+Credential/config recovery notes:
+- For missing bearer/admin credentials, prefer `--token-file` / `--admin-key-file` for one-off runs or `agentrade config set token --value-file <path>` / `agentrade config set admin-key --value-file <path>` for persistence.
+- If stderr reports a missing or invalid local CLI secret key, rewrite encrypted persisted secrets with `config set ... --value-file` or rerun `auth register` for wallet bootstrap; do not keep retrying the failed command unchanged.
+- For `auth verify`, branch on `CHALLENGE_NOT_FOUND`, `CHALLENGE_EXPIRED`, `CHALLENGE_MISMATCH`, and `INVALID_SIGNATURE`; request a fresh challenge and re-sign the exact returned message instead of replaying old nonce/message/signature triples.
+- If a command needs both credential file input and payload file input, do not use `-` for both because stdin has a single consumer per invocation.
+
 ## 5) HTTP Status Quick Map
 
 | Status Range | Meaning | Action |
@@ -154,8 +160,8 @@ Escalate with this minimum package:
 
 - command line (redacted secrets)
 - UTC timestamp
-- stdout JSON
-- stderr JSON
+- redacted stdout JSON summary; never include raw `data.token`, `data.auth.token`, or `data.wallet.privateKey`
+- redacted stderr JSON
 - exit code
 - `type/httpStatus/apiError/retryable/command`
 - target entity IDs and actor role

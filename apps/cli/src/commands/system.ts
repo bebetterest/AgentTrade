@@ -1,6 +1,6 @@
 import type { Command } from "commander";
 import { cliOperationBindings } from "../operation-bindings.js";
-import { resolveFileBackedInput } from "../text-input.js";
+import { resolveFileBackedInput, resolveTextInput } from "../text-input.js";
 import {
   ensureNonEmpty,
   ensurePageLimit,
@@ -38,53 +38,86 @@ export const registerSystemCommands = (program: Command): void => {
       .requiredOption("--apply-to <target>", "current or next")
       .option("--patch-json <json>", "JSON patch object with editable runtime rule fields")
       .option("--patch-file <path>", "file containing runtime settings patch JSON")
-      .option("--reason <reason>", "optional update reason (max 1000 chars)"),
-    ["require one of --patch-json / --patch-file"]
+      .option("--reason <reason>", "optional update reason (max 1000 chars)")
+      .option("--reason-file <path>", "file containing optional update reason (max 1000 chars)"),
+    ["require one of --patch-json / --patch-file", "--reason and --reason-file are mutually exclusive"]
   ).action(async (options, command: Command) => {
-      const patchInput = resolveFileBackedInput({
-        inlineValue: options.patchJson,
-        filePath: options.patchFile,
-        inlineFlag: "patch-json",
-        fileFlag: "patch-file",
-        normalize: (value) => value.replace(/^\uFEFF/, "")
-      });
+    await executeAdminOperationCommand(
+      command,
+      cliOperationBindings["system settings update"],
+      async () => {
+        const patchInput = resolveFileBackedInput({
+          inlineValue: options.patchJson,
+          filePath: options.patchFile,
+          inlineFlag: "patch-json",
+          fileFlag: "patch-file",
+          normalize: (value) => value.replace(/^\uFEFF/, "")
+        });
+        const reasonInput = resolveTextInput({
+          inlineValue: options.reason,
+          filePath: options.reasonFile,
+          fieldName: "reason",
+          required: false
+        });
 
-      await executeAdminOperationCommand(
-        command,
-        cliOperationBindings["system settings update"],
-        async () => ({
+        return {
           body: {
             applyTo: ensureRuntimeSettingsApplyTo(String(options.applyTo), "--apply-to"),
             patch: ensureRuntimeSettingsPatchJson(
               patchInput,
               options.patchFile ? "--patch-file" : "--patch-json"
             ),
-            ...(options.reason
-              ? { reason: ensureTrimmedNonEmptyMaxLength(String(options.reason), 1000, "--reason") }
+            ...(reasonInput
+              ? {
+                  reason: ensureTrimmedNonEmptyMaxLength(
+                    reasonInput,
+                    1000,
+                    options.reasonFile ? "--reason-file" : "--reason"
+                  )
+                }
               : {})
           }
-        })
-      );
+        };
+      }
+    );
   });
-  settings
-    .command("reset")
-    .description("Reset runtime settings to environment defaults (token + admin key required)")
-    .requiredOption("--apply-to <target>", "current or next")
-    .option("--reason <reason>", "optional reset reason (max 1000 chars)")
-    .action(async (options, command: Command) => {
-      await executeAdminOperationCommand(
-        command,
-        cliOperationBindings["system settings reset"],
-        async () => ({
+  addInputContractHelp(
+    settings
+      .command("reset")
+      .description("Reset runtime settings to environment defaults (token + admin key required)")
+      .requiredOption("--apply-to <target>", "current or next")
+      .option("--reason <reason>", "optional reset reason (max 1000 chars)")
+      .option("--reason-file <path>", "file containing optional reset reason (max 1000 chars)"),
+    ["--reason and --reason-file are mutually exclusive"]
+  ).action(async (options, command: Command) => {
+    await executeAdminOperationCommand(
+      command,
+      cliOperationBindings["system settings reset"],
+      async () => {
+        const reasonInput = resolveTextInput({
+          inlineValue: options.reason,
+          filePath: options.reasonFile,
+          fieldName: "reason",
+          required: false
+        });
+
+        return {
           body: {
             applyTo: ensureRuntimeSettingsApplyTo(String(options.applyTo), "--apply-to"),
-            ...(options.reason
-              ? { reason: ensureTrimmedNonEmptyMaxLength(String(options.reason), 1000, "--reason") }
+            ...(reasonInput
+              ? {
+                  reason: ensureTrimmedNonEmptyMaxLength(
+                    reasonInput,
+                    1000,
+                    options.reasonFile ? "--reason-file" : "--reason"
+                  )
+                }
               : {})
           }
-        })
-      );
-    });
+        };
+      }
+    );
+  });
   settings
     .command("history")
     .description("List runtime settings audit history (token required)")

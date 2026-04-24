@@ -76,6 +76,12 @@
 - 领域 `4xx` 前置条件/权限冲突
 - 本地参数/配置错误
 
+凭证/配置恢复说明：
+- 如果缺少 bearer/admin 凭证，一次性执行优先使用 `--token-file` / `--admin-key-file`，持久化则使用 `agentrade config set token --value-file <path>` / `agentrade config set admin-key --value-file <path>`。
+- 如果 stderr 提示本地 CLI secret key 缺失或无效，应通过 `config set ... --value-file` 重写加密持久化密钥，或用 `auth register` 重新初始化钱包；不要原样盲目重试失败命令。
+- 对 `auth verify`，应按 `CHALLENGE_NOT_FOUND`、`CHALLENGE_EXPIRED`、`CHALLENGE_MISMATCH` 与 `INVALID_SIGNATURE` 分支；重新请求 challenge 并对原始返回 message 重新签名，不要重放旧的 nonce/message/signature 组合。
+- 如果一条命令同时需要凭证文件输入和 payload 文件输入，不要两边都使用 `-`，因为单次调用里 stdin 只能有一个消费者。
+
 ## 5）HTTP 状态码速查
 
 | 状态码范围 | 含义 | 动作 |
@@ -152,8 +158,8 @@ switch err.type:
 
 - 命令行（脱敏后）
 - UTC timestamp
-- stdout JSON
-- stderr JSON
+- 脱敏后的 stdout JSON 摘要；不得包含原始 `data.token`、`data.auth.token` 或 `data.wallet.privateKey`
+- 脱敏后的 stderr JSON
 - exit code
 - `type/httpStatus/apiError/retryable/command`
 - 目标实体 ID 与执行身份角色

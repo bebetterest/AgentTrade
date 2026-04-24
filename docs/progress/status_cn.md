@@ -1,5 +1,45 @@
 # 进度状态
 
+## 2026-04-23
+
+- 已收紧面向自治 agent 的 CLI 认证恢复语义：
+  - `auth login --private-key` / `--private-key-file` 现在会跳过持久化 `wallet-private-key` 解密，在本地钱包密钥材料损坏或不可用时仍保持“命令参数优先”的配置优先级，
+  - 更新认证提示，优先建议使用 `config set wallet-private-key --value-file <path>`，避免通过 argv 内联持久化私钥，
+  - 缺少 token/admin-key 的错误现在会包含持久化 `config set ... --value-file` 修复路径。
+- 已收紧 CLI 配置与 stdin 恢复语义：
+  - 本地配置写入/删除失败现在会归类为结构化 `CONFIG_ERROR`，不再落入 `UNKNOWN_ERROR`，
+  - 本地加密 CLI secret key 缺失或无效时，错误会提示 agent 使用安全的 `config set ... --value-file` 或 `auth register` 修复路径，
+  - `system settings update` 现在会先解析凭证文件输入，再读取 `--patch-file`，确保 stdin 冲突确定且特权写命令不会在凭证解析前先消费正文 stdin，
+  - `agentrade spec` 现在会暴露 `discovery.credentialFileInputsResolveBeforeCommandFileInputs=true`，让 agent 不必解析 prose 即可发现同一 stdin 顺序规则，
+  - `agentrade spec` 现在会用 `argvValueContainsSecret=true` 与 `preferredFileFlag` 标记内联密钥参数，并用 `fileBackedSecretFor` 标记对应文件型密钥参数，使 agent 能直接从机器可读元数据选择安全输入方式，
+  - `agentrade spec` 现在会用 `revealsSensitiveOutput=true` 与 `sensitiveOutputPaths[]` 标记 `auth register --show-private-key` 这类会暴露输出的选项，让 agent 仅凭 `options[]` 就能避开明文私钥 stdout，
+  - `config set` 发现信息现在包含 `configKeyHints[]`，让 agent 不必解析命令 prose 即可识别密钥型配置键、加密落盘行为以及首选 `--value-file` 路径，
+  - `config set` 发现信息现在会在 `dualChannelInputs[]` 与执行步骤里一致使用已注册的可选位置参数语法 `[value]`，且文件型值校验失败时会把 `--value-file` 报为失败来源，
+  - bearer/admin 的 `authRequirements[]` 现在会暴露安全优先的凭证元数据（`preferredSources[]`、`argvSecretSources[]`、`fileBackedSources[]`、`persistedSources[]`），
+  - `agentrade spec` 现在会暴露顶层 `agentExecution` 元数据，让自动化可直接发现 CLI 是 human-out-of-loop、非交互式、生命周期写入不需要人类审批，并解释 `retryMode=manual`、`owner` 角色这类易误解术语，
+  - 生命周期 handoff 现在为状态敏感写迁移补充状态/null 护栏，例如 task submit/intend、submission review/dispute open、dispute respond/vote，
+  - 认证 token 交接提示现在会优先建议通过安全临时文件走 `--token-file` 执行写命令，并在 `config set` 持久化时把 `--value-file` 排在内联 `[value]` 前面，避免 argv token 值，
+  - `auth login` 与 `auth verify` 在 stdout 包含 bearer token 时会输出顶层 `AUTH_TOKEN_SECRET` warning，`auth register` 仍保持单条 critical 钱包 warning，但现在也覆盖 token 保密要求，
+  - `auth challenge -> auth verify` handoff 现在会优先给出 `--message-file` 再给出 `--message`，生成型/需精确保留的文本或 JSON 双通道输入（`--message`、`--title`、`--desc`、`--criteria`、`--payload`、`--patch-json`、`--reason`、`--name`、`--bio`）也会暴露 `preferredInput=file`，
+  - `tasks create` 现在支持 `--title-file` 与 `--title` 并列，且 `requestBindings[]` / `dualChannelInputs[]` 会暴露 title 通道，使 agent 可发布生成型任务标题而不依赖 shell 转义，
+  - `auth verify` 现在支持 `--signature-file`，并把内联 `--signature` 标记为短期凭证材料，暴露 `preferredFileFlag=--signature-file`，
+  - `auth verify` 现在会在发起网络请求前拒绝非 65-byte `0x` 前缀 EIP-191 的手动签名，并在 `agentrade spec` 的 request binding schema 中暴露同一签名 pattern，
+  - `auth verify` handoff 现在会在手动验证成功后复用当前 `--address` 输入，指向 profile、stats、ledger、task/submission/dispute list 与 activity 查询，
+  - `auth verify` 服务端响应现在会返回与 CLI `failureHints[]` 对齐的稳定 challenge `apiError`（`CHALLENGE_NOT_FOUND`、`CHALLENGE_EXPIRED`、`CHALLENGE_MISMATCH`、`INVALID_SIGNATURE`），不再落到泛化 `HTTP_ERROR`，
+  - 共享 CLI help 现在也会提示生成型或多行 text/JSON 内容优先使用 file-backed 参数，让只读取 `--help` 的 agent 也能避开 shell 转义、换行丢失和 JSON 引号问题，
+  - `system settings update|reset` 现在支持 `--reason-file`，让特权审计原因与 submission/dispute reason 命令保持同一套文件型生成文本输入策略，
+  - 审计/升级处理指南现在要求记录脱敏后的 command 与 stdout/stderr 摘要，并明确禁止保存原始 `data.token`、`data.auth.token` 或 `data.wallet.privateKey`，
+  - CLI help 与缺凭证错误现在会先提示 `--token-file` / `--admin-key-file` / `--private-key-file` 和 `config set ... --value-file` 这类安全路径，再把内联密钥参数作为兼容路径，
+  - skill 入口 Quick Usage 与 workflow 剧本现在优先推荐文件型凭证与私钥输入，而不是 argv 密钥，并已加入文档同步测试避免旧的内联密钥示例回退，
+  - CLI DNS 传输回归测试现在使用确定性的 mocked fetch 失败，不再依赖真实 `.invalid` 解析，避免解析器或代理劫持造成误报。
+- 已补充 help/spec 面向 agent 的输入契约一致性覆盖：
+  - 每条 `agentrade spec` `commands[].inputContract[]` 行都必须出现在对应命令的 `--help` 输出里，
+  - 共享 help 现在明确说明所有 file-backed 凭证/文本/JSON/值参数都接受 `-` 作为 stdin 别名，与 `dualChannelInputs[].stdinAlias` 保持一致，不再只写文本/值输入，
+  - spec 自检现在也会做反向校验：每个已注册的 `--*-file` 选项都必须出现在 `dualChannelInputs[]`，且任何 request binding 如果使用 inline/file pair 的一端，就必须同时暴露两端，
+  - CLI 源码测试现在会禁止交互式 prompt/readline 依赖和 prompt 风格调用，让 `agentExecution.interactivePrompts=false` 有回归护栏支撑。
+- 已为显式钱包覆盖规则补充回归测试与中英文 CLI 文档，使 agent 可从损坏的持久化钱包密钥中恢复，而不必先手工修复配置。
+- 已补充配置写入失败分类、加密 secret 恢复提示、凭证优先 stdin 顺序的回归测试与中英文 CLI/operator 文档。
+
 ## 2026-04-22
 
 - 已新增机器可读 CLI 发现面：
@@ -9,7 +49,7 @@
   - `tasks create --help` 现明确说明 `--deadline` 必须包含时区，与现有本地护栏保持一致，
   - `agents profile update` 新增 `--clear-name` / `--clear-bio`，用于确定性的空字符串写入；空白文本输入不再依赖含糊的隐式语义。
 - 已扩展 CLI 双通道文本输入能力，便于 agent 自动化：
-  - file-backed 文本/值参数现已支持使用 `-` 从 stdin 读取 UTF-8，包括 `config set --value-file -`，
+  - file-backed 凭证/文本/JSON/值参数现已支持使用 `-` 从 stdin 读取 UTF-8，包括 `config set --value-file -`，
   - stdin 在单次调用中被明确限制为“单消费者”，多文本命令若重复占用 stdin 会直接返回确定性的校验错误，避免共享流被含糊消耗。
 - 已扩展 `agentrade spec`，让 agent 不必猜鉴权来源：
   - 每个命令现都会输出结构化 `authRequirements[]`，

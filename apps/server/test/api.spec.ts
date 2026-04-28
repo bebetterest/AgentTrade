@@ -531,7 +531,10 @@ describe("API integration", () => {
   it("rejects expired challenge on auth verify", async () => {
     await app!.close();
     app = null;
-    process.env.AUTH_CHALLENGE_TTL_MINUTES = "0";
+    process.env.AUTH_CHALLENGE_TTL_MINUTES = "1";
+    const realDateNow = Date.now;
+    const baseMs = Date.parse("2026-04-28T00:00:00.000Z");
+    Date.now = () => baseMs;
     try {
       app = await buildApp();
       await app.ready();
@@ -544,6 +547,8 @@ describe("API integration", () => {
       });
       expect(challenge.statusCode).toBe(200);
       const payload = challenge.json() as { nonce: string; message: string };
+
+      Date.now = () => baseMs + 60_001;
 
       const verify = await app.inject({
         method: "POST",
@@ -559,6 +564,47 @@ describe("API integration", () => {
       expect(errorCode(verify.json())).toBe("CHALLENGE_EXPIRED");
       expect((verify.json() as { error: { message: string } }).error.message).toMatch(/expired/i);
     } finally {
+      Date.now = realDateNow;
+      delete process.env.AUTH_CHALLENGE_TTL_MINUTES;
+    }
+  });
+
+  it("treats zero auth challenge ttl as never expire", async () => {
+    await app!.close();
+    app = null;
+    process.env.AUTH_CHALLENGE_TTL_MINUTES = "0";
+    const realDateNow = Date.now;
+    const baseMs = Date.parse("2026-04-28T00:00:00.000Z");
+    Date.now = () => baseMs;
+    try {
+      app = await buildApp();
+      await app.ready();
+
+      const address = addr("auth-never-expire");
+      const challenge = await app.inject({
+        method: "POST",
+        url: "/v2/auth/challenge",
+        payload: { address }
+      });
+      expect(challenge.statusCode).toBe(200);
+      const payload = challenge.json() as { nonce: string; message: string };
+
+      Date.now = () => baseMs + 24 * 60 * 60 * 1_000;
+
+      const verify = await app.inject({
+        method: "POST",
+        url: "/v2/auth/verify",
+        payload: {
+          address,
+          nonce: payload.nonce,
+          message: payload.message,
+          signature: "0xdeadbeef"
+        }
+      });
+      expect(verify.statusCode).toBe(401);
+      expect(errorCode(verify.json())).toBe("INVALID_SIGNATURE");
+    } finally {
+      Date.now = realDateNow;
       delete process.env.AUTH_CHALLENGE_TTL_MINUTES;
     }
   });
@@ -604,8 +650,11 @@ describe("API integration", () => {
     await app!.close();
     app = null;
     process.env.AUTH_CHALLENGE_MAX_ENTRIES = "1";
-    process.env.AUTH_CHALLENGE_TTL_MINUTES = "0";
+    process.env.AUTH_CHALLENGE_TTL_MINUTES = "1";
     process.env.AUTH_CHALLENGE_SWEEP_INTERVAL_MS = "0";
+    const realDateNow = Date.now;
+    const baseMs = Date.parse("2026-04-28T00:00:00.000Z");
+    Date.now = () => baseMs;
     try {
       app = await buildApp();
       await app.ready();
@@ -615,6 +664,7 @@ describe("API integration", () => {
         url: "/v2/auth/challenge",
         payload: { address: addr("auth-sweep-1") }
       });
+      Date.now = () => baseMs + 60_001;
       const second = await app.inject({
         method: "POST",
         url: "/v2/auth/challenge",
@@ -624,6 +674,7 @@ describe("API integration", () => {
       expect(first.statusCode).toBe(200);
       expect(second.statusCode).toBe(200);
     } finally {
+      Date.now = realDateNow;
       delete process.env.AUTH_CHALLENGE_MAX_ENTRIES;
       delete process.env.AUTH_CHALLENGE_TTL_MINUTES;
       delete process.env.AUTH_CHALLENGE_SWEEP_INTERVAL_MS;

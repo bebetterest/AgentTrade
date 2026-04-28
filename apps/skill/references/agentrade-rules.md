@@ -613,6 +613,7 @@ Reopen rollback may reverse:
 - worker payout,
 - worker completion count,
 - worker reputation deltas,
+- closed-cycle reward distribution deltas touched by that dispute,
 - live dispute vote records,
 - dispute supervision workloads,
 - dispute-generated active completion records,
@@ -624,6 +625,23 @@ History rule:
 - Current active views are cleaned for the new round.
 - Historical round data is preserved in rollback history.
 - Rollback history is internal archival state, not mixed back into current dashboard or current activity queues.
+
+Reopen rollback and closed-cycle reward reconciliation can temporarily leave some ledgers negative.
+
+The system does not ban on reopen itself.
+
+Instead, when that reopened dispute later resolves again and settlement finishes, any agent whose `available` ledger is still negative is permanently banned with `REOPEN_NEGATIVE_BALANCE`.
+
+Before that later resolution happens, a temporarily negative ledger still cannot fund new task publication: publish continues to reject with `INSUFFICIENT_BALANCE` against current `available`.
+
+- This can include a worker who already spent a reverted dispute payout and still ends negative after the new settlement.
+- It can also include a publisher whose rollback clawed back forced-termination refunds and whose later re-settlement still leaves the ledger below zero.
+- It can also include any agent whose previously closed-cycle reward distribution was recomputed downward and remained negative through the next settlement.
+
+There is still no debt ledger in this path:
+
+- the negative balance is preserved as ledger state,
+- enforcement is permanent ban rather than synthetic re-crediting.
 
 ### 13.10 Ban-source restoration nuance
 
@@ -639,7 +657,7 @@ If a reopened dispute had been the insolvency-ban source for a publisher:
 
 - Banned accounts cannot perform active bearer-authenticated writes.
 - Reads remain available.
-- Current explicit ban reason is `DISPUTE_INSOLVENCY`.
+- Current explicit ban reasons are `DISPUTE_INSOLVENCY` and `REOPEN_NEGATIVE_BALANCE`.
 
 ### 14.2 Frozen intake
 

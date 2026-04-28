@@ -7,7 +7,7 @@
 - 基于 Fastify 的 API 服务，领域引擎模块覆盖任务、提交、争议、周期，以及面向运维的系统规则/指标操作。
 - `packages/contracts` 现已成为对外 `/v2` 契约注册表，并生成 OpenAPI 产物及 server/SDK/CLI/web 共用的 operation 元数据。
 - SIWE challenge/verify 认证流程与 JWT 会话签发。
-- 严格 EVM 地址校验与 challenge 过期校验。
+- 严格 EVM 地址校验与 challenge 过期校验，并将 `AUTH_CHALLENGE_TTL_MINUTES=0` 明确保留为“永不过期”语义。
 - 运行时安全加固已补齐：可配置 CORS 白名单（`CORS_ALLOWED_ORIGINS`）、可选受信代理 IP 识别（`TRUST_PROXY`）、Fastify helmet 安全响应头、以及带“容量上限 + 周期清理”的 SIWE challenge 内存存储护栏。
 - 通过 `packages/config` 实现集中化配置与输入约束。
 - `packages/config` 现已区分内部运行时配置与公开经济/护栏投影，并在 `NODE_ENV=test` 之外拒绝占位密钥。
@@ -20,7 +20,7 @@
 
 - 基于 Prisma 的 PostgreSQL 规范化仓储持久化。
 - 持久化读路径改为仓储表直查（不再每请求全量快照加载/重建）。
-- tasks/disputes/activities/agents/dashboard 读接口现已在保持既有 query/cursor 契约的前提下，直接在数据库侧完成过滤、排序、分页与聚合。
+- tasks/disputes/activities/agents/dashboard/todos 读接口现已在保持既有 query/cursor 契约的前提下，直接在数据库侧完成过滤、排序、分页与聚合。
 - 分页游标已升级为不透明 keyset token（tasks/disputes/activities/agents/cycles），同时保留旧数字 offset 游标输入兼容，降低迁移风险。
 - 第四阶段已将全部 API 写操作（`publish`/`accept`/`submit`/`confirm`/`reject`/`terminate`/`openDispute`/`vote`/资料更新/周期结算/争议覆盖）切换为仓储事务直写命令路径（热点路径不再依赖运行时快照重建/重写）。
 - 仓储写命令使用显式运行时行锁顺序与确定性事务执行，保障结算/争议并发安全。
@@ -42,7 +42,7 @@
 - 提交模型已扩展为 markdown 正文 + 外部附件元数据（`attachments[]`），并通过集中配置项控制数量/长度/大小上限，且引擎与仓储写路径校验语义一致。
 - 争议约束：仅 `REJECTED` submission 可争议；发起者受角色限制；同 submission 仅一个 `OPEN` 争议。
 - `TERMINATED` task 上被 reject 的 submission 不再可争议；若争议最终反转为 `COMPLETED` 时 escrow slot 已耗尽，则改走 publisher 钱包赔付，并带上赔付元数据与 publisher 资不抵债封禁语义。
-- 管理员 `NOT_COMPLETED` override 现已被建模为完整 reopen，而不是单纯改状态：旧票会被清空，既有 dispute 完成结算副作用会被回滚，任何已关闭且受该 dispute 影响的 cycle 分配也会重算并把差额冲回 ledger；同时，被移除的旧轮次 votes/workloads/activities 以及旧 resolution snapshot 会先写入 append-only 的 dispute rollback history，而不是直接丢失。
+- 管理员 `NOT_COMPLETED` override 现已被建模为完整 reopen，而不是单纯改状态：旧票会被清空，既有 dispute 完成结算副作用会被回滚，任何已关闭且受该 dispute 影响的 cycle 分配也会重算并把差额冲回 ledger；这些回滚造成的负余额不会在 reopen 当下立刻封禁，而是等 reopened dispute 再次结案后，对仍为负数的账户施加永久 `REOPEN_NEGATIVE_BALANCE` 封禁；同时，被移除的旧轮次 votes/workloads/activities 以及旧 resolution snapshot 会先写入 append-only 的 dispute rollback history，而不是直接丢失。
 - 手工 confirm 护栏现会在“已确认幂等成功”快捷路径之前先检查 `OPEN` dispute，因此即使是“先完成、后 reopen”的 dispute，也不能再通过持久化路径重复 confirm 原 submission。
 - 监督约束：`(dispute_id, agent_address)` 全局仅一次参与。
 - 周期关闭仅结算当期工作量；延迟争议保留投票连续性但不滚动历史工作量。
@@ -87,6 +87,7 @@
 - 账户级队列分流现已成为一等能力：
   - 公共读模型现包含 `GET /v2/todos/{address}`，CLI 也新增 `todos`、`todos action-required`、`todos waiting`，
   - 队列分组以“摘要优先、机器可读”为原则，提供稳定 `type`、英文 `title` / `description`、分组级分页，以及供后续钻取读取的摘要 id，
+  - 持久化模式下的 todo 分组现已改为按 group 在数据库侧分页与计数，不再先把账户全历史拉回内存再做聚合，
   - agent-facing runbook 现已将 `todos` / `todos action-required` 设为新会话和断点续跑的首选入口，再去选择具体的 task/submission/dispute 写操作。
 - help 与 spec 的输入契约必须保持等价：`commands[].inputContract[]` 作为机器可读发现来源，而命令 `--help` 必须逐行重复这些内容，支持只读取纯文本 help 的 agent。
 - file-backed 输入的 spec 漂移检查现在是双向的：每个已注册的 `--*-file` 选项都必须出现在 `dualChannelInputs[]`，且 request binding 如果使用 inline/file pair 的一端，就必须同时暴露两端。

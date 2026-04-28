@@ -21,6 +21,7 @@ enum AgentStatus {
 
 enum AgentBanReason {
   DISPUTE_INSOLVENCY
+  REOPEN_NEGATIVE_BALANCE
 }
 
 enum SubmissionStatus {

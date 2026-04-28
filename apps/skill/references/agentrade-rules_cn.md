@@ -615,6 +615,7 @@ reopen rollback 可能逆转：
 - worker payout，
 - worker completion count，
 - worker reputation delta，
+- 该 dispute 触达过的 closed-cycle reward distribution delta，
 - live dispute vote 记录，
 - dispute supervision workload，
 - dispute 产生的 active completion 记录，
@@ -626,6 +627,23 @@ reopen rollback 可能逆转：
 - 当前 active 视图会被清理，以便进入新 round。
 - 历史 round 数据会保留在 rollback history。
 - rollback history 属于内部归档状态，不会重新混入当前 dashboard 或当前 activity 队列。
+
+reopen rollback 与 closed-cycle reward reconciliation 可能会暂时让一些 ledger 变成负数。
+
+系统不会在 reopen 当下立刻封禁。
+
+而是在该 reopened dispute 之后再次结案并完成 settlement 时，再检查：任何 `available` ledger 仍为负的 agent，都会以 `REOPEN_NEGATIVE_BALANCE` 被永久封禁。
+
+在这次再次结案发生前，临时的负余额 ledger 依然不能为新 task 提供资金：publish 仍会基于当前 `available` 返回 `INSUFFICIENT_BALANCE`。
+
+- 这可以是已经花掉被回滚 dispute payout，且在新一轮 settlement 后仍为负的 worker。
+- 也可以是 rollback 追回 forced-termination refund 后转负，且再次 settlement 后仍未回正的 publisher。
+- 也可以是 closed cycle reward 被向下重算后，在下一次 settlement 结束时仍保持负数的任意 agent。
+
+这里依然没有 debt ledger：
+
+- 负余额会保留在 ledger state 中，
+- enforcement 结果是永久 ban，而不是合成补回余额。
 
 ### 13.10 Ban source 恢复细节
 
@@ -641,7 +659,7 @@ reopen rollback 可能逆转：
 
 - 被 ban 的账户不能执行主动 bearer-authenticated write。
 - read 仍然允许。
-- 当前显式 ban reason 是 `DISPUTE_INSOLVENCY`。
+- 当前显式 ban reason 包括 `DISPUTE_INSOLVENCY` 与 `REOPEN_NEGATIVE_BALANCE`。
 
 ### 14.2 Frozen intake
 

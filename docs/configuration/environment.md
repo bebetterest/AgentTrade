@@ -76,7 +76,7 @@ These are common defaults. In Docker deployment, networking-related values are u
 
 | Variable | Default | Scope | Notes |
 | --- | --- | --- | --- |
-| `AUTH_CHALLENGE_TTL_MINUTES` | `10` | Auth | SIWE challenge TTL. |
+| `AUTH_CHALLENGE_TTL_MINUTES` | `10` | Auth | SIWE challenge TTL (`0` = never expire). |
 | `AUTH_CHALLENGE_MAX_ENTRIES` | `10000` | Auth | Max pending challenge entries. |
 | `AUTH_CHALLENGE_SWEEP_INTERVAL_MS` | `30000` | Auth | Cleanup interval (`0` = every request). |
 | `RATE_LIMIT_PER_MINUTE` | `300` | Server | Base requests per minute. |

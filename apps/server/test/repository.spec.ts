@@ -218,6 +218,7 @@ runDbSuite("PrismaStateRepository", () => {
     });
     engine.getLedger(publisher).available = 3;
     engine.closeCurrentCycle();
+    engine.getLedger(workerB).available = 0;
 
     await repo.sync(engine.toSnapshot());
     expect(await repo.getDisputeResolutionDirect(dispute.id)).toMatchObject({
@@ -265,6 +266,25 @@ runDbSuite("PrismaStateRepository", () => {
     );
     expect(await repo.getDisputeResolutionDirect(dispute.id)).toBeNull();
     expect((await repo.getAgentDirect(publisher))?.status).toBe(AgentStatus.ACTIVE);
+    expect((await repo.getAgentDirect(workerB))?.status).toBe(AgentStatus.ACTIVE);
+    expect((await repo.getLedgerDirect(workerB))?.available).toBeLessThan(0);
+    await expect(
+      repo.publishTaskDirect({
+        publisher: workerB,
+        title: "negative-ledger-publish-blocked",
+        descriptionMd: "desc",
+        acceptanceCriteria: "ok",
+        deadlineUtc: "2026-05-05T00:00:00.000Z",
+        displayTimezone: "UTC",
+        slotsTotal: 1,
+        rewardPerSlot: 10,
+        allowRepeatCompletionsBySameAgent: false,
+        config: defaultConfig
+      })
+    ).rejects.toMatchObject({
+      code: "INSUFFICIENT_BALANCE",
+      statusCode: 409
+    });
     expect((await repo.getSubmissionDirect(disputed.id))?.status).toBe(SubmissionStatus.REJECTED);
     await expect(repo.confirmSubmissionDirect(disputed.id, publisher)).rejects.toMatchObject({
       code: "SUBMISSION_NOT_CONFIRMABLE",
@@ -273,17 +293,101 @@ runDbSuite("PrismaStateRepository", () => {
     expect((await repo.getTaskDirect(cleanTask.id))?.status).toBe(TaskStatus.OPEN);
     expect((await repo.getTaskDirect(cleanTask.id))?.rewardEscrowRemaining).toBe(15);
 
-    const replayVote = await repo.voteDisputeDirect({
-      disputeId: dispute.id,
-      agent: supervisor,
-      vote: VoteChoice.COMPLETED,
-      config: {
-        ...defaultConfig,
-        disputeQuorum: 1,
-        disputeApprovalBps: 5_000
+    await repo.overrideDisputeDirect(dispute.id, "COMPLETED");
+    expect(await repo.getAgentDirect(workerB)).toMatchObject({
+      status: AgentStatus.BANNED,
+      banReasonCode: AgentBanReason.REOPEN_NEGATIVE_BALANCE
+    });
+  });
+
+  it("does not ban unrelated negative accounts when a different reopened dispute settles again through direct writes", async () => {
+    const clock = new MutableClock(new Date("2026-03-30T00:00:00.000Z"));
+    const engine = new AgentradeEngine(defaultConfig, clock);
+    const publisherA = addr("repo-reopen-scope-pub-a");
+    const workerA = addr("repo-reopen-scope-worker-a");
+    const publisherB = addr("repo-reopen-scope-pub-b");
+    const workerB = addr("repo-reopen-scope-worker-b");
+
+    const taskA = engine.publishTask({
+      publisher: publisherA,
+      title: "repo-reopen-scope-task-a",
+      descriptionMd: "desc",
+      acceptanceCriteria: "ok",
+      deadlineUtc: "2026-05-05T00:00:00.000Z",
+      displayTimezone: "UTC",
+      slotsTotal: 1,
+      rewardPerSlot: 10,
+      allowRepeatCompletionsBySameAgent: false
+    });
+    engine.addTaskIntention(taskA.id, workerA);
+    const taskB = engine.publishTask({
+      publisher: publisherB,
+      title: "repo-reopen-scope-task-b",
+      descriptionMd: "desc",
+      acceptanceCriteria: "ok",
+      deadlineUtc: "2026-05-05T00:00:00.000Z",
+      displayTimezone: "UTC",
+      slotsTotal: 1,
+      rewardPerSlot: 10,
+      allowRepeatCompletionsBySameAgent: false
+    });
+    engine.addTaskIntention(taskB.id, workerB);
+    clock.advanceMinutes(31);
+
+    const submissionA = engine.submitTask(taskA.id, workerA, "payload-a");
+    engine.rejectSubmission(submissionA.id, publisherA, "needs revision");
+    const disputeA = engine.openDispute({
+      taskId: taskA.id,
+      submissionId: submissionA.id,
+      opener: workerA,
+      reasonMd: "review-a"
+    });
+
+    const submissionB = engine.submitTask(taskB.id, workerB, "payload-b");
+    engine.rejectSubmission(submissionB.id, publisherB, "needs revision");
+    const disputeB = engine.openDispute({
+      taskId: taskB.id,
+      submissionId: submissionB.id,
+      opener: workerB,
+      reasonMd: "review-b"
+    });
+
+    await repo.sync(engine.toSnapshot());
+    await repo.overrideDisputeDirect(disputeA.id, "COMPLETED");
+
+    const prisma = new PrismaClient({
+      datasources: {
+        db: {
+          url: TEST_DB_URL!
+        }
       }
     });
-    expect(replayVote.vote.agent).toBe(supervisor);
+    await prisma.ledgerBalance.update({
+      where: { address: workerA },
+      data: { available: 0 }
+    });
+
+    await repo.overrideDisputeDirect(disputeA.id, "NOT_COMPLETED");
+    expect((await repo.getLedgerDirect(workerA))?.available).toBeLessThan(0);
+    expect((await repo.getAgentDirect(workerA))?.status).toBe(AgentStatus.ACTIVE);
+
+    await repo.overrideDisputeDirect(disputeB.id, "COMPLETED");
+    await repo.overrideDisputeDirect(disputeB.id, "NOT_COMPLETED");
+    await repo.overrideDisputeDirect(disputeB.id, "COMPLETED");
+
+    expect((await repo.getAgentDirect(workerA))?.status).toBe(AgentStatus.ACTIVE);
+
+    await prisma.ledgerBalance.update({
+      where: { address: workerA },
+      data: { available: -20 }
+    });
+    await repo.overrideDisputeDirect(disputeA.id, "COMPLETED");
+    expect(await repo.getAgentDirect(workerA)).toMatchObject({
+      status: AgentStatus.BANNED,
+      banReasonCode: AgentBanReason.REOPEN_NEGATIVE_BALANCE
+    });
+
+    await prisma.$disconnect();
   });
 
   it("blocks manual confirm and terminate through direct writes while dispute is open", async () => {

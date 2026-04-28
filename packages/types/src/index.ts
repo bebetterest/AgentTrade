@@ -7,7 +7,8 @@ export enum AgentStatus {
 }
 
 export enum AgentBanReason {
-  DISPUTE_INSOLVENCY = "DISPUTE_INSOLVENCY"
+  DISPUTE_INSOLVENCY = "DISPUTE_INSOLVENCY",
+  REOPEN_NEGATIVE_BALANCE = "REOPEN_NEGATIVE_BALANCE"
 }
 
 export enum TaskStatus {

@@ -853,8 +853,9 @@ export class AgentradeEngine {
       const distributionsBefore = this.captureClosedCycleDistributions(affectedCycleIds);
       const wasResolvedCompleted = dispute.status === DisputeStatus.RESOLVED_COMPLETED;
       const rollbackHistory = this.captureDisputeRollbackHistory(dispute.id, now);
+      let publisherRemainsBanned = false;
       if (wasResolvedCompleted) {
-        this.rollbackResolvedCompletedDispute(dispute);
+        publisherRemainsBanned = this.rollbackResolvedCompletedDispute(dispute);
       }
       this.clearDisputeVotes(dispute.id, {
         reverseResolvedOutcome: wasResolvedCompleted,
@@ -865,6 +866,9 @@ export class AgentradeEngine {
       }
       dispute.status = DisputeStatus.OPEN;
       this.reconcileClosedCycleDistributions(distributionsBefore);
+      if (publisherRemainsBanned) {
+        this.sweepBannedPublisherCleanTasks();
+      }
     }
     dispute.updatedAt = now;
     return dispute;
@@ -944,6 +948,7 @@ export class AgentradeEngine {
   }
 
   private finalizeDisputeWithOutcome(dispute: Dispute, outcome: VoteChoice): void {
+    const now = this.nowIso();
     const submission = this.requireSubmission(dispute.submissionId);
     const task = this.getTask(dispute.taskId);
     if (outcome === VoteChoice.COMPLETED) {
@@ -984,6 +989,15 @@ export class AgentradeEngine {
         this.shiftReputation(vote.agent, "supervisor", 1);
       } else {
         this.shiftReputation(vote.agent, "supervisor", -1);
+      }
+    }
+    if (outcome === VoteChoice.COMPLETED && this.hasReopenHistoryForDispute(dispute.id)) {
+      const negativeBalanceAddresses = this.banNegativeBalanceAgentsAffectedByReopenedDisputeSettlement(
+        dispute.id,
+        now
+      );
+      if (this.hasActiveTaskForAnyPublisher(negativeBalanceAddresses)) {
+        this.sweepBannedPublisherCleanTasks();
       }
     }
   }
@@ -1257,7 +1271,7 @@ export class AgentradeEngine {
     );
   }
 
-  private rollbackResolvedCompletedDispute(dispute: Dispute): void {
+  private rollbackResolvedCompletedDispute(dispute: Dispute): boolean {
     const meta = this.disputeResolutionMeta.get(dispute.id);
     const submission = this.requireSubmission(dispute.submissionId);
     const task = this.getTask(dispute.taskId);
@@ -1299,9 +1313,7 @@ export class AgentradeEngine {
     }
     const publisherRemainsBanned = this.restorePublisherBanState(task.publisher, dispute.id, rollback, now);
     this.disputeResolutionMeta.delete(dispute.id);
-    if (publisherRemainsBanned) {
-      this.sweepBannedPublisherCleanTasks();
-    }
+    return publisherRemainsBanned;
   }
 
   private rollbackForcedTermination(disputeId: string, rollback: ForcedTerminationRollbackRecord): void {
@@ -1458,6 +1470,82 @@ export class AgentradeEngine {
       }
     }
     return null;
+  }
+
+  private hasReopenHistoryForDispute(disputeId: string): boolean {
+    return this.disputeRollbackHistory.some((item) => item.disputeId === disputeId);
+  }
+
+  private collectAddressesAffectedByReopenedDispute(disputeId: string): Set<Address> {
+    const dispute = this.getDispute(disputeId);
+    const submission = this.requireSubmission(dispute.submissionId);
+    const task = this.getTask(dispute.taskId);
+    const addresses = new Set<Address>([submission.agent, task.publisher]);
+    const affectedCycleIds = new Set<string>();
+
+    for (const history of this.disputeRollbackHistory) {
+      if (history.disputeId !== disputeId) {
+        continue;
+      }
+      for (const vote of history.archivedVotes) {
+        affectedCycleIds.add(vote.createdCycleId);
+      }
+      for (const workload of history.archivedWorkloads) {
+        affectedCycleIds.add(workload.cycleId);
+        addresses.add(workload.agent);
+      }
+      for (const forcedTermination of history.previousResolution?.rollback?.forcedTerminations ?? []) {
+        affectedCycleIds.add(forcedTermination.cycleId);
+      }
+    }
+
+    for (const workload of this.cycleWorkloads.values()) {
+      if (affectedCycleIds.has(workload.cycleId)) {
+        addresses.add(workload.agent);
+      }
+    }
+
+    return addresses;
+  }
+
+  private banNegativeBalanceAgentsAffectedByReopenedDisputeSettlement(
+    disputeId: string,
+    now: string
+  ): Set<Address> {
+    const addresses = new Set<Address>();
+    for (const address of this.collectAddressesAffectedByReopenedDispute(disputeId)) {
+      const balance = this.balances.get(address);
+      if (!balance || balance.available >= 0) {
+        continue;
+      }
+      addresses.add(address);
+      const profile = this.requireAgent(address);
+      if (profile.status === AgentStatus.BANNED) {
+        if (!profile.banReasonCode) {
+          profile.banReasonCode = AgentBanReason.REOPEN_NEGATIVE_BALANCE;
+          profile.updatedAt = now;
+        }
+        continue;
+      }
+      profile.status = AgentStatus.BANNED;
+      profile.bannedAt = now;
+      profile.banReasonCode = AgentBanReason.REOPEN_NEGATIVE_BALANCE;
+      profile.updatedAt = now;
+    }
+    return addresses;
+  }
+
+  private hasActiveTaskForAnyPublisher(addresses: Iterable<Address>): boolean {
+    const publisherSet = new Set(addresses);
+    if (publisherSet.size === 0) {
+      return false;
+    }
+    for (const task of this.tasks.values()) {
+      if (publisherSet.has(task.publisher) && this.isTaskActive(task)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private hasPayableSlot(task: Task): boolean {

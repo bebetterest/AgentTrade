@@ -3,7 +3,7 @@ import jwt from "jsonwebtoken";
 import type { FastifyInstance } from "fastify";
 import { PrismaClient } from "@prisma/client";
 import type { Address } from "@agentrade/types";
-import { DisputePayoutSource, VoteChoice } from "@agentrade/types";
+import { AgentBanReason, AgentStatus, DisputePayoutSource, VoteChoice } from "@agentrade/types";
 import { defaultConfig } from "@agentrade/config";
 import { buildApp } from "../src/app.js";
 import { parseCursorOffset } from "../src/api/services.js";
@@ -1963,6 +1963,291 @@ runDbSuite("API persistence mode", () => {
     });
     expect(confirmRes.statusCode).toBe(409);
     expect(errorCode(confirmRes.json())).toBe("SUBMISSION_NOT_CONFIRMABLE");
+  });
+
+  it("bans agents that remain negative after a reopened dispute settles again in persistence mode", async () => {
+    const publisher = addr("persist-reopen-ban-pub");
+    const worker = addr("persist-reopen-ban-worker");
+
+    const taskRes = await app!.inject({
+      method: "POST",
+      url: "/v2/tasks",
+      headers: { authorization: `Bearer ${bearer(publisher)}` },
+      payload: {
+        title: "reopen-negative-ban",
+        descriptionMd: "desc",
+        acceptanceCriteria: "criteria",
+        deadlineUtc: futureDeadline(),
+        displayTimezone: "UTC",
+        slotsTotal: 1,
+        rewardPerSlot: 10,
+        allowRepeatCompletionsBySameAgent: false
+      }
+    });
+    expect(taskRes.statusCode).toBe(200);
+    const task = taskRes.json() as { id: string };
+
+    const intentionRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/intentions`,
+      headers: { authorization: `Bearer ${bearer(worker)}` }
+    });
+    expect(intentionRes.statusCode).toBe(200);
+
+    const submitRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/submissions`,
+      headers: { authorization: `Bearer ${bearer(worker)}` },
+      payload: { payloadMd: "payload" }
+    });
+    expect(submitRes.statusCode).toBe(200);
+    const submission = submitRes.json() as { id: string };
+    await rejectSubmission(submission.id, publisher);
+
+    const disputeRes = await app!.inject({
+      method: "POST",
+      url: "/v2/disputes",
+      headers: { authorization: `Bearer ${bearer(worker)}` },
+      payload: {
+        taskId: task.id,
+        submissionId: submission.id,
+        reasonMd: "reopen negative balance"
+      }
+    });
+    expect(disputeRes.statusCode).toBe(200);
+    const dispute = disputeRes.json() as { id: string };
+
+    await repo.overrideDisputeDirect(dispute.id, "COMPLETED");
+
+    const prisma = new PrismaClient({
+      datasources: {
+        db: {
+          url: TEST_DB_URL!
+        }
+      }
+    });
+    await prisma.ledgerBalance.update({
+      where: { address: worker },
+      data: { available: 0 }
+    });
+    await prisma.$disconnect();
+
+    await repo.overrideDisputeDirect(dispute.id, "NOT_COMPLETED");
+
+    const profileRes = await app!.inject({
+      method: "GET",
+      url: `/v2/agents/${worker}`
+    });
+    expect(profileRes.statusCode).toBe(200);
+    expect(profileRes.json()).toMatchObject({
+      status: AgentStatus.ACTIVE,
+      banReasonCode: null
+    });
+
+    const ledgerRes = await app!.inject({
+      method: "GET",
+      url: `/v2/ledger/${worker}`
+    });
+    expect(ledgerRes.statusCode).toBe(200);
+    expect(ledgerRes.json()).toMatchObject({
+      available: -10
+    });
+
+    const publishWhileNegativeRes = await app!.inject({
+      method: "POST",
+      url: "/v2/tasks",
+      headers: { authorization: `Bearer ${bearer(worker)}` },
+      payload: {
+        title: "negative-ledger-publish-blocked",
+        descriptionMd: "desc",
+        acceptanceCriteria: "criteria",
+        deadlineUtc: futureDeadline(),
+        displayTimezone: "UTC",
+        slotsTotal: 1,
+        rewardPerSlot: 10,
+        allowRepeatCompletionsBySameAgent: false
+      }
+    });
+    expect(publishWhileNegativeRes.statusCode).toBe(409);
+    expect(errorCode(publishWhileNegativeRes.json())).toBe("INSUFFICIENT_BALANCE");
+
+    const prismaAfterReopen = new PrismaClient({
+      datasources: {
+        db: {
+          url: TEST_DB_URL!
+        }
+      }
+    });
+    await prismaAfterReopen.ledgerBalance.update({
+      where: { address: worker },
+      data: { available: -20 }
+    });
+    await prismaAfterReopen.$disconnect();
+
+    await repo.overrideDisputeDirect(dispute.id, "COMPLETED");
+
+    const profileAfterResolutionRes = await app!.inject({
+      method: "GET",
+      url: `/v2/agents/${worker}`
+    });
+    expect(profileAfterResolutionRes.statusCode).toBe(200);
+    expect(profileAfterResolutionRes.json()).toMatchObject({
+      status: AgentStatus.BANNED,
+      banReasonCode: AgentBanReason.REOPEN_NEGATIVE_BALANCE
+    });
+
+    const ledgerAfterResolutionRes = await app!.inject({
+      method: "GET",
+      url: `/v2/ledger/${worker}`
+    });
+    expect(ledgerAfterResolutionRes.statusCode).toBe(200);
+    expect((ledgerAfterResolutionRes.json() as { available: number }).available).toBeLessThan(0);
+
+    const bannedWriteRes = await app!.inject({
+      method: "POST",
+      url: "/v2/tasks",
+      headers: { authorization: `Bearer ${bearer(worker)}` },
+      payload: {
+        title: "should-fail-while-banned",
+        descriptionMd: "desc",
+        acceptanceCriteria: "criteria",
+        deadlineUtc: futureDeadline(),
+        displayTimezone: "UTC",
+        slotsTotal: 1,
+        rewardPerSlot: 10,
+        allowRepeatCompletionsBySameAgent: false
+      }
+    });
+    expect(bannedWriteRes.statusCode).toBe(403);
+    expect(errorCode(bannedWriteRes.json())).toBe("ACCOUNT_BANNED");
+  });
+
+  it("does not ban unrelated negative accounts when a different reopened dispute settles again in persistence mode", async () => {
+    const publisherA = addr("persist-reopen-scope-pub-a");
+    const workerA = addr("persist-reopen-scope-worker-a");
+    const publisherB = addr("persist-reopen-scope-pub-b");
+    const workerB = addr("persist-reopen-scope-worker-b");
+
+    const createRejectedDispute = async (publisher: Address, worker: Address, title: string, reasonMd: string) => {
+      const taskRes = await app!.inject({
+        method: "POST",
+        url: "/v2/tasks",
+        headers: { authorization: `Bearer ${bearer(publisher)}` },
+        payload: {
+          title,
+          descriptionMd: "desc",
+          acceptanceCriteria: "criteria",
+          deadlineUtc: futureDeadline(),
+          displayTimezone: "UTC",
+          slotsTotal: 1,
+          rewardPerSlot: 10,
+          allowRepeatCompletionsBySameAgent: false
+        }
+      });
+      expect(taskRes.statusCode).toBe(200);
+      const task = taskRes.json() as { id: string };
+
+      const intentionRes = await app!.inject({
+        method: "POST",
+        url: `/v2/tasks/${task.id}/intentions`,
+        headers: { authorization: `Bearer ${bearer(worker)}` }
+      });
+      expect(intentionRes.statusCode).toBe(200);
+
+      const submitRes = await app!.inject({
+        method: "POST",
+        url: `/v2/tasks/${task.id}/submissions`,
+        headers: { authorization: `Bearer ${bearer(worker)}` },
+        payload: { payloadMd: "payload" }
+      });
+      expect(submitRes.statusCode).toBe(200);
+      const submission = submitRes.json() as { id: string };
+      await rejectSubmission(submission.id, publisher);
+
+      const disputeRes = await app!.inject({
+        method: "POST",
+        url: "/v2/disputes",
+        headers: { authorization: `Bearer ${bearer(worker)}` },
+        payload: {
+          taskId: task.id,
+          submissionId: submission.id,
+          reasonMd
+        }
+      });
+      expect(disputeRes.statusCode).toBe(200);
+      return disputeRes.json() as { id: string };
+    };
+
+    const disputeA = await createRejectedDispute(
+      publisherA,
+      workerA,
+      "persist-reopen-scope-task-a",
+      "reopen-scope-a"
+    );
+    const disputeB = await createRejectedDispute(
+      publisherB,
+      workerB,
+      "persist-reopen-scope-task-b",
+      "reopen-scope-b"
+    );
+
+    await repo.overrideDisputeDirect(disputeA.id, "COMPLETED");
+
+    const prisma = new PrismaClient({
+      datasources: {
+        db: {
+          url: TEST_DB_URL!
+        }
+      }
+    });
+    await prisma.ledgerBalance.update({
+      where: { address: workerA },
+      data: { available: 0 }
+    });
+
+    await repo.overrideDisputeDirect(disputeA.id, "NOT_COMPLETED");
+
+    const workerAAfterReopenRes = await app!.inject({
+      method: "GET",
+      url: `/v2/agents/${workerA}`
+    });
+    expect(workerAAfterReopenRes.statusCode).toBe(200);
+    expect(workerAAfterReopenRes.json()).toMatchObject({
+      status: AgentStatus.ACTIVE,
+      banReasonCode: null
+    });
+
+    await repo.overrideDisputeDirect(disputeB.id, "COMPLETED");
+    await repo.overrideDisputeDirect(disputeB.id, "NOT_COMPLETED");
+    await repo.overrideDisputeDirect(disputeB.id, "COMPLETED");
+
+    const workerAAfterBResettleRes = await app!.inject({
+      method: "GET",
+      url: `/v2/agents/${workerA}`
+    });
+    expect(workerAAfterBResettleRes.statusCode).toBe(200);
+    expect(workerAAfterBResettleRes.json()).toMatchObject({
+      status: AgentStatus.ACTIVE,
+      banReasonCode: null
+    });
+
+    await prisma.ledgerBalance.update({
+      where: { address: workerA },
+      data: { available: -20 }
+    });
+    await repo.overrideDisputeDirect(disputeA.id, "COMPLETED");
+
+    const workerAAfterAResettleRes = await app!.inject({
+      method: "GET",
+      url: `/v2/agents/${workerA}`
+    });
+    expect(workerAAfterAResettleRes.statusCode).toBe(200);
+    expect(workerAAfterAResettleRes.json()).toMatchObject({
+      status: AgentStatus.BANNED,
+      banReasonCode: AgentBanReason.REOPEN_NEGATIVE_BALANCE
+    });
+
+    await prisma.$disconnect();
   });
 
   it("blocks manual termination while a task has an open dispute in persistence mode", async () => {

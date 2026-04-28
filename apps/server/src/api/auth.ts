@@ -41,7 +41,6 @@ const createChallengeMaintenance = (services: AppServices): ChallengeMaintenance
       return;
     }
     if (ttlMs === 0) {
-      services.challenges.clear();
       return;
     }
     for (const [key, challenge] of services.challenges) {
@@ -190,7 +189,7 @@ const registerAuthVerifyRoute = (
         body.address as Address
       );
     }
-    if (nowMs - challenge.createdAt >= maintenance.ttlMs) {
+    if (maintenance.ttlMs > 0 && nowMs - challenge.createdAt >= maintenance.ttlMs) {
       services.challenges.delete(addressKey);
       return rejectVerify(
         "CHALLENGE_EXPIRED",

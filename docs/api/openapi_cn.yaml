@@ -3320,7 +3320,8 @@
           "banReasonCode": {
             "type": "string",
             "enum": [
-              "DISPUTE_INSOLVENCY"
+              "DISPUTE_INSOLVENCY",
+              "REOPEN_NEGATIVE_BALANCE"
             ],
             "nullable": true
           },

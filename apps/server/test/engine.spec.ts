@@ -368,6 +368,7 @@ describe("AgentradeEngine disputes and cycle settlement", () => {
     });
     expect(engine.findAgent(publisher)?.status).toBe(AgentStatus.BANNED);
     expect(engine.getTask(cleanTask.id).status).toBe(TaskStatus.TERMINATED);
+    engine.getLedger(workerB).available = 0;
 
     expect(engine.overrideDispute(dispute.id, "NOT_COMPLETED").status).toBe("OPEN");
     expect(engine.getDisputeResolution(dispute.id)).toBeNull();
@@ -404,19 +405,101 @@ describe("AgentradeEngine disputes and cycle settlement", () => {
       ])
     );
     expect(engine.findAgent(publisher)?.status).toBe(AgentStatus.ACTIVE);
+    expect(engine.findAgent(workerB)?.status).toBe(AgentStatus.ACTIVE);
+    expect(engine.getLedger(workerB).available).toBeLessThan(0);
+    expect(() =>
+      engine.publishTask({
+        publisher: workerB,
+        title: "negative-ledger-publish-blocked",
+        descriptionMd: "desc",
+        acceptanceCriteria: "accept",
+        deadlineUtc: "2026-05-05T00:00:00.000Z",
+        displayTimezone: "UTC",
+        slotsTotal: 1,
+        rewardPerSlot: 10,
+        allowRepeatCompletionsBySameAgent: false
+      })
+    ).toThrowError(/insufficient balance/i);
     expect(engine.getSubmission(disputed.id).status).toBe(SubmissionStatus.REJECTED);
     expect(engine.getTask(cleanTask.id).status).toBe(TaskStatus.OPEN);
     expect(engine.getTask(cleanTask.id).rewardEscrowRemaining).toBe(15);
 
-    engine.closeCurrentCycle();
-    expect(engine.getDispute(dispute.id).status).toBe("OPEN");
-
-    const replayVote = engine.voteDispute({
-      disputeId: dispute.id,
-      agent: supervisor,
-      vote: VoteChoice.COMPLETED
+    expect(engine.overrideDispute(dispute.id, "COMPLETED").status).toBe("RESOLVED_COMPLETED");
+    expect(engine.findAgent(workerB)).toMatchObject({
+      status: AgentStatus.BANNED,
+      banReasonCode: AgentBanReason.REOPEN_NEGATIVE_BALANCE
     });
-    expect(replayVote.vote.agent).toBe(supervisor);
+  });
+
+  it("does not ban unrelated negative accounts when a different reopened dispute settles again", () => {
+    const { engine, clock } = makeEngine();
+    const publisherA = addr("reopen-scope-pub-a");
+    const workerA = addr("reopen-scope-worker-a");
+    const publisherB = addr("reopen-scope-pub-b");
+    const workerB = addr("reopen-scope-worker-b");
+
+    const taskA = engine.publishTask({
+      publisher: publisherA,
+      title: "reopen-scope-task-a",
+      descriptionMd: "desc",
+      acceptanceCriteria: "accept",
+      deadlineUtc: "2026-05-05T00:00:00.000Z",
+      displayTimezone: "UTC",
+      slotsTotal: 1,
+      rewardPerSlot: 10,
+      allowRepeatCompletionsBySameAgent: false
+    });
+    engine.addTaskIntention(taskA.id, workerA);
+    const taskB = engine.publishTask({
+      publisher: publisherB,
+      title: "reopen-scope-task-b",
+      descriptionMd: "desc",
+      acceptanceCriteria: "accept",
+      deadlineUtc: "2026-05-05T00:00:00.000Z",
+      displayTimezone: "UTC",
+      slotsTotal: 1,
+      rewardPerSlot: 10,
+      allowRepeatCompletionsBySameAgent: false
+    });
+    engine.addTaskIntention(taskB.id, workerB);
+    clock.advanceMinutes(31);
+
+    const submissionA = engine.submitTask(taskA.id, workerA, "payload-a");
+    engine.rejectSubmission(submissionA.id, publisherA, "needs revision");
+    const disputeA = engine.openDispute({
+      taskId: taskA.id,
+      submissionId: submissionA.id,
+      opener: workerA,
+      reasonMd: "review-a"
+    });
+
+    const submissionB = engine.submitTask(taskB.id, workerB, "payload-b");
+    engine.rejectSubmission(submissionB.id, publisherB, "needs revision");
+    const disputeB = engine.openDispute({
+      taskId: taskB.id,
+      submissionId: submissionB.id,
+      opener: workerB,
+      reasonMd: "review-b"
+    });
+
+    expect(engine.overrideDispute(disputeA.id, "COMPLETED").status).toBe("RESOLVED_COMPLETED");
+    engine.getLedger(workerA).available = 0;
+    expect(engine.overrideDispute(disputeA.id, "NOT_COMPLETED").status).toBe("OPEN");
+    expect(engine.getLedger(workerA).available).toBeLessThan(0);
+    expect(engine.findAgent(workerA)?.status).toBe(AgentStatus.ACTIVE);
+
+    expect(engine.overrideDispute(disputeB.id, "COMPLETED").status).toBe("RESOLVED_COMPLETED");
+    expect(engine.overrideDispute(disputeB.id, "NOT_COMPLETED").status).toBe("OPEN");
+    expect(engine.overrideDispute(disputeB.id, "COMPLETED").status).toBe("RESOLVED_COMPLETED");
+
+    expect(engine.findAgent(workerA)?.status).toBe(AgentStatus.ACTIVE);
+
+    engine.getLedger(workerA).available = -20;
+    expect(engine.overrideDispute(disputeA.id, "COMPLETED").status).toBe("RESOLVED_COMPLETED");
+    expect(engine.findAgent(workerA)).toMatchObject({
+      status: AgentStatus.BANNED,
+      banReasonCode: AgentBanReason.REOPEN_NEGATIVE_BALANCE
+    });
   });
 
   it("allows intention registration beyond slot count and updates competition metrics", () => {

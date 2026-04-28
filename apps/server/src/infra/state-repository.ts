@@ -67,12 +67,8 @@ import {
   mapVote
 } from "./state-repository-mappers.js";
 import {
-  buildTodosResponse,
-  type TodoDisputeRecord,
-  type TodoIntentionRecord,
-  type TodoSubmissionRecord,
-  type TodoTaskRecord
-} from "../todos/read-model.js";
+  queryTodosDirect
+} from "./state-repository-todo-helpers.js";
 import {
   appendActivityEventWithTx,
   applyProfileDeltaWithTx,
@@ -1325,26 +1321,25 @@ export class PrismaStateRepository {
   }
 
   async getDashboardSummaryDirect(timeZone: string): Promise<DashboardSummaryResponse> {
-    const [activeCycle, today, totals, currentCycle] = await Promise.all([
-      this.getActiveCycleDirect(),
-      this.queryActivityMetrics(
-        Prisma.sql`WHERE timezone(${timeZone}, "createdAt")::date = timezone(${timeZone}, CURRENT_TIMESTAMP)::date`
-      ),
-      Promise.all([
-        this.prisma.task.count(),
-        this.prisma.dispute.count(),
-        this.prisma.agentProfile.count()
-      ]),
-      this.getActiveCycleDirect().then((cycle) =>
-        this.queryActivityMetrics(
-          cycle ? Prisma.sql`WHERE "cycleId" = ${cycle.id}` : Prisma.sql`WHERE 1 = 0`
-        )
-      )
+    const activeCyclePromise = this.getActiveCycleDirect();
+    const todayPromise = this.queryActivityMetrics(
+      Prisma.sql`WHERE timezone(${timeZone}, "createdAt")::date = timezone(${timeZone}, CURRENT_TIMESTAMP)::date`
+    );
+    const totalsPromise = Promise.all([
+      this.prisma.task.count(),
+      this.prisma.dispute.count(),
+      this.prisma.agentProfile.count()
     ]);
-
+    const activeCycle = await activeCyclePromise;
     if (!activeCycle) {
       throw new Error("active cycle is unavailable");
     }
+
+    const [today, totals, currentCycle] = await Promise.all([
+      todayPromise,
+      totalsPromise,
+      this.queryActivityMetrics(Prisma.sql`WHERE "cycleId" = ${activeCycle.id}`)
+    ]);
 
     return {
       timezone: timeZone,
@@ -1422,230 +1417,7 @@ export class PrismaStateRepository {
     limit: number;
     generatedAt?: string;
   }): Promise<TodosResponse> {
-    const [publishedTasks, intentionRows, actorSubmissions, publishedPendingSubmissions, openDisputes] =
-      await Promise.all([
-        this.prisma.task.findMany({
-          where: {
-            publisherAddress: {
-              equals: input.address,
-              mode: "insensitive"
-            }
-          },
-          select: {
-            id: true,
-            publisherAddress: true,
-            title: true,
-            status: true,
-            deadlineUtc: true,
-            createdAt: true,
-            updatedAt: true
-          }
-        }),
-        this.prisma.taskIntention.findMany({
-          where: {
-            agentAddress: {
-              equals: input.address,
-              mode: "insensitive"
-            }
-          },
-          select: {
-            id: true,
-            taskId: true,
-            agentAddress: true,
-            createdAt: true,
-            task: {
-              select: {
-                id: true,
-                publisherAddress: true,
-                title: true,
-                status: true,
-                deadlineUtc: true,
-                createdAt: true,
-                updatedAt: true
-              }
-            }
-          }
-        }),
-        this.prisma.submission.findMany({
-          where: {
-            agentAddress: {
-              equals: input.address,
-              mode: "insensitive"
-            }
-          },
-          select: {
-            id: true,
-            taskId: true,
-            agentAddress: true,
-            status: true,
-            createdAt: true,
-            updatedAt: true,
-            task: {
-              select: {
-                id: true,
-                publisherAddress: true,
-                title: true,
-                status: true,
-                deadlineUtc: true
-              }
-            }
-          }
-        }),
-        this.prisma.submission.findMany({
-          where: {
-            status: DomainSubmissionStatus.SUBMITTED,
-            task: {
-              publisherAddress: {
-                equals: input.address,
-                mode: "insensitive"
-              }
-            }
-          },
-          select: {
-            id: true,
-            taskId: true,
-            agentAddress: true,
-            status: true,
-            createdAt: true,
-            updatedAt: true,
-            task: {
-              select: {
-                id: true,
-                publisherAddress: true,
-                title: true,
-                status: true,
-                deadlineUtc: true
-              }
-            }
-          }
-        }),
-        this.prisma.dispute.findMany({
-          where: {
-            status: DomainDisputeStatus.OPEN,
-            OR: [
-              {
-                openerAddress: {
-                  equals: input.address,
-                  mode: "insensitive"
-                }
-              },
-              {
-                task: {
-                  publisherAddress: {
-                    equals: input.address,
-                    mode: "insensitive"
-                  }
-                }
-              },
-              {
-                submission: {
-                  agentAddress: {
-                    equals: input.address,
-                    mode: "insensitive"
-                  }
-                }
-              }
-            ]
-          },
-          select: {
-            id: true,
-            taskId: true,
-            submissionId: true,
-            openerAddress: true,
-            counterpartyReasonMd: true,
-            status: true,
-            createdAt: true,
-            updatedAt: true,
-            task: {
-              select: {
-                id: true,
-                publisherAddress: true,
-                title: true,
-                deadlineUtc: true
-              }
-            },
-            submission: {
-              select: {
-                agentAddress: true
-              }
-            }
-          }
-        })
-      ]);
-
-    const tasks: TodoTaskRecord[] = [
-      ...publishedTasks.map((item) => ({
-        id: item.id,
-        publisher: asAddress(item.publisherAddress),
-        title: item.title,
-        status: item.status as DomainTaskStatus,
-        deadlineUtc: toIso(item.deadlineUtc),
-        createdAt: toIso(item.createdAt),
-        updatedAt: toIso(item.updatedAt)
-      })),
-      ...intentionRows
-        .filter((item) => item.task)
-        .map((item) => ({
-          id: item.task.id,
-          publisher: asAddress(item.task.publisherAddress),
-          title: item.task.title,
-          status: item.task.status as DomainTaskStatus,
-          deadlineUtc: toIso(item.task.deadlineUtc),
-          createdAt: toIso(item.task.createdAt),
-          updatedAt: toIso(item.task.updatedAt)
-        }))
-    ];
-
-    const intentions: TodoIntentionRecord[] = intentionRows.map((item) => ({
-      id: item.id,
-      taskId: item.taskId,
-      agent: asAddress(item.agentAddress),
-      createdAt: toIso(item.createdAt)
-    }));
-
-    const mapTodoSubmission = (
-      item: (typeof actorSubmissions)[number] | (typeof publishedPendingSubmissions)[number]
-    ): TodoSubmissionRecord => ({
-      id: item.id,
-      taskId: item.taskId,
-      agent: asAddress(item.agentAddress),
-      taskPublisher: asAddress(item.task.publisherAddress),
-      taskTitle: item.task.title,
-      taskStatus: item.task.status as DomainTaskStatus,
-      taskDeadlineUtc: toIso(item.task.deadlineUtc),
-      status: item.status as DomainSubmissionStatus,
-      createdAt: toIso(item.createdAt),
-      updatedAt: toIso(item.updatedAt)
-    });
-
-    const submissions: TodoSubmissionRecord[] = [
-      ...actorSubmissions.map((item) => mapTodoSubmission(item)),
-      ...publishedPendingSubmissions.map((item) => mapTodoSubmission(item))
-    ];
-
-    const disputes: TodoDisputeRecord[] = openDisputes.map((item) => ({
-      id: item.id,
-      taskId: item.taskId,
-      submissionId: item.submissionId,
-      opener: asAddress(item.openerAddress),
-      taskPublisher: asAddress(item.task.publisherAddress),
-      submissionAgent: asAddress(item.submission.agentAddress),
-      taskTitle: item.task.title,
-      taskDeadlineUtc: toIso(item.task.deadlineUtc),
-      counterpartyReasonMd: item.counterpartyReasonMd,
-      status: item.status as DomainDisputeStatus,
-      createdAt: toIso(item.createdAt),
-      updatedAt: toIso(item.updatedAt)
-    }));
-
-    return buildTodosResponse({
-      ...input,
-      generatedAt: input.generatedAt ?? new Date().toISOString(),
-      tasks,
-      submissions,
-      disputes,
-      intentions
-    });
+    return queryTodosDirect(this.prisma, input);
   }
 
   async getCycleRewardsDirect(cycleId: string): Promise<CycleRewardsResponse | null> {
@@ -2655,10 +2427,10 @@ export class PrismaStateRepository {
         updatedAt: now
       }
     });
+    await this.reconcileClosedCycleDistributionsWithTx(tx, distributionsBefore, now);
     if (publisherRemainsBanned) {
       await this.sweepBannedPublisherCleanTasksWithTx(tx, now, activeCycleId);
     }
-    await this.reconcileClosedCycleDistributionsWithTx(tx, distributionsBefore, now);
   }
 
   private async collectDisputeAffectedCycleIdsWithTx(
@@ -2761,6 +2533,137 @@ export class PrismaStateRepository {
         });
       }
     }
+  }
+
+  private async collectAddressesAffectedByReopenedDisputeWithTx(
+    tx: Prisma.TransactionClient,
+    disputeId: string
+  ): Promise<Address[]> {
+    const dispute = await tx.dispute.findUnique({
+      where: { id: disputeId },
+      select: {
+        submissionId: true,
+        task: {
+          select: {
+            publisherAddress: true
+          }
+        }
+      }
+    });
+    if (!dispute) {
+      throw new DomainError("DISPUTE_NOT_FOUND", `Dispute ${disputeId} does not exist`, 404);
+    }
+    const submission = await tx.submission.findUnique({
+      where: { id: dispute.submissionId },
+      select: { agentAddress: true }
+    });
+    if (!submission) {
+      throw new DomainError("SUBMISSION_NOT_FOUND", `Submission ${dispute.submissionId} not found`, 404);
+    }
+
+    const addresses = new Set<Address>([asAddress(submission.agentAddress), asAddress(dispute.task.publisherAddress)]);
+    const affectedCycleIds = new Set<string>();
+    const rollbackHistory = await tx.disputeRollbackHistory.findMany({
+      where: { disputeId },
+      select: {
+        archivedVotes: true,
+        archivedWorkloads: true,
+        previousResolutionRollbackSnapshot: true
+      }
+    });
+    for (const history of rollbackHistory) {
+      for (const vote of asDisputeRollbackHistoryArray<SupervisionVote>(history.archivedVotes)) {
+        affectedCycleIds.add(vote.createdCycleId);
+      }
+      for (const workload of asDisputeRollbackHistoryArray<CycleWorkload>(history.archivedWorkloads)) {
+        affectedCycleIds.add(workload.cycleId);
+        addresses.add(workload.agent);
+      }
+      for (const forcedTermination of asDisputeResolutionRollback(history.previousResolutionRollbackSnapshot)
+        ?.forcedTerminations ?? []) {
+        affectedCycleIds.add(forcedTermination.cycleId);
+      }
+    }
+    if (affectedCycleIds.size > 0) {
+      const workloads = await tx.cycleWorkload.findMany({
+        where: {
+          cycleId: {
+            in: [...affectedCycleIds]
+          }
+        },
+        select: {
+          agentAddress: true
+        }
+      });
+      for (const workload of workloads) {
+        addresses.add(asAddress(workload.agentAddress));
+      }
+    }
+    return [...addresses];
+  }
+
+  private async banNegativeBalanceAgentsAffectedByReopenedDisputeSettlementWithTx(
+    tx: Prisma.TransactionClient,
+    disputeId: string,
+    now: Date
+  ): Promise<Address[]> {
+    const affectedAddresses = await this.collectAddressesAffectedByReopenedDisputeWithTx(tx, disputeId);
+    if (affectedAddresses.length === 0) {
+      return [];
+    }
+    const balances = await tx.ledgerBalance.findMany({
+      where: {
+        address: {
+          in: affectedAddresses
+        },
+        available: {
+          lt: 0
+        }
+      },
+      select: {
+        address: true
+      }
+    });
+    for (const balance of balances) {
+      const address = asAddress(balance.address);
+      await this.ensureAgentAndLedgerWithTx(tx, address, now);
+      await this.banAgentWithTx(tx, address, now, AgentBanReason.REOPEN_NEGATIVE_BALANCE);
+    }
+    return balances.map((item) => asAddress(item.address));
+  }
+
+  private async hasReopenHistoryForDisputeWithTx(
+    tx: Prisma.TransactionClient,
+    disputeId: string
+  ): Promise<boolean> {
+    const history = await tx.disputeRollbackHistory.findFirst({
+      where: { disputeId },
+      select: { id: true }
+    });
+    return history !== null;
+  }
+
+  private async hasActiveTaskForAnyPublisherWithTx(
+    tx: Prisma.TransactionClient,
+    addresses: Address[]
+  ): Promise<boolean> {
+    if (addresses.length === 0) {
+      return false;
+    }
+    const task = await tx.task.findFirst({
+      where: {
+        publisherAddress: {
+          in: addresses
+        },
+        status: {
+          in: [DomainTaskStatus.OPEN, DomainTaskStatus.IN_PROGRESS]
+        }
+      },
+      select: {
+        id: true
+      }
+    });
+    return task !== null;
   }
 
   private async rollbackResolvedCompletedDisputeWithTx(
@@ -3175,6 +3078,17 @@ export class PrismaStateRepository {
       await this.applyProfileDeltaWithTx(tx, asAddress(vote.agentAddress), now, {
         supervisorReputationDelta: vote.vote === outcome ? 1 : -1
       });
+    }
+    if (outcome === DomainVoteChoice.COMPLETED && (await this.hasReopenHistoryForDisputeWithTx(tx, disputeId))) {
+      const negativeBalanceAddresses =
+        await this.banNegativeBalanceAgentsAffectedByReopenedDisputeSettlementWithTx(
+        tx,
+        disputeId,
+        now
+      );
+      if (await this.hasActiveTaskForAnyPublisherWithTx(tx, negativeBalanceAddresses)) {
+        await this.sweepBannedPublisherCleanTasksWithTx(tx, now, cycleId);
+      }
     }
   }
 

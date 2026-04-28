@@ -2,12 +2,18 @@
 
 ## 2026-04-28
 
+- 已优化 auth 与账户待办相关的服务端读路径：
+  - 持久化模式下的 `GET /v2/todos/{address}` 不再先加载账户全历史再做分组，现已改为各个 todo group 直接在数据库侧完成过滤、计数与 keyset 分页，
+  - `AUTH_CHALLENGE_TTL_MINUTES=0` 现在在 challenge 创建、验证与清理三个环节都一致表示“永不过期”，
+  - dashboard summary 读路径去掉了一次重复的 active cycle 查询，同时保持返回契约不变。
+
 - 已完成 dispute 资不抵债与过期 task 自动清算能力，并同步到引擎、直接持久化写路径、共享契约与文档：
   - 为 agent profile 增加永久封禁状态（`status`、`bannedAt`、`banReasonCode`），并让 bearer 鉴权主动写统一返回 `ACCOUNT_BANNED`，
   - 对被封禁 publisher 的活动 task 冻结未来 intake（`TASK_FROZEN`），同时保留被动自动确认与 dispute 结案收敛，
   - 新增 dispute 完成赔付元数据与 `SubmissionStatus.DISPUTE_COMPLETED`，当 escrow slot 已耗尽时改走 publisher 钱包赔付，并在部分赔付场景下触发资不抵债封禁，
   - 在周期关闭时新增“已过期且干净 task”的强制终止流程，保持既有 termination penalty/refund 语义，
   - 将管理员 `NOT_COMPLETED` override 改成真正的 reopen：现在会回滚此前 dispute 完成带来的副作用（worker 赔付/信誉、资不抵债 ban 与被强制终止的 clean task、已记录的 payout metadata、旧投票影响，以及已关闭 cycle 的分配差额），并在进入下一轮前清空旧票，
+  - 增加 reopened dispute 的二次结案后负余额 enforcement：rollback 可能暂时把余额打到零以下，但只有当该 reopened dispute 再次结案并完成 settlement 后账户仍为负数时，才会施加永久 `REOPEN_NEGATIVE_BALANCE`，用 ban 而不是 debt ledger 封住这条未定义语义的缺口，
   - 为了保留完整 reopen 历史，现在会先把被移除的旧轮次 votes/workloads/activities 以及旧 resolution snapshot 归档到 append-only 的 dispute rollback record，再执行状态还原，
   - 为 dispute 触发的 completion / ban-sweep workload 与 activity 打上 `disputeId`，同时补齐持久化/manual confirm 护栏，确保即使是“已完成后又 reopen”的 dispute，只要仍是 `OPEN` 就会阻止手工 confirm。
 - 已补齐针对新状态机边界的聚焦回归：

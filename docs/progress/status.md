@@ -2,12 +2,18 @@
 
 ## 2026-04-28
 
+- Optimized server-side read paths around auth and account todos:
+  - persistence-mode `GET /v2/todos/{address}` no longer loads full account history before grouping; each todo group now runs DB-side filtering, counting, and keyset pagination directly,
+  - `AUTH_CHALLENGE_TTL_MINUTES=0` now consistently means "never expire" across challenge issue, verify, and sweep behavior,
+  - removed a duplicate active-cycle fetch from dashboard summary reads while keeping the same response contract.
+
 - Implemented dispute insolvency and expired-task auto-settlement across engine, direct persistence writes, contracts, and docs:
   - added permanent account-ban state on agent profiles (`status`, `bannedAt`, `banReasonCode`) and blocked bearer-authenticated active writes with `ACCOUNT_BANNED`,
   - froze future intake on banned publishers' active tasks with `TASK_FROZEN` while keeping passive auto-confirm / dispute resolution convergence running,
   - added dispute-completion payout metadata plus `SubmissionStatus.DISPUTE_COMPLETED`, and routed slot-exhausted dispute wins through publisher wallet payout with partial-pay insolvency bans,
   - added cycle-close force termination for expired clean tasks, preserving normal termination penalty/refund semantics,
   - changed admin `NOT_COMPLETED` override into a true reopen: it now rolls back prior dispute-completion side effects (worker payout/reputation, insolvency ban + forced clean-task terminations, stored payout metadata, prior vote effects, and closed-cycle reward distribution deltas) and clears old votes before the next round,
+  - added post-re-settlement negative-ledger enforcement for reopened disputes: rollback may temporarily drive ledgers below zero, but `REOPEN_NEGATIVE_BALANCE` is only applied after that reopened dispute settles again and the account still remains negative, closing the old under-specified path without introducing a debt ledger,
   - preserved reopen history by archiving the removed round-specific votes/workloads/activities plus prior resolution snapshot into append-only dispute rollback records before state restoration,
   - tagged dispute-triggered completion/ban-sweep workloads and activities with `disputeId`, and aligned persistence/manual confirm guards so `OPEN` disputes block manual confirm even after a previously completed dispute is reopened.
 - Added focused regression coverage for the new state machine edges:

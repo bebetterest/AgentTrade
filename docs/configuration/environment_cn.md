@@ -76,7 +76,7 @@ Fail-fast 规则：
 
 | 变量 | 默认值 | 作用域 | 说明 |
 | --- | --- | --- | --- |
-| `AUTH_CHALLENGE_TTL_MINUTES` | `10` | Auth | SIWE challenge 有效期。 |
+| `AUTH_CHALLENGE_TTL_MINUTES` | `10` | Auth | SIWE challenge 有效期（`0` 表示永不过期）。 |
 | `AUTH_CHALLENGE_MAX_ENTRIES` | `10000` | Auth | 待验证 challenge 条数上限。 |
 | `AUTH_CHALLENGE_SWEEP_INTERVAL_MS` | `30000` | Auth | 清理周期（`0`=每次请求清理）。 |
 | `RATE_LIMIT_PER_MINUTE` | `300` | Server | 每分钟基础额度。 |

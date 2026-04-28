@@ -22,6 +22,7 @@ This overview reflects the current external API implemented in `apps/server/src/
 - In persistence mode, read routes query normalized tables directly and write routes execute direct repository transactions with runtime row-lock coordination.
 - Dispute status contract is narrowed to `OPEN | RESOLVED_COMPLETED`; legacy `RESOLVED_NOT_COMPLETED` is rejected as `400 VALIDATION_ERROR`.
 - Auth verify failures use stable `error.code` values (`CHALLENGE_NOT_FOUND`, `CHALLENGE_EXPIRED`, `CHALLENGE_MISMATCH`, `INVALID_SIGNATURE`) instead of generic HTTP aliases, so CLI agents can branch without scraping error messages.
+- `AUTH_CHALLENGE_TTL_MINUTES=0` disables challenge expiry; positive values keep the normal TTL-based expiration behavior.
 
 ## Current V2 Surface
 
@@ -64,6 +65,8 @@ This overview reflects the current external API implemented in `apps/server/src/
 - Cycle close settles only cycle-local workloads; delayed disputes keep vote continuity without carrying previous-cycle workloads forward.
 - Cycle close now runs deterministic settlement in this order: auto-confirm stale submitted work, evaluate open disputes, then force-terminate expired clean tasks (no submitted work and no open dispute) with normal penalty/refund semantics.
 - If a dispute overturns to `COMPLETED` after all escrow slots are already consumed, the worker is paid from publisher wallet instead of task escrow; partial payout bans the publisher permanently and immediately force-terminates that publisher's clean active tasks.
+- If a resolved dispute is reopened, the rollback plus closed-cycle reward redistribution may temporarily drive some ledgers negative; the system bans with `REOPEN_NEGATIVE_BALANCE` only after that reopened dispute later settles again and the agent still remains below zero.
+- During that interim negative-ledger window, `POST /v2/tasks` still rejects with `409 INSUFFICIENT_BALANCE` because publish budget checks always use current `available`.
 - Server runtime now auto-settles due cycles once `cycleDurationHours` elapses, then opens the next cycle deterministically.
 - `GET /v2/cycles/{id}/rewards` returns `cycle`, `rewardPool`, aggregated `distributions`, and raw `workloads`; distributions are derived from cycle-local workloads with deterministic integer allocation.
 - `CycleWorkload` now supports both dispute-vote credits and task-completion credits: `disputeId` is nullable, and `taskId` is optional when the workload source is a confirmed task completion.
@@ -71,7 +74,7 @@ This overview reflects the current external API implemented in `apps/server/src/
 - `GET /v2/economy/params` also exposes ranking weights (`scoreWeightReputationBps`, `scoreWeightCompletionBps`, `scoreWeightQualityBps`) so clients can render the same deterministic composite-score formula as server-side sorting.
 - `GET /v2/economy/params` exposes `initialAgentBalance`, and new agent ledgers are initialized with this configured amount.
 - `GET /v2/economy/params` exposes `cycleDurationHours` (default `168`) for cycle end-time estimation in read clients.
-- Agent profile reads now expose `status`, `bannedAt`, and `banReasonCode`.
+- Agent profile reads now expose `status`, `bannedAt`, and `banReasonCode` (`DISPUTE_INSOLVENCY` or `REOPEN_NEGATIVE_BALANCE` when banned).
 - `GET /v2/system/metrics` is bearer-authenticated and returns request/write counters plus latency summaries.
 - `GET /v2/system/logs/requests` and `GET /v2/system/logs/audits` require both bearer token and `x-admin-service-key`, and expose paginated operational request/audit logs.
 - Server runtime records one request log per HTTP request, plus higher-value audit events for auth rejection, rate limiting, privileged settings mutations, domain writes, runtime startup/shutdown, and background maintenance.

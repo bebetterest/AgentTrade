@@ -7,7 +7,7 @@
 - Fastify API server with modular domain engine for tasks, submissions, disputes, cycles, and operator-facing system settings/metrics operations.
 - `packages/contracts` now defines the external `/v2` contract registry and generates OpenAPI artifacts plus shared operation metadata for server/SDK/CLI/web.
 - SIWE challenge/verify auth flow with JWT session token issuance.
-- Strict EVM address validation and challenge expiration checks.
+- Strict EVM address validation and challenge expiration checks, with `AUTH_CHALLENGE_TTL_MINUTES=0` explicitly reserved for non-expiring challenges.
 - Runtime hardening now includes configurable CORS allowlist (`CORS_ALLOWED_ORIGINS`), optional trusted-proxy IP extraction (`TRUST_PROXY`), security headers via Fastify helmet, and bounded SIWE challenge storage with capacity + periodic expiration sweep controls.
 - Config-driven guardrails loaded from `packages/config`.
 - `packages/config` now separates internal runtime config from public economy/guardrail projection and rejects placeholder secrets outside `NODE_ENV=test`.
@@ -20,7 +20,7 @@
 
 - PostgreSQL repository persistence in normalized domain tables via Prisma.
 - Persistence read path is direct table query (no per-request full snapshot load/rebuild).
-- Persistence read routes for tasks/disputes/activities/agents/dashboard now execute DB-side filtering, sorting, pagination, and aggregation while preserving the existing query/cursor contract.
+- Persistence read routes for tasks/disputes/activities/agents/dashboard/todos now execute DB-side filtering, sorting, pagination, and aggregation while preserving the existing query/cursor contract.
 - Pagination cursors now default to opaque keyset tokens (tasks/disputes/activities/agents/cycles) while keeping legacy numeric offset cursor input compatibility for transition safety.
 - Stage-4 persistence path routes all API write operations (`publish`, `accept`, `submit`, `confirm`, `reject`, `terminate`, `openDispute`, `vote`, profile patch, cycle close, dispute override) to direct transactional repository commands (without runtime snapshot rebuild/rewrite on hot path).
 - Repository write commands use explicit runtime row-lock sequencing and deterministic transaction ordering for settlement/dispute safety.
@@ -42,7 +42,7 @@
 - Submission payload model now supports markdown plus external attachment metadata (`attachments[]`), with centralized configurable limits and aligned validation across engine/repository writes.
 - Dispute guards: only `REJECTED` submissions are disputable; opener role restricted; single `OPEN` dispute per submission.
 - Rejected submissions on `TERMINATED` tasks are no longer disputable, while disputes that overturn to `COMPLETED` after escrow slots are exhausted settle from publisher wallet with payout metadata and publisher insolvency ban semantics.
-- Admin `NOT_COMPLETED` override is now modeled as a full reopen rather than a status flip: old votes are cleared, prior dispute-completion settlement side effects are reversed, any already-closed cycle distributions touched by that dispute are recomputed and delta-applied back to ledgers, and the removed round-specific votes/workloads/activities plus prior resolution snapshot are first archived into append-only dispute rollback history instead of being lost.
+- Admin `NOT_COMPLETED` override is now modeled as a full reopen rather than a status flip: old votes are cleared, prior dispute-completion settlement side effects are reversed, any already-closed cycle distributions touched by that dispute are recomputed and delta-applied back to ledgers, and any negative ledgers created by that rollback are deferred until the reopened dispute settles again, at which point still-negative accounts are permanently banned with `REOPEN_NEGATIVE_BALANCE`; the removed round-specific votes/workloads/activities plus prior resolution snapshot are first archived into append-only dispute rollback history instead of being lost.
 - Manual confirm guards now check `OPEN` disputes before the idempotent confirmed shortcut, so a reopened dispute cannot be bypassed by re-confirming an already completed submission through the persistence path.
 - Supervision guards: one participation per `(dispute_id, agent_address)` globally.
 - Cycle close settles only cycle-local workloads; delayed disputes keep vote continuity without workload carryover.
@@ -87,6 +87,7 @@
 - Account-level queue triage is now first-class:
   - the public read-model surface includes `GET /v2/todos/{address}` plus CLI `todos`, `todos action-required`, and `todos waiting`,
   - queue groups are summary-first and machine-readable, with stable `type`, English `title` / `description`, per-group pagination, and summary ids for drill-down reads,
+  - persistence-mode todo groups now page and count on the database per group instead of scanning full account history into memory first,
   - agent-facing runbooks now treat `todos` / `todos action-required` as the preferred entrypoint for fresh and resumed sessions before selecting concrete task/submission/dispute writes.
 - Help and spec must remain equivalent for input contracts: `commands[].inputContract[]` is treated as the source for machine-readable discovery, and command `--help` must repeat every line for agents that only inspect plain-text help.
 - Spec drift checks are bidirectional for file-backed inputs: every registered `--*-file` option must appear in `dualChannelInputs[]`, and request bindings that use one side of an inline/file pair must expose both sides.

@@ -9,6 +9,7 @@ import {
   type OpenApiParameterObject,
   type OpenApiSchemaObject
 } from "@agentrade/contracts";
+import { TODO_ACTION_REQUIRED_TYPES, TODO_WAITING_TYPES } from "@agentrade/types";
 import { cliOperationBindings } from "../operation-bindings.js";
 import {
   CLI_DEFAULT_BASE_URL,
@@ -197,6 +198,7 @@ type CliSpecEntityKind =
   | "serviceMetrics"
   | "submission"
   | "supervisionVote"
+  | "todoGroup"
   | "task"
   | "taskIntention";
 
@@ -2416,6 +2418,26 @@ const applyCliRequestBindingOverrides = (
       }
     };
   }
+  if (binding.field === "type" && spec.schema) {
+    if (path === "todos action-required") {
+      return {
+        ...spec,
+        schema: {
+          ...spec.schema,
+          enum: [...TODO_ACTION_REQUIRED_TYPES]
+        }
+      };
+    }
+    if (path === "todos waiting") {
+      return {
+        ...spec,
+        schema: {
+          ...spec.schema,
+          enum: [...TODO_WAITING_TYPES]
+        }
+      };
+    }
+  }
   return spec;
 };
 
@@ -2950,6 +2972,40 @@ const getEntityHints = (
             relation: "target",
             inputSources: ["--address"],
             outputPaths: ["data.address"]
+          }
+        ]
+      };
+    case "todos":
+    case "todos action-required":
+    case "todos waiting":
+      return {
+        primaryEntity: "todoGroup",
+        bindings: [
+          {
+            entity: "agent",
+            relation: "target",
+            inputSources: ["--address", "persistedConfig.walletAddress"],
+            outputPaths: ["data.address"]
+          },
+          {
+            entity: "todoGroup",
+            relation: "listed",
+            outputPaths: ["data.groups[].type"]
+          },
+          {
+            entity: "task",
+            relation: "related",
+            outputPaths: ["data.groups[].items[].taskId"]
+          },
+          {
+            entity: "submission",
+            relation: "related",
+            outputPaths: ["data.groups[].items[].submissionId"]
+          },
+          {
+            entity: "dispute",
+            relation: "related",
+            outputPaths: ["data.groups[].items[].disputeId"]
           }
         ]
       };
@@ -4045,6 +4101,109 @@ const getHandoffHints = (
           note: "rerun the activity list scoped to this agent"
         }
       ]);
+    case "todos":
+      return cloneHandoffHints([
+        {
+          targetCommand: "todos action-required",
+          bindings: [handoffFromPath("data.address", ["--address"])]
+        },
+        {
+          targetCommand: "todos waiting",
+          bindings: [handoffFromPath("data.address", ["--address"])]
+        },
+        {
+          targetCommand: "agents profile get",
+          bindings: [handoffFromPath("data.address", ["--address"])]
+        },
+        {
+          targetCommand: "agents stats",
+          bindings: [handoffFromPath("data.address", ["--address"])]
+        },
+        {
+          targetCommand: "tasks get",
+          bindings: [handoffFromPath("data.groups[].items[].taskId", ["--task"])],
+          ...currentPageSelection(nonNullSelectionCondition("data.groups[].items[].taskId")),
+          note: "drill into the selected todo summary's task"
+        },
+        {
+          targetCommand: "submissions get",
+          bindings: [handoffFromPath("data.groups[].items[].submissionId", ["--submission"])],
+          ...currentPageSelection(nonNullSelectionCondition("data.groups[].items[].submissionId")),
+          note: "drill into the selected todo summary's submission when present"
+        },
+        {
+          targetCommand: "disputes get",
+          bindings: [handoffFromPath("data.groups[].items[].disputeId", ["--dispute"])],
+          ...currentPageSelection(nonNullSelectionCondition("data.groups[].items[].disputeId")),
+          note: "drill into the selected todo summary's dispute when present"
+        }
+      ]);
+    case "todos action-required":
+      return cloneHandoffHints([
+        {
+          targetCommand: "todos",
+          bindings: [handoffFromPath("data.address", ["--address"])]
+        },
+        {
+          targetCommand: "todos waiting",
+          bindings: [handoffFromPath("data.address", ["--address"])]
+        },
+        {
+          targetCommand: "agents profile get",
+          bindings: [handoffFromPath("data.address", ["--address"])]
+        },
+        {
+          targetCommand: "tasks get",
+          bindings: [handoffFromPath("data.groups[].items[].taskId", ["--task"])],
+          ...currentPageSelection(nonNullSelectionCondition("data.groups[].items[].taskId")),
+          note: "drill into the selected todo summary's task"
+        },
+        {
+          targetCommand: "submissions get",
+          bindings: [handoffFromPath("data.groups[].items[].submissionId", ["--submission"])],
+          ...currentPageSelection(nonNullSelectionCondition("data.groups[].items[].submissionId")),
+          note: "drill into the selected todo summary's submission when present"
+        },
+        {
+          targetCommand: "disputes get",
+          bindings: [handoffFromPath("data.groups[].items[].disputeId", ["--dispute"])],
+          ...currentPageSelection(nonNullSelectionCondition("data.groups[].items[].disputeId")),
+          note: "drill into the selected todo summary's dispute when present"
+        }
+      ]);
+    case "todos waiting":
+      return cloneHandoffHints([
+        {
+          targetCommand: "todos",
+          bindings: [handoffFromPath("data.address", ["--address"])]
+        },
+        {
+          targetCommand: "todos action-required",
+          bindings: [handoffFromPath("data.address", ["--address"])]
+        },
+        {
+          targetCommand: "agents profile get",
+          bindings: [handoffFromPath("data.address", ["--address"])]
+        },
+        {
+          targetCommand: "tasks get",
+          bindings: [handoffFromPath("data.groups[].items[].taskId", ["--task"])],
+          ...currentPageSelection(nonNullSelectionCondition("data.groups[].items[].taskId")),
+          note: "drill into the selected todo summary's task"
+        },
+        {
+          targetCommand: "submissions get",
+          bindings: [handoffFromPath("data.groups[].items[].submissionId", ["--submission"])],
+          ...currentPageSelection(nonNullSelectionCondition("data.groups[].items[].submissionId")),
+          note: "drill into the selected todo summary's submission when present"
+        },
+        {
+          targetCommand: "disputes get",
+          bindings: [handoffFromPath("data.groups[].items[].disputeId", ["--dispute"])],
+          ...currentPageSelection(nonNullSelectionCondition("data.groups[].items[].disputeId")),
+          note: "drill into the selected todo summary's dispute when present"
+        }
+      ]);
     case "submissions get":
       return cloneHandoffHints([
         {
@@ -4863,6 +5022,27 @@ const getWorkflowHints = (
         prerequisiteCommands: [],
         nextCommands: ["tasks create", "cycles rewards"]
       };
+    case "todos":
+      return {
+        phase: "discover",
+        actorRoles: ["any"],
+        prerequisiteCommands: [],
+        nextCommands: ["todos action-required", "todos waiting", "tasks get", "submissions get", "disputes get"]
+      };
+    case "todos action-required":
+      return {
+        phase: "review",
+        actorRoles: ["any"],
+        prerequisiteCommands: ["todos"],
+        nextCommands: ["todos waiting", "tasks get", "submissions get", "disputes get"]
+      };
+    case "todos waiting":
+      return {
+        phase: "discover",
+        actorRoles: ["any"],
+        prerequisiteCommands: ["todos"],
+        nextCommands: ["todos action-required", "tasks get", "submissions get", "disputes get"]
+      };
     case "submissions get":
       return {
         phase: "review",
@@ -5052,11 +5232,12 @@ const getFailureHints = (
 
 const collectLeafCommands = (root: Command): Array<{ path: string; command: Command }> => {
   const leaves: Array<{ path: string; command: Command }> = [];
+  const hasActionHandler = (command: Command): boolean =>
+    Boolean((command as Command & { _actionHandler?: unknown })._actionHandler);
 
   const visit = (command: Command, segments: string[]): void => {
-    if (command.commands.length === 0) {
+    if (command.commands.length === 0 || hasActionHandler(command)) {
       leaves.push({ path: segments.join(" "), command });
-      return;
     }
 
     for (const child of command.commands) {
@@ -5153,14 +5334,18 @@ const toDiscoverySpec = async (command: Command, commandQuery?: string): Promise
     .map(({ path, command: leaf }) => resolveCommandSpec(path, leaf))
     .sort((left, right) => left.path.localeCompare(right.path));
   const filteredCommands = normalizedQuery
-    ? commands.filter(
-        (item) => item.path === normalizedQuery || item.path.startsWith(`${normalizedQuery} `)
-      )
+    ? (() => {
+        const exactMatches = commands.filter((item) => item.path === normalizedQuery);
+        if (exactMatches.length > 0) {
+          return exactMatches;
+        }
+        return commands.filter((item) => item.path.startsWith(`${normalizedQuery} `));
+      })()
     : commands;
 
   if (normalizedQuery && filteredCommands.length === 0) {
     throw new CliValidationError(
-      `unknown command query '${normalizedQuery}': use an exact leaf path like 'tasks create' or a group prefix like 'tasks'`
+      `unknown command query '${normalizedQuery}': use an exact executable path like 'tasks create' or a group prefix like 'tasks'`
     );
   }
 

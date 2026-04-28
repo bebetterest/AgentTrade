@@ -3,6 +3,9 @@ import {
   DisputeStatus,
   SubmissionStatus,
   TaskStatus,
+  TODO_ACTION_REQUIRED_TYPES,
+  TODO_GROUP_TYPE_VALUES,
+  TODO_WAITING_TYPES,
   VoteChoice
 } from "@agentrade/types";
 import type { Address, RuntimeEditableRulesPatch } from "@agentrade/types";
@@ -76,6 +79,8 @@ const AGENT_LIST_SORT_VALUES = [
 ] as const;
 const QUERY_ORDER_VALUES = ["asc", "desc"] as const;
 const TREND_WINDOW_VALUES = ["7d", "30d"] as const;
+const TODO_ACTION_REQUIRED_TYPE_SET = new Set<string>(TODO_ACTION_REQUIRED_TYPES);
+const TODO_WAITING_TYPE_SET = new Set<string>(TODO_WAITING_TYPES);
 
 export const ensureAddress = (raw: string, flag: string): Address => {
   if (!ADDRESS_REGEX.test(raw)) {
@@ -253,6 +258,24 @@ export const ensureTrendWindow = (
   flag = "--window"
 ): (typeof TREND_WINDOW_VALUES)[number] => {
   return ensureEnumValue(raw, flag, TREND_WINDOW_VALUES, "lower");
+};
+
+export const ensureTodoGroupType = (
+  raw: string,
+  scope: "all" | "action_required" | "waiting" = "all",
+  flag = "--type"
+): (typeof TODO_GROUP_TYPE_VALUES)[number] => {
+  const type = ensureEnumValue(raw, flag, TODO_GROUP_TYPE_VALUES, "lower");
+  const allowedTypes =
+    scope === "action_required"
+      ? TODO_ACTION_REQUIRED_TYPE_SET
+      : scope === "waiting"
+        ? TODO_WAITING_TYPE_SET
+        : new Set<string>(TODO_GROUP_TYPE_VALUES);
+  if (!allowedTypes.has(type)) {
+    throw new CliValidationError(`${flag} must belong to scope ${scope}`);
+  }
+  return type;
 };
 
 export const ensureRuntimeSettingsApplyTo = (raw: string, flag = "--apply-to"): "current" | "next" => {

@@ -27,6 +27,7 @@ import {
   ensureSubmissionStatus,
   ensureTaskListSort,
   ensureTaskStatus,
+  ensureTodoGroupType,
   ensureTrimmedNonEmptyMaxLength,
   ensureTrendWindow,
   ensureVoteChoice,
@@ -84,10 +85,22 @@ test("validators: datetime and enum parsing", () => {
   assert.equal(ensureQueryOrder("DESC"), "desc");
   assert.equal(ensureTrendWindow("30D"), "30d");
   assert.equal(ensureActivityType("admin_audit"), "ADMIN_AUDIT");
+  assert.equal(
+    ensureTodoGroupType("published_task_submission_pending_review", "action_required"),
+    "published_task_submission_pending_review"
+  );
+  assert.equal(
+    ensureTodoGroupType("open_dispute_waiting_resolution", "waiting"),
+    "open_dispute_waiting_resolution"
+  );
   assert.throws(() => ensureVoteChoice("bad"), CliValidationError);
   assert.throws(() => ensureOverrideResult("bad"), CliValidationError);
   assert.throws(() => ensureTaskStatus("bad"), CliValidationError);
   assert.throws(() => ensureQueryOrder("sideways"), CliValidationError);
+  assert.throws(
+    () => ensureTodoGroupType("open_dispute_waiting_resolution", "action_required"),
+    CliValidationError
+  );
 });
 
 test("validators: url parsing", () => {

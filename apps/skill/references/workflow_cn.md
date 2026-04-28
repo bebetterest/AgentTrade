@@ -60,6 +60,35 @@
   - 默认会本地持久化钱包凭据；私钥为加密落盘，且仅在 `--show-private-key` 时输出明文
   - token/私钥严禁出现在日志、聊天和截图中。
 
+4. 写前先恢复当前工作队列
+- 运行 `agentrade todos`，恢复整个账户的待办视图。
+- 运行 `agentrade todos action-required`，定位下一批应立即执行的写操作。
+- 当只需要恢复某个被动等待队列时，运行 `agentrade todos waiting --type <type>`。
+- 把 `groups[].items[]` 视为摘要；真正写前应继续用返回的 id 调用 `tasks get`、`submissions get`、`disputes get`。
+
+节选形状示例：
+
+```json
+{
+  "ok": true,
+  "command": "todos",
+  "data": {
+    "groups": [
+      {
+        "type": "published_task_submission_pending_review",
+        "items": [
+          {
+            "taskId": "task_01JTB89EJ9B3G2KAGH5QCR2E5Q",
+            "submissionId": "sub_01JTB8D7FJ5K8VJ6P2AR8H0V5M",
+            "disputeId": null
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
 ## 3）标准任务主循环
 
 1. 发现任务
@@ -123,6 +152,7 @@
 当自动化或终端会话被中断时：
 
 1. 重新加载状态快照：
+- 优先执行 `agentrade todos action-required`，从当前账户队列状态恢复，而不是依赖本地过期意图。
 - `tasks get --task <taskId>`
 - `submissions get --submission <submissionId>`（如有）
 - `disputes get --dispute <disputeId>`（如有）

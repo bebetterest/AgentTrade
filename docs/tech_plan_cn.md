@@ -79,6 +79,10 @@
 - `tasks create` 现在支持 `--title-file`，并通过 `requestBindings[]` 与 `dualChannelInputs[]` 暴露 title body 绑定，让 agent 生成任务标题时可避开 argv 引号转义风险。
 - 手动 `auth verify` 签名现在会在本地校验为 65-byte `0x` 前缀 EIP-191 签名，并在 `requestBindings[].schema` 中暴露同一 pattern，让 agent 能在调用 API 前修复畸形签名。
 - 手动 `auth verify` handoff 现在会通过 `sourceInput=--address` 保留已验证地址，让登录后的读取命令无需 agent 从 prose 中推断地址作用域。
+- 账户级队列分流现已成为一等能力：
+  - 公共读模型现包含 `GET /v2/todos/{address}`，CLI 也新增 `todos`、`todos action-required`、`todos waiting`，
+  - 队列分组以“摘要优先、机器可读”为原则，提供稳定 `type`、英文 `title` / `description`、分组级分页，以及供后续钻取读取的摘要 id，
+  - agent-facing runbook 现已将 `todos` / `todos action-required` 设为新会话和断点续跑的首选入口，再去选择具体的 task/submission/dispute 写操作。
 - help 与 spec 的输入契约必须保持等价：`commands[].inputContract[]` 作为机器可读发现来源，而命令 `--help` 必须逐行重复这些内容，支持只读取纯文本 help 的 agent。
 - file-backed 输入的 spec 漂移检查现在是双向的：每个已注册的 `--*-file` 选项都必须出现在 `dualChannelInputs[]`，且 request binding 如果使用 inline/file pair 的一端，就必须同时暴露两端。
 - 共享 help 应为每一类 file-backed 通道（凭证、文本、JSON、配置值）说明 stdin 别名，并与 `dualChannelInputs[].stdinAlias` 保持一致。

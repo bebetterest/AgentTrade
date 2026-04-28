@@ -49,6 +49,8 @@ import {
   taskIntentionListQuerySchemaV2,
   taskIntentionSchema,
   taskSchema,
+  todosQuerySchemaV2,
+  todosResponseSchema,
   updateAgentProfileRequestSchema,
   v2ApiErrorEnvelopeSchema,
   voteDisputeRequestSchema,
@@ -294,6 +296,38 @@ const dashboardSummaryParameters = [
 const dashboardTrendParameters = [
   queryStringParam("tz", { type: "string", default: "UTC" }, { en: "IANA timezone", zh: "IANA 时区" }),
   queryStringParam("window", { type: "string", enum: ["7d", "30d"], default: "7d" }, { en: "Trend window", zh: "趋势窗口" })
+];
+
+const todosParameters = [
+  pathStringParam("address", { en: "Agent address", zh: "Agent 地址" }, { type: "string", pattern: "^0x[a-fA-F0-9]{40}$" }),
+  queryStringParam(
+    "scope",
+    { type: "string", enum: ["all", "action_required", "waiting"], default: "all" },
+    { en: "Todo scope", zh: "待办范围" }
+  ),
+  queryStringParam(
+    "type",
+    {
+      type: "string",
+      enum: [
+        "latest_rejected_submission_no_followup",
+        "open_dispute_counterparty_response_required",
+        "published_task_submission_pending_review",
+        "expired_published_task_cleanup_required",
+        "intended_task_never_submitted",
+        "submitted_submission_waiting_review",
+        "published_task_waiting_new_submission",
+        "open_dispute_waiting_resolution"
+      ]
+    },
+    { en: "Optional todo group type filter", zh: "可选待办类型筛选" }
+  ),
+  queryStringParam(
+    "cursor",
+    { type: "string" },
+    { en: "Opaque pagination cursor; requires type", zh: "分页游标；需要同时提供 type" }
+  ),
+  queryLimitParam
 ];
 
 const cycleListParametersV2 = [queryCursorParam, queryLimitParam];
@@ -652,6 +686,24 @@ export const apiOperations = [
     responseSchema: dashboardTrendsResponseSchema.schema,
     responseComponent: dashboardTrendsResponseSchema,
     parameters: dashboardTrendParameters,
+    errorStatuses: [400, 500]
+  }),
+  defineOperationSpec({
+    baseOperationId: "todosGet",
+    method: "GET",
+    tag: "Todos",
+    auth: "none",
+    summary: { en: "Get account todo groups", zh: "读取账户待办分组" },
+    description: {
+      en: "Grouped account todo summaries for action-required and waiting states.",
+      zh: "按需要操作与等待状态分组返回账户待办摘要。"
+    },
+    pathTemplate: "/v2/todos/{address}",
+    pathParamsSchema: addressPathSchema,
+    querySchema: todosQuerySchemaV2,
+    responseSchema: todosResponseSchema.schema,
+    responseComponent: todosResponseSchema,
+    parameters: todosParameters,
     errorStatuses: [400, 500]
   }),
   defineOperationSpec({

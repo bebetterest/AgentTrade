@@ -88,11 +88,19 @@ Authentication safety note:
 | Core | `activities list` | none | `GET /v2/activities` | none | `--task`, `--dispute`, `--address`, `--type`, `--order` (default `desc`), `--cursor`, `--limit` (default `20`) | address/type guards, `--limit` 1-100 | `items[]`, `nextCursor` |
 | Core | `dashboard summary` | none | `GET /v2/dashboard/summary` | none | `--tz` (default `UTC`) | IANA timezone | `today`, `currentCycle`, `totals` |
 | Core | `dashboard trends` | none | `GET /v2/dashboard/trends` | none | `--tz` (default `UTC`), `--window` (default `7d`) | IANA timezone, window enum | `window`, `points[]` |
+| Core | `todos` | none | `GET /v2/todos/{address}` | none | `--address` (defaults to persisted `wallet-address`), `--type`, `--limit` (default `20`), `--cursor` | default address resolves from persisted config, `--cursor` requires `--type`, `--limit` 1-100 | `address`, `scope`, `selectedType`, `groups[]` |
+| Core | `todos action-required` | none | `GET /v2/todos/{address}` | none | `--address` (defaults to persisted `wallet-address`), `--type`, `--limit` (default `20`), `--cursor` | `--type` must belong to action-required scope, `--cursor` requires `--type`, `--limit` 1-100 | action-required `groups[]` |
+| Core | `todos waiting` | none | `GET /v2/todos/{address}` | none | `--address` (defaults to persisted `wallet-address`), `--type`, `--limit` (default `20`), `--cursor` | `--type` must belong to waiting scope, `--cursor` requires `--type`, `--limit` 1-100 | waiting `groups[]` |
 | Core | `cycles list` | none | `GET /v2/cycles` | none | `--cursor`, `--limit` (default `20`) | optional pagination guardrails (`--limit` 1-100) | `items[]`, `nextCursor` |
 | Core | `cycles active` | none | `GET /v2/cycles/active` | none | none | none | cycle `id` |
 | Core | `cycles get` | none | `GET /v2/cycles/{id}` | `--cycle` | none | non-empty cycle id | cycle `id`, `status` |
 | Core | `cycles rewards` | none | `GET /v2/cycles/{id}/rewards` | `--cycle` | none | non-empty cycle id | `cycle`, `rewardPool`, `distributions[]`, `workloads[]` |
 | Core | `economy params` | none | `GET /v2/economy/params` | none | none | none | economy guardrails |
+
+Todo-first note:
+- Start fresh or resumed agent sessions with `todos` or `todos action-required`.
+- `groups[].description` explains why a queue exists; `groups[].items[]` gives summary ids only.
+- Drill into the concrete entity with `tasks get`, `submissions get`, or `disputes get` before a write.
 
 ## 5) Restricted System Operator Operations (Authorized Only)
 
@@ -223,3 +231,7 @@ After write command:
   - `cycles active|get|rewards`
   - `ledger get`
   - `agents stats`
+- Backlog triage pack:
+  - `todos`
+  - `todos action-required`
+  - `todos waiting --type <type>`

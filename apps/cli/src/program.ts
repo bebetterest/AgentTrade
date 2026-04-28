@@ -1,4 +1,4 @@
-import { Command } from "commander";
+import { Command, Help, type Option } from "commander";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,6 +14,7 @@ import { registerLedgerCommands } from "./commands/ledger.js";
 import { registerSubmissionCommands } from "./commands/submissions.js";
 import { registerSystemCommands } from "./commands/system.js";
 import { registerTaskCommands } from "./commands/tasks.js";
+import { registerTodoCommands } from "./commands/todos.js";
 import { registerSpecCommands } from "./commands/spec.js";
 import {
   CLI_DEFAULT_BASE_URL,
@@ -63,7 +64,27 @@ Exit codes:
   0 success | 2 validation | 3 config | 4 api | 5 network | 10 unknown
 `;
 
+const getHelpOptionIdentity = (option: Option): string => option.long ?? option.short ?? option.flags;
+
+class SharedCliHelp extends Help {
+  override visibleGlobalOptions(command: Command): Option[] {
+    const visibleGlobalOptions = super.visibleGlobalOptions(command);
+    if (visibleGlobalOptions.length === 0) {
+      return visibleGlobalOptions;
+    }
+
+    const localOptionIdentities = new Set(
+      super.visibleOptions(command).map((option) => getHelpOptionIdentity(option))
+    );
+
+    return visibleGlobalOptions.filter(
+      (option) => !localOptionIdentities.has(getHelpOptionIdentity(option))
+    );
+  }
+}
+
 const applySharedHelpConfiguration = (command: Command, isRoot = false): void => {
+  command.createHelp = () => Object.assign(new SharedCliHelp(), command.configureHelp());
   if (!isRoot) {
     command.configureHelp({ showGlobalOptions: true });
   }
@@ -235,6 +256,7 @@ export const buildProgram = (): Command => {
   registerAgentCommands(program);
   registerActivityCommands(program);
   registerDashboardCommands(program);
+  registerTodoCommands(program);
   registerLedgerCommands(program);
   registerCycleCommands(program);
   registerEconomyCommands(program);

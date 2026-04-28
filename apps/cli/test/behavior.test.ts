@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { TODO_ACTION_REQUIRED_TYPES, TODO_WAITING_TYPES } from "@agentrade/types";
 
 interface CliResult {
   code: number | null;
@@ -333,6 +334,24 @@ test("cli subcommand help is self-contained for agent execution", async () => {
   assert.equal(settingsHistoryHelp.code, 0);
   assert.match(settingsHistoryHelp.stdout, /opaque pagination cursor returned by previous\s+nextCursor/i);
   assert.match(settingsHistoryHelp.stdout, /page size \(1-100, default: 20\)/);
+
+  const todosActionRequiredHelp = await runCli(["todos", "action-required", "--help"]);
+  assert.equal(todosActionRequiredHelp.code, 0);
+  assert.equal((todosActionRequiredHelp.stdout.match(/--address <address>/g) ?? []).length, 1);
+  assert.equal((todosActionRequiredHelp.stdout.match(/--type <type>/g) ?? []).length, 1);
+  assert.match(
+    todosActionRequiredHelp.stdout,
+    /--type, when provided, must be one of:\s+latest_rejected_submission_no_followup/i
+  );
+
+  const todosWaitingHelp = await runCli(["todos", "waiting", "--help"]);
+  assert.equal(todosWaitingHelp.code, 0);
+  assert.equal((todosWaitingHelp.stdout.match(/--address <address>/g) ?? []).length, 1);
+  assert.equal((todosWaitingHelp.stdout.match(/--type <type>/g) ?? []).length, 1);
+  assert.match(
+    todosWaitingHelp.stdout,
+    /--type, when provided, must be one of:\s+submitted_submission_waiting_review/i
+  );
 
   const configSetHelp = await runCli(["config", "set", "--help"]);
   assert.equal(configSetHelp.code, 0);
@@ -2854,6 +2873,24 @@ test("cli spec sorts prefix matches, omits discovery-only globals, and preserves
   );
 });
 
+test("cli spec prefers exact executable command matches over prefix expansion", async () => {
+  const result = await runCli(["spec", "--command", "todos"]);
+  assert.equal(result.code, 0);
+  const envelope = JSON.parse(result.stdout) as {
+    ok: boolean;
+    data: {
+      commandQuery: string | null;
+      commandCount: number;
+      commands: Array<{ path: string }>;
+    };
+  };
+
+  assert.equal(envelope.ok, true);
+  assert.equal(envelope.data.commandQuery, "todos");
+  assert.equal(envelope.data.commandCount, 1);
+  assert.deepEqual(envelope.data.commands.map((command) => command.path), ["todos"]);
+});
+
 test("cli spec exposes structured auth requirement sources for privileged commands", async () => {
   const result = await runCli(["spec", "--command", "system settings update"]);
   assert.equal(result.code, 0);
@@ -2942,6 +2979,87 @@ test("cli spec exposes structured auth requirement sources for privileged comman
         maxLength: 1000
       }
     }
+  ]);
+});
+
+test("cli spec narrows todo type enums by scope and exposes todo drill-down handoffs", async () => {
+  const todosActionRequired = await getSpecCommand<{
+    path: string;
+    requestBindings: Array<{
+      field: string;
+      schema?: {
+        enum?: string[];
+      };
+    }>;
+    handoffHints: SpecHandoffHint[];
+  }>("todos action-required");
+  assert.deepEqual(
+    todosActionRequired.requestBindings.find((binding) => binding.field === "type")?.schema?.enum,
+    [...TODO_ACTION_REQUIRED_TYPES]
+  );
+  assertSpecHandoff(todosActionRequired, "tasks get", {
+    targetCommand: "tasks get",
+    bindings: [
+      {
+        sourcePath: "data.groups[].items[].taskId",
+        targetInputs: ["--task"]
+      }
+    ],
+    selectionMode: "currentPageItem",
+    selectionConditions: [
+      {
+        path: "data.groups[].items[].taskId",
+        operator: "nonNull"
+      }
+    ],
+    note: "drill into the selected todo summary's task"
+  });
+
+  const todosWaiting = await getSpecCommand<{
+    path: string;
+    requestBindings: Array<{
+      field: string;
+      schema?: {
+        enum?: string[];
+      };
+    }>;
+    handoffHints: SpecHandoffHint[];
+  }>("todos waiting");
+  assert.deepEqual(
+    todosWaiting.requestBindings.find((binding) => binding.field === "type")?.schema?.enum,
+    [...TODO_WAITING_TYPES]
+  );
+  assertSpecHandoff(todosWaiting, "disputes get", {
+    targetCommand: "disputes get",
+    bindings: [
+      {
+        sourcePath: "data.groups[].items[].disputeId",
+        targetInputs: ["--dispute"]
+      }
+    ],
+    selectionMode: "currentPageItem",
+    selectionConditions: [
+      {
+        path: "data.groups[].items[].disputeId",
+        operator: "nonNull"
+      }
+    ],
+    note: "drill into the selected todo summary's dispute when present"
+  });
+
+  const todosSpecResult = await runCli(["spec", "--command", "todos"]);
+  assert.equal(todosSpecResult.code, 0);
+  const todosSpecEnvelope = JSON.parse(todosSpecResult.stdout) as SpecCommandEnvelope<DiscoveredSpecCommand>;
+  const todosAll = todosSpecEnvelope.data.commands.find((command) => command.path === "todos");
+  assert.ok(todosAll);
+  assertHandoffTargets(todosAll, [
+    "todos action-required",
+    "todos waiting",
+    "agents profile get",
+    "agents stats",
+    "tasks get",
+    "submissions get",
+    "disputes get"
   ]);
 });
 
@@ -3976,6 +4094,100 @@ test("cli tasks list blocks limit above pagination cap before network request", 
   assert.equal(errorJson.type, "VALIDATION_ERROR");
   assert.equal(errorJson.command, "tasks list");
   assert.match(errorJson.message, /--limit must be <= 100/);
+});
+
+test("cli todos requires either --address or persisted wallet-address before network request", async () => {
+  writeFileSync(testConfigPath, JSON.stringify({}, null, 2), "utf8");
+  const result = await runCli(["--base-url", "http://127.0.0.1:1", "todos"]);
+  assert.equal(result.code, 3);
+  const errorJson = JSON.parse(result.stderr.trim()) as {
+    type: string;
+    command: string;
+    message: string;
+  };
+  assert.equal(errorJson.type, "CONFIG_ERROR");
+  assert.equal(errorJson.command, "todos");
+  assert.match(errorJson.message, /wallet-address/i);
+});
+
+test("cli todos blocks cursor without type before network request", async () => {
+  writeFileSync(
+    testConfigPath,
+    JSON.stringify(
+      {
+        walletAddress: "0x1111111111111111111111111111111111111111"
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  const result = await runCli([
+    "--base-url",
+    "http://127.0.0.1:1",
+    "todos",
+    "--cursor",
+    "opaque-cursor"
+  ]);
+  assert.equal(result.code, 2);
+  const errorJson = JSON.parse(result.stderr.trim()) as {
+    type: string;
+    command: string;
+    message: string;
+  };
+  assert.equal(errorJson.type, "VALIDATION_ERROR");
+  assert.equal(errorJson.command, "todos");
+  assert.match(errorJson.message, /--cursor requires --type/);
+});
+
+test("cli todos subcommands reject todo types outside their scope before network request", async () => {
+  writeFileSync(
+    testConfigPath,
+    JSON.stringify(
+      {
+        walletAddress: "0x1111111111111111111111111111111111111111"
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+
+  const waitingScope = await runCli([
+    "--base-url",
+    "http://127.0.0.1:1",
+    "todos",
+    "waiting",
+    "--type",
+    "published_task_submission_pending_review"
+  ]);
+  assert.equal(waitingScope.code, 2);
+  const waitingError = JSON.parse(waitingScope.stderr.trim()) as {
+    type: string;
+    command: string;
+    message: string;
+  };
+  assert.equal(waitingError.type, "VALIDATION_ERROR");
+  assert.equal(waitingError.command, "todos waiting");
+  assert.match(waitingError.message, /--type must belong to scope waiting/);
+
+  const actionRequiredScope = await runCli([
+    "--base-url",
+    "http://127.0.0.1:1",
+    "todos",
+    "action-required",
+    "--type",
+    "open_dispute_waiting_resolution"
+  ]);
+  assert.equal(actionRequiredScope.code, 2);
+  const actionRequiredError = JSON.parse(actionRequiredScope.stderr.trim()) as {
+    type: string;
+    command: string;
+    message: string;
+  };
+  assert.equal(actionRequiredError.type, "VALIDATION_ERROR");
+  assert.equal(actionRequiredError.command, "todos action-required");
+  assert.match(actionRequiredError.message, /--type must belong to scope action_required/);
 });
 
 test("cli agents profile update blocks overlong name before network request", async () => {

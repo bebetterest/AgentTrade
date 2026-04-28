@@ -540,4 +540,202 @@ runDbSuite("PrismaStateRepository", () => {
     expect(trends.points.reduce((sum, item) => sum + item.tasksCompleted, 0)).toBe(1);
     expect(trends.points.reduce((sum, item) => sum + item.disputesOpened, 0)).toBe(1);
   });
+
+  it("builds grouped account todos directly from persistence tables", async () => {
+    const clock = new MutableClock(new Date("2026-04-01T00:00:00.000Z"));
+    const engine = new AgentradeEngine(defaultConfig, clock);
+    const target = addr("repo-todo-target");
+    const otherPublisher = addr("repo-todo-other-publisher");
+    const workerB = addr("repo-todo-worker-b");
+    const workerC = addr("repo-todo-worker-c");
+
+    const deadline = () => new Date(clock.now().getTime() + 72 * 3_600_000).toISOString();
+
+    const rejectedTask = engine.publishTask({
+      publisher: otherPublisher,
+      title: "repo-todo-rejected",
+      descriptionMd: "desc",
+      acceptanceCriteria: "ok",
+      deadlineUtc: deadline(),
+      displayTimezone: "UTC",
+      slotsTotal: 1,
+      rewardPerSlot: 10,
+      allowRepeatCompletionsBySameAgent: false
+    });
+    engine.addTaskIntention(rejectedTask.id, target);
+    clock.advanceMinutes(31);
+    const rejectedSubmission = engine.submitTask(rejectedTask.id, target, "todo rejected");
+    engine.rejectSubmission(rejectedSubmission.id, otherPublisher, "needs revision");
+
+    clock.advanceMinutes(1);
+    const counterpartyTask = engine.publishTask({
+      publisher: target,
+      title: "repo-todo-counterparty",
+      descriptionMd: "desc",
+      acceptanceCriteria: "ok",
+      deadlineUtc: deadline(),
+      displayTimezone: "UTC",
+      slotsTotal: 1,
+      rewardPerSlot: 10,
+      allowRepeatCompletionsBySameAgent: false
+    });
+    engine.addTaskIntention(counterpartyTask.id, workerB);
+    clock.advanceMinutes(31);
+    const counterpartySubmission = engine.submitTask(counterpartyTask.id, workerB, "needs review");
+    engine.rejectSubmission(counterpartySubmission.id, target, "needs revision");
+    engine.openDispute({
+      taskId: counterpartyTask.id,
+      submissionId: counterpartySubmission.id,
+      opener: workerB,
+      reasonMd: "todo dispute"
+    });
+
+    clock.advanceMinutes(1);
+    const pendingReviewTask = engine.publishTask({
+      publisher: target,
+      title: "repo-todo-pending-review",
+      descriptionMd: "desc",
+      acceptanceCriteria: "ok",
+      deadlineUtc: deadline(),
+      displayTimezone: "UTC",
+      slotsTotal: 2,
+      rewardPerSlot: 10,
+      allowRepeatCompletionsBySameAgent: false
+    });
+    engine.addTaskIntention(pendingReviewTask.id, workerB);
+    clock.advanceMinutes(31);
+    const pendingSubmissionA = engine.submitTask(pendingReviewTask.id, workerB, "pending a");
+    engine.addTaskIntention(pendingReviewTask.id, workerC);
+    clock.advanceMinutes(31);
+    const pendingSubmissionB = engine.submitTask(pendingReviewTask.id, workerC, "pending b");
+
+    const expiredTask = engine.publishTask({
+      publisher: target,
+      title: "repo-todo-expired",
+      descriptionMd: "desc",
+      acceptanceCriteria: "ok",
+      deadlineUtc: deadline(),
+      displayTimezone: "UTC",
+      slotsTotal: 1,
+      rewardPerSlot: 10,
+      allowRepeatCompletionsBySameAgent: false
+    });
+    engine.getTask(expiredTask.id).deadlineUtc = new Date(clock.now().getTime() - 60_000).toISOString();
+
+    clock.advanceMinutes(1);
+    const intendedTask = engine.publishTask({
+      publisher: otherPublisher,
+      title: "repo-todo-intended",
+      descriptionMd: "desc",
+      acceptanceCriteria: "ok",
+      deadlineUtc: deadline(),
+      displayTimezone: "UTC",
+      slotsTotal: 1,
+      rewardPerSlot: 10,
+      allowRepeatCompletionsBySameAgent: false
+    });
+    engine.addTaskIntention(intendedTask.id, target);
+
+    clock.advanceMinutes(1);
+    const waitingReviewTask = engine.publishTask({
+      publisher: otherPublisher,
+      title: "repo-todo-waiting-review",
+      descriptionMd: "desc",
+      acceptanceCriteria: "ok",
+      deadlineUtc: deadline(),
+      displayTimezone: "UTC",
+      slotsTotal: 1,
+      rewardPerSlot: 10,
+      allowRepeatCompletionsBySameAgent: false
+    });
+    engine.addTaskIntention(waitingReviewTask.id, target);
+    clock.advanceMinutes(31);
+    const waitingSubmission = engine.submitTask(waitingReviewTask.id, target, "awaiting publisher");
+
+    const waitingNewSubmissionTask = engine.publishTask({
+      publisher: target,
+      title: "repo-todo-waiting-new",
+      descriptionMd: "desc",
+      acceptanceCriteria: "ok",
+      deadlineUtc: deadline(),
+      displayTimezone: "UTC",
+      slotsTotal: 1,
+      rewardPerSlot: 10,
+      allowRepeatCompletionsBySameAgent: false
+    });
+
+    clock.advanceMinutes(1);
+    const waitingResolutionTask = engine.publishTask({
+      publisher: otherPublisher,
+      title: "repo-todo-waiting-resolution",
+      descriptionMd: "desc",
+      acceptanceCriteria: "ok",
+      deadlineUtc: deadline(),
+      displayTimezone: "UTC",
+      slotsTotal: 1,
+      rewardPerSlot: 10,
+      allowRepeatCompletionsBySameAgent: false
+    });
+    engine.addTaskIntention(waitingResolutionTask.id, target);
+    clock.advanceMinutes(31);
+    const waitingResolutionSubmission = engine.submitTask(
+      waitingResolutionTask.id,
+      target,
+      "open dispute"
+    );
+    engine.rejectSubmission(waitingResolutionSubmission.id, otherPublisher, "needs revision");
+    const waitingResolutionDispute = engine.openDispute({
+      taskId: waitingResolutionTask.id,
+      submissionId: waitingResolutionSubmission.id,
+      opener: target,
+      reasonMd: "todo dispute"
+    });
+
+    await repo.sync(engine.toSnapshot());
+
+    const allGroups = await repo.getTodosDirect({
+      address: target,
+      scope: "all",
+      limit: 1,
+      generatedAt: clock.now().toISOString()
+    });
+    expect(allGroups.address).toBe(target);
+    expect(allGroups.groups).toHaveLength(8);
+
+    const groups = new Map(allGroups.groups.map((group) => [group.type, group]));
+    expect(groups.get("latest_rejected_submission_no_followup")?.items[0]?.submissionId).toBe(rejectedSubmission.id);
+    expect(groups.get("open_dispute_counterparty_response_required")?.totalCount).toBe(1);
+    expect(groups.get("published_task_submission_pending_review")?.totalCount).toBe(2);
+    expect(groups.get("published_task_submission_pending_review")?.nextCursor).not.toBeNull();
+    expect(groups.get("expired_published_task_cleanup_required")?.items[0]?.taskId).toBe(expiredTask.id);
+    expect(groups.get("intended_task_never_submitted")?.items[0]?.taskId).toBe(intendedTask.id);
+    expect(groups.get("submitted_submission_waiting_review")?.items[0]?.submissionId).toBe(waitingSubmission.id);
+    expect(groups.get("published_task_waiting_new_submission")?.items[0]?.taskId).toBe(waitingNewSubmissionTask.id);
+    expect(groups.get("open_dispute_waiting_resolution")?.items[0]?.disputeId).toBe(waitingResolutionDispute.id);
+
+    const pageOne = await repo.getTodosDirect({
+      address: target,
+      scope: "action_required",
+      type: "published_task_submission_pending_review",
+      limit: 1,
+      generatedAt: clock.now().toISOString()
+    });
+    expect(pageOne.groups).toHaveLength(1);
+    expect(pageOne.groups[0]?.totalCount).toBe(2);
+    expect(pageOne.groups[0]?.nextCursor).not.toBeNull();
+    expect([pendingSubmissionA.id, pendingSubmissionB.id]).toContain(
+      pageOne.groups[0]?.items[0]?.submissionId
+    );
+
+    const pageTwo = await repo.getTodosDirect({
+      address: target,
+      scope: "action_required",
+      type: "published_task_submission_pending_review",
+      cursor: pageOne.groups[0]!.nextCursor ?? undefined,
+      limit: 1,
+      generatedAt: clock.now().toISOString()
+    });
+    expect(pageTwo.groups[0]?.items).toHaveLength(1);
+    expect(pageTwo.groups[0]?.items[0]?.submissionId).not.toBe(pageOne.groups[0]?.items[0]?.submissionId);
+  });
 });

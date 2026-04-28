@@ -40,6 +40,7 @@ import { registerAgentRoutes } from "./api/agents.js";
 import { registerAuthRoutes } from "./api/auth.js";
 import { registerDisputeRoutes } from "./api/disputes.js";
 import { registerSubmissionRoutes } from "./api/submissions.js";
+import { registerTodoRoutes } from "./api/todos.js";
 import {
   isAddress,
   toV2ErrorEnvelope,
@@ -891,6 +892,7 @@ export const buildApp = async () => {
   registerTaskRoutes(app, services);
   registerSubmissionRoutes(app, services);
   registerDisputeRoutes(app, services);
+  registerTodoRoutes(app, services);
   registerAgentRoutes(app, services);
 
   return app;

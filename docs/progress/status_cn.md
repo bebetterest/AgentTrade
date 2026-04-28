@@ -1,5 +1,18 @@
 # 进度状态
 
+## 2026-04-28
+
+- 已补齐账户级待办队列能力，贯通 API、CLI 与 agent 指南：
+  - 新增 `GET /v2/todos/{address}`，以及 CLI 命令 `agentrade todos`、`agentrade todos action-required`、`agentrade todos waiting`，
+  - 实现 `action_required` 与 `waiting` 两类分组摘要队列，包含稳定 machine-readable `type`、随响应返回的英文 `title` / `description`、分组级分页，以及仅供后续钻取读取使用的摘要实体句柄（`taskId`、`submissionId`、`disputeId`），
+  - 已对齐持久化直读、内存态 read model 聚合、OpenAPI/contracts、CLI request bindings 与 `agentrade spec` 发现覆盖。
+- 已收紧面向 agent 的恢复执行入口说明：
+  - CLI/API 文档已补充 `todos` 的具体响应示例与分页说明，
+  - skill runbook、workflow 剧本、command matrix、README 能力面摘要与 `apps/skill/agents/openai.yaml` 现都明确要求 agent 在新会话或断点续跑时先执行 `todos` / `todos action-required`，再决定下一条写迁移，
+  - 已明确 `todos` 只是摘要读模型，真正写前必须继续调用 `tasks get`、`submissions get` 或 `disputes get`。
+- 已通过聚焦回归验证文档/agent 指南链路：
+  - `pnpm --filter @agentrade/cli exec tsx --test test/documentation-sync.test.ts`。
+
 ## 2026-04-24
 
 - 收紧 CLI 默认运行配置的归属边界：

@@ -208,6 +208,37 @@ test("cli command contract: method/path/auth/body coverage for all command group
     currentCycle: { tasksPublished: 1, tasksIntented: 0, tasksCompleted: 0, disputesOpened: 0 },
     totals: { tasks: 1, disputes: 1, agents: 1 }
   };
+  const todosPayload = {
+    address: addressA,
+    scope: "all",
+    selectedType: null,
+    generatedAt: now,
+    groups: [
+      {
+        scope: "action_required",
+        type: "published_task_submission_pending_review",
+        resourceKind: "submission",
+        title: "Published Task Submission Pending Review",
+        description: "A submitted output under this account's published task still needs confirm or reject handling.",
+        totalCount: 1,
+        nextCursor: null,
+        items: [
+          {
+            resourceKind: "submission",
+            primaryId: "submission-1",
+            title: "contract-task",
+            taskId: "task-1",
+            submissionId: "submission-1",
+            disputeId: null,
+            status: "SUBMITTED",
+            createdAt: now,
+            updatedAt: now,
+            deadlineUtc: deadline
+          }
+        ]
+      }
+    ]
+  };
   const cyclePayload = {
     id: "cycle-1",
     status: "OPEN",
@@ -477,6 +508,11 @@ test("cli command contract: method/path/auth/body coverage for all command group
             points: []
           })
         );
+        return;
+      case `GET /v2/todos/${addressA}?scope=all`:
+      case `GET /v2/todos/${addressA}?scope=action_required&type=published_task_submission_pending_review&limit=2`:
+      case `GET /v2/todos/${addressA}?scope=waiting&type=open_dispute_waiting_resolution&cursor=todo-cursor&limit=3`:
+        response.end(JSON.stringify(todosPayload));
         return;
       case `GET /v2/ledger/${addressA}`:
         response.end(JSON.stringify({ address: addressA, available: 10, updatedAt: now }));
@@ -1159,6 +1195,47 @@ test("cli command contract: method/path/auth/body coverage for all command group
       url: "/v2/dashboard/trends?tz=Asia%2FShanghai&window=30d",
       auth: "none"
     });
+    await runAndAssert(["todos", "--address", addressA], {
+      method: "GET",
+      url: `/v2/todos/${addressA}?scope=all`,
+      auth: "none"
+    });
+    await runAndAssert(
+      [
+        "todos",
+        "action-required",
+        "--address",
+        addressA,
+        "--type",
+        "published_task_submission_pending_review",
+        "--limit",
+        "2"
+      ],
+      {
+        method: "GET",
+        url: `/v2/todos/${addressA}?scope=action_required&type=published_task_submission_pending_review&limit=2`,
+        auth: "none"
+      }
+    );
+    await runAndAssert(
+      [
+        "todos",
+        "waiting",
+        "--address",
+        addressA,
+        "--type",
+        "open_dispute_waiting_resolution",
+        "--cursor",
+        "todo-cursor",
+        "--limit",
+        "3"
+      ],
+      {
+        method: "GET",
+        url: `/v2/todos/${addressA}?scope=waiting&type=open_dispute_waiting_resolution&cursor=todo-cursor&limit=3`,
+        auth: "none"
+      }
+    );
 
     await runAndAssert(
       ["--token-file", tokenFile, "system", "metrics"],

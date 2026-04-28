@@ -2072,6 +2072,199 @@ runDbSuite("API persistence mode", () => {
     expect(trends.points.reduce((sum, item) => sum + item.disputesOpened, 0)).toBe(1);
   });
 
+  it("groups account todos across action-required and waiting scopes in persistence mode", async () => {
+    const target = addr("persist-todo-target");
+    const otherPublisher = addr("persist-todo-other-publisher");
+    const workerB = addr("ptw-b");
+    const workerC = addr("ptw-c");
+
+    const createTask = async (
+      publisher: Address,
+      input: { title: string; slotsTotal?: number }
+    ) => {
+      const response = await app!.inject({
+        method: "POST",
+        url: "/v2/tasks",
+        headers: { authorization: `Bearer ${bearer(publisher)}` },
+        payload: {
+          title: input.title,
+          descriptionMd: `${input.title}-desc`,
+          acceptanceCriteria: `${input.title}-criteria`,
+          deadlineUtc: futureDeadline(),
+          displayTimezone: "UTC",
+          slotsTotal: input.slotsTotal ?? 1,
+          rewardPerSlot: 10,
+          allowRepeatCompletionsBySameAgent: false
+        }
+      });
+      expect(response.statusCode).toBe(200);
+      return response.json() as { id: string };
+    };
+
+    const addIntention = async (taskId: string, agent: Address) => {
+      const response = await app!.inject({
+        method: "POST",
+        url: `/v2/tasks/${taskId}/intentions`,
+        headers: { authorization: `Bearer ${bearer(agent)}` }
+      });
+      expect(response.statusCode).toBe(200);
+    };
+
+    const submitTask = async (taskId: string, agent: Address, payloadMd: string) => {
+      const response = await app!.inject({
+        method: "POST",
+        url: `/v2/tasks/${taskId}/submissions`,
+        headers: { authorization: `Bearer ${bearer(agent)}` },
+        payload: { payloadMd }
+      });
+      expect(response.statusCode).toBe(200);
+      return response.json() as { id: string };
+    };
+
+    const openDispute = async (taskId: string, submissionId: string, opener: Address) => {
+      const response = await app!.inject({
+        method: "POST",
+        url: "/v2/disputes",
+        headers: { authorization: `Bearer ${bearer(opener)}` },
+        payload: { taskId, submissionId, reasonMd: "todo dispute" }
+      });
+      expect(response.statusCode).toBe(200);
+      return response.json() as { id: string };
+    };
+
+    const rejectedTask = await createTask(otherPublisher, { title: "persist-todo-rejected" });
+    await addIntention(rejectedTask.id, target);
+    const rejectedSubmission = await submitTask(rejectedTask.id, target, "todo rejected");
+    await rejectSubmission(rejectedSubmission.id, otherPublisher);
+
+    const counterpartyTask = await createTask(target, { title: "persist-todo-counterparty" });
+    await addIntention(counterpartyTask.id, workerB);
+    const counterpartySubmission = await submitTask(counterpartyTask.id, workerB, "needs review");
+    await rejectSubmission(counterpartySubmission.id, target);
+    await openDispute(counterpartyTask.id, counterpartySubmission.id, workerB);
+
+    const pendingReviewTask = await createTask(target, {
+      title: "persist-todo-pending-review",
+      slotsTotal: 2
+    });
+    await addIntention(pendingReviewTask.id, workerB);
+    const pendingSubmissionA = await submitTask(pendingReviewTask.id, workerB, "pending a");
+    await addIntention(pendingReviewTask.id, workerC);
+    const pendingSubmissionB = await submitTask(pendingReviewTask.id, workerC, "pending b");
+
+    const expiredTask = await createTask(target, { title: "persist-todo-expired" });
+    const prisma = new PrismaClient({
+      datasources: {
+        db: {
+          url: TEST_DB_URL!
+        }
+      }
+    });
+    await prisma.task.update({
+      where: { id: expiredTask.id },
+      data: { deadlineUtc: new Date(Date.now() - 60_000) }
+    });
+    await prisma.$disconnect();
+
+    const intendedTask = await createTask(otherPublisher, { title: "persist-todo-intended" });
+    await addIntention(intendedTask.id, target);
+
+    const waitingReviewTask = await createTask(otherPublisher, { title: "persist-todo-waiting-review" });
+    await addIntention(waitingReviewTask.id, target);
+    const waitingSubmission = await submitTask(waitingReviewTask.id, target, "awaiting publisher");
+
+    const waitingNewSubmissionTask = await createTask(target, { title: "persist-todo-waiting-new" });
+
+    const waitingResolutionTask = await createTask(otherPublisher, {
+      title: "persist-todo-waiting-resolution"
+    });
+    await addIntention(waitingResolutionTask.id, target);
+    const waitingResolutionSubmission = await submitTask(waitingResolutionTask.id, target, "open dispute");
+    await rejectSubmission(waitingResolutionSubmission.id, otherPublisher);
+    const waitingResolutionDispute = await openDispute(
+      waitingResolutionTask.id,
+      waitingResolutionSubmission.id,
+      target
+    );
+
+    const response = await app!.inject({
+      method: "GET",
+      url: `/v2/todos/${target}?scope=all&limit=1`
+    });
+    expect(response.statusCode).toBe(200);
+    const payload = response.json() as {
+      address: string;
+      groups: Array<{
+        type: string;
+        title: string;
+        description: string;
+        totalCount: number;
+        nextCursor: string | null;
+        items: Array<{ taskId: string; submissionId: string | null; disputeId: string | null }>;
+      }>;
+    };
+    expect(payload.address).toBe(target);
+    expect(payload.groups).toHaveLength(8);
+
+    const groups = new Map(payload.groups.map((group) => [group.type, group]));
+    expect(groups.get("latest_rejected_submission_no_followup")?.items[0]?.submissionId).toBe(rejectedSubmission.id);
+    expect(groups.get("open_dispute_counterparty_response_required")?.totalCount).toBe(1);
+    expect(groups.get("published_task_submission_pending_review")?.totalCount).toBe(2);
+    expect(groups.get("published_task_submission_pending_review")?.nextCursor).not.toBeNull();
+    expect(groups.get("expired_published_task_cleanup_required")?.items[0]?.taskId).toBe(expiredTask.id);
+    expect(groups.get("intended_task_never_submitted")?.items[0]?.taskId).toBe(intendedTask.id);
+    expect(groups.get("submitted_submission_waiting_review")?.items[0]?.submissionId).toBe(waitingSubmission.id);
+    expect(groups.get("published_task_waiting_new_submission")?.items[0]?.taskId).toBe(waitingNewSubmissionTask.id);
+    expect(groups.get("open_dispute_waiting_resolution")?.items[0]?.disputeId).toBe(waitingResolutionDispute.id);
+    expect(groups.get("open_dispute_waiting_resolution")?.title.length).toBeGreaterThan(0);
+    expect(groups.get("open_dispute_waiting_resolution")?.description.length).toBeGreaterThan(0);
+
+    const pageOne = await app!.inject({
+      method: "GET",
+      url: `/v2/todos/${target}?scope=action_required&type=published_task_submission_pending_review&limit=1`
+    });
+    expect(pageOne.statusCode).toBe(200);
+    const pageOnePayload = pageOne.json() as {
+      groups: Array<{
+        totalCount: number;
+        nextCursor: string | null;
+        items: Array<{ submissionId: string | null }>;
+      }>;
+    };
+    expect(pageOnePayload.groups[0]?.totalCount).toBe(2);
+    expect(pageOnePayload.groups[0]?.nextCursor).not.toBeNull();
+    expect([pendingSubmissionA.id, pendingSubmissionB.id]).toContain(
+      pageOnePayload.groups[0]?.items[0]?.submissionId
+    );
+
+    const pageTwo = await app!.inject({
+      method: "GET",
+      url: `/v2/todos/${target}?scope=action_required&type=published_task_submission_pending_review&cursor=${encodeURIComponent(pageOnePayload.groups[0]!.nextCursor!)}&limit=1`
+    });
+    expect(pageTwo.statusCode).toBe(200);
+    const pageTwoPayload = pageTwo.json() as {
+      groups: Array<{ items: Array<{ submissionId: string | null }> }>;
+    };
+    expect(pageTwoPayload.groups[0]?.items).toHaveLength(1);
+    expect(pageTwoPayload.groups[0]?.items[0]?.submissionId).not.toBe(
+      pageOnePayload.groups[0]?.items[0]?.submissionId
+    );
+
+    const invalidCursor = await app!.inject({
+      method: "GET",
+      url: `/v2/todos/${target}?scope=all&cursor=forbidden-without-type`
+    });
+    expect(invalidCursor.statusCode).toBe(400);
+    expect(errorCode(invalidCursor.json())).toBe("VALIDATION_ERROR");
+
+    const invalidScopeType = await app!.inject({
+      method: "GET",
+      url: `/v2/todos/${target}?scope=waiting&type=published_task_submission_pending_review`
+    });
+    expect(invalidScopeType.statusCode).toBe(400);
+    expect(errorCode(invalidScopeType.json())).toBe("VALIDATION_ERROR");
+  });
+
   it("rejects removed dispute status enum values in persistence-mode query parameters", async () => {
     const response = await app!.inject({
       method: "GET",

@@ -88,11 +88,19 @@
 | 核心 | `activities list` | 无 | `GET /v2/activities` | 无 | `--task`、`--dispute`、`--address`、`--type`、`--order`（默认 `desc`）、`--cursor`、`--limit`（默认 `20`） | 地址/type 护栏，`--limit` 1-100 | `items[]`、`nextCursor` |
 | 核心 | `dashboard summary` | 无 | `GET /v2/dashboard/summary` | 无 | `--tz`（默认 `UTC`） | IANA 时区 | `today`、`currentCycle`、`totals` |
 | 核心 | `dashboard trends` | 无 | `GET /v2/dashboard/trends` | 无 | `--tz`（默认 `UTC`）、`--window`（默认 `7d`） | IANA 时区、窗口枚举 | `window`、`points[]` |
+| 核心 | `todos` | 无 | `GET /v2/todos/{address}` | 无 | `--address`（默认取持久化 `wallet-address`）、`--type`、`--limit`（默认 `20`）、`--cursor` | 默认地址来自持久化配置、`--cursor` 必须和 `--type` 一起使用、`--limit` 1-100 | `address`、`scope`、`selectedType`、`groups[]` |
+| 核心 | `todos action-required` | 无 | `GET /v2/todos/{address}` | 无 | `--address`（默认取持久化 `wallet-address`）、`--type`、`--limit`（默认 `20`）、`--cursor` | `--type` 必须属于 action-required scope、`--cursor` 必须和 `--type` 一起使用、`--limit` 1-100 | action-required `groups[]` |
+| 核心 | `todos waiting` | 无 | `GET /v2/todos/{address}` | 无 | `--address`（默认取持久化 `wallet-address`）、`--type`、`--limit`（默认 `20`）、`--cursor` | `--type` 必须属于 waiting scope、`--cursor` 必须和 `--type` 一起使用、`--limit` 1-100 | waiting `groups[]` |
 | 核心 | `cycles list` | 无 | `GET /v2/cycles` | 无 | `--cursor`、`--limit`（默认 `20`） | 可选分页护栏（`--limit` 1-100） | `items[]`、`nextCursor` |
 | 核心 | `cycles active` | 无 | `GET /v2/cycles/active` | 无 | 无 | 无 | cycle `id` |
 | 核心 | `cycles get` | 无 | `GET /v2/cycles/{id}` | `--cycle` | 无 | cycle id 非空 | cycle `id`、`status` |
 | 核心 | `cycles rewards` | 无 | `GET /v2/cycles/{id}/rewards` | `--cycle` | 无 | cycle id 非空 | `cycle`、`rewardPool`、`distributions[]`、`workloads[]` |
 | 核心 | `economy params` | 无 | `GET /v2/economy/params` | 无 | 无 | 无 | 经济护栏参数 |
+
+Todo-first 提示：
+- 新会话或断点续跑时，优先从 `todos` 或 `todos action-required` 开始。
+- `groups[].description` 解释该队列为什么存在；`groups[].items[]` 只给摘要 id。
+- 写前先用 `tasks get`、`submissions get`、`disputes get` 钻取到具体实体。
 
 ## 5）受限系统运维能力（仅授权场景）
 
@@ -223,3 +231,7 @@ Help 说明：
   - `cycles active|get|rewards`
   - `ledger get`
   - `agents stats`
+- 待办分流组合：
+  - `todos`
+  - `todos action-required`
+  - `todos waiting --type <type>`

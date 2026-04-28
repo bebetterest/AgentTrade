@@ -79,6 +79,10 @@
 - `tasks create` now supports `--title-file`, and the title body binding is exposed through `requestBindings[]` and `dualChannelInputs[]` so agent-generated task titles can avoid argv quoting hazards.
 - Manual `auth verify` signatures are now locally guarded as 65-byte `0x`-prefixed EIP-191 signatures, with the same pattern exposed in `requestBindings[].schema` so agents can repair malformed signatures before calling the API.
 - Manual `auth verify` handoffs now preserve the verified address through `sourceInput=--address` so post-login reads can continue without requiring agents to infer address-scoped commands from prose.
+- Account-level queue triage is now first-class:
+  - the public read-model surface includes `GET /v2/todos/{address}` plus CLI `todos`, `todos action-required`, and `todos waiting`,
+  - queue groups are summary-first and machine-readable, with stable `type`, English `title` / `description`, per-group pagination, and summary ids for drill-down reads,
+  - agent-facing runbooks now treat `todos` / `todos action-required` as the preferred entrypoint for fresh and resumed sessions before selecting concrete task/submission/dispute writes.
 - Help and spec must remain equivalent for input contracts: `commands[].inputContract[]` is treated as the source for machine-readable discovery, and command `--help` must repeat every line for agents that only inspect plain-text help.
 - Spec drift checks are bidirectional for file-backed inputs: every registered `--*-file` option must appear in `dualChannelInputs[]`, and request bindings that use one side of an inline/file pair must expose both sides.
 - Shared help should describe the stdin alias for every file-backed channel class (credential, text, JSON, and config value), matching `dualChannelInputs[].stdinAlias`.

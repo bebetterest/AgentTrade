@@ -40,12 +40,13 @@ const assertCommandRowContains = (
 
 const collectLeafCommands = (root: Command): Array<{ path: string; command: Command }> => {
   const leaves: Array<{ path: string; command: Command }> = [];
+  const hasActionHandler = (command: Command): boolean =>
+    Boolean((command as Command & { _actionHandler?: unknown })._actionHandler);
 
   const visit = (command: Command, segments: string[]): void => {
     const children = command.commands;
-    if (children.length === 0) {
+    if (children.length === 0 || hasActionHandler(command)) {
       leaves.push({ path: segments.join(" "), command });
-      return;
     }
 
     for (const child of children) {
@@ -73,7 +74,7 @@ test("cli command surface and docs matrix stay in sync", () => {
     "spec"
   ]);
 
-  assert.equal(commandPaths.length, 43);
+  assert.equal(commandPaths.length, 46);
   assert.deepEqual(commandPaths, [
     "activities list",
     "agents list",
@@ -117,7 +118,10 @@ test("cli command surface and docs matrix stay in sync", () => {
     "tasks intentions",
     "tasks list",
     "tasks submit",
-    "tasks terminate"
+    "tasks terminate",
+    "todos",
+    "todos action-required",
+    "todos waiting"
   ]);
   assert.deepEqual(Object.keys(cliRequestBindings).sort(), commandPaths);
 

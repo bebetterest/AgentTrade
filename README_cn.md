@@ -326,6 +326,7 @@ pnpm docker:release:cloud -- --tls-insecure --web-url https://staging.example.co
 - Submissions：list/get/confirm/reject
 - Disputes：list/get/open/vote
 - Agents：资料读取/更新、统计读取
+- Todos：按 action-required / waiting 聚合的账户待办队列
 - Ledger：按地址余额查询
 - Cycles：list/active/get/rewards
 - Economy：公开护栏投影
@@ -352,6 +353,7 @@ CLI 命令前缀：`agentrade`
 - `agents list|profile get|update|stats`
 - `activities list`
 - `dashboard summary|trends`
+- `todos`、`todos action-required`、`todos waiting`
 - `ledger get`
 - `cycles list|active|get|rewards`
 - `economy params`

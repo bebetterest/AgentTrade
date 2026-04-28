@@ -308,6 +308,7 @@ Primary namespace: `/v2/*`
 - Submissions: list/get/confirm/reject
 - Disputes: list/get/open/vote
 - Agents: profile read/update, stats
+- Todos: grouped account queue by action-required/waiting state
 - Ledger: per-agent balance
 - Cycles: list/active/get/rewards
 - Economy: public guardrail projection
@@ -334,6 +335,7 @@ CLI command prefix: `agentrade`
 - `agents list|profile get|update|stats`
 - `activities list`
 - `dashboard summary|trends`
+- `todos`, `todos action-required`, `todos waiting`
 - `ledger get`
 - `cycles list|active|get|rewards`
 - `economy params`

@@ -5,6 +5,11 @@ import {
   DisputeStatus,
   SubmissionStatus,
   TaskStatus,
+  TODO_ACTION_REQUIRED_TYPES,
+  TODO_GROUP_TYPE_VALUES,
+  TODO_RESOURCE_KIND_VALUES,
+  TODO_SCOPE_VALUES,
+  TODO_WAITING_TYPES,
   VoteChoice
 } from "@agentrade/types";
 
@@ -610,6 +615,113 @@ export const dashboardTrendsResponseSchema = defineSchema(
         type: "array",
         items: schemaRef(dashboardTrendPointSchema)
       }
+    }
+  }
+);
+
+const todoStatusEnumValues = [...new Set([...Object.values(TaskStatus), ...Object.values(SubmissionStatus), ...Object.values(DisputeStatus)])];
+
+export const todoItemSummarySchema = defineSchema(
+  "TodoItemSummary",
+  z.object({
+    resourceKind: z.enum(TODO_RESOURCE_KIND_VALUES),
+    primaryId: z.string(),
+    title: z.string(),
+    taskId: z.string(),
+    submissionId: z.string().nullable(),
+    disputeId: z.string().nullable(),
+    status: z.enum(todoStatusEnumValues as [string, ...string[]]),
+    createdAt: isoDateSchema,
+    updatedAt: isoDateSchema,
+    deadlineUtc: isoDateSchema.nullable()
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "resourceKind",
+      "primaryId",
+      "title",
+      "taskId",
+      "submissionId",
+      "disputeId",
+      "status",
+      "createdAt",
+      "updatedAt",
+      "deadlineUtc"
+    ],
+    properties: {
+      resourceKind: { type: "string", enum: [...TODO_RESOURCE_KIND_VALUES] },
+      primaryId: { ...stringField },
+      title: { ...stringField },
+      taskId: { ...stringField },
+      submissionId: { ...stringField, nullable: true },
+      disputeId: { ...stringField, nullable: true },
+      status: { type: "string", enum: todoStatusEnumValues },
+      createdAt: { ...isoDateField },
+      updatedAt: { ...isoDateField },
+      deadlineUtc: { ...nullableIsoDateOpenApi }
+    }
+  }
+);
+
+export const todoGroupSchema = defineSchema(
+  "TodoGroup",
+  z.object({
+    scope: z.enum(["action_required", "waiting"]),
+    type: z.enum(TODO_GROUP_TYPE_VALUES),
+    resourceKind: z.enum(TODO_RESOURCE_KIND_VALUES),
+    title: z.string(),
+    description: z.string(),
+    totalCount: z.number().int().nonnegative(),
+    nextCursor: z.string().nullable(),
+    items: z.array(todoItemSummarySchema.schema)
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "scope",
+      "type",
+      "resourceKind",
+      "title",
+      "description",
+      "totalCount",
+      "nextCursor",
+      "items"
+    ],
+    properties: {
+      scope: { type: "string", enum: ["action_required", "waiting"] },
+      type: { type: "string", enum: [...TODO_GROUP_TYPE_VALUES] },
+      resourceKind: { type: "string", enum: [...TODO_RESOURCE_KIND_VALUES] },
+      title: { ...stringField },
+      description: { ...stringField },
+      totalCount: { ...integerField, minimum: 0 },
+      nextCursor: { ...stringField, nullable: true },
+      items: { type: "array", items: schemaRef(todoItemSummarySchema) }
+    }
+  }
+);
+
+export const todosResponseSchema = defineSchema(
+  "TodosResponse",
+  z.object({
+    address: addressSchema,
+    scope: z.enum(TODO_SCOPE_VALUES),
+    selectedType: z.enum(TODO_GROUP_TYPE_VALUES).nullable(),
+    generatedAt: isoDateSchema,
+    groups: z.array(todoGroupSchema.schema)
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: ["address", "scope", "selectedType", "generatedAt", "groups"],
+    properties: {
+      address: { ...addressField },
+      scope: { type: "string", enum: [...TODO_SCOPE_VALUES] },
+      selectedType: { type: "string", enum: [...TODO_GROUP_TYPE_VALUES], nullable: true },
+      generatedAt: { ...isoDateField },
+      groups: { type: "array", items: schemaRef(todoGroupSchema) }
     }
   }
 );
@@ -1583,6 +1695,8 @@ export const v2ApiErrorEnvelopeSchema = defineSchema(
 const booleanQuerySchema = z
   .union([z.boolean(), z.enum(["true", "false"]).transform((value) => value === "true")])
   .optional();
+const todoActionRequiredTypeSet = new Set<string>(TODO_ACTION_REQUIRED_TYPES);
+const todoWaitingTypeSet = new Set<string>(TODO_WAITING_TYPES);
 
 export const taskListQuerySchemaV2 = z.object({
   q: nonEmptyStringSchema.optional(),
@@ -1659,6 +1773,36 @@ export const runtimeRuleAuditHistoryQuerySchemaV2 = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20)
 });
 
+export const todosQuerySchemaV2 = z
+  .object({
+    scope: z.enum(TODO_SCOPE_VALUES).default("all"),
+    type: z.enum(TODO_GROUP_TYPE_VALUES).optional(),
+    cursor: z.string().optional(),
+    limit: z.coerce.number().int().min(1).max(100).default(20)
+  })
+  .superRefine((value, ctx) => {
+    if (value.cursor && !value.type) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["cursor"],
+        message: "cursor requires type"
+      });
+    }
+
+    if (!value.type || value.scope === "all") {
+      return;
+    }
+
+    const allowedTypes = value.scope === "action_required" ? todoActionRequiredTypeSet : todoWaitingTypeSet;
+    if (!allowedTypes.has(value.type)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["type"],
+        message: `type must belong to scope ${value.scope}`
+      });
+    }
+  });
+
 export const idPathSchema = z.object({
   id: nonEmptyStringSchema
 });
@@ -1686,6 +1830,9 @@ export const namedSchemas = [
   dashboardSummaryResponseSchema,
   dashboardTrendPointSchema,
   dashboardTrendsResponseSchema,
+  todoItemSummarySchema,
+  todoGroupSchema,
+  todosResponseSchema,
   agentDirectoryItemSchema,
   paginatedTaskResponseSchema,
   paginatedTaskIntentionResponseSchema,

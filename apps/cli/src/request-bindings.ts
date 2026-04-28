@@ -91,6 +91,57 @@ export const cliRequestBindings: Record<string, readonly CliRequestBindingDefini
   "economy params": [],
   "ledger get": [{ location: "path", field: "address", sources: ["--address"] }],
   spec: [],
+  todos: [
+    {
+      location: "path",
+      field: "address",
+      sources: ["--address", "persistedConfig.walletAddress"],
+      note: "defaults to persisted wallet-address when --address is omitted"
+    },
+    { location: "query", field: "scope", sources: ["literal:all"] },
+    { location: "query", field: "type", sources: ["--type"] },
+    {
+      location: "query",
+      field: "cursor",
+      sources: ["--cursor"],
+      note: "--cursor is only valid together with --type"
+    },
+    { location: "query", field: "limit", sources: ["--limit"] }
+  ],
+  "todos action-required": [
+    {
+      location: "path",
+      field: "address",
+      sources: ["--address", "persistedConfig.walletAddress"],
+      note: "defaults to persisted wallet-address when --address is omitted"
+    },
+    { location: "query", field: "scope", sources: ["literal:action_required"] },
+    { location: "query", field: "type", sources: ["--type"] },
+    {
+      location: "query",
+      field: "cursor",
+      sources: ["--cursor"],
+      note: "--cursor is only valid together with --type"
+    },
+    { location: "query", field: "limit", sources: ["--limit"] }
+  ],
+  "todos waiting": [
+    {
+      location: "path",
+      field: "address",
+      sources: ["--address", "persistedConfig.walletAddress"],
+      note: "defaults to persisted wallet-address when --address is omitted"
+    },
+    { location: "query", field: "scope", sources: ["literal:waiting"] },
+    { location: "query", field: "type", sources: ["--type"] },
+    {
+      location: "query",
+      field: "cursor",
+      sources: ["--cursor"],
+      note: "--cursor is only valid together with --type"
+    },
+    { location: "query", field: "limit", sources: ["--limit"] }
+  ],
   "submissions confirm": [{ location: "path", field: "id", sources: ["--submission"] }],
   "submissions get": [{ location: "path", field: "id", sources: ["--submission"] }],
   "submissions list": [

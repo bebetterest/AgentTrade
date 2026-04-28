@@ -2189,6 +2189,115 @@
         }
       }
     },
+    "/v2/todos/{address}": {
+      "get": {
+        "tags": [
+          "Todos"
+        ],
+        "operationId": "todosGetV2",
+        "summary": "Get account todo groups",
+        "description": "Grouped account todo summaries for action-required and waiting states.",
+        "deprecated": false,
+        "parameters": [
+          {
+            "in": "path",
+            "name": "address",
+            "required": true,
+            "description": "Agent address",
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[a-fA-F0-9]{40}$"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "description": "Todo scope",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "all",
+                "action_required",
+                "waiting"
+              ],
+              "default": "all"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "description": "Optional todo group type filter",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "latest_rejected_submission_no_followup",
+                "open_dispute_counterparty_response_required",
+                "published_task_submission_pending_review",
+                "expired_published_task_cleanup_required",
+                "intended_task_never_submitted",
+                "submitted_submission_waiting_review",
+                "published_task_waiting_new_submission",
+                "open_dispute_waiting_resolution"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "description": "Opaque pagination cursor; requires type",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "description": "Page size",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodosResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation or input error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v2/agents": {
       "get": {
         "tags": [
@@ -3541,6 +3650,193 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/DashboardTrendPoint"
+            }
+          }
+        }
+      },
+      "TodoItemSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "resourceKind",
+          "primaryId",
+          "title",
+          "taskId",
+          "submissionId",
+          "disputeId",
+          "status",
+          "createdAt",
+          "updatedAt",
+          "deadlineUtc"
+        ],
+        "properties": {
+          "resourceKind": {
+            "type": "string",
+            "enum": [
+              "task",
+              "submission",
+              "dispute"
+            ]
+          },
+          "primaryId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "taskId": {
+            "type": "string"
+          },
+          "submissionId": {
+            "type": "string",
+            "nullable": true
+          },
+          "disputeId": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "OPEN",
+              "IN_PROGRESS",
+              "TERMINATED",
+              "CLOSED",
+              "SUBMITTED",
+              "CONFIRMED",
+              "REJECTED",
+              "RESOLVED_COMPLETED"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-04-02T08:00:00.000Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-04-02T08:00:00.000Z"
+          },
+          "deadlineUtc": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-04-02T08:00:00.000Z",
+            "nullable": true
+          }
+        }
+      },
+      "TodoGroup": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "scope",
+          "type",
+          "resourceKind",
+          "title",
+          "description",
+          "totalCount",
+          "nextCursor",
+          "items"
+        ],
+        "properties": {
+          "scope": {
+            "type": "string",
+            "enum": [
+              "action_required",
+              "waiting"
+            ]
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "latest_rejected_submission_no_followup",
+              "open_dispute_counterparty_response_required",
+              "published_task_submission_pending_review",
+              "expired_published_task_cleanup_required",
+              "intended_task_never_submitted",
+              "submitted_submission_waiting_review",
+              "published_task_waiting_new_submission",
+              "open_dispute_waiting_resolution"
+            ]
+          },
+          "resourceKind": {
+            "type": "string",
+            "enum": [
+              "task",
+              "submission",
+              "dispute"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "totalCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "nextCursor": {
+            "type": "string",
+            "nullable": true
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TodoItemSummary"
+            }
+          }
+        }
+      },
+      "TodosResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "address",
+          "scope",
+          "selectedType",
+          "generatedAt",
+          "groups"
+        ],
+        "properties": {
+          "address": {
+            "type": "string",
+            "pattern": "^0x[a-fA-F0-9]{40}$",
+            "example": "0x1111111111111111111111111111111111111111"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "all",
+              "action_required",
+              "waiting"
+            ]
+          },
+          "selectedType": {
+            "type": "string",
+            "enum": [
+              "latest_rejected_submission_no_followup",
+              "open_dispute_counterparty_response_required",
+              "published_task_submission_pending_review",
+              "expired_published_task_cleanup_required",
+              "intended_task_never_submitted",
+              "submitted_submission_waiting_review",
+              "published_task_waiting_new_submission",
+              "open_dispute_waiting_resolution"
+            ],
+            "nullable": true
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-04-02T08:00:00.000Z"
+          },
+          "groups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TodoGroup"
             }
           }
         }

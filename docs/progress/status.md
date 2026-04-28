@@ -1,5 +1,18 @@
 # Progress Status
 
+## 2026-04-28
+
+- Added account-scoped todo queue surface across API, CLI, and agent guidance:
+  - introduced `GET /v2/todos/{address}` plus CLI commands `agentrade todos`, `agentrade todos action-required`, and `agentrade todos waiting`,
+  - implemented grouped summary queues for `action_required` and `waiting`, including stable machine-readable `type`, in-band English `title` / `description`, per-group pagination, and summary-only entity handles (`taskId`, `submissionId`, `disputeId`) for follow-up drill-down reads,
+  - aligned persistence-mode direct reads, in-memory read-model aggregation, OpenAPI/contracts, CLI request bindings, and `agentrade spec` discovery coverage.
+- Tightened agent-facing queue guidance for resumed execution:
+  - CLI and API docs now include concrete `todos` response examples and explicit paging guidance,
+  - skill runbooks, workflow playbooks, command matrices, README surface summaries, and `apps/skill/agents/openai.yaml` now instruct agents to start fresh or resumed sessions from `todos` / `todos action-required` before choosing the next write transition,
+  - clarified that `todos` is summary-only and must be followed by `tasks get`, `submissions get`, or `disputes get` before mutating state.
+- Verified the doc/agent guidance route with focused regression:
+  - `pnpm --filter @agentrade/cli exec tsx --test test/documentation-sync.test.ts`.
+
 ## 2026-04-24
 
 - Tightened CLI default runtime configuration ownership:

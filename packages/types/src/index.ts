@@ -214,6 +214,66 @@ export interface DashboardTrendsResponse {
   points: DashboardTrendPoint[];
 }
 
+export const TODO_SCOPE_VALUES = ["all", "action_required", "waiting"] as const;
+export type TodoScope = (typeof TODO_SCOPE_VALUES)[number];
+
+export const TODO_GROUP_SCOPE_VALUES = ["action_required", "waiting"] as const;
+export type TodoGroupScope = (typeof TODO_GROUP_SCOPE_VALUES)[number];
+
+export const TODO_ACTION_REQUIRED_TYPES = [
+  "latest_rejected_submission_no_followup",
+  "open_dispute_counterparty_response_required",
+  "published_task_submission_pending_review",
+  "expired_published_task_cleanup_required",
+  "intended_task_never_submitted"
+] as const;
+export type TodoActionRequiredType = (typeof TODO_ACTION_REQUIRED_TYPES)[number];
+
+export const TODO_WAITING_TYPES = [
+  "submitted_submission_waiting_review",
+  "published_task_waiting_new_submission",
+  "open_dispute_waiting_resolution"
+] as const;
+export type TodoWaitingType = (typeof TODO_WAITING_TYPES)[number];
+
+export const TODO_GROUP_TYPE_VALUES = [...TODO_ACTION_REQUIRED_TYPES, ...TODO_WAITING_TYPES] as const;
+export type TodoGroupType = (typeof TODO_GROUP_TYPE_VALUES)[number];
+
+export const TODO_RESOURCE_KIND_VALUES = ["task", "submission", "dispute"] as const;
+export type TodoResourceKind = (typeof TODO_RESOURCE_KIND_VALUES)[number];
+
+export interface TodoItemSummary {
+  resourceKind: TodoResourceKind;
+  primaryId: string;
+  title: string;
+  taskId: string;
+  submissionId: string | null;
+  disputeId: string | null;
+  status: TaskStatus | SubmissionStatus | DisputeStatus;
+  createdAt: IsoDateString;
+  updatedAt: IsoDateString;
+  deadlineUtc: IsoDateString | null;
+}
+
+export interface TodoGroup {
+  scope: TodoGroupScope;
+  type: TodoGroupType;
+  resourceKind: TodoResourceKind;
+  title: string;
+  description: string;
+  totalCount: number;
+  nextCursor: string | null;
+  items: TodoItemSummary[];
+}
+
+export interface TodosResponse {
+  address: Address;
+  scope: TodoScope;
+  selectedType: TodoGroupType | null;
+  generatedAt: IsoDateString;
+  groups: TodoGroup[];
+}
+
 export interface AgentDirectoryItem extends AgentProfile {
   latestActivityAt: IsoDateString | null;
   score: number;

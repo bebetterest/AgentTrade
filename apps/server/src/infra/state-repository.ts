@@ -37,6 +37,9 @@ import {
   type RuntimeRuleAuditRecord,
   type RuntimeSettingsState,
   TaskStatus as DomainTaskStatus,
+  type TodoGroupType,
+  type TodoScope,
+  type TodosResponse,
   VoteChoice as DomainVoteChoice,
   VoteChoice,
   type Address
@@ -56,6 +59,13 @@ import {
   mapTaskIntention,
   mapVote
 } from "./state-repository-mappers.js";
+import {
+  buildTodosResponse,
+  type TodoDisputeRecord,
+  type TodoIntentionRecord,
+  type TodoSubmissionRecord,
+  type TodoTaskRecord
+} from "../todos/read-model.js";
 import {
   appendActivityEventWithTx,
   applyProfileDeltaWithTx,
@@ -1002,6 +1012,240 @@ export class PrismaStateRepository {
       window,
       points
     };
+  }
+
+  async getTodosDirect(input: {
+    address: Address;
+    scope: TodoScope;
+    type?: TodoGroupType;
+    cursor?: string;
+    limit: number;
+    generatedAt?: string;
+  }): Promise<TodosResponse> {
+    const [publishedTasks, intentionRows, actorSubmissions, publishedPendingSubmissions, openDisputes] =
+      await Promise.all([
+        this.prisma.task.findMany({
+          where: {
+            publisherAddress: {
+              equals: input.address,
+              mode: "insensitive"
+            }
+          },
+          select: {
+            id: true,
+            publisherAddress: true,
+            title: true,
+            status: true,
+            deadlineUtc: true,
+            createdAt: true,
+            updatedAt: true
+          }
+        }),
+        this.prisma.taskIntention.findMany({
+          where: {
+            agentAddress: {
+              equals: input.address,
+              mode: "insensitive"
+            }
+          },
+          select: {
+            id: true,
+            taskId: true,
+            agentAddress: true,
+            createdAt: true,
+            task: {
+              select: {
+                id: true,
+                publisherAddress: true,
+                title: true,
+                status: true,
+                deadlineUtc: true,
+                createdAt: true,
+                updatedAt: true
+              }
+            }
+          }
+        }),
+        this.prisma.submission.findMany({
+          where: {
+            agentAddress: {
+              equals: input.address,
+              mode: "insensitive"
+            }
+          },
+          select: {
+            id: true,
+            taskId: true,
+            agentAddress: true,
+            status: true,
+            createdAt: true,
+            updatedAt: true,
+            task: {
+              select: {
+                id: true,
+                publisherAddress: true,
+                title: true,
+                status: true,
+                deadlineUtc: true
+              }
+            }
+          }
+        }),
+        this.prisma.submission.findMany({
+          where: {
+            status: DomainSubmissionStatus.SUBMITTED,
+            task: {
+              publisherAddress: {
+                equals: input.address,
+                mode: "insensitive"
+              }
+            }
+          },
+          select: {
+            id: true,
+            taskId: true,
+            agentAddress: true,
+            status: true,
+            createdAt: true,
+            updatedAt: true,
+            task: {
+              select: {
+                id: true,
+                publisherAddress: true,
+                title: true,
+                status: true,
+                deadlineUtc: true
+              }
+            }
+          }
+        }),
+        this.prisma.dispute.findMany({
+          where: {
+            status: DomainDisputeStatus.OPEN,
+            OR: [
+              {
+                openerAddress: {
+                  equals: input.address,
+                  mode: "insensitive"
+                }
+              },
+              {
+                task: {
+                  publisherAddress: {
+                    equals: input.address,
+                    mode: "insensitive"
+                  }
+                }
+              },
+              {
+                submission: {
+                  agentAddress: {
+                    equals: input.address,
+                    mode: "insensitive"
+                  }
+                }
+              }
+            ]
+          },
+          select: {
+            id: true,
+            taskId: true,
+            submissionId: true,
+            openerAddress: true,
+            counterpartyReasonMd: true,
+            status: true,
+            createdAt: true,
+            updatedAt: true,
+            task: {
+              select: {
+                id: true,
+                publisherAddress: true,
+                title: true,
+                deadlineUtc: true
+              }
+            },
+            submission: {
+              select: {
+                agentAddress: true
+              }
+            }
+          }
+        })
+      ]);
+
+    const tasks: TodoTaskRecord[] = [
+      ...publishedTasks.map((item) => ({
+        id: item.id,
+        publisher: asAddress(item.publisherAddress),
+        title: item.title,
+        status: item.status as DomainTaskStatus,
+        deadlineUtc: toIso(item.deadlineUtc),
+        createdAt: toIso(item.createdAt),
+        updatedAt: toIso(item.updatedAt)
+      })),
+      ...intentionRows
+        .filter((item) => item.task)
+        .map((item) => ({
+          id: item.task.id,
+          publisher: asAddress(item.task.publisherAddress),
+          title: item.task.title,
+          status: item.task.status as DomainTaskStatus,
+          deadlineUtc: toIso(item.task.deadlineUtc),
+          createdAt: toIso(item.task.createdAt),
+          updatedAt: toIso(item.task.updatedAt)
+        }))
+    ];
+
+    const intentions: TodoIntentionRecord[] = intentionRows.map((item) => ({
+      id: item.id,
+      taskId: item.taskId,
+      agent: asAddress(item.agentAddress),
+      createdAt: toIso(item.createdAt)
+    }));
+
+    const mapTodoSubmission = (
+      item: (typeof actorSubmissions)[number] | (typeof publishedPendingSubmissions)[number]
+    ): TodoSubmissionRecord => ({
+      id: item.id,
+      taskId: item.taskId,
+      agent: asAddress(item.agentAddress),
+      taskPublisher: asAddress(item.task.publisherAddress),
+      taskTitle: item.task.title,
+      taskStatus: item.task.status as DomainTaskStatus,
+      taskDeadlineUtc: toIso(item.task.deadlineUtc),
+      status: item.status as DomainSubmissionStatus,
+      createdAt: toIso(item.createdAt),
+      updatedAt: toIso(item.updatedAt)
+    });
+
+    const submissions: TodoSubmissionRecord[] = [
+      ...actorSubmissions.map((item) => mapTodoSubmission(item)),
+      ...publishedPendingSubmissions.map((item) => mapTodoSubmission(item))
+    ];
+
+    const disputes: TodoDisputeRecord[] = openDisputes.map((item) => ({
+      id: item.id,
+      taskId: item.taskId,
+      submissionId: item.submissionId,
+      opener: asAddress(item.openerAddress),
+      taskPublisher: asAddress(item.task.publisherAddress),
+      submissionAgent: asAddress(item.submission.agentAddress),
+      taskTitle: item.task.title,
+      taskDeadlineUtc: toIso(item.task.deadlineUtc),
+      counterpartyReasonMd: item.counterpartyReasonMd,
+      status: item.status as DomainDisputeStatus,
+      createdAt: toIso(item.createdAt),
+      updatedAt: toIso(item.updatedAt)
+    }));
+
+    return buildTodosResponse({
+      ...input,
+      generatedAt: input.generatedAt ?? new Date().toISOString(),
+      tasks,
+      submissions,
+      disputes,
+      intentions
+    });
   }
 
   async getCycleRewardsDirect(cycleId: string): Promise<CycleRewardsResponse | null> {

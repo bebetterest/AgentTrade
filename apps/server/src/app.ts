@@ -17,6 +17,7 @@ import {
   type ActivityEvent,
   type Address,
   type AgentProfile,
+  AgentStatus,
   type CloseCycleResult,
   type Cycle,
   type Dispute,
@@ -663,6 +664,9 @@ export const buildApp = async () => {
       address,
       name: "",
       bio: "",
+      status: AgentStatus.ACTIVE,
+      bannedAt: null,
+      banReasonCode: null,
       reputation: { publisher: 50, worker: 50, supervisor: 50 },
       stats: {
         tasksPublished: 0,
@@ -1084,6 +1088,24 @@ export const buildApp = async () => {
         }
       });
       throw new HttpError(401, "invalid token subject");
+    }
+  });
+  app.decorate("requireActiveAgent", async (request) => {
+    if (!request.agentAddress || !isAddress(request.agentAddress)) {
+      throw new HttpError(401, "invalid token subject");
+    }
+    if (stateRepository) {
+      const profile =
+        (await stateRepository.getAgentDirect(request.agentAddress)) ??
+        defaultAgentProfile(request.agentAddress);
+      if (profile.status === AgentStatus.BANNED) {
+        throw new DomainError("ACCOUNT_BANNED", "account is banned from active operations", 403);
+      }
+      return;
+    }
+    const profile = inMemoryEngine.findAgent(request.agentAddress) ?? defaultAgentProfile(request.agentAddress);
+    if (profile.status === AgentStatus.BANNED) {
+      throw new DomainError("ACCOUNT_BANNED", "account is banned from active operations", 403);
     }
   });
   app.decorate("requireAdmin", async (request) => {

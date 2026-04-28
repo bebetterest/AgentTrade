@@ -13,6 +13,8 @@ import type { EngineStateSnapshot } from "../domain/engine.js";
 import {
   type ActivityEvent,
   type AgentDirectoryItem,
+  AgentBanReason,
+  AgentStatus,
   ActivityEventType as DomainActivityEventType,
   type AgentProfile,
   type ServerAuditLogRecord,
@@ -27,6 +29,7 @@ import {
   type DashboardTrendPoint,
   type DashboardTrendsResponse,
   type Dispute,
+  DisputePayoutSource,
   type DisputeResolutionSummary,
   DisputeStatus as DomainDisputeStatus,
   type LedgerBalance,
@@ -47,10 +50,12 @@ import {
   type Address
 } from "@agentrade/types";
 import {
-  allocateIntegerPool
+  allocateIntegerPool,
+  computeTerminationPenalty
 } from "../domain/helpers.js";
 import { DomainError } from "../domain/errors.js";
 import {
+  mapActivityEvent,
   computeTaskCompetitionRatio,
   mapAgentProfile,
   mapCycle,
@@ -145,6 +150,42 @@ import {
   writeUpdateAgentProfileDirect
 } from "./state-repository-write-helpers.js";
 
+interface ForcedTerminationRollbackRecord {
+  taskId: string;
+  cycleId: string;
+  previousStatus: DomainTaskStatus;
+  previousRewardEscrowRemaining: number;
+  penalty: number;
+  refund: number;
+}
+
+interface DisputeResolutionRollbackRecord {
+  resolutionCycleId: string;
+  taskStatusBeforeResolution: DomainTaskStatus;
+  taskRewardEscrowRemainingBeforeResolution: number;
+  publisherWasBannedBeforeResolution: boolean;
+  publisherBanSourceDisputeIdBeforeResolution: string | null;
+  forcedTerminations: ForcedTerminationRollbackRecord[];
+}
+
+interface DisputeRollbackHistoryRecord {
+  id: string;
+  disputeId: string;
+  previousStatus: DomainDisputeStatus;
+  previousResolution: {
+    disputeId: string;
+    payoutSource: DisputePayoutSource;
+    payoutAmount: number;
+    payoutShortfallAmount: number;
+    publisherBanned: boolean;
+    rollback?: DisputeResolutionRollbackRecord | null;
+  } | null;
+  archivedVotes: SupervisionVote[];
+  archivedWorkloads: CycleWorkload[];
+  archivedActivities: ActivityEvent[];
+  reopenedAt: string;
+}
+
 const RUNTIME_ID = "singleton";
 const RUNTIME_RULE_STATE_ID = "singleton";
 const OPEN_DISPUTE_UNIQUE_INDEX = "uq_dispute_open_submission";
@@ -172,6 +213,23 @@ const asStringArray = (value: Prisma.JsonValue): string[] => {
 
 const asAddressArray = (value: Prisma.JsonValue): Address[] =>
   asStringArray(value).map((item) => asAddress(item));
+
+const toJsonDisputeResolutionRollback = (
+  value: DisputeResolutionRollbackRecord | null | undefined
+): Prisma.InputJsonValue | typeof Prisma.JsonNull =>
+  (value ?? Prisma.JsonNull) as Prisma.InputJsonValue | typeof Prisma.JsonNull;
+
+const toJsonRollbackHistoryEntries = (
+  value: SupervisionVote[] | CycleWorkload[] | ActivityEvent[]
+): Prisma.InputJsonValue => value as unknown as Prisma.InputJsonValue;
+
+const asDisputeResolutionRollback = (
+  value: Prisma.JsonValue | null
+): DisputeResolutionRollbackRecord | null =>
+  value ? (value as unknown as DisputeResolutionRollbackRecord) : null;
+
+const asDisputeRollbackHistoryArray = <T>(value: Prisma.JsonValue): T[] =>
+  Array.isArray(value) ? (value as unknown as T[]) : [];
 
 interface DashboardMetricRow {
   tasksPublished: number | bigint | Prisma.Decimal | string | null;
@@ -1151,7 +1209,11 @@ export class PrismaStateRepository {
         id: true,
         status: true,
         taskId: true,
-        submissionId: true
+        submissionId: true,
+        resolutionPayoutSource: true,
+        resolutionPayoutAmount: true,
+        resolutionPayoutShortfallAmount: true,
+        resolutionPublisherBanned: true
       }
     });
     if (!dispute) {
@@ -1170,7 +1232,7 @@ export class PrismaStateRepository {
       }),
       this.prisma.task.findUnique({
         where: { id: dispute.taskId },
-        select: { publisherAddress: true }
+        select: { publisherAddress: true, rewardPerSlot: true }
       }),
       this.prisma.submission.findUnique({
         where: { id: dispute.submissionId },
@@ -1195,6 +1257,10 @@ export class PrismaStateRepository {
       outcome === VoteChoice.COMPLETED
         ? asAddress(submission.agentAddress)
         : asAddress(task.publisherAddress);
+    const payoutSource = dispute.resolutionPayoutSource ?? DisputePayoutSource.ESCROW;
+    const payoutAmount = dispute.resolutionPayoutAmount ?? task.rewardPerSlot;
+    const payoutShortfallAmount = dispute.resolutionPayoutShortfallAmount ?? 0;
+    const publisherBanned = dispute.resolutionPublisherBanned ?? false;
 
     return {
       totalVotes: completedVotes + notCompletedVotes,
@@ -1202,7 +1268,11 @@ export class PrismaStateRepository {
       notCompletedVotes,
       outcome,
       winnerRole,
-      winnerAddress
+      winnerAddress,
+      payoutSource: payoutSource as DisputePayoutSource,
+      payoutAmount,
+      payoutShortfallAmount,
+      publisherBanned
     };
   }
 
@@ -1220,6 +1290,8 @@ export class PrismaStateRepository {
       {
         executeWithRetry: (operation) => this.executeWithRetry(operation),
         lockRuntimeWithTx: (tx) => this.lockRuntimeWithTx(tx),
+        assertAgentActiveForWriteWithTx: (tx, nextAddress, now) =>
+          this.assertAgentActiveForWriteWithTx(tx, nextAddress, now),
         ensureAgentAndLedgerWithTx: (tx, nextAddress, now) =>
           this.ensureAgentAndLedgerWithTx(tx, nextAddress, now),
         touchRuntimeStateWithTx: (tx) => this.touchRuntimeStateWithTx(tx),
@@ -1617,6 +1689,8 @@ export class PrismaStateRepository {
       {
         executeWithRetry: (operation) => this.executeWithRetry(operation),
         lockRuntimeWithTx: (tx) => this.lockRuntimeWithTx(tx),
+        assertAgentActiveForWriteWithTx: (tx, address, now) =>
+          this.assertAgentActiveForWriteWithTx(tx, address, now),
         ensureAgentAndLedgerWithTx: (tx, address, now) =>
           this.ensureAgentAndLedgerWithTx(tx, address, now),
         touchRuntimeStateWithTx: (tx) => this.touchRuntimeStateWithTx(tx),
@@ -1636,6 +1710,8 @@ export class PrismaStateRepository {
       {
         executeWithRetry: (operation) => this.executeWithRetry(operation),
         lockRuntimeWithTx: (tx) => this.lockRuntimeWithTx(tx),
+        assertAgentActiveForWriteWithTx: (tx, address, now) =>
+          this.assertAgentActiveForWriteWithTx(tx, address, now),
         ensureAgentAndLedgerWithTx: (tx, address, now) =>
           this.ensureAgentAndLedgerWithTx(tx, address, now),
         touchRuntimeStateWithTx: (tx) => this.touchRuntimeStateWithTx(tx),
@@ -1661,6 +1737,8 @@ export class PrismaStateRepository {
       {
         executeWithRetry: (operation) => this.executeWithRetry(operation),
         lockRuntimeWithTx: (tx) => this.lockRuntimeWithTx(tx),
+        assertAgentActiveForWriteWithTx: (tx, address, now) =>
+          this.assertAgentActiveForWriteWithTx(tx, address, now),
         ensureAgentAndLedgerWithTx: (tx, address, now) =>
           this.ensureAgentAndLedgerWithTx(tx, address, now),
         touchRuntimeStateWithTx: (tx) => this.touchRuntimeStateWithTx(tx),
@@ -1684,6 +1762,8 @@ export class PrismaStateRepository {
       {
         executeWithRetry: (operation) => this.executeWithRetry(operation),
         lockRuntimeWithTx: (tx) => this.lockRuntimeWithTx(tx),
+        assertAgentActiveForWriteWithTx: (tx, address, now) =>
+          this.assertAgentActiveForWriteWithTx(tx, address, now),
         ensureAgentAndLedgerWithTx: (tx, address, now) =>
           this.ensureAgentAndLedgerWithTx(tx, address, now),
         touchRuntimeStateWithTx: (tx) => this.touchRuntimeStateWithTx(tx),
@@ -1703,6 +1783,8 @@ export class PrismaStateRepository {
       {
         executeWithRetry: (operation) => this.executeWithRetry(operation),
         lockRuntimeWithTx: (tx) => this.lockRuntimeWithTx(tx),
+        assertAgentActiveForWriteWithTx: (tx, address, now) =>
+          this.assertAgentActiveForWriteWithTx(tx, address, now),
         ensureAgentAndLedgerWithTx: (tx, address, now) =>
           this.ensureAgentAndLedgerWithTx(tx, address, now),
         touchRuntimeStateWithTx: (tx) => this.touchRuntimeStateWithTx(tx),
@@ -1719,6 +1801,8 @@ export class PrismaStateRepository {
       {
         executeWithRetry: (operation) => this.executeWithRetry(operation),
         lockRuntimeWithTx: (tx) => this.lockRuntimeWithTx(tx),
+        assertAgentActiveForWriteWithTx: (tx, address, now) =>
+          this.assertAgentActiveForWriteWithTx(tx, address, now),
         ensureAgentAndLedgerWithTx: (tx, address, now) =>
           this.ensureAgentAndLedgerWithTx(tx, address, now),
         touchRuntimeStateWithTx: (tx, activeCycleId) =>
@@ -1726,10 +1810,14 @@ export class PrismaStateRepository {
         getConfirmedSlots: (slotsTotal, rewardPerSlot, rewardEscrowRemaining) =>
           this.getConfirmedSlots(slotsTotal, rewardPerSlot, rewardEscrowRemaining),
         appendAuditLogWithTx: (tx, audit) => this.appendAuditLogWithTx(tx, audit).then(() => undefined),
-        confirmSubmissionInternalWithTx: (tx, submission, task, now, cycleId, actor) =>
-          this.confirmSubmissionInternalWithTx(tx, submission, task, now, cycleId, actor),
+        confirmSubmissionInternalWithTx: (tx, submission, task, now, cycleId, actor, options) =>
+          this.confirmSubmissionInternalWithTx(tx, submission, task, now, cycleId, actor, options),
         evaluateDisputeWithTx: (tx, disputeId, nextConfig, now, cycleId) =>
           this.evaluateDisputeWithTx(tx, disputeId, nextConfig, now, cycleId),
+        sweepBannedPublisherCleanTasksWithTx: (tx, now, cycleId) =>
+          this.sweepBannedPublisherCleanTasksWithTx(tx, now, cycleId),
+        autoTerminateExpiredCleanTasksWithTx: (tx, now, cycleId) =>
+          this.autoTerminateExpiredCleanTasksWithTx(tx, now, cycleId),
         nextCycleId: (currentCycleId) => this.nextCycleId(currentCycleId)
       },
       config
@@ -1742,6 +1830,8 @@ export class PrismaStateRepository {
       {
         executeWithRetry: (operation) => this.executeWithRetry(operation),
         lockRuntimeWithTx: (tx) => this.lockRuntimeWithTx(tx),
+        assertAgentActiveForWriteWithTx: (tx, address, now) =>
+          this.assertAgentActiveForWriteWithTx(tx, address, now),
         ensureAgentAndLedgerWithTx: (tx, address, now) =>
           this.ensureAgentAndLedgerWithTx(tx, address, now),
         touchRuntimeStateWithTx: (tx, activeCycleId) =>
@@ -1749,10 +1839,14 @@ export class PrismaStateRepository {
         getConfirmedSlots: (slotsTotal, rewardPerSlot, rewardEscrowRemaining) =>
           this.getConfirmedSlots(slotsTotal, rewardPerSlot, rewardEscrowRemaining),
         appendAuditLogWithTx: (tx, audit) => this.appendAuditLogWithTx(tx, audit).then(() => undefined),
-        confirmSubmissionInternalWithTx: (tx, submission, task, now, cycleId, actor) =>
-          this.confirmSubmissionInternalWithTx(tx, submission, task, now, cycleId, actor),
+        confirmSubmissionInternalWithTx: (tx, submission, task, now, cycleId, actor, options) =>
+          this.confirmSubmissionInternalWithTx(tx, submission, task, now, cycleId, actor, options),
         evaluateDisputeWithTx: (tx, disputeId, nextConfig, now, cycleId) =>
           this.evaluateDisputeWithTx(tx, disputeId, nextConfig, now, cycleId),
+        sweepBannedPublisherCleanTasksWithTx: (tx, now, cycleId) =>
+          this.sweepBannedPublisherCleanTasksWithTx(tx, now, cycleId),
+        autoTerminateExpiredCleanTasksWithTx: (tx, now, cycleId) =>
+          this.autoTerminateExpiredCleanTasksWithTx(tx, now, cycleId),
         nextCycleId: (currentCycleId) => this.nextCycleId(currentCycleId)
       },
       config
@@ -1771,7 +1865,9 @@ export class PrismaStateRepository {
         touchRuntimeStateWithTx: (tx, activeCycleId) =>
           this.touchRuntimeStateWithTx(tx, activeCycleId),
         finalizeDisputeWithOutcomeWithTx: (tx, nextDisputeId, outcome, now, cycleId) =>
-          this.finalizeDisputeWithOutcomeWithTx(tx, nextDisputeId, outcome, now, cycleId)
+          this.finalizeDisputeWithOutcomeWithTx(tx, nextDisputeId, outcome, now, cycleId),
+        reopenDisputeAsNotCompletedWithTx: (tx, nextDisputeId, now, activeCycleId) =>
+          this.reopenDisputeAsNotCompletedWithTx(tx, nextDisputeId, now, activeCycleId)
       },
       disputeId,
       result
@@ -1790,6 +1886,8 @@ export class PrismaStateRepository {
       {
         executeWithRetry: (operation) => this.executeWithRetry(operation),
         lockRuntimeWithTx: (tx) => this.lockRuntimeWithTx(tx),
+        assertAgentActiveForWriteWithTx: (tx, address, now) =>
+          this.assertAgentActiveForWriteWithTx(tx, address, now),
         ensureAgentAndLedgerWithTx: (tx, address, now) =>
           this.ensureAgentAndLedgerWithTx(tx, address, now),
         touchRuntimeStateWithTx: (tx) => this.touchRuntimeStateWithTx(tx),
@@ -1812,6 +1910,8 @@ export class PrismaStateRepository {
       {
         executeWithRetry: (operation) => this.executeWithRetry(operation),
         lockRuntimeWithTx: (tx) => this.lockRuntimeWithTx(tx),
+        assertAgentActiveForWriteWithTx: (tx, address, now) =>
+          this.assertAgentActiveForWriteWithTx(tx, address, now),
         ensureAgentAndLedgerWithTx: (tx, address, now) =>
           this.ensureAgentAndLedgerWithTx(tx, address, now),
         touchRuntimeStateWithTx: (tx) => this.touchRuntimeStateWithTx(tx),
@@ -1836,14 +1936,16 @@ export class PrismaStateRepository {
       {
         executeWithRetry: (operation) => this.executeWithRetry(operation),
         lockRuntimeWithTx: (tx) => this.lockRuntimeWithTx(tx),
+        assertAgentActiveForWriteWithTx: (tx, address, now) =>
+          this.assertAgentActiveForWriteWithTx(tx, address, now),
         ensureAgentAndLedgerWithTx: (tx, address, now) =>
           this.ensureAgentAndLedgerWithTx(tx, address, now),
         touchRuntimeStateWithTx: (tx) => this.touchRuntimeStateWithTx(tx),
         getConfirmedSlots: (slotsTotal, rewardPerSlot, rewardEscrowRemaining) =>
           this.getConfirmedSlots(slotsTotal, rewardPerSlot, rewardEscrowRemaining),
         appendAuditLogWithTx: (tx, audit) => this.appendAuditLogWithTx(tx, audit).then(() => undefined),
-        confirmSubmissionInternalWithTx: (tx, nextSubmission, task, now, cycleId, actor) =>
-          this.confirmSubmissionInternalWithTx(tx, nextSubmission, task, now, cycleId, actor)
+        confirmSubmissionInternalWithTx: (tx, nextSubmission, task, now, cycleId, actor, options) =>
+          this.confirmSubmissionInternalWithTx(tx, nextSubmission, task, now, cycleId, actor, options)
       },
       submissionId,
       publisher,
@@ -1860,6 +1962,8 @@ export class PrismaStateRepository {
       {
         executeWithRetry: (operation) => this.executeWithRetry(operation),
         lockRuntimeWithTx: (tx) => this.lockRuntimeWithTx(tx),
+        assertAgentActiveForWriteWithTx: (tx, address, now) =>
+          this.assertAgentActiveForWriteWithTx(tx, address, now),
         ensureAgentAndLedgerWithTx: (tx, address, now) =>
           this.ensureAgentAndLedgerWithTx(tx, address, now),
         touchRuntimeStateWithTx: (tx) => this.touchRuntimeStateWithTx(tx),
@@ -1901,7 +2005,11 @@ export class PrismaStateRepository {
     },
     now: Date,
     cycleId: string,
-    actor: Address
+    actor: Address,
+    options?: {
+      grantPublisherCredits?: boolean;
+      disputeId?: string | null;
+    }
   ): Promise<void> {
     const submissionStatus = submission.status as DomainSubmissionStatus;
     if (submissionStatus === DomainSubmissionStatus.CONFIRMED) {
@@ -1924,12 +2032,7 @@ export class PrismaStateRepository {
       );
     }
 
-    const confirmedSlotsBefore = this.getConfirmedSlots(
-      task.slotsTotal,
-      task.rewardPerSlot,
-      task.rewardEscrowRemaining
-    );
-    if (confirmedSlotsBefore >= task.slotsTotal || task.rewardEscrowRemaining < task.rewardPerSlot) {
+    if (!this.hasPayableSlot(task)) {
       await tx.task.update({
         where: { id: task.id },
         data: {
@@ -1976,47 +2079,76 @@ export class PrismaStateRepository {
       }
     });
 
-    await this.ensureAgentAndLedgerWithTx(tx, submissionAgent, now);
-    await this.ensureAgentAndLedgerWithTx(tx, asAddress(task.publisherAddress), now);
+    await this.settleConfirmedSubmissionWithTx(tx, {
+      submissionAgent,
+      publisher: asAddress(task.publisherAddress),
+      rewardPerSlot: task.rewardPerSlot,
+      taskId: task.id,
+      cycleId,
+      actor,
+      now,
+      grantPublisherCredits: options?.grantPublisherCredits ?? true,
+      disputeId: options?.disputeId ?? null
+    });
+  }
+
+  private async settleConfirmedSubmissionWithTx(
+    tx: Prisma.TransactionClient,
+    input: {
+      submissionAgent: Address;
+      publisher: Address;
+      rewardPerSlot: number;
+      taskId: string;
+      cycleId: string;
+      actor: Address;
+      now: Date;
+      grantPublisherCredits: boolean;
+      disputeId: string | null;
+    }
+  ): Promise<void> {
+    await this.ensureAgentAndLedgerWithTx(tx, input.submissionAgent, input.now);
+    await this.ensureAgentAndLedgerWithTx(tx, input.publisher, input.now);
     await tx.ledgerBalance.update({
-      where: { address: submission.agentAddress },
+      where: { address: input.submissionAgent },
       data: {
         available: {
-          increment: task.rewardPerSlot
+          increment: input.rewardPerSlot
         },
-        updatedAt: now
+        updatedAt: input.now
       }
     });
-    await this.applyProfileDeltaWithTx(tx, submissionAgent, now, {
+    await this.applyProfileDeltaWithTx(tx, input.submissionAgent, input.now, {
       workerReputationDelta: 2,
       tasksCompleted: 1
     });
-    await this.applyProfileDeltaWithTx(tx, asAddress(task.publisherAddress), now, {
-      publisherReputationDelta: 1
-    });
+    if (input.grantPublisherCredits) {
+      await this.applyProfileDeltaWithTx(tx, input.publisher, input.now, {
+        publisherReputationDelta: 1
+      });
+      await this.recordCycleWorkloadWithTx(tx, {
+        cycleId: input.cycleId,
+        disputeId: null,
+        taskId: input.taskId,
+        agent: input.publisher,
+        workload: this.config.taskCompletionPublisherWorkload,
+        createdAt: input.now
+      });
+    }
     await this.recordCycleWorkloadWithTx(tx, {
-      cycleId,
-      disputeId: null,
-      taskId: task.id,
-      agent: asAddress(task.publisherAddress),
-      workload: this.config.taskCompletionPublisherWorkload,
-      createdAt: now
-    });
-    await this.recordCycleWorkloadWithTx(tx, {
-      cycleId,
-      disputeId: null,
-      taskId: task.id,
-      agent: submissionAgent,
+      cycleId: input.cycleId,
+      disputeId: input.disputeId,
+      taskId: input.taskId,
+      agent: input.submissionAgent,
       workload: this.config.taskCompletionWorkerWorkload,
-      createdAt: now
+      createdAt: input.now
     });
     await this.appendActivityEventWithTx(tx, {
       type: DomainActivityEventType.TASK_COMPLETED,
-      cycleId,
-      taskId: task.id,
-      disputeId: null,
-      actor,
-      createdAt: now
+      cycleId: input.cycleId,
+      taskId: input.taskId,
+      disputeId: input.disputeId,
+      actor: input.actor,
+      createdAt: input.now
     });
   }
 
@@ -2046,6 +2178,862 @@ export class PrismaStateRepository {
         settledAt: null
       }
     });
+  }
+
+  private hasPayableSlot(task: {
+    slotsTotal: number;
+    rewardPerSlot: number;
+    rewardEscrowRemaining: number;
+  }): boolean {
+    return (
+      this.getConfirmedSlots(task.slotsTotal, task.rewardPerSlot, task.rewardEscrowRemaining) < task.slotsTotal &&
+      task.rewardEscrowRemaining >= task.rewardPerSlot
+    );
+  }
+
+  private async assertAgentActiveForWriteWithTx(
+    tx: Prisma.TransactionClient,
+    address: Address,
+    now: Date
+  ): Promise<void> {
+    await this.ensureAgentAndLedgerWithTx(tx, address, now);
+    const profile = await tx.agentProfile.findUnique({
+      where: { address },
+      select: { status: true }
+    });
+    if (profile?.status === "BANNED") {
+      throw new DomainError("ACCOUNT_BANNED", "account is banned from active operations", 403);
+    }
+  }
+
+  private async banAgentWithTx(
+    tx: Prisma.TransactionClient,
+    address: Address,
+    now: Date,
+    reason: AgentBanReason,
+    sourceDisputeId?: string
+  ): Promise<boolean> {
+    const profile = await tx.agentProfile.findUnique({
+      where: { address },
+      select: { status: true, banReasonCode: true, banSourceDisputeId: true }
+    });
+    if (!profile) {
+      throw new DomainError("AGENT_NOT_FOUND", `Agent ${address} not found`, 404);
+    }
+    if (profile.status === "BANNED") {
+      if (!profile.banReasonCode || (sourceDisputeId && !profile.banSourceDisputeId)) {
+        await tx.agentProfile.update({
+          where: { address },
+          data: {
+            banReasonCode: profile.banReasonCode ?? reason,
+            banSourceDisputeId: sourceDisputeId ?? profile.banSourceDisputeId,
+            updatedAt: now
+          }
+        });
+      }
+      return false;
+    }
+    await tx.agentProfile.update({
+      where: { address },
+      data: {
+        status: AgentStatus.BANNED,
+        bannedAt: now,
+        banReasonCode: reason,
+        banSourceDisputeId: sourceDisputeId ?? null,
+        updatedAt: now
+      }
+    });
+    return true;
+  }
+
+  private async isTaskCleanForForcedTerminationWithTx(
+    tx: Prisma.TransactionClient,
+    taskId: string
+  ): Promise<boolean> {
+    const [submittedCount, openDisputeCount] = await Promise.all([
+      tx.submission.count({
+        where: {
+          taskId,
+          status: DomainSubmissionStatus.SUBMITTED
+        }
+      }),
+      tx.dispute.count({
+        where: {
+          taskId,
+          status: DomainDisputeStatus.OPEN
+        }
+      })
+    ]);
+    return submittedCount === 0 && openDisputeCount === 0;
+  }
+
+  private async terminateTaskInternalWithTx(
+    tx: Prisma.TransactionClient,
+    task: {
+      id: string;
+      publisherAddress: string;
+      status: string;
+      rewardEscrowRemaining: number;
+    },
+    now: Date,
+    cycleId: string,
+    actor: Address,
+    options?: { disputeId?: string | null }
+  ): Promise<ForcedTerminationRollbackRecord | null> {
+    if (task.status === DomainTaskStatus.TERMINATED || task.status === DomainTaskStatus.CLOSED) {
+      throw new DomainError("TASK_NOT_TERMINABLE", "task is already closed", 409);
+    }
+
+    const previousStatus = task.status as DomainTaskStatus;
+    const previousRewardEscrowRemaining = task.rewardEscrowRemaining;
+    const penalty = computeTerminationPenalty(task.rewardEscrowRemaining, this.config);
+    const refund = Math.max(0, task.rewardEscrowRemaining - penalty);
+
+    await this.ensureAgentAndLedgerWithTx(tx, asAddress(task.publisherAddress), now);
+    await tx.ledgerBalance.update({
+      where: { address: task.publisherAddress },
+      data: {
+        available: {
+          increment: refund
+        },
+        updatedAt: now
+      }
+    });
+    await tx.cycle.update({
+      where: { id: cycleId },
+      data: {
+        penaltyPool: {
+          increment: penalty
+        }
+      }
+    });
+    await tx.task.update({
+      where: { id: task.id },
+      data: {
+        rewardEscrowRemaining: 0,
+        status: DomainTaskStatus.TERMINATED,
+        updatedAt: now
+      }
+    });
+    await this.applyProfileDeltaWithTx(tx, asAddress(task.publisherAddress), now, {
+      publisherReputationDelta: -1,
+      tasksTerminated: 1
+    });
+    await this.appendActivityEventWithTx(tx, {
+      type: DomainActivityEventType.TASK_TERMINATED,
+      cycleId,
+      taskId: task.id,
+      disputeId: options?.disputeId ?? null,
+      actor,
+      createdAt: now
+    });
+    return options?.disputeId
+      ? {
+          taskId: task.id,
+          cycleId,
+          previousStatus,
+          previousRewardEscrowRemaining,
+          penalty,
+          refund
+        }
+      : null;
+  }
+
+  private async sweepBannedPublisherCleanTasksWithTx(
+    tx: Prisma.TransactionClient,
+    now: Date,
+    cycleId: string
+  ): Promise<void> {
+    const tasks = await tx.task.findMany({
+      where: {
+        status: { in: [DomainTaskStatus.OPEN, DomainTaskStatus.IN_PROGRESS] },
+        publisher: {
+          status: AgentStatus.BANNED
+        }
+      },
+      select: {
+        id: true,
+        publisherAddress: true,
+        status: true,
+        rewardEscrowRemaining: true,
+        publisher: {
+          select: {
+            banSourceDisputeId: true
+          }
+        }
+      }
+    });
+    for (const task of tasks) {
+      if (!(await this.isTaskCleanForForcedTerminationWithTx(tx, task.id))) {
+        continue;
+      }
+      const disputeId = task.publisher.banSourceDisputeId;
+      const rollback = await this.terminateTaskInternalWithTx(
+        tx,
+        task,
+        now,
+        cycleId,
+        asAddress(task.publisherAddress),
+        { disputeId }
+      );
+      if (disputeId && rollback) {
+        await this.appendForcedTerminationRollbackWithTx(tx, disputeId, rollback);
+      }
+    }
+  }
+
+  private async autoTerminateExpiredCleanTasksWithTx(
+    tx: Prisma.TransactionClient,
+    now: Date,
+    cycleId: string
+  ): Promise<void> {
+    const tasks = await tx.task.findMany({
+      where: {
+        status: { in: [DomainTaskStatus.OPEN, DomainTaskStatus.IN_PROGRESS] },
+        deadlineUtc: { lte: now }
+      },
+      select: {
+        id: true,
+        publisherAddress: true,
+        status: true,
+        rewardEscrowRemaining: true
+      }
+    });
+    for (const task of tasks) {
+      if (!(await this.isTaskCleanForForcedTerminationWithTx(tx, task.id))) {
+        continue;
+      }
+      await this.terminateTaskInternalWithTx(tx, task, now, cycleId, asAddress(task.publisherAddress));
+    }
+  }
+
+  private async resolveCompletedDisputeFromPublisherWalletWithTx(
+    tx: Prisma.TransactionClient,
+    input: {
+      disputeId: string;
+      submission: {
+        id: string;
+        agentAddress: string;
+      };
+      task: {
+        id: string;
+        publisherAddress: string;
+        status: DomainTaskStatus;
+        slotsTotal: number;
+        rewardPerSlot: number;
+        rewardEscrowRemaining: number;
+        completedAgents: Prisma.JsonValue;
+      };
+      now: Date;
+      cycleId: string;
+      rollback: DisputeResolutionRollbackRecord;
+    }
+  ): Promise<void> {
+    const submissionAgent = asAddress(input.submission.agentAddress);
+    const publisher = asAddress(input.task.publisherAddress);
+    const completedAgents = asAddressArray(input.task.completedAgents);
+    const publisherLedger = await tx.ledgerBalance.findUniqueOrThrow({
+      where: { address: input.task.publisherAddress }
+    });
+    const payoutAmount = Math.max(0, Math.min(input.task.rewardPerSlot, publisherLedger.available));
+    const payoutShortfallAmount = Math.max(0, input.task.rewardPerSlot - payoutAmount);
+
+    if (payoutAmount > 0) {
+      await tx.ledgerBalance.update({
+        where: { address: input.task.publisherAddress },
+        data: {
+          available: {
+            decrement: payoutAmount
+          },
+          updatedAt: input.now
+        }
+      });
+    } else {
+      await tx.ledgerBalance.update({
+        where: { address: input.task.publisherAddress },
+        data: {
+          updatedAt: input.now
+        }
+      });
+    }
+
+    if (!completedAgents.includes(submissionAgent)) {
+      completedAgents.push(submissionAgent);
+    }
+    await tx.submission.update({
+      where: { id: input.submission.id },
+      data: {
+        status: DomainSubmissionStatus.DISPUTE_COMPLETED,
+        updatedAt: input.now
+      }
+    });
+    await tx.task.update({
+      where: { id: input.task.id },
+      data: {
+        completedAgents: toJsonAddressArray(completedAgents),
+        status: this.hasPayableSlot(input.task) ? input.task.status : DomainTaskStatus.CLOSED,
+        updatedAt: input.now
+      }
+    });
+
+    await this.settleConfirmedSubmissionWithTx(tx, {
+      submissionAgent,
+      publisher,
+      rewardPerSlot: payoutAmount,
+      taskId: input.task.id,
+      cycleId: input.cycleId,
+      actor: publisher,
+      now: input.now,
+      grantPublisherCredits: false,
+      disputeId: input.disputeId
+    });
+
+    await tx.dispute.update({
+      where: { id: input.disputeId },
+      data: {
+        resolutionRollbackSnapshot: toJsonDisputeResolutionRollback(input.rollback)
+      }
+    });
+    if (payoutShortfallAmount > 0) {
+      await this.banAgentWithTx(tx, publisher, input.now, AgentBanReason.DISPUTE_INSOLVENCY, input.disputeId);
+      await this.sweepBannedPublisherCleanTasksWithTx(tx, input.now, input.cycleId);
+    }
+    const publisherProfile = await tx.agentProfile.findUnique({
+      where: { address: input.task.publisherAddress },
+      select: { status: true }
+    });
+
+    await tx.dispute.update({
+      where: { id: input.disputeId },
+      data: {
+        resolutionPayoutSource:
+          payoutShortfallAmount > 0
+            ? DisputePayoutSource.PUBLISHER_WALLET_PARTIAL
+            : DisputePayoutSource.PUBLISHER_WALLET,
+        resolutionPayoutAmount: payoutAmount,
+        resolutionPayoutShortfallAmount: payoutShortfallAmount,
+        resolutionPublisherBanned: publisherProfile?.status === AgentStatus.BANNED
+      }
+    });
+  }
+
+  private async appendForcedTerminationRollbackWithTx(
+    tx: Prisma.TransactionClient,
+    disputeId: string,
+    rollback: ForcedTerminationRollbackRecord
+  ): Promise<void> {
+    const dispute = await tx.dispute.findUnique({
+      where: { id: disputeId },
+      select: { resolutionRollbackSnapshot: true }
+    });
+    if (!dispute) {
+      throw new DomainError("DISPUTE_NOT_FOUND", `Dispute ${disputeId} does not exist`, 404);
+    }
+    const snapshot = asDisputeResolutionRollback(dispute.resolutionRollbackSnapshot);
+    if (!snapshot) {
+      return;
+    }
+    snapshot.forcedTerminations.push(rollback);
+    await tx.dispute.update({
+      where: { id: disputeId },
+      data: {
+        resolutionRollbackSnapshot: toJsonDisputeResolutionRollback(snapshot)
+      }
+    });
+  }
+
+  private async appendDisputeRollbackHistoryWithTx(
+    tx: Prisma.TransactionClient,
+    input: {
+      dispute: {
+        id: string;
+        status: string;
+        resolutionPayoutSource: string | null;
+        resolutionPayoutAmount: number | null;
+        resolutionPayoutShortfallAmount: number | null;
+        resolutionPublisherBanned: boolean | null;
+        resolutionRollbackSnapshot: Prisma.JsonValue | null;
+      };
+      reopenedAt: Date;
+    }
+  ): Promise<void> {
+    const [votes, workloads, activities] = await Promise.all([
+      tx.supervisionVote.findMany({
+        where: { disputeId: input.dispute.id },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }]
+      }),
+      tx.cycleWorkload.findMany({
+        where: { disputeId: input.dispute.id },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }]
+      }),
+      tx.activityEvent.findMany({
+        where: {
+          disputeId: input.dispute.id,
+          type: {
+            in: [DomainActivityEventType.TASK_COMPLETED, DomainActivityEventType.TASK_TERMINATED]
+          }
+        },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }]
+      })
+    ]);
+    const hasPreviousResolution =
+      input.dispute.resolutionPayoutSource !== null ||
+      input.dispute.resolutionPayoutAmount !== null ||
+      input.dispute.resolutionPayoutShortfallAmount !== null ||
+      input.dispute.resolutionPublisherBanned !== null ||
+      input.dispute.resolutionRollbackSnapshot !== null;
+    if (!hasPreviousResolution && votes.length === 0 && workloads.length === 0 && activities.length === 0) {
+      return;
+    }
+
+    await tx.disputeRollbackHistory.create({
+      data: {
+        id: nanoid(),
+        disputeId: input.dispute.id,
+        previousStatus: input.dispute.status as DomainDisputeStatus,
+        previousResolutionPayoutSource:
+          (input.dispute.resolutionPayoutSource as DisputePayoutSource | null) ?? null,
+        previousResolutionPayoutAmount: input.dispute.resolutionPayoutAmount,
+        previousResolutionPayoutShortfallAmount: input.dispute.resolutionPayoutShortfallAmount,
+        previousResolutionPublisherBanned: input.dispute.resolutionPublisherBanned,
+        previousResolutionRollbackSnapshot: toJsonDisputeResolutionRollback(
+          asDisputeResolutionRollback(input.dispute.resolutionRollbackSnapshot)
+        ),
+        archivedVotes: toJsonRollbackHistoryEntries(votes.map((item) => mapVote(item))),
+        archivedWorkloads: toJsonRollbackHistoryEntries(workloads.map((item) => mapCycleWorkload(item))),
+        archivedActivities: toJsonRollbackHistoryEntries(activities.map((item) => mapActivityEvent(item))),
+        reopenedAt: input.reopenedAt
+      }
+    });
+  }
+
+  private async reopenDisputeAsNotCompletedWithTx(
+    tx: Prisma.TransactionClient,
+    disputeId: string,
+    now: Date,
+    activeCycleId: string
+  ): Promise<void> {
+    const dispute = await tx.dispute.findUnique({
+      where: { id: disputeId },
+      select: {
+        id: true,
+        taskId: true,
+        submissionId: true,
+        status: true,
+        resolutionPayoutSource: true,
+        resolutionPayoutAmount: true,
+        resolutionPayoutShortfallAmount: true,
+        resolutionPublisherBanned: true,
+        resolutionRollbackSnapshot: true
+      }
+    });
+    if (!dispute) {
+      throw new DomainError("DISPUTE_NOT_FOUND", `Dispute ${disputeId} does not exist`, 404);
+    }
+
+    const affectedCycleIds = await this.collectDisputeAffectedCycleIdsWithTx(tx, disputeId);
+    const distributionsBefore = await this.captureClosedCycleDistributionsWithTx(tx, affectedCycleIds);
+    const wasResolvedCompleted = dispute.status === DomainDisputeStatus.RESOLVED_COMPLETED;
+    await this.appendDisputeRollbackHistoryWithTx(tx, {
+      dispute,
+      reopenedAt: now
+    });
+    let publisherRemainsBanned = false;
+    if (wasResolvedCompleted) {
+      publisherRemainsBanned = await this.rollbackResolvedCompletedDisputeWithTx(tx, dispute, now);
+    }
+    await this.clearDisputeVotesWithTx(tx, disputeId, wasResolvedCompleted, now);
+    await tx.dispute.update({
+      where: { id: disputeId },
+      data: {
+        status: DomainDisputeStatus.OPEN,
+        resolutionPayoutSource: null,
+        resolutionPayoutAmount: null,
+        resolutionPayoutShortfallAmount: null,
+        resolutionPublisherBanned: null,
+        resolutionRollbackSnapshot: Prisma.JsonNull,
+        updatedAt: now
+      }
+    });
+    if (publisherRemainsBanned) {
+      await this.sweepBannedPublisherCleanTasksWithTx(tx, now, activeCycleId);
+    }
+    await this.reconcileClosedCycleDistributionsWithTx(tx, distributionsBefore, now);
+  }
+
+  private async collectDisputeAffectedCycleIdsWithTx(
+    tx: Prisma.TransactionClient,
+    disputeId: string
+  ): Promise<Set<string>> {
+    const [votes, workloads, dispute] = await Promise.all([
+      tx.supervisionVote.findMany({
+        where: { disputeId },
+        select: { createdCycleId: true }
+      }),
+      tx.cycleWorkload.findMany({
+        where: { disputeId },
+        select: { cycleId: true }
+      }),
+      tx.dispute.findUnique({
+        where: { id: disputeId },
+        select: { resolutionRollbackSnapshot: true }
+      })
+    ]);
+    const cycleIds = new Set<string>();
+    for (const vote of votes) {
+      cycleIds.add(vote.createdCycleId);
+    }
+    for (const workload of workloads) {
+      cycleIds.add(workload.cycleId);
+    }
+    const rollback = asDisputeResolutionRollback(dispute?.resolutionRollbackSnapshot ?? null);
+    for (const termination of rollback?.forcedTerminations ?? []) {
+      cycleIds.add(termination.cycleId);
+    }
+    return cycleIds;
+  }
+
+  private async captureClosedCycleDistributionsWithTx(
+    tx: Prisma.TransactionClient,
+    cycleIds: Iterable<string>
+  ): Promise<Map<string, Map<Address, number>>> {
+    const snapshot = new Map<string, Map<Address, number>>();
+    for (const cycleId of cycleIds) {
+      const cycle = await tx.cycle.findUnique({
+        where: { id: cycleId },
+        select: { status: true }
+      });
+      if (!cycle || cycle.status !== DomainCycleStatus.CLOSED) {
+        continue;
+      }
+      snapshot.set(cycleId, await this.computeCycleDistributionWithTx(tx, cycleId));
+    }
+    return snapshot;
+  }
+
+  private async computeCycleDistributionWithTx(
+    tx: Prisma.TransactionClient,
+    cycleId: string
+  ): Promise<Map<Address, number>> {
+    const cycle = await tx.cycle.findUnique({
+      where: { id: cycleId },
+      select: { mintedAmount: true, taxPool: true, penaltyPool: true }
+    });
+    if (!cycle) {
+      throw new DomainError("CYCLE_NOT_FOUND", `Cycle ${cycleId} not found`, 404);
+    }
+    const workloads = await tx.cycleWorkload.findMany({
+      where: { cycleId },
+      select: { agentAddress: true, workload: true }
+    });
+    const grouped = new Map<string, number>();
+    for (const workload of workloads) {
+      grouped.set(workload.agentAddress, (grouped.get(workload.agentAddress) ?? 0) + workload.workload);
+    }
+    const rewardPool = cycle.mintedAmount + cycle.taxPool + cycle.penaltyPool;
+    return new Map(
+      [...allocateIntegerPool(rewardPool, grouped).entries()].map(([agent, amount]) => [asAddress(agent), amount])
+    );
+  }
+
+  private async reconcileClosedCycleDistributionsWithTx(
+    tx: Prisma.TransactionClient,
+    distributionsBefore: Map<string, Map<Address, number>>,
+    now: Date
+  ): Promise<void> {
+    for (const [cycleId, before] of distributionsBefore.entries()) {
+      const after = await this.computeCycleDistributionWithTx(tx, cycleId);
+      const agents = new Set<Address>([...before.keys(), ...after.keys()]);
+      for (const agent of agents) {
+        const delta = (after.get(agent) ?? 0) - (before.get(agent) ?? 0);
+        if (delta === 0) {
+          continue;
+        }
+        await this.ensureAgentAndLedgerWithTx(tx, agent, now);
+        await tx.ledgerBalance.update({
+          where: { address: agent },
+          data: {
+            available: {
+              increment: delta
+            },
+            updatedAt: now
+          }
+        });
+      }
+    }
+  }
+
+  private async rollbackResolvedCompletedDisputeWithTx(
+    tx: Prisma.TransactionClient,
+    dispute: {
+      id: string;
+      taskId: string;
+      submissionId: string;
+      resolutionPayoutSource: string | null;
+      resolutionPayoutAmount: number | null;
+      resolutionRollbackSnapshot: Prisma.JsonValue | null;
+    },
+    now: Date
+  ): Promise<boolean> {
+    const submission = await tx.submission.findUnique({
+      where: { id: dispute.submissionId },
+      select: { id: true, taskId: true, agentAddress: true, status: true }
+    });
+    if (!submission) {
+      throw new DomainError("SUBMISSION_NOT_FOUND", `Submission ${dispute.submissionId} not found`, 404);
+    }
+    const task = await tx.task.findUnique({
+      where: { id: dispute.taskId },
+      select: {
+        id: true,
+        publisherAddress: true,
+        status: true,
+        rewardPerSlot: true,
+        rewardEscrowRemaining: true,
+        completedAgents: true
+      }
+    });
+    if (!task) {
+      throw new DomainError("TASK_NOT_FOUND", `Task ${dispute.taskId} does not exist`, 404);
+    }
+    const rollback = asDisputeResolutionRollback(dispute.resolutionRollbackSnapshot);
+    const payoutAmount =
+      dispute.resolutionPayoutAmount ??
+      ((submission.status as DomainSubmissionStatus) === DomainSubmissionStatus.CONFIRMED ? task.rewardPerSlot : 0);
+    const payoutSource = dispute.resolutionPayoutSource ?? DisputePayoutSource.ESCROW;
+
+    await tx.submission.update({
+      where: { id: submission.id },
+      data: {
+        status: DomainSubmissionStatus.REJECTED,
+        updatedAt: now
+      }
+    });
+
+    const completedAgents = asAddressArray(task.completedAgents);
+    const hasOtherCompletion =
+      (await tx.submission.count({
+        where: {
+          taskId: task.id,
+          agentAddress: submission.agentAddress,
+          id: { not: submission.id },
+          status: {
+            in: [DomainSubmissionStatus.CONFIRMED, DomainSubmissionStatus.DISPUTE_COMPLETED]
+          }
+        }
+      })) > 0;
+    const nextCompletedAgents = hasOtherCompletion
+      ? completedAgents
+      : completedAgents.filter((item) => item !== asAddress(submission.agentAddress));
+    await tx.task.update({
+      where: { id: task.id },
+      data: {
+        rewardEscrowRemaining:
+          rollback?.taskRewardEscrowRemainingBeforeResolution ?? task.rewardEscrowRemaining,
+        status: rollback?.taskStatusBeforeResolution ?? DomainTaskStatus.IN_PROGRESS,
+        completedAgents: toJsonAddressArray(nextCompletedAgents),
+        updatedAt: now
+      }
+    });
+
+    await this.ensureAgentAndLedgerWithTx(tx, asAddress(submission.agentAddress), now);
+    await tx.ledgerBalance.update({
+      where: { address: submission.agentAddress },
+      data: {
+        available: {
+          decrement: payoutAmount
+        },
+        updatedAt: now
+      }
+    });
+    if (payoutSource !== DisputePayoutSource.ESCROW) {
+      await this.ensureAgentAndLedgerWithTx(tx, asAddress(task.publisherAddress), now);
+      await tx.ledgerBalance.update({
+        where: { address: task.publisherAddress },
+        data: {
+          available: {
+            increment: payoutAmount
+          },
+          updatedAt: now
+        }
+      });
+    }
+    await this.applyProfileDeltaWithTx(tx, asAddress(submission.agentAddress), now, {
+      workerReputationDelta: -2,
+      tasksCompleted: -1
+    });
+
+    await tx.cycleWorkload.deleteMany({
+      where: {
+        disputeId: dispute.id,
+        taskId: task.id
+      }
+    });
+    await tx.activityEvent.deleteMany({
+      where: {
+        type: DomainActivityEventType.TASK_COMPLETED,
+        disputeId: dispute.id
+      }
+    });
+    for (const termination of rollback?.forcedTerminations ?? []) {
+      await this.rollbackForcedTerminationWithTx(tx, dispute.id, termination, now);
+    }
+    return this.restorePublisherBanStateWithTx(
+      tx,
+      asAddress(task.publisherAddress),
+      dispute.id,
+      rollback,
+      now
+    );
+  }
+
+  private async rollbackForcedTerminationWithTx(
+    tx: Prisma.TransactionClient,
+    disputeId: string,
+    rollback: ForcedTerminationRollbackRecord,
+    now: Date
+  ): Promise<void> {
+    const task = await tx.task.findUnique({
+      where: { id: rollback.taskId },
+      select: { id: true, publisherAddress: true }
+    });
+    if (!task) {
+      throw new DomainError("TASK_NOT_FOUND", `Task ${rollback.taskId} does not exist`, 404);
+    }
+    await this.ensureAgentAndLedgerWithTx(tx, asAddress(task.publisherAddress), now);
+    await tx.ledgerBalance.update({
+      where: { address: task.publisherAddress },
+      data: {
+        available: {
+          decrement: rollback.refund
+        },
+        updatedAt: now
+      }
+    });
+    await tx.cycle.update({
+      where: { id: rollback.cycleId },
+      data: {
+        penaltyPool: {
+          decrement: rollback.penalty
+        }
+      }
+    });
+    await tx.task.update({
+      where: { id: rollback.taskId },
+      data: {
+        rewardEscrowRemaining: rollback.previousRewardEscrowRemaining,
+        status: rollback.previousStatus,
+        updatedAt: now
+      }
+    });
+    await this.applyProfileDeltaWithTx(tx, asAddress(task.publisherAddress), now, {
+      publisherReputationDelta: 1,
+      tasksTerminated: -1
+    });
+    await tx.activityEvent.deleteMany({
+      where: {
+        type: DomainActivityEventType.TASK_TERMINATED,
+        disputeId,
+        taskId: rollback.taskId
+      }
+    });
+  }
+
+  private async clearDisputeVotesWithTx(
+    tx: Prisma.TransactionClient,
+    disputeId: string,
+    reverseResolvedOutcome: boolean,
+    now: Date
+  ): Promise<void> {
+    const votes = await tx.supervisionVote.findMany({
+      where: { disputeId },
+      select: { id: true, agentAddress: true, vote: true }
+    });
+    for (const vote of votes) {
+      await this.applyProfileDeltaWithTx(tx, asAddress(vote.agentAddress), now, {
+        supervisorReputationDelta:
+          -0.5 + (reverseResolvedOutcome ? (vote.vote === DomainVoteChoice.COMPLETED ? -1 : 1) : 0),
+        supervisionVotes: -1
+      });
+    }
+    await tx.supervisionVote.deleteMany({ where: { disputeId } });
+    await tx.cycleWorkload.deleteMany({
+      where: {
+        disputeId,
+        taskId: null
+      }
+    });
+  }
+
+  private async restorePublisherBanStateWithTx(
+    tx: Prisma.TransactionClient,
+    publisher: Address,
+    disputeId: string,
+    rollback: DisputeResolutionRollbackRecord | null,
+    now: Date
+  ): Promise<boolean> {
+    const alternateBanSourceDisputeId = await this.findAlternateBanSourceDisputeIdWithTx(tx, publisher, disputeId);
+    if (rollback?.publisherWasBannedBeforeResolution) {
+      await tx.agentProfile.update({
+        where: { address: publisher },
+        data: {
+          banSourceDisputeId:
+            rollback.publisherBanSourceDisputeIdBeforeResolution ?? alternateBanSourceDisputeId,
+          updatedAt: now
+        }
+      });
+      return true;
+    }
+    const profile = await tx.agentProfile.findUnique({
+      where: { address: publisher },
+      select: { banSourceDisputeId: true, status: true }
+    });
+    if (alternateBanSourceDisputeId) {
+      await tx.agentProfile.update({
+        where: { address: publisher },
+        data: {
+          status: AgentStatus.BANNED,
+          banReasonCode: AgentBanReason.DISPUTE_INSOLVENCY,
+          banSourceDisputeId: alternateBanSourceDisputeId,
+          updatedAt: now
+        }
+      });
+      return true;
+    }
+    if (!profile || profile.banSourceDisputeId !== disputeId) {
+      return profile?.status === AgentStatus.BANNED;
+    }
+    await tx.agentProfile.update({
+      where: { address: publisher },
+      data: {
+        status: AgentStatus.ACTIVE,
+        bannedAt: null,
+        banReasonCode: null,
+        banSourceDisputeId: null,
+        updatedAt: now
+      }
+    });
+    return false;
+  }
+
+  private async findAlternateBanSourceDisputeIdWithTx(
+    tx: Prisma.TransactionClient,
+    publisher: Address,
+    excludingDisputeId: string
+  ): Promise<string | null> {
+    const alternate = await tx.dispute.findFirst({
+      where: {
+        id: { not: excludingDisputeId },
+        status: DomainDisputeStatus.RESOLVED_COMPLETED,
+        resolutionPayoutSource: DisputePayoutSource.PUBLISHER_WALLET_PARTIAL,
+        task: {
+          publisherAddress: publisher
+        }
+      },
+      orderBy: { updatedAt: "asc" },
+      select: { id: true }
+    });
+    return alternate?.id ?? null;
   }
 
   private async evaluateDisputeWithTx(
@@ -2116,15 +3104,70 @@ export class PrismaStateRepository {
       throw new DomainError("TASK_NOT_FOUND", `Task ${dispute.taskId} does not exist`, 404);
     }
 
-    if (outcome === DomainVoteChoice.COMPLETED && submission.status !== DomainSubmissionStatus.CONFIRMED) {
-      await this.confirmSubmissionInternalWithTx(
-        tx,
-        submission,
-        task,
-        now,
-        cycleId,
-        asAddress(task.publisherAddress)
-      );
+    if (outcome === DomainVoteChoice.COMPLETED) {
+      if (
+        submission.status !== DomainSubmissionStatus.CONFIRMED &&
+        submission.status !== DomainSubmissionStatus.DISPUTE_COMPLETED
+      ) {
+        const publisherProfileBeforeResolution = await tx.agentProfile.findUnique({
+          where: { address: task.publisherAddress },
+          select: { status: true, banSourceDisputeId: true }
+        });
+        const rollback: DisputeResolutionRollbackRecord = {
+          resolutionCycleId: cycleId,
+          taskStatusBeforeResolution: task.status as DomainTaskStatus,
+          taskRewardEscrowRemainingBeforeResolution: task.rewardEscrowRemaining,
+          publisherWasBannedBeforeResolution: publisherProfileBeforeResolution?.status === AgentStatus.BANNED,
+          publisherBanSourceDisputeIdBeforeResolution:
+            publisherProfileBeforeResolution?.banSourceDisputeId ?? null,
+          forcedTerminations: []
+        };
+        if (this.hasPayableSlot(task)) {
+          await this.confirmSubmissionInternalWithTx(
+            tx,
+            submission,
+            task,
+            now,
+            cycleId,
+            asAddress(task.publisherAddress),
+            {
+              grantPublisherCredits: false,
+              disputeId
+            }
+          );
+          const publisher = await tx.agentProfile.findUnique({
+            where: { address: task.publisherAddress },
+            select: { status: true }
+          });
+          await tx.dispute.update({
+            where: { id: disputeId },
+            data: {
+              resolutionPayoutSource: DisputePayoutSource.ESCROW,
+              resolutionPayoutAmount: task.rewardPerSlot,
+              resolutionPayoutShortfallAmount: 0,
+              resolutionPublisherBanned: publisher?.status === AgentStatus.BANNED,
+              resolutionRollbackSnapshot: toJsonDisputeResolutionRollback(rollback)
+            }
+          });
+        } else {
+          await this.resolveCompletedDisputeFromPublisherWalletWithTx(tx, {
+            disputeId,
+            submission,
+            task: {
+              id: task.id,
+              publisherAddress: task.publisherAddress,
+              status: task.status as DomainTaskStatus,
+              slotsTotal: task.slotsTotal,
+              rewardPerSlot: task.rewardPerSlot,
+              rewardEscrowRemaining: task.rewardEscrowRemaining,
+              completedAgents: task.completedAgents
+            },
+            now,
+            cycleId,
+            rollback
+          });
+        }
+      }
     }
 
     const votes = await tx.supervisionVote.findMany({ where: { disputeId } });
@@ -2385,6 +3428,7 @@ export class PrismaStateRepository {
     const includeIntentions = !scopeSet || scopeSet.has("intentions");
     const includeSubmissions = !scopeSet || scopeSet.has("submissions");
     const includeDisputes = !scopeSet || scopeSet.has("disputes");
+    const includeDisputeRollbackHistory = includeDisputes && nextSnapshot.disputeRollbackHistory !== undefined;
     const includeVotes = !scopeSet || scopeSet.has("votes");
     const includeCycleWorkloads = !scopeSet || scopeSet.has("cycleWorkloads");
     const includeActivities = !scopeSet || scopeSet.has("activities");
@@ -2410,6 +3454,27 @@ export class PrismaStateRepository {
     const disputeDiff = includeDisputes
       ? diffByKey(currentSnapshot?.disputes ?? [], nextSnapshot.disputes, (item) => item.id)
       : { upserts: [], deletes: [] };
+    const disputeResolutionDiff = includeDisputes
+      ? diffByKey(
+          currentSnapshot?.disputeResolutionMeta ?? [],
+          nextSnapshot.disputeResolutionMeta ?? [],
+          (item) => item.disputeId
+        )
+      : { upserts: [], deletes: [] };
+    const disputeRollbackHistoryDiff = includeDisputeRollbackHistory
+      ? diffByKey(
+          currentSnapshot?.disputeRollbackHistory ?? [],
+          nextSnapshot.disputeRollbackHistory ?? [],
+          (item) => item.id
+        )
+      : { upserts: [], deletes: [] };
+    const banSourceDiff = includeProfiles
+      ? diffByKey(
+          currentSnapshot?.banSourceDisputeByPublisher ?? [],
+          nextSnapshot.banSourceDisputeByPublisher ?? [],
+          (item) => item[0]
+        )
+      : { upserts: [], deletes: [] };
     const voteDiff = includeVotes
       ? diffByKey(currentSnapshot?.votes ?? [], nextSnapshot.votes, (item) => item.id)
       : { upserts: [], deletes: [] };
@@ -2419,6 +3484,13 @@ export class PrismaStateRepository {
     const activityDiff = includeActivities
       ? diffByKey(currentSnapshot?.activities ?? [], nextSnapshot.activities, (item) => item.id)
       : { upserts: [], deletes: [] };
+    const nextDisputeResolutionMetaById = new Map(
+      (nextSnapshot.disputeResolutionMeta ?? []).map((item) => [item.disputeId, item])
+    );
+    const nextDisputeRollbackHistoryById = new Map(
+      (nextSnapshot.disputeRollbackHistory ?? []).map((item) => [item.id, item])
+    );
+    const nextBanSourceByPublisher = new Map(nextSnapshot.banSourceDisputeByPublisher ?? []);
 
     for (const item of cycleDiff.upserts) {
       await tx.cycle.upsert({
@@ -2450,6 +3522,10 @@ export class PrismaStateRepository {
           address: item.address,
           name: item.name,
           bio: item.bio,
+          status: item.status,
+          bannedAt: item.bannedAt ? toDate(item.bannedAt) : null,
+          banReasonCode: item.banReasonCode,
+          banSourceDisputeId: nextBanSourceByPublisher.get(item.address) ?? null,
           publisherRep: item.reputation.publisher,
           workerRep: item.reputation.worker,
           supervisorRep: item.reputation.supervisor,
@@ -2465,6 +3541,10 @@ export class PrismaStateRepository {
         update: {
           name: item.name,
           bio: item.bio,
+          status: item.status,
+          bannedAt: item.bannedAt ? toDate(item.bannedAt) : null,
+          banReasonCode: item.banReasonCode,
+          banSourceDisputeId: nextBanSourceByPublisher.get(item.address) ?? null,
           publisherRep: item.reputation.publisher,
           workerRep: item.reputation.worker,
           supervisorRep: item.reputation.supervisor,
@@ -2581,6 +3661,7 @@ export class PrismaStateRepository {
     }
 
     for (const item of disputeDiff.upserts) {
+      const resolutionMeta = nextDisputeResolutionMetaById.get(item.id);
       await tx.dispute.upsert({
         where: { id: item.id },
         create: {
@@ -2592,6 +3673,13 @@ export class PrismaStateRepository {
           counterpartyResponderAddress: item.counterpartyResponder ?? null,
           counterpartyReasonMd: item.counterpartyReasonMd ?? null,
           status: item.status,
+          resolutionPayoutSource: resolutionMeta?.payoutSource ?? null,
+          resolutionPayoutAmount: resolutionMeta?.payoutAmount ?? null,
+          resolutionPayoutShortfallAmount: resolutionMeta?.payoutShortfallAmount ?? null,
+          resolutionPublisherBanned: resolutionMeta?.publisherBanned ?? null,
+          resolutionRollbackSnapshot: toJsonDisputeResolutionRollback(
+            (resolutionMeta?.rollback as DisputeResolutionRollbackRecord | null | undefined) ?? null
+          ),
           createdAt: toDate(item.createdAt),
           updatedAt: toDate(item.updatedAt)
         },
@@ -2603,8 +3691,98 @@ export class PrismaStateRepository {
           counterpartyResponderAddress: item.counterpartyResponder ?? null,
           counterpartyReasonMd: item.counterpartyReasonMd ?? null,
           status: item.status,
+          resolutionPayoutSource: resolutionMeta?.payoutSource ?? null,
+          resolutionPayoutAmount: resolutionMeta?.payoutAmount ?? null,
+          resolutionPayoutShortfallAmount: resolutionMeta?.payoutShortfallAmount ?? null,
+          resolutionPublisherBanned: resolutionMeta?.publisherBanned ?? null,
+          resolutionRollbackSnapshot: toJsonDisputeResolutionRollback(
+            (resolutionMeta?.rollback as DisputeResolutionRollbackRecord | null | undefined) ?? null
+          ),
           createdAt: toDate(item.createdAt),
           updatedAt: toDate(item.updatedAt)
+        }
+      });
+    }
+
+    const disputeIdsUpdatedByRow = new Set(disputeDiff.upserts.map((item) => item.id));
+    const disputeMetaOnlyUpdateIds = new Set([
+      ...disputeResolutionDiff.upserts.map((item) => item.disputeId),
+      ...disputeResolutionDiff.deletes
+    ]);
+    for (const disputeId of disputeMetaOnlyUpdateIds) {
+      if (disputeIdsUpdatedByRow.has(disputeId)) {
+        continue;
+      }
+      const resolutionMeta = nextDisputeResolutionMetaById.get(disputeId);
+      await tx.dispute.update({
+        where: { id: disputeId },
+        data: {
+          resolutionPayoutSource: resolutionMeta?.payoutSource ?? null,
+          resolutionPayoutAmount: resolutionMeta?.payoutAmount ?? null,
+          resolutionPayoutShortfallAmount: resolutionMeta?.payoutShortfallAmount ?? null,
+          resolutionPublisherBanned: resolutionMeta?.publisherBanned ?? null,
+          resolutionRollbackSnapshot: toJsonDisputeResolutionRollback(
+            (resolutionMeta?.rollback as DisputeResolutionRollbackRecord | null | undefined) ?? null
+          )
+        }
+      });
+    }
+
+    for (const item of disputeRollbackHistoryDiff.upserts) {
+      const rollbackHistory = nextDisputeRollbackHistoryById.get(item.id);
+      if (!rollbackHistory) {
+        continue;
+      }
+      await tx.disputeRollbackHistory.upsert({
+        where: { id: rollbackHistory.id },
+        create: {
+          id: rollbackHistory.id,
+          disputeId: rollbackHistory.disputeId,
+          previousStatus: rollbackHistory.previousStatus,
+          previousResolutionPayoutSource: rollbackHistory.previousResolution?.payoutSource ?? null,
+          previousResolutionPayoutAmount: rollbackHistory.previousResolution?.payoutAmount ?? null,
+          previousResolutionPayoutShortfallAmount:
+            rollbackHistory.previousResolution?.payoutShortfallAmount ?? null,
+          previousResolutionPublisherBanned: rollbackHistory.previousResolution?.publisherBanned ?? null,
+          previousResolutionRollbackSnapshot: toJsonDisputeResolutionRollback(
+            rollbackHistory.previousResolution?.rollback ?? null
+          ),
+          archivedVotes: toJsonRollbackHistoryEntries(rollbackHistory.archivedVotes),
+          archivedWorkloads: toJsonRollbackHistoryEntries(rollbackHistory.archivedWorkloads),
+          archivedActivities: toJsonRollbackHistoryEntries(rollbackHistory.archivedActivities),
+          reopenedAt: toDate(rollbackHistory.reopenedAt)
+        },
+        update: {
+          disputeId: rollbackHistory.disputeId,
+          previousStatus: rollbackHistory.previousStatus,
+          previousResolutionPayoutSource: rollbackHistory.previousResolution?.payoutSource ?? null,
+          previousResolutionPayoutAmount: rollbackHistory.previousResolution?.payoutAmount ?? null,
+          previousResolutionPayoutShortfallAmount:
+            rollbackHistory.previousResolution?.payoutShortfallAmount ?? null,
+          previousResolutionPublisherBanned: rollbackHistory.previousResolution?.publisherBanned ?? null,
+          previousResolutionRollbackSnapshot: toJsonDisputeResolutionRollback(
+            rollbackHistory.previousResolution?.rollback ?? null
+          ),
+          archivedVotes: toJsonRollbackHistoryEntries(rollbackHistory.archivedVotes),
+          archivedWorkloads: toJsonRollbackHistoryEntries(rollbackHistory.archivedWorkloads),
+          archivedActivities: toJsonRollbackHistoryEntries(rollbackHistory.archivedActivities),
+          reopenedAt: toDate(rollbackHistory.reopenedAt)
+        }
+      });
+    }
+
+    const banSourceProfileIds = new Set([
+      ...banSourceDiff.upserts.map((item) => item[0]),
+      ...banSourceDiff.deletes
+    ]);
+    for (const address of banSourceProfileIds) {
+      if (profileDiff.upserts.some((item) => item.address === address)) {
+        continue;
+      }
+      await tx.agentProfile.update({
+        where: { address },
+        data: {
+          banSourceDisputeId: nextBanSourceByPublisher.get(address as Address) ?? null
         }
       });
     }
@@ -2688,6 +3866,9 @@ export class PrismaStateRepository {
     }
     if (voteDiff.deletes.length > 0) {
       await tx.supervisionVote.deleteMany({ where: { id: { in: voteDiff.deletes } } });
+    }
+    if (disputeRollbackHistoryDiff.deletes.length > 0) {
+      await tx.disputeRollbackHistory.deleteMany({ where: { id: { in: disputeRollbackHistoryDiff.deletes } } });
     }
     if (disputeDiff.deletes.length > 0) {
       await tx.dispute.deleteMany({ where: { id: { in: disputeDiff.deletes } } });
@@ -2872,7 +4053,19 @@ export class PrismaStateRepository {
       return null;
     }
 
-    const [profiles, balances, tasks, taskIntentions, submissions, disputes, votes, cycleWorkloads, cycles, activities] =
+    const [
+      profiles,
+      balances,
+      tasks,
+      taskIntentions,
+      submissions,
+      disputes,
+      disputeRollbackHistory,
+      votes,
+      cycleWorkloads,
+      cycles,
+      activities
+    ] =
       await Promise.all([
         tx.agentProfile.findMany(),
         tx.ledgerBalance.findMany(),
@@ -2880,6 +4073,7 @@ export class PrismaStateRepository {
         tx.taskIntention.findMany(),
         tx.submission.findMany(),
         tx.dispute.findMany(),
+        tx.disputeRollbackHistory.findMany({ orderBy: [{ reopenedAt: "asc" }, { id: "asc" }] }),
         tx.supervisionVote.findMany(),
         tx.cycleWorkload.findMany(),
         tx.cycle.findMany(),
@@ -2890,6 +4084,9 @@ export class PrismaStateRepository {
       address: asAddress(item.address),
       name: item.name,
       bio: item.bio,
+      status: item.status as AgentStatus,
+      bannedAt: item.bannedAt ? toIso(item.bannedAt) : null,
+      banReasonCode: item.banReasonCode as AgentBanReason | null,
       reputation: {
         publisher: item.publisherRep,
         worker: item.workerRep,
@@ -2906,6 +4103,11 @@ export class PrismaStateRepository {
       createdAt: toIso(item.createdAt),
       updatedAt: toIso(item.updatedAt)
     })) satisfies EngineStateSnapshot["profiles"];
+    const banSourceDisputeByPublisher = (
+      profiles
+        .filter((item) => typeof item.banSourceDisputeId === "string" && item.banSourceDisputeId.length > 0)
+        .map((item) => [asAddress(item.address), item.banSourceDisputeId as string] as [Address, string])
+    ) satisfies NonNullable<EngineStateSnapshot["banSourceDisputeByPublisher"]>;
 
     const mappedBalances = balances.map((item) => ({
       address: asAddress(item.address),
@@ -2967,6 +4169,45 @@ export class PrismaStateRepository {
       createdAt: toIso(item.createdAt),
       updatedAt: toIso(item.updatedAt)
     })) satisfies EngineStateSnapshot["disputes"];
+    const disputeResolutionMeta = disputes
+      .filter(
+        (item) =>
+          item.resolutionPayoutSource !== null ||
+          item.resolutionPayoutAmount !== null ||
+          item.resolutionPayoutShortfallAmount !== null ||
+          item.resolutionPublisherBanned !== null
+      )
+      .map((item) => ({
+        disputeId: item.id,
+        payoutSource: (item.resolutionPayoutSource ?? DisputePayoutSource.ESCROW) as DisputePayoutSource,
+        payoutAmount: item.resolutionPayoutAmount ?? 0,
+        payoutShortfallAmount: item.resolutionPayoutShortfallAmount ?? 0,
+        publisherBanned: item.resolutionPublisherBanned ?? false,
+        rollback: asDisputeResolutionRollback(item.resolutionRollbackSnapshot)
+      })) satisfies NonNullable<EngineStateSnapshot["disputeResolutionMeta"]>;
+    const mappedDisputeRollbackHistory = disputeRollbackHistory.map((item) => ({
+      id: item.id,
+      disputeId: item.disputeId,
+      previousStatus: item.previousStatus as DomainDisputeStatus,
+      previousResolution:
+        item.previousResolutionPayoutSource !== null ||
+        item.previousResolutionPayoutAmount !== null ||
+        item.previousResolutionPayoutShortfallAmount !== null ||
+        item.previousResolutionPublisherBanned !== null
+          ? {
+              disputeId: item.disputeId,
+              payoutSource: (item.previousResolutionPayoutSource ?? DisputePayoutSource.ESCROW) as DisputePayoutSource,
+              payoutAmount: item.previousResolutionPayoutAmount ?? 0,
+              payoutShortfallAmount: item.previousResolutionPayoutShortfallAmount ?? 0,
+              publisherBanned: item.previousResolutionPublisherBanned ?? false,
+              rollback: asDisputeResolutionRollback(item.previousResolutionRollbackSnapshot)
+            }
+          : null,
+      archivedVotes: asDisputeRollbackHistoryArray<SupervisionVote>(item.archivedVotes),
+      archivedWorkloads: asDisputeRollbackHistoryArray<CycleWorkload>(item.archivedWorkloads),
+      archivedActivities: asDisputeRollbackHistoryArray<ActivityEvent>(item.archivedActivities),
+      reopenedAt: toIso(item.reopenedAt)
+    })) satisfies NonNullable<EngineStateSnapshot["disputeRollbackHistory"]>;
 
     const mappedVotes = votes.map((item) => ({
       id: item.id,
@@ -3034,13 +4275,16 @@ export class PrismaStateRepository {
       tasks: mappedTasks,
       submissions: mappedSubmissions,
       disputes: mappedDisputes,
+      disputeResolutionMeta,
+      disputeRollbackHistory: mappedDisputeRollbackHistory,
       votes: mappedVotes,
       votesByDisputeAndAgent,
       cycleWorkloads: mappedCycleWorkloads,
       cycles: mappedCycles,
       activities: mappedActivities,
       intentions: mappedIntentions,
-      latestSubmissionByTaskAndAgent
+      latestSubmissionByTaskAndAgent,
+      banSourceDisputeByPublisher
     };
   }
 }

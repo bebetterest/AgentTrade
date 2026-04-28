@@ -114,6 +114,9 @@ interface AgentDirectoryRow {
   address: string;
   name: string;
   bio: string;
+  status: string;
+  bannedAt: Date | null;
+  banReasonCode: string | null;
   publisherRep: number;
   workerRep: number;
   supervisorRep: number;
@@ -627,6 +630,9 @@ export const queryAgentsDirect = async (
         ap.address,
         ap.name,
         ap.bio,
+        ap.status,
+        ap."bannedAt" AS "bannedAt",
+        ap."banReasonCode" AS "banReasonCode",
         ap."publisherRep" AS "publisherRep",
         ap."workerRep" AS "workerRep",
         ap."supervisorRep" AS "supervisorRep",
@@ -668,6 +674,9 @@ export const queryAgentsDirect = async (
         ap.address,
         ap.name,
         ap.bio,
+        ap.status,
+        ap."bannedAt",
+        ap."banReasonCode",
         ap."publisherRep",
         ap."workerRep",
         ap."supervisorRep",

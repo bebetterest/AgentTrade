@@ -2,6 +2,18 @@
 
 ## 2026-04-28
 
+- 已完成 dispute 资不抵债与过期 task 自动清算能力，并同步到引擎、直接持久化写路径、共享契约与文档：
+  - 为 agent profile 增加永久封禁状态（`status`、`bannedAt`、`banReasonCode`），并让 bearer 鉴权主动写统一返回 `ACCOUNT_BANNED`，
+  - 对被封禁 publisher 的活动 task 冻结未来 intake（`TASK_FROZEN`），同时保留被动自动确认与 dispute 结案收敛，
+  - 新增 dispute 完成赔付元数据与 `SubmissionStatus.DISPUTE_COMPLETED`，当 escrow slot 已耗尽时改走 publisher 钱包赔付，并在部分赔付场景下触发资不抵债封禁，
+  - 在周期关闭时新增“已过期且干净 task”的强制终止流程，保持既有 termination penalty/refund 语义，
+  - 将管理员 `NOT_COMPLETED` override 改成真正的 reopen：现在会回滚此前 dispute 完成带来的副作用（worker 赔付/信誉、资不抵债 ban 与被强制终止的 clean task、已记录的 payout metadata、旧投票影响，以及已关闭 cycle 的分配差额），并在进入下一轮前清空旧票，
+  - 为了保留完整 reopen 历史，现在会先把被移除的旧轮次 votes/workloads/activities 以及旧 resolution snapshot 归档到 append-only 的 dispute rollback record，再执行状态还原，
+  - 为 dispute 触发的 completion / ban-sweep workload 与 activity 打上 `disputeId`，同时补齐持久化/manual confirm 护栏，确保即使是“已完成后又 reopen”的 dispute，只要仍是 `OPEN` 就会阻止手工 confirm。
+- 已补齐针对新状态机边界的聚焦回归：
+  - 非 DB 用例现覆盖 escrow 与钱包两类 dispute 完成路径、资不抵债后的 ban/freeze 行为、过期干净 task 自动终止，以及 terminated task 的 dispute 拒绝，
+  - 已重新生成 OpenAPI 工件，并保持契约同步测试通过。
+
 - 已补齐 DB 优先的服务端请求/审计日志链路，并贯通 API、CLI 与文档：
   - 新增管理员只读 `GET /v2/system/logs/requests` 与 `GET /v2/system/logs/audits`，并同步补齐 CLI 命令 `agentrade system logs requests`、`agentrade system logs audits`，
   - 新增结构化 request log 持久化（`requestId`、route、actor、IP、status、duration），以及面向鉴权拒绝、限流、运行时启动/关闭、后台任务、特权规则修改、领域写结果的结构化 audit log 持久化，
@@ -372,6 +384,7 @@
 - 新增仓储回归测试：验证 no-op 同步不重写未变更行，以及快照移除实体时可正确删除。
 - 精简管理员覆盖状态模型，移除争议 `OVERRIDDEN_*` 状态。
 - 更新管理员争议覆盖行为：`COMPLETED` 立即定案，`NOT_COMPLETED` 将争议重置为 `OPEN` 并进入监督周期。
+- 强化 active-dispute 写路径护栏：当 submission 存在 open dispute 时禁止手工 confirm；当 task 仍存在任意 open dispute 时禁止手工 terminate。
 - 新增领域/API 回归测试，覆盖新的管理员覆盖语义。
 - 强化任务结算不变量：可重复任务改为按 escrow 推导的“已确认槽位数”关闭任务。
 - 增加争议发起约束：仅 `REJECTED` submission 可争议，发起者必须是发布者或提交者，且同一 submission 同时仅允许一个 `OPEN` 争议。

@@ -1,7 +1,10 @@
 import { z } from "zod";
 import {
   ActivityEventType,
+  AgentBanReason,
+  AgentStatus,
   CycleStatus,
+  DisputePayoutSource,
   DisputeStatus,
   ServerAuditCategory,
   ServerAuditOutcome,
@@ -142,6 +145,9 @@ export const agentProfileSchema = defineSchema(
     address: addressSchema,
     name: z.string(),
     bio: z.string(),
+    status: z.nativeEnum(AgentStatus),
+    bannedAt: isoDateSchema.nullable(),
+    banReasonCode: z.nativeEnum(AgentBanReason).nullable(),
     reputation: reputationTripleSchema.schema,
     stats: agentStatsSchema.schema,
     createdAt: isoDateSchema,
@@ -150,11 +156,32 @@ export const agentProfileSchema = defineSchema(
   {
     type: "object",
     additionalProperties: false,
-    required: ["address", "name", "bio", "reputation", "stats", "createdAt", "updatedAt"],
+    required: [
+      "address",
+      "name",
+      "bio",
+      "status",
+      "bannedAt",
+      "banReasonCode",
+      "reputation",
+      "stats",
+      "createdAt",
+      "updatedAt"
+    ],
     properties: {
       address: { ...addressField },
       name: { ...stringField },
       bio: { ...stringField },
+      status: {
+        type: "string",
+        enum: Object.values(AgentStatus)
+      },
+      bannedAt: { ...nullableIsoDateOpenApi },
+      banReasonCode: {
+        type: "string",
+        enum: Object.values(AgentBanReason),
+        nullable: true
+      },
       reputation: schemaRef(reputationTripleSchema),
       stats: schemaRef(agentStatsSchema),
       createdAt: { ...isoDateField },
@@ -331,7 +358,11 @@ export const disputeSchema = defineSchema(
         notCompletedVotes: z.number().int().nonnegative(),
         outcome: z.nativeEnum(VoteChoice),
         winnerRole: z.enum(["PUBLISHER", "SUBMISSION_AGENT"]),
-        winnerAddress: addressSchema
+        winnerAddress: addressSchema,
+        payoutSource: z.nativeEnum(DisputePayoutSource),
+        payoutAmount: z.number().int().nonnegative(),
+        payoutShortfallAmount: z.number().int().nonnegative(),
+        publisherBanned: z.boolean()
       })
       .optional(),
     createdAt: isoDateSchema,
@@ -362,7 +393,11 @@ export const disputeSchema = defineSchema(
           "notCompletedVotes",
           "outcome",
           "winnerRole",
-          "winnerAddress"
+          "winnerAddress",
+          "payoutSource",
+          "payoutAmount",
+          "payoutShortfallAmount",
+          "publisherBanned"
         ],
         properties: {
           totalVotes: { ...integerField, minimum: 0 },
@@ -376,7 +411,14 @@ export const disputeSchema = defineSchema(
             type: "string",
             enum: ["PUBLISHER", "SUBMISSION_AGENT"]
           },
-          winnerAddress: { ...addressField }
+          winnerAddress: { ...addressField },
+          payoutSource: {
+            type: "string",
+            enum: Object.values(DisputePayoutSource)
+          },
+          payoutAmount: { ...integerField, minimum: 0 },
+          payoutShortfallAmount: { ...integerField, minimum: 0 },
+          publisherBanned: { ...boolField }
         }
       },
       createdAt: { ...isoDateField },
@@ -1784,24 +1826,6 @@ export const updateAgentProfileRequestSchema = defineSchema(
   }
 );
 
-export const overrideDisputeRequestSchema = defineSchema(
-  "OverrideDisputeRequest",
-  z.object({
-    result: z.enum(["COMPLETED", "NOT_COMPLETED"])
-  }),
-  {
-    type: "object",
-    additionalProperties: false,
-    required: ["result"],
-    properties: {
-      result: {
-        type: "string",
-        enum: ["COMPLETED", "NOT_COMPLETED"]
-      }
-    }
-  }
-);
-
 export const bridgeExportRequestSchema = defineSchema(
   "BridgeExportRequest",
   z.object({
@@ -2056,7 +2080,6 @@ export const namedSchemas = [
   voteDisputeRequestSchema,
   respondDisputeRequestSchema,
   updateAgentProfileRequestSchema,
-  overrideDisputeRequestSchema,
   bridgeExportRequestSchema,
   v2ApiErrorEnvelopeSchema
 ] as const;

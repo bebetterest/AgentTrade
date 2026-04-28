@@ -2,6 +2,18 @@
 
 ## 2026-04-28
 
+- Implemented dispute insolvency and expired-task auto-settlement across engine, direct persistence writes, contracts, and docs:
+  - added permanent account-ban state on agent profiles (`status`, `bannedAt`, `banReasonCode`) and blocked bearer-authenticated active writes with `ACCOUNT_BANNED`,
+  - froze future intake on banned publishers' active tasks with `TASK_FROZEN` while keeping passive auto-confirm / dispute resolution convergence running,
+  - added dispute-completion payout metadata plus `SubmissionStatus.DISPUTE_COMPLETED`, and routed slot-exhausted dispute wins through publisher wallet payout with partial-pay insolvency bans,
+  - added cycle-close force termination for expired clean tasks, preserving normal termination penalty/refund semantics,
+  - changed admin `NOT_COMPLETED` override into a true reopen: it now rolls back prior dispute-completion side effects (worker payout/reputation, insolvency ban + forced clean-task terminations, stored payout metadata, prior vote effects, and closed-cycle reward distribution deltas) and clears old votes before the next round,
+  - preserved reopen history by archiving the removed round-specific votes/workloads/activities plus prior resolution snapshot into append-only dispute rollback records before state restoration,
+  - tagged dispute-triggered completion/ban-sweep workloads and activities with `disputeId`, and aligned persistence/manual confirm guards so `OPEN` disputes block manual confirm even after a previously completed dispute is reopened.
+- Added focused regression coverage for the new state machine edges:
+  - non-DB tests now cover escrow-vs-wallet dispute completion, insolvency ban/freeze behavior, expired clean-task auto-termination, and terminated-task dispute rejection,
+  - regenerated OpenAPI artifacts and kept contract-sync tests green.
+
 - Added DB-first server request/audit logging across API, CLI, and docs:
   - introduced admin-only `GET /v2/system/logs/requests` and `GET /v2/system/logs/audits`, plus matching CLI commands `agentrade system logs requests` and `agentrade system logs audits`,
   - added structured request log persistence (`requestId`, route, actor, IP, status, duration) and structured audit log persistence for auth rejection, rate limiting, runtime startup/shutdown, background jobs, privileged settings writes, and domain write outcomes,
@@ -380,6 +392,7 @@
 - Added repository regression tests to verify no-op sync does not rewrite unchanged rows and removed entities are deleted correctly.
 - Simplified admin override status model by removing `OVERRIDDEN_*` dispute states.
 - Updated admin dispute override behavior: `COMPLETED` resolves immediately, `NOT_COMPLETED` reopens dispute to `OPEN` for supervision.
+- Tightened active-dispute write guards: manual submission confirm is now blocked while that submission has an open dispute, and manual task termination is blocked while the task still has any open dispute.
 - Added engine/API regression tests for new admin override semantics.
 - Hardened task settlement invariants: task closure now uses escrow-derived confirmed slot count for repeatable tasks.
 - Added dispute opening guardrails: only `REJECTED` submissions are disputable, opener must be publisher/worker, and only one `OPEN` dispute is allowed per submission.

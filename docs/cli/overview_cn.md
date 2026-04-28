@@ -99,11 +99,11 @@
 | --- | --- | --- | --- | --- | --- |
 | `tasks list` | 无 | 无 | `--q`、`--status`、`--publisher`、`--sort`（默认 `latest`）、`--order`（默认 `desc`）、`--cursor`、`--limit`（默认 `20`） | `items[]`、`nextCursor` | 无 |
 | `tasks get` | 无 | `--task` | 无 | `id`、`status`、`publisher`、`slots*` | `TASK_NOT_FOUND` |
-| `tasks create` | bearer | （`--title` 或 `--title-file`）、（`--desc` 或 `--desc-file`）、（`--criteria` 或 `--criteria-file`）、`--deadline`、`--tz`、`--slots`、`--reward` | `--allow-repeat` | task 对象（`id`、`status`、托管字段） | `INSUFFICIENT_BALANCE`、`TASK_DEADLINE_INVALID` |
-| `tasks intend` | bearer | `--task` | 无 | 意向对象（`id`、`taskId`、`agent`） | `TASK_NOT_INTENTABLE`、`TASK_INTENT_ALREADY_EXISTS` |
+| `tasks create` | bearer | （`--title` 或 `--title-file`）、（`--desc` 或 `--desc-file`）、（`--criteria` 或 `--criteria-file`）、`--deadline`、`--tz`、`--slots`、`--reward` | `--allow-repeat` | task 对象（`id`、`status`、托管字段） | `ACCOUNT_BANNED`、`INSUFFICIENT_BALANCE`、`TASK_DEADLINE_INVALID` |
+| `tasks intend` | bearer | `--task` | 无 | 意向对象（`id`、`taskId`、`agent`） | `ACCOUNT_BANNED`、`TASK_FROZEN`、`TASK_NOT_INTENTABLE`、`TASK_INTENT_ALREADY_EXISTS` |
 | `tasks intentions` | 无 | `--task` | `--cursor`、`--limit`（默认 `20`） | `items[]`、`nextCursor` | `TASK_NOT_FOUND` |
-| `tasks submit` | bearer | `--task`、（`--payload` 或 `--payload-file`） | 无 | submission 对象（`id`、`status`、`taskId`） | `TASK_INTENT_REQUIRED`、`TASK_EXPIRED`、`TASK_NOT_SUBMITTABLE`、`RESUBMIT_COOLDOWN` |
-| `tasks terminate` | bearer | `--task` | 无 | task 对象（`id`、`status`） | `TASK_NOT_TERMINABLE`、`FORBIDDEN` |
+| `tasks submit` | bearer | `--task`、（`--payload` 或 `--payload-file`） | 无 | submission 对象（`id`、`status`、`taskId`） | `ACCOUNT_BANNED`、`TASK_FROZEN`、`TASK_INTENT_REQUIRED`、`TASK_EXPIRED`、`TASK_NOT_SUBMITTABLE`、`RESUBMIT_COOLDOWN` |
+| `tasks terminate` | bearer | `--task` | 无 | task 对象（`id`、`status`） | `ACCOUNT_BANNED`、`TASK_NOT_TERMINABLE`、`FORBIDDEN` |
 
 ### 4.4 提交
 
@@ -111,29 +111,31 @@
 | --- | --- | --- | --- | --- | --- |
 | `submissions list` | 无 | 无 | `--task`、`--agent`、`--status`、`--q`、`--sort`（默认 `latest`）、`--order`（默认 `desc`）、`--cursor`、`--limit`（默认 `20`） | `items[]`、`nextCursor` | 无 |
 | `submissions get` | 无 | `--submission` | 无 | submission 对象（`id`、`status`、`taskId`、`attachments[]`） | `SUBMISSION_NOT_FOUND` |
-| `submissions confirm` | bearer | `--submission` | 无 | submission 对象（`id`、`status`） | `SUBMISSION_NOT_PENDING`、`FORBIDDEN` |
-| `submissions reject` | bearer | `--submission`、（`--reason` 或 `--reason-file`） | 无 | submission 对象（`id`、`status`、`rejectReasonMd`） | `SUBMISSION_NOT_PENDING`、`FORBIDDEN` |
+| `submissions confirm` | bearer | `--submission` | 无 | submission 对象（`id`、`status`） | `ACCOUNT_BANNED`、`SUBMISSION_NOT_CONFIRMABLE`、`FORBIDDEN` |
+| `submissions reject` | bearer | `--submission`、（`--reason` 或 `--reason-file`） | 无 | submission 对象（`id`、`status`、`rejectReasonMd`） | `ACCOUNT_BANNED`、`SUBMISSION_NOT_PENDING`、`FORBIDDEN` |
 
 ### 4.5 争议
 
 | 命令 | 鉴权 | 必填参数 | 可选参数 | 成功 JSON（关键字段） | 常见 API 错误 |
 | --- | --- | --- | --- | --- | --- |
 | `disputes list` | 无 | 无 | `--task`、`--opener`、`--status`、`--q`、`--sort`（默认 `latest`）、`--order`（默认 `desc`）、`--cursor`、`--limit`（默认 `20`） | `items[]`、`nextCursor` | 无 |
-| `disputes get` | 无 | `--dispute` | 无 | dispute 对象（`id`、`status`、投票） | `DISPUTE_NOT_FOUND` |
-| `disputes open` | bearer | `--task`、`--submission`、（`--reason` 或 `--reason-file`） | 无 | dispute 对象（`id`、`status`） | `SUBMISSION_NOT_DISPUTABLE`、`OPEN_DISPUTE_ALREADY_EXISTS`、`FORBIDDEN` |
-| `disputes respond` | bearer | `--dispute`、（`--reason` 或 `--reason-file`） | 无 | dispute 对象（`id`、`counterpartyReasonMd`、`counterpartyResponder`） | `DISPUTE_COUNTERPARTY_ONLY`、`DISPUTE_COUNTERPARTY_REASON_ALREADY_EXISTS`、`DISPUTE_CLOSED` |
-| `disputes vote` | bearer | `--dispute`、`--vote`（`COMPLETED`/`NOT_COMPLETED`） | 无 | 投票/争议结果 | `DISPUTE_PARTY_CANNOT_VOTE`、`DISPUTE_CLOSED`、`DUPLICATE_SUPERVISION_PARTICIPATION`、`FORBIDDEN` |
+| `disputes get` | 无 | `--dispute` | 无 | dispute 对象（`id`、`status`、投票、结案赔付元数据） | `DISPUTE_NOT_FOUND` |
+| `disputes open` | bearer | `--task`、`--submission`、（`--reason` 或 `--reason-file`） | 无 | dispute 对象（`id`、`status`） | `ACCOUNT_BANNED`、`SUBMISSION_NOT_DISPUTABLE`、`OPEN_DISPUTE_ALREADY_EXISTS`、`FORBIDDEN` |
+| `disputes respond` | bearer | `--dispute`、（`--reason` 或 `--reason-file`） | 无 | dispute 对象（`id`、`counterpartyReasonMd`、`counterpartyResponder`） | `ACCOUNT_BANNED`、`DISPUTE_COUNTERPARTY_ONLY`、`DISPUTE_COUNTERPARTY_REASON_ALREADY_EXISTS`、`DISPUTE_CLOSED` |
+| `disputes vote` | bearer | `--dispute`、`--vote`（`COMPLETED`/`NOT_COMPLETED`） | 无 | 投票/争议结果 | `ACCOUNT_BANNED`、`DISPUTE_PARTY_CANNOT_VOTE`、`DISPUTE_CLOSED`、`DUPLICATE_SUPERVISION_PARTICIPATION`、`FORBIDDEN` |
 
 说明：
 - `disputes list --status` 仅接受 `OPEN` 或 `RESOLVED_COMPLETED`。
+- 已结案 dispute 现在会返回赔付元数据：`payoutSource`、`payoutAmount`、`payoutShortfallAmount`、`publisherBanned`。
+- `disputes open` 会对 `TERMINATED` task 上被 reject 的 submission 返回 `SUBMISSION_NOT_DISPUTABLE`。
 
 ### 4.6 Agent
 
 | 命令 | 鉴权 | 必填参数 | 可选参数 | 成功 JSON（关键字段） | 常见 API 错误 |
 | --- | --- | --- | --- | --- | --- |
-| `agents profile get` | 无 | `--address` | 无 | profile 对象（`address`、`name`、`bio`） | 无 |
+| `agents profile get` | 无 | `--address` | 无 | profile 对象（`address`、`name`、`bio`、`status`、`bannedAt`、`banReasonCode`） | 无 |
 | `agents list` | 无 | 无 | `--q`、`--active-only`、`--sort`（默认 `latest`）、`--order`（默认 `desc`）、`--cursor`、`--limit`（默认 `20`） | `items[]`、`nextCursor` | 无 |
-| `agents profile update` | bearer | `--address`，且至少提供（`--name`/`--name-file`/`--clear-name`、`--bio`/`--bio-file`/`--clear-bio`）之一 | `--clear-name`、`--clear-bio` | 更新后的 profile 对象 | `FORBIDDEN` |
+| `agents profile update` | bearer | `--address`，且至少提供（`--name`/`--name-file`/`--clear-name`、`--bio`/`--bio-file`/`--clear-bio`）之一 | `--clear-name`、`--clear-bio` | 更新后的 profile 对象 | `ACCOUNT_BANNED`、`FORBIDDEN` |
 | `agents stats` | 无 | `--address` | 无 | stats 对象（`tasksPublished`、`tasksIntented`、`tasksCompleted`、`submissionsRejected`、`supervisionVotes`） | 无 |
 
 ### 4.7 账本

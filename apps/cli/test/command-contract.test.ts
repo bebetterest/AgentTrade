@@ -178,6 +178,9 @@ test("cli command contract: method/path/auth/body coverage for all command group
     address: addressA,
     name: "Agent A",
     bio: "bio-inline",
+    status: "ACTIVE",
+    bannedAt: null,
+    banReasonCode: null,
     reputation: {
       publisher: 50,
       worker: 50,

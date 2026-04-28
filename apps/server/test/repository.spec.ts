@@ -4,6 +4,9 @@ import { defaultConfig } from "@agentrade/config";
 import type { Address } from "@agentrade/types";
 import {
   ActivityEventType,
+  AgentBanReason,
+  AgentStatus,
+  DisputePayoutSource,
   DisputeStatus,
   ServerAuditCategory,
   ServerAuditOutcome,
@@ -87,6 +90,242 @@ runDbSuite("PrismaStateRepository", () => {
     expect(loaded!.activeCycleId).toBe("cycle-1");
   });
 
+  it("round-trips banned profiles and dispute payout metadata through snapshot sync", async () => {
+    const clock = new MutableClock(new Date("2026-03-30T00:00:00.000Z"));
+    const engine = new AgentradeEngine(
+      {
+        ...defaultConfig,
+        disputeQuorum: 1,
+        disputeApprovalBps: 5_000
+      },
+      clock
+    );
+    const publisher = addr("rpb");
+    const workerA = addr("rwa");
+    const workerB = addr("rwb");
+    const supervisor = addr("rws");
+
+    const task = engine.publishTask({
+      publisher,
+      title: "repo-dispute-wallet",
+      descriptionMd: "desc",
+      acceptanceCriteria: "ok",
+      deadlineUtc: "2026-05-01T00:00:00.000Z",
+      displayTimezone: "UTC",
+      slotsTotal: 1,
+      rewardPerSlot: 20,
+      allowRepeatCompletionsBySameAgent: false
+    });
+    engine.addTaskIntention(task.id, workerA);
+    engine.addTaskIntention(task.id, workerB);
+    clock.advanceMinutes(31);
+    const confirmed = engine.submitTask(task.id, workerA, "confirmed");
+    const disputed = engine.submitTask(task.id, workerB, "disputed");
+    engine.confirmSubmission(confirmed.id, publisher);
+    engine.rejectSubmission(disputed.id, publisher, "reject");
+    const dispute = engine.openDispute({
+      taskId: task.id,
+      submissionId: disputed.id,
+      opener: workerB,
+      reasonMd: "valid work"
+    });
+    engine.voteDispute({
+      disputeId: dispute.id,
+      agent: supervisor,
+      vote: VoteChoice.COMPLETED
+    });
+    engine.getLedger(publisher).available = 3;
+    engine.closeCurrentCycle();
+
+    await repo.sync(engine.toSnapshot());
+    const loaded = await repo.load();
+    expect(loaded).not.toBeNull();
+    const publisherProfile = loaded!.profiles.find((item) => item.address === publisher);
+    expect(publisherProfile).toMatchObject({
+      status: AgentStatus.BANNED,
+      banReasonCode: AgentBanReason.DISPUTE_INSOLVENCY
+    });
+    expect(loaded!.submissions.find((item) => item.id === disputed.id)?.status).toBe(
+      SubmissionStatus.DISPUTE_COMPLETED
+    );
+    expect(loaded!.disputeResolutionMeta).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          disputeId: dispute.id,
+          payoutSource: DisputePayoutSource.PUBLISHER_WALLET_PARTIAL,
+          payoutAmount: 3,
+          payoutShortfallAmount: 17,
+          publisherBanned: true
+        })
+      ])
+    );
+  });
+
+  it("rolls back settlement, unbans publisher, and clears old votes when reopening through direct writes", async () => {
+    const clock = new MutableClock(new Date("2026-03-30T00:00:00.000Z"));
+    const engine = new AgentradeEngine(
+      {
+        ...defaultConfig,
+        disputeQuorum: 1,
+        disputeApprovalBps: 5_000
+      },
+      clock
+    );
+    const publisher = addr("repo-ov1");
+    const workerA = addr("repo-ov2");
+    const workerB = addr("repo-ov3");
+    const supervisor = addr("repo-ov4");
+
+    const task = engine.publishTask({
+      publisher,
+      title: "repo-override-meta",
+      descriptionMd: "desc",
+      acceptanceCriteria: "ok",
+      deadlineUtc: "2026-05-01T00:00:00.000Z",
+      displayTimezone: "UTC",
+      slotsTotal: 1,
+      rewardPerSlot: 20,
+      allowRepeatCompletionsBySameAgent: false
+    });
+    engine.addTaskIntention(task.id, workerA);
+    engine.addTaskIntention(task.id, workerB);
+    const cleanTask = engine.publishTask({
+      publisher,
+      title: "repo-cleanup-task",
+      descriptionMd: "desc",
+      acceptanceCriteria: "ok",
+      deadlineUtc: "2026-05-02T00:00:00.000Z",
+      displayTimezone: "UTC",
+      slotsTotal: 1,
+      rewardPerSlot: 15,
+      allowRepeatCompletionsBySameAgent: false
+    });
+    clock.advanceMinutes(31);
+    const confirmed = engine.submitTask(task.id, workerA, "confirmed");
+    const disputed = engine.submitTask(task.id, workerB, "disputed");
+    engine.confirmSubmission(confirmed.id, publisher);
+    engine.rejectSubmission(disputed.id, publisher, "needs revision");
+    const dispute = engine.openDispute({
+      taskId: task.id,
+      submissionId: disputed.id,
+      opener: workerB,
+      reasonMd: "review"
+    });
+    engine.voteDispute({
+      disputeId: dispute.id,
+      agent: supervisor,
+      vote: VoteChoice.COMPLETED
+    });
+    engine.getLedger(publisher).available = 3;
+    engine.closeCurrentCycle();
+
+    await repo.sync(engine.toSnapshot());
+    expect(await repo.getDisputeResolutionDirect(dispute.id)).toMatchObject({
+      payoutSource: DisputePayoutSource.PUBLISHER_WALLET_PARTIAL,
+      payoutAmount: 3,
+      payoutShortfallAmount: 17,
+      publisherBanned: true
+    });
+    expect((await repo.getAgentDirect(publisher))?.status).toBe(AgentStatus.BANNED);
+    expect((await repo.getTaskDirect(cleanTask.id))?.status).toBe(TaskStatus.TERMINATED);
+
+    await repo.overrideDisputeDirect(dispute.id, "NOT_COMPLETED");
+    const loadedAfterOverride = await repo.load();
+    expect(loadedAfterOverride?.disputeRollbackHistory).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          disputeId: dispute.id,
+          previousStatus: DisputeStatus.RESOLVED_COMPLETED,
+          previousResolution: expect.objectContaining({
+            payoutSource: DisputePayoutSource.PUBLISHER_WALLET_PARTIAL,
+            payoutAmount: 3,
+            payoutShortfallAmount: 17,
+            publisherBanned: true
+          }),
+          archivedVotes: expect.arrayContaining([
+            expect.objectContaining({
+              disputeId: dispute.id,
+              agent: supervisor,
+              vote: VoteChoice.COMPLETED
+            })
+          ]),
+          archivedActivities: expect.arrayContaining([
+            expect.objectContaining({
+              disputeId: dispute.id,
+              type: ActivityEventType.TASK_COMPLETED
+            }),
+            expect.objectContaining({
+              disputeId: dispute.id,
+              type: ActivityEventType.TASK_TERMINATED,
+              taskId: cleanTask.id
+            })
+          ])
+        })
+      ])
+    );
+    expect(await repo.getDisputeResolutionDirect(dispute.id)).toBeNull();
+    expect((await repo.getAgentDirect(publisher))?.status).toBe(AgentStatus.ACTIVE);
+    expect((await repo.getSubmissionDirect(disputed.id))?.status).toBe(SubmissionStatus.REJECTED);
+    await expect(repo.confirmSubmissionDirect(disputed.id, publisher)).rejects.toMatchObject({
+      code: "SUBMISSION_NOT_CONFIRMABLE",
+      statusCode: 409
+    });
+    expect((await repo.getTaskDirect(cleanTask.id))?.status).toBe(TaskStatus.OPEN);
+    expect((await repo.getTaskDirect(cleanTask.id))?.rewardEscrowRemaining).toBe(15);
+
+    const replayVote = await repo.voteDisputeDirect({
+      disputeId: dispute.id,
+      agent: supervisor,
+      vote: VoteChoice.COMPLETED,
+      config: {
+        ...defaultConfig,
+        disputeQuorum: 1,
+        disputeApprovalBps: 5_000
+      }
+    });
+    expect(replayVote.vote.agent).toBe(supervisor);
+  });
+
+  it("blocks manual confirm and terminate through direct writes while dispute is open", async () => {
+    const clock = new MutableClock(new Date("2026-03-30T00:00:00.000Z"));
+    const engine = new AgentradeEngine(defaultConfig, clock);
+    const publisher = addr("repo-guard-pub");
+    const worker = addr("repo-guard-worker");
+
+    const task = engine.publishTask({
+      publisher,
+      title: "repo-open-dispute-guards",
+      descriptionMd: "desc",
+      acceptanceCriteria: "ok",
+      deadlineUtc: "2026-05-01T00:00:00.000Z",
+      displayTimezone: "UTC",
+      slotsTotal: 1,
+      rewardPerSlot: 20,
+      allowRepeatCompletionsBySameAgent: false
+    });
+    engine.addTaskIntention(task.id, worker);
+    clock.advanceMinutes(31);
+    const submission = engine.submitTask(task.id, worker, "payload");
+    engine.rejectSubmission(submission.id, publisher, "needs revision");
+    engine.openDispute({
+      taskId: task.id,
+      submissionId: submission.id,
+      opener: worker,
+      reasonMd: "open dispute"
+    });
+
+    await repo.sync(engine.toSnapshot());
+
+    await expect(repo.confirmSubmissionDirect(submission.id, publisher)).rejects.toMatchObject({
+      code: "SUBMISSION_NOT_CONFIRMABLE",
+      statusCode: 409
+    });
+    await expect(repo.terminateTaskDirect(task.id, publisher, defaultConfig)).rejects.toMatchObject({
+      code: "TASK_NOT_TERMINABLE",
+      statusCode: 409
+    });
+  });
+
   it("serializes many concurrent writes via runLocked without lost updates", async () => {
     const base = new AgentradeEngine(defaultConfig).toSnapshot();
     await repo.sync(base);
@@ -154,6 +393,67 @@ runDbSuite("PrismaStateRepository", () => {
     await prisma.$disconnect();
     expect(after).not.toBeNull();
     expect(after!.updatedAt.toISOString()).toBe(before!.updatedAt.toISOString());
+  });
+
+  it("preserves dispute rollback history when syncing a legacy snapshot without that field", async () => {
+    const clock = new MutableClock(new Date("2026-03-30T00:00:00.000Z"));
+    const engine = new AgentradeEngine(
+      {
+        ...defaultConfig,
+        disputeQuorum: 1,
+        disputeApprovalBps: 5_000
+      },
+      clock
+    );
+    const publisher = addr("legacy-hist-pub");
+    const workerA = addr("legacy-hist-wa");
+    const workerB = addr("legacy-hist-wb");
+    const supervisor = addr("legacy-hist-sup");
+
+    const task = engine.publishTask({
+      publisher,
+      title: "legacy-history-task",
+      descriptionMd: "desc",
+      acceptanceCriteria: "ok",
+      deadlineUtc: "2026-05-01T00:00:00.000Z",
+      displayTimezone: "UTC",
+      slotsTotal: 1,
+      rewardPerSlot: 20,
+      allowRepeatCompletionsBySameAgent: false
+    });
+    engine.addTaskIntention(task.id, workerA);
+    engine.addTaskIntention(task.id, workerB);
+    clock.advanceMinutes(31);
+    const confirmed = engine.submitTask(task.id, workerA, "confirmed");
+    const disputed = engine.submitTask(task.id, workerB, "disputed");
+    engine.confirmSubmission(confirmed.id, publisher);
+    engine.rejectSubmission(disputed.id, publisher, "reject");
+    const dispute = engine.openDispute({
+      taskId: task.id,
+      submissionId: disputed.id,
+      opener: workerB,
+      reasonMd: "valid work"
+    });
+    engine.voteDispute({
+      disputeId: dispute.id,
+      agent: supervisor,
+      vote: VoteChoice.COMPLETED
+    });
+    engine.closeCurrentCycle();
+    engine.overrideDispute(dispute.id, "NOT_COMPLETED");
+
+    const snapshot = engine.toSnapshot();
+    expect(snapshot.disputeRollbackHistory?.length).toBeGreaterThan(0);
+    await repo.sync(snapshot);
+
+    const legacySnapshot = JSON.parse(JSON.stringify(snapshot)) as typeof snapshot & {
+      disputeRollbackHistory?: typeof snapshot.disputeRollbackHistory;
+    };
+    delete legacySnapshot.disputeRollbackHistory;
+    await repo.sync(legacySnapshot);
+
+    const loaded = await repo.load();
+    expect(loaded?.disputeRollbackHistory).toEqual(snapshot.disputeRollbackHistory);
   });
 
   it("stores, queries, and cleans up server request and audit logs", async () => {

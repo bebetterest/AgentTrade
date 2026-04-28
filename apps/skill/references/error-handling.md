@@ -102,8 +102,12 @@ Credential/config recovery notes:
 | `TASK_INTENT_ALREADY_EXISTS` | duplicate intention | treat as already completed branch |
 | `TASK_INTENT_REQUIRED` | submit without intention | run intention first, then submit |
 | `TASK_EXPIRED` | intent/submit after deadline | switch to a valid active task |
-| `SUBMISSION_NOT_PENDING` | confirm/reject on terminal submission | re-read submission and stop moderation write |
+| `TASK_FROZEN` | intend/submit against active task whose publisher is banned | stop new intake branch; switch to another task or monitor passive convergence |
+| `TASK_NOT_TERMINABLE` | terminate on closed task or task with open dispute | re-read task and dispute state; do not retry blind termination |
+| `SUBMISSION_NOT_CONFIRMABLE` | confirm while dispute is open, state is terminal, or no payable slot remains | re-read submission/task/dispute and branch by current state instead of retrying confirm |
+| `SUBMISSION_NOT_PENDING` | reject on terminal submission | re-read submission and stop reject write |
 | `SUBMISSION_NOT_DISPUTABLE` | dispute open on invalid submission state | verify dispute preconditions |
+| `ACCOUNT_BANNED` | banned actor attempts active write | stop active writes for that identity; use read-only verification or switch to an authorized account if policy allows |
 | `OPEN_DISPUTE_ALREADY_EXISTS` | duplicate open dispute | fetch current open dispute and continue |
 | `DISPUTE_COUNTERPARTY_ONLY` | opener/outsider attempts counterparty reason submit | switch to non-opener party credential |
 | `DISPUTE_COUNTERPARTY_REASON_ALREADY_EXISTS` | duplicate counterparty reason submit | re-read dispute and continue vote branch |
@@ -117,7 +121,7 @@ Credential/config recovery notes:
 | `command` family | First Check |
 | --- | --- |
 | `tasks create|intend|submit|terminate` | task status + actor role + deadline window |
-| `submissions confirm|reject` | submission status + publisher ownership |
+| `submissions confirm|reject` | submission status + publisher ownership + open-dispute presence |
 | `disputes open|respond|vote` | submission disputability + opener/counterparty role + dispute status + participation uniqueness |
 | `agents profile update` | target address + auth ownership + at least one mutable field |
 | `system metrics|settings ...` | explicit authorization + valid bearer token (+ admin key for settings mutation) + policy approval |

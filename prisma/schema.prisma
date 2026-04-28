@@ -14,15 +14,31 @@ enum TaskStatus {
   CLOSED
 }
 
+enum AgentStatus {
+  ACTIVE
+  BANNED
+}
+
+enum AgentBanReason {
+  DISPUTE_INSOLVENCY
+}
+
 enum SubmissionStatus {
   SUBMITTED
   CONFIRMED
   REJECTED
+  DISPUTE_COMPLETED
 }
 
 enum DisputeStatus {
   OPEN
   RESOLVED_COMPLETED
+}
+
+enum DisputePayoutSource {
+  ESCROW
+  PUBLISHER_WALLET
+  PUBLISHER_WALLET_PARTIAL
 }
 
 enum VoteChoice {
@@ -82,6 +98,10 @@ model AgentProfile {
   address      String   @id
   name         String
   bio          String
+  status       AgentStatus @default(ACTIVE)
+  bannedAt     DateTime?
+  banReasonCode AgentBanReason?
+  banSourceDisputeId String?
   publisherRep Float
   workerRep    Float
   supervisorRep Float
@@ -192,6 +212,11 @@ model Dispute {
   counterpartyResponderAddress String?
   counterpartyReasonMd String?
   status       DisputeStatus
+  resolutionPayoutSource DisputePayoutSource?
+  resolutionPayoutAmount Int?
+  resolutionPayoutShortfallAmount Int?
+  resolutionPublisherBanned Boolean?
+  resolutionRollbackSnapshot Json?
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 
@@ -202,12 +227,32 @@ model Dispute {
   votes      SupervisionVote[]
   workloads  CycleWorkload[]
   activityEvents ActivityEvent[]
+  rollbackHistory DisputeRollbackHistory[]
 
   @@index([status, updatedAt])
   @@index([taskId, updatedAt])
   @@index([openerAddress, updatedAt])
   @@index([counterpartyResponderAddress, updatedAt])
   @@index([createdAt, id])
+}
+
+model DisputeRollbackHistory {
+  id                                     String              @id
+  disputeId                              String
+  previousStatus                         DisputeStatus
+  previousResolutionPayoutSource         DisputePayoutSource?
+  previousResolutionPayoutAmount         Int?
+  previousResolutionPayoutShortfallAmount Int?
+  previousResolutionPublisherBanned      Boolean?
+  previousResolutionRollbackSnapshot     Json?
+  archivedVotes                          Json
+  archivedWorkloads                      Json
+  archivedActivities                     Json
+  reopenedAt                             DateTime            @default(now())
+
+  dispute Dispute @relation(fields: [disputeId], references: [id], onDelete: Cascade)
+
+  @@index([disputeId, reopenedAt, id])
 }
 
 model SupervisionVote {

@@ -235,7 +235,10 @@ const registerDisputeOpenRoute = (
   services: AppServices,
   operation: ApiOperationDefinition
 ) => {
-  app.post(toServerRoutePath(operation.pathTemplate), { preHandler: [app.authenticate] }, async (request) => {
+  app.post(
+    toServerRoutePath(operation.pathTemplate),
+    { preHandler: [app.authenticate, app.requireActiveAgent] },
+    async (request) => {
     const body = parseOperationBody<{
       taskId: string;
       submissionId: string;
@@ -276,7 +279,8 @@ const registerDisputeOpenRoute = (
         writeMeta
       )
     );
-  });
+    }
+  );
 };
 
 const registerDisputeVoteRoute = (
@@ -284,7 +288,10 @@ const registerDisputeVoteRoute = (
   services: AppServices,
   operation: ApiOperationDefinition
 ) => {
-  app.post(toServerRoutePath(operation.pathTemplate), { preHandler: [app.authenticate] }, async (request, reply) => {
+  app.post(
+    toServerRoutePath(operation.pathTemplate),
+    { preHandler: [app.authenticate, app.requireActiveAgent] },
+    async (request, reply) => {
     const params = parseOperationParams<{ id: string }>(operation, request);
     const body = parseOperationBody<{ vote: VoteChoice }>(operation, request);
     const agent = request.agentAddress as Address;
@@ -334,7 +341,8 @@ const registerDisputeVoteRoute = (
       }
       throw error;
     }
-  });
+    }
+  );
 };
 
 const registerDisputeRespondRoute = (
@@ -342,7 +350,10 @@ const registerDisputeRespondRoute = (
   services: AppServices,
   operation: ApiOperationDefinition
 ) => {
-  app.post(toServerRoutePath(operation.pathTemplate), { preHandler: [app.authenticate] }, async (request) => {
+  app.post(
+    toServerRoutePath(operation.pathTemplate),
+    { preHandler: [app.authenticate, app.requireActiveAgent] },
+    async (request) => {
     const params = parseOperationParams<{ id: string }>(operation, request);
     const body = parseOperationBody<{ reasonMd: string }>(operation, request);
     validateDisputeReasonLength(body.reasonMd, services.config);
@@ -386,7 +397,8 @@ const registerDisputeRespondRoute = (
         writeMeta
       )
     );
-  });
+    }
+  );
 };
 
 const registerActivityListRoute = (

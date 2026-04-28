@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import jwt from "jsonwebtoken";
 import type { Address } from "@agentrade/types";
-import { VoteChoice } from "@agentrade/types";
+import { DisputePayoutSource, VoteChoice } from "@agentrade/types";
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "../src/app.js";
 import { parseCursorOffset } from "../src/api/services.js";
@@ -1294,6 +1294,46 @@ describe("API integration", () => {
     expect(errorCode(disputeRes.json())).toBe("SUBMISSION_NOT_DISPUTABLE");
   });
 
+  it("rejects dispute creation after the parent task has been terminated", async () => {
+    const publisher = addr("dsp-api-term-1");
+    const worker = addr("dsp-api-term-2");
+    const task = await createSingleSlotTask(publisher);
+    await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/intentions`,
+      headers: { authorization: `Bearer ${bearer(worker)}` }
+    });
+    const submitRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/submissions`,
+      headers: { authorization: `Bearer ${bearer(worker)}` },
+      payload: { payloadMd: "result" }
+    });
+    expect(submitRes.statusCode).toBe(200);
+    const submission = submitRes.json() as { id: string };
+    await rejectSubmission(submission.id, publisher);
+
+    const terminateRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/terminate`,
+      headers: { authorization: `Bearer ${bearer(publisher)}` }
+    });
+    expect(terminateRes.statusCode).toBe(200);
+
+    const disputeRes = await app!.inject({
+      method: "POST",
+      url: "/v2/disputes",
+      headers: { authorization: `Bearer ${bearer(worker)}` },
+      payload: {
+        taskId: task.id,
+        submissionId: submission.id,
+        reasonMd: "terminated tasks cannot be disputed"
+      }
+    });
+    expect(disputeRes.statusCode).toBe(409);
+    expect(errorCode(disputeRes.json())).toBe("SUBMISSION_NOT_DISPUTABLE");
+  });
+
   it("rejects dispute creation by non task-related agent", async () => {
     const publisher = addr("dsp-api-3");
     const worker = addr("dsp-api-4");
@@ -1718,6 +1758,10 @@ describe("API integration", () => {
         outcome: VoteChoice;
         winnerRole: string;
         winnerAddress: Address;
+        payoutSource: DisputePayoutSource;
+        payoutAmount: number;
+        payoutShortfallAmount: number;
+        publisherBanned: boolean;
       };
     };
     expect(disputeAfter.status).toBe("RESOLVED_COMPLETED");
@@ -1727,7 +1771,11 @@ describe("API integration", () => {
       notCompletedVotes: 2,
       outcome: VoteChoice.COMPLETED,
       winnerRole: "SUBMISSION_AGENT",
-      winnerAddress: workerB
+      winnerAddress: workerB,
+      payoutSource: DisputePayoutSource.ESCROW,
+      payoutAmount: 10,
+      payoutShortfallAmount: 0,
+      publisherBanned: false
     });
 
     const workerBAfterLedgerRes = await app!.inject({
@@ -1745,6 +1793,248 @@ describe("API integration", () => {
       payload: { vote: VoteChoice.COMPLETED }
     });
     expect(voteAfterResolvedRes.statusCode).toBe(409);
+  });
+
+  it("blocks manual confirm while a submission has an open dispute", async () => {
+    const publisher = addr("api-confirm-open-dispute-pub");
+    const worker = addr("api-confirm-open-dispute-worker");
+
+    const task = await createSingleSlotTask(publisher);
+    const intentionRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/intentions`,
+      headers: { authorization: `Bearer ${bearer(worker)}` }
+    });
+    expect(intentionRes.statusCode).toBe(200);
+
+    const submitRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/submissions`,
+      headers: { authorization: `Bearer ${bearer(worker)}` },
+      payload: { payloadMd: "payload" }
+    });
+    expect(submitRes.statusCode).toBe(200);
+    const submission = submitRes.json() as { id: string };
+    await rejectSubmission(submission.id, publisher);
+
+    const disputeRes = await app!.inject({
+      method: "POST",
+      url: "/v2/disputes",
+      headers: { authorization: `Bearer ${bearer(worker)}` },
+      payload: {
+        taskId: task.id,
+        submissionId: submission.id,
+        reasonMd: "open dispute"
+      }
+    });
+    expect(disputeRes.statusCode).toBe(200);
+
+    const confirmRes = await app!.inject({
+      method: "POST",
+      url: `/v2/submissions/${submission.id}/confirm`,
+      headers: { authorization: `Bearer ${bearer(publisher)}` }
+    });
+    expect(confirmRes.statusCode).toBe(409);
+    expect(errorCode(confirmRes.json())).toBe("SUBMISSION_NOT_CONFIRMABLE");
+  });
+
+  it("blocks manual termination while a task has an open dispute", async () => {
+    const publisher = addr("api-terminate-open-dispute-pub");
+    const worker = addr("api-terminate-open-dispute-worker");
+
+    const task = await createSingleSlotTask(publisher);
+    const intentionRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/intentions`,
+      headers: { authorization: `Bearer ${bearer(worker)}` }
+    });
+    expect(intentionRes.statusCode).toBe(200);
+
+    const submitRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/submissions`,
+      headers: { authorization: `Bearer ${bearer(worker)}` },
+      payload: { payloadMd: "payload" }
+    });
+    expect(submitRes.statusCode).toBe(200);
+    const submission = submitRes.json() as { id: string };
+    await rejectSubmission(submission.id, publisher);
+
+    const disputeRes = await app!.inject({
+      method: "POST",
+      url: "/v2/disputes",
+      headers: { authorization: `Bearer ${bearer(worker)}` },
+      payload: {
+        taskId: task.id,
+        submissionId: submission.id,
+        reasonMd: "open dispute"
+      }
+    });
+    expect(disputeRes.statusCode).toBe(200);
+
+    const terminateRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/terminate`,
+      headers: { authorization: `Bearer ${bearer(publisher)}` }
+    });
+    expect(terminateRes.statusCode).toBe(409);
+    expect(errorCode(terminateRes.json())).toBe("TASK_NOT_TERMINABLE");
+  });
+
+  it("blocks banned publishers from active writes and freezes new intake on their remaining tasks", async () => {
+    const publisher = addr("bap");
+    const workerA = addr("baa");
+    const workerB = addr("bab");
+    const workerC = addr("bac");
+    const workerD = addr("bad");
+    const supervisors = [addr("bas1"), addr("bas2"), addr("bas3"), addr("bas4"), addr("bas5")];
+
+    const slotTask = await createSingleSlotTask(publisher);
+    const cleanTask = await createSingleSlotTask(publisher);
+    const frozenTask = await createSingleSlotTask(publisher);
+
+    for (const [taskId, worker] of [
+      [slotTask.id, workerA],
+      [slotTask.id, workerB],
+      [frozenTask.id, workerC]
+    ] as const) {
+      const intentionRes = await app!.inject({
+        method: "POST",
+        url: `/v2/tasks/${taskId}/intentions`,
+        headers: { authorization: `Bearer ${bearer(worker)}` }
+      });
+      expect(intentionRes.statusCode).toBe(200);
+    }
+
+    const confirmedRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${slotTask.id}/submissions`,
+      headers: { authorization: `Bearer ${bearer(workerA)}` },
+      payload: { payloadMd: "confirmed" }
+    });
+    expect(confirmedRes.statusCode).toBe(200);
+    const confirmedSubmission = confirmedRes.json() as { id: string };
+
+    const disputedRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${slotTask.id}/submissions`,
+      headers: { authorization: `Bearer ${bearer(workerB)}` },
+      payload: { payloadMd: "disputed" }
+    });
+    expect(disputedRes.statusCode).toBe(200);
+    const disputedSubmission = disputedRes.json() as { id: string };
+
+    const pendingRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${frozenTask.id}/submissions`,
+      headers: { authorization: `Bearer ${bearer(workerC)}` },
+      payload: { payloadMd: "pending" }
+    });
+    expect(pendingRes.statusCode).toBe(200);
+    expect(pendingRes.json()).toHaveProperty("id");
+
+    const confirmRes = await app!.inject({
+      method: "POST",
+      url: `/v2/submissions/${confirmedSubmission.id}/confirm`,
+      headers: { authorization: `Bearer ${bearer(publisher)}` }
+    });
+    expect(confirmRes.statusCode).toBe(200);
+    await rejectSubmission(disputedSubmission.id, publisher);
+
+    const disputeRes = await app!.inject({
+      method: "POST",
+      url: "/v2/disputes",
+      headers: { authorization: `Bearer ${bearer(workerB)}` },
+      payload: {
+        taskId: slotTask.id,
+        submissionId: disputedSubmission.id,
+        reasonMd: "valid completion"
+      }
+    });
+    expect(disputeRes.statusCode).toBe(200);
+    const dispute = disputeRes.json() as { id: string };
+
+    app!.engine.getLedger(publisher).available = 4;
+
+    for (const supervisor of supervisors) {
+      const voteRes = await app!.inject({
+        method: "POST",
+        url: `/v2/disputes/${dispute.id}/votes`,
+        headers: { authorization: `Bearer ${bearer(supervisor)}` },
+        payload: { vote: VoteChoice.COMPLETED }
+      });
+      expect(voteRes.statusCode).toBe(200);
+    }
+
+    await forceAutoCloseCurrentCycle();
+
+    const publisherRes = await app!.inject({
+      method: "GET",
+      url: `/v2/agents/${publisher}`
+    });
+    expect(publisherRes.statusCode).toBe(200);
+    expect(
+      publisherRes.json() as { status: string; banReasonCode: string | null }
+    ).toMatchObject({
+      status: "BANNED",
+      banReasonCode: "DISPUTE_INSOLVENCY"
+    });
+
+    const disputeAfterRes = await app!.inject({
+      method: "GET",
+      url: `/v2/disputes/${dispute.id}`
+    });
+    expect(disputeAfterRes.statusCode).toBe(200);
+    expect(
+      disputeAfterRes.json() as {
+        resolution: {
+          payoutSource: string;
+          payoutAmount: number;
+          payoutShortfallAmount: number;
+          publisherBanned: boolean;
+        };
+      }
+    ).toMatchObject({
+      resolution: {
+        payoutSource: "PUBLISHER_WALLET_PARTIAL",
+        payoutAmount: 4,
+        payoutShortfallAmount: 6,
+        publisherBanned: true
+      }
+    });
+
+    const bannedWriteRes = await app!.inject({
+      method: "POST",
+      url: "/v2/tasks",
+      headers: { authorization: `Bearer ${bearer(publisher)}` },
+      payload: {
+        title: "should fail",
+        descriptionMd: "desc",
+        acceptanceCriteria: "criteria",
+        deadlineUtc: futureDeadline(),
+        displayTimezone: "UTC",
+        slotsTotal: 1,
+        rewardPerSlot: 10,
+        allowRepeatCompletionsBySameAgent: false
+      }
+    });
+    expect(bannedWriteRes.statusCode).toBe(403);
+    expect(errorCode(bannedWriteRes.json())).toBe("ACCOUNT_BANNED");
+
+    const frozenIntentRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${frozenTask.id}/intentions`,
+      headers: { authorization: `Bearer ${bearer(workerD)}` }
+    });
+    expect(frozenIntentRes.statusCode).toBe(409);
+    expect(errorCode(frozenIntentRes.json())).toBe("TASK_FROZEN");
+
+    const cleanTaskRes = await app!.inject({
+      method: "GET",
+      url: `/v2/tasks/${cleanTask.id}`
+    });
+    expect(cleanTaskRes.statusCode).toBe(200);
+    expect((cleanTaskRes.json() as { status: string }).status).toBe("TERMINATED");
   });
 
   it("keeps payout idempotent when publisher sends duplicate confirm requests", async () => {

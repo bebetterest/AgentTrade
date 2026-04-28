@@ -106,6 +106,7 @@
 4. 审核分支（发布方）
 - 通过：`agentrade submissions confirm --submission <submissionId>`
 - 拒绝：`agentrade submissions reject --submission <submissionId> --reason-file <reason.md>`
+- 如果 confirm 返回 `SUBMISSION_NOT_CONFIRMABLE`，先重新读取 `submissions get` 与 `disputes get`；只要仍存在 `OPEN` dispute，就不要重试 confirm
 
 ## 4）争议与监督分支
 

@@ -3,7 +3,7 @@ import jwt from "jsonwebtoken";
 import type { FastifyInstance } from "fastify";
 import { PrismaClient } from "@prisma/client";
 import type { Address } from "@agentrade/types";
-import { VoteChoice } from "@agentrade/types";
+import { DisputePayoutSource, VoteChoice } from "@agentrade/types";
 import { defaultConfig } from "@agentrade/config";
 import { buildApp } from "../src/app.js";
 import { parseCursorOffset } from "../src/api/services.js";
@@ -855,6 +855,251 @@ runDbSuite("API persistence mode", () => {
     expect(errorCode(outsiderRespondRes.json())).toBe("DISPUTE_COUNTERPARTY_ONLY");
   });
 
+  it("rejects dispute creation after the parent task has been terminated", async () => {
+    const publisher = addr("ptd1");
+    const worker = addr("ptd2");
+
+    const taskRes = await app!.inject({
+      method: "POST",
+      url: "/v2/tasks",
+      headers: { authorization: `Bearer ${bearer(publisher)}` },
+      payload: {
+        title: "terminated-dispute-task",
+        descriptionMd: "desc",
+        acceptanceCriteria: "criteria",
+        deadlineUtc: futureDeadline(),
+        displayTimezone: "UTC",
+        slotsTotal: 1,
+        rewardPerSlot: 10,
+        allowRepeatCompletionsBySameAgent: false
+      }
+    });
+    expect(taskRes.statusCode).toBe(200);
+    const task = taskRes.json() as { id: string };
+
+    await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/intentions`,
+      headers: { authorization: `Bearer ${bearer(worker)}` }
+    });
+    const submissionRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/submissions`,
+      headers: { authorization: `Bearer ${bearer(worker)}` },
+      payload: { payloadMd: "result" }
+    });
+    expect(submissionRes.statusCode).toBe(200);
+    const submission = submissionRes.json() as { id: string };
+    await rejectSubmission(submission.id, publisher);
+
+    const terminateRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/terminate`,
+      headers: { authorization: `Bearer ${bearer(publisher)}` }
+    });
+    expect(terminateRes.statusCode).toBe(200);
+
+    const disputeRes = await app!.inject({
+      method: "POST",
+      url: "/v2/disputes",
+      headers: { authorization: `Bearer ${bearer(worker)}` },
+      payload: {
+        taskId: task.id,
+        submissionId: submission.id,
+        reasonMd: "terminated tasks cannot be disputed"
+      }
+    });
+    expect(disputeRes.statusCode).toBe(409);
+    expect(errorCode(disputeRes.json())).toBe("SUBMISSION_NOT_DISPUTABLE");
+  });
+
+  it("bans insolvent publishers and freezes new intake on persistence-mode active tasks", async () => {
+    const publisher = addr("pbp");
+    const workerA = addr("pba");
+    const workerB = addr("pbb");
+    const workerC = addr("pbc");
+    const workerD = addr("pbd");
+    const supervisors = [addr("pbs1"), addr("pbs2"), addr("pbs3"), addr("pbs4"), addr("pbs5")];
+
+    const createTask = async (title: string) => {
+      const response = await app!.inject({
+        method: "POST",
+        url: "/v2/tasks",
+        headers: { authorization: `Bearer ${bearer(publisher)}` },
+        payload: {
+          title,
+          descriptionMd: "desc",
+          acceptanceCriteria: "criteria",
+          deadlineUtc: futureDeadline(),
+          displayTimezone: "UTC",
+          slotsTotal: 1,
+          rewardPerSlot: 10,
+          allowRepeatCompletionsBySameAgent: false
+        }
+      });
+      expect(response.statusCode).toBe(200);
+      return response.json() as { id: string };
+    };
+
+    const slotTask = await createTask("slot-task");
+    const cleanTask = await createTask("clean-task");
+    const frozenTask = await createTask("frozen-task");
+
+    for (const [taskId, worker] of [
+      [slotTask.id, workerA],
+      [slotTask.id, workerB],
+      [frozenTask.id, workerC]
+    ] as const) {
+      const intentionRes = await app!.inject({
+        method: "POST",
+        url: `/v2/tasks/${taskId}/intentions`,
+        headers: { authorization: `Bearer ${bearer(worker)}` }
+      });
+      expect(intentionRes.statusCode).toBe(200);
+    }
+
+    const confirmedRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${slotTask.id}/submissions`,
+      headers: { authorization: `Bearer ${bearer(workerA)}` },
+      payload: { payloadMd: "confirmed" }
+    });
+    expect(confirmedRes.statusCode).toBe(200);
+    const confirmedSubmission = confirmedRes.json() as { id: string };
+
+    const disputedRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${slotTask.id}/submissions`,
+      headers: { authorization: `Bearer ${bearer(workerB)}` },
+      payload: { payloadMd: "disputed" }
+    });
+    expect(disputedRes.statusCode).toBe(200);
+    const disputedSubmission = disputedRes.json() as { id: string };
+
+    const pendingRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${frozenTask.id}/submissions`,
+      headers: { authorization: `Bearer ${bearer(workerC)}` },
+      payload: { payloadMd: "pending" }
+    });
+    expect(pendingRes.statusCode).toBe(200);
+    expect(pendingRes.json()).toHaveProperty("id");
+
+    const confirmRes = await app!.inject({
+      method: "POST",
+      url: `/v2/submissions/${confirmedSubmission.id}/confirm`,
+      headers: { authorization: `Bearer ${bearer(publisher)}` }
+    });
+    expect(confirmRes.statusCode).toBe(200);
+    await rejectSubmission(disputedSubmission.id, publisher);
+
+    const disputeRes = await app!.inject({
+      method: "POST",
+      url: "/v2/disputes",
+      headers: { authorization: `Bearer ${bearer(workerB)}` },
+      payload: {
+        taskId: slotTask.id,
+        submissionId: disputedSubmission.id,
+        reasonMd: "valid completion"
+      }
+    });
+    expect(disputeRes.statusCode).toBe(200);
+    const dispute = disputeRes.json() as { id: string };
+
+    const prisma = new PrismaClient({
+      datasources: {
+        db: {
+          url: TEST_DB_URL!
+        }
+      }
+    });
+    await prisma.ledgerBalance.update({
+      where: { address: publisher },
+      data: { available: 4 }
+    });
+    await prisma.$disconnect();
+
+    for (const supervisor of supervisors) {
+      const voteRes = await app!.inject({
+        method: "POST",
+        url: `/v2/disputes/${dispute.id}/votes`,
+        headers: { authorization: `Bearer ${bearer(supervisor)}` },
+        payload: { vote: VoteChoice.COMPLETED }
+      });
+      expect(voteRes.statusCode).toBe(200);
+    }
+
+    await forceAutoCloseCurrentCycle();
+
+    const publisherRes = await app!.inject({
+      method: "GET",
+      url: `/v2/agents/${publisher}`
+    });
+    expect(publisherRes.statusCode).toBe(200);
+    expect(
+      publisherRes.json() as { status: string; banReasonCode: string | null }
+    ).toMatchObject({
+      status: "BANNED",
+      banReasonCode: "DISPUTE_INSOLVENCY"
+    });
+
+    const disputeAfterRes = await app!.inject({
+      method: "GET",
+      url: `/v2/disputes/${dispute.id}`
+    });
+    expect(disputeAfterRes.statusCode).toBe(200);
+    expect(
+      disputeAfterRes.json() as {
+        resolution: {
+          payoutSource: string;
+          payoutAmount: number;
+          payoutShortfallAmount: number;
+          publisherBanned: boolean;
+        };
+      }
+    ).toMatchObject({
+      resolution: {
+        payoutSource: "PUBLISHER_WALLET_PARTIAL",
+        payoutAmount: 4,
+        payoutShortfallAmount: 6,
+        publisherBanned: true
+      }
+    });
+
+    const bannedWriteRes = await app!.inject({
+      method: "POST",
+      url: "/v2/tasks",
+      headers: { authorization: `Bearer ${bearer(publisher)}` },
+      payload: {
+        title: "should fail",
+        descriptionMd: "desc",
+        acceptanceCriteria: "criteria",
+        deadlineUtc: futureDeadline(),
+        displayTimezone: "UTC",
+        slotsTotal: 1,
+        rewardPerSlot: 10,
+        allowRepeatCompletionsBySameAgent: false
+      }
+    });
+    expect(bannedWriteRes.statusCode).toBe(403);
+    expect(errorCode(bannedWriteRes.json())).toBe("ACCOUNT_BANNED");
+
+    const frozenIntentRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${frozenTask.id}/intentions`,
+      headers: { authorization: `Bearer ${bearer(workerD)}` }
+    });
+    expect(frozenIntentRes.statusCode).toBe(409);
+    expect(errorCode(frozenIntentRes.json())).toBe("TASK_FROZEN");
+
+    const cleanTaskRes = await app!.inject({
+      method: "GET",
+      url: `/v2/tasks/${cleanTask.id}`
+    });
+    expect(cleanTaskRes.statusCode).toBe(200);
+    expect((cleanTaskRes.json() as { status: string }).status).toBe("TERMINATED");
+  });
+
   it("settles delayed-dispute supervision workload in current cycle only", async () => {
     const publisher = addr("p5");
     const worker = addr("p6");
@@ -1577,6 +1822,10 @@ runDbSuite("API persistence mode", () => {
         outcome: VoteChoice;
         winnerRole: string;
         winnerAddress: Address;
+        payoutSource: DisputePayoutSource;
+        payoutAmount: number;
+        payoutShortfallAmount: number;
+        publisherBanned: boolean;
       };
     };
     expect(disputeAfterRestart.status).toBe("RESOLVED_COMPLETED");
@@ -1586,8 +1835,194 @@ runDbSuite("API persistence mode", () => {
       notCompletedVotes: 1,
       outcome: VoteChoice.COMPLETED,
       winnerRole: "SUBMISSION_AGENT",
-      winnerAddress: worker
+      winnerAddress: worker,
+      payoutSource: DisputePayoutSource.ESCROW,
+      payoutAmount: 10,
+      payoutShortfallAmount: 0,
+      publisherBanned: false
     });
+  });
+
+  it("blocks manual confirm while a submission has an open dispute in persistence mode", async () => {
+    const publisher = addr("persist-confirm-open-dispute-pub");
+    const worker = addr("persist-confirm-open-dispute-worker");
+
+    const taskRes = await app!.inject({
+      method: "POST",
+      url: "/v2/tasks",
+      headers: { authorization: `Bearer ${bearer(publisher)}` },
+      payload: {
+        title: "confirm-blocked-by-open-dispute",
+        descriptionMd: "desc",
+        acceptanceCriteria: "criteria",
+        deadlineUtc: futureDeadline(),
+        displayTimezone: "UTC",
+        slotsTotal: 1,
+        rewardPerSlot: 10,
+        allowRepeatCompletionsBySameAgent: false
+      }
+    });
+    expect(taskRes.statusCode).toBe(200);
+    const task = taskRes.json() as { id: string };
+
+    const intentionRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/intentions`,
+      headers: { authorization: `Bearer ${bearer(worker)}` }
+    });
+    expect(intentionRes.statusCode).toBe(200);
+
+    const submitRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/submissions`,
+      headers: { authorization: `Bearer ${bearer(worker)}` },
+      payload: { payloadMd: "payload" }
+    });
+    expect(submitRes.statusCode).toBe(200);
+    const submission = submitRes.json() as { id: string };
+    await rejectSubmission(submission.id, publisher);
+
+    const disputeRes = await app!.inject({
+      method: "POST",
+      url: "/v2/disputes",
+      headers: { authorization: `Bearer ${bearer(worker)}` },
+      payload: {
+        taskId: task.id,
+        submissionId: submission.id,
+        reasonMd: "open dispute"
+      }
+    });
+    expect(disputeRes.statusCode).toBe(200);
+
+    const confirmRes = await app!.inject({
+      method: "POST",
+      url: `/v2/submissions/${submission.id}/confirm`,
+      headers: { authorization: `Bearer ${bearer(publisher)}` }
+    });
+    expect(confirmRes.statusCode).toBe(409);
+    expect(errorCode(confirmRes.json())).toBe("SUBMISSION_NOT_CONFIRMABLE");
+  });
+
+  it("blocks manual confirm after a completed dispute is reopened in persistence mode", async () => {
+    const publisher = addr("persist-reopen-confirm-pub");
+    const worker = addr("persist-reopen-confirm-worker");
+
+    const taskRes = await app!.inject({
+      method: "POST",
+      url: "/v2/tasks",
+      headers: { authorization: `Bearer ${bearer(publisher)}` },
+      payload: {
+        title: "confirm-blocked-after-reopen",
+        descriptionMd: "desc",
+        acceptanceCriteria: "criteria",
+        deadlineUtc: futureDeadline(),
+        displayTimezone: "UTC",
+        slotsTotal: 1,
+        rewardPerSlot: 10,
+        allowRepeatCompletionsBySameAgent: false
+      }
+    });
+    expect(taskRes.statusCode).toBe(200);
+    const task = taskRes.json() as { id: string };
+
+    await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/intentions`,
+      headers: { authorization: `Bearer ${bearer(worker)}` }
+    });
+    const submitRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/submissions`,
+      headers: { authorization: `Bearer ${bearer(worker)}` },
+      payload: { payloadMd: "payload" }
+    });
+    expect(submitRes.statusCode).toBe(200);
+    const submission = submitRes.json() as { id: string };
+    await rejectSubmission(submission.id, publisher);
+
+    const disputeRes = await app!.inject({
+      method: "POST",
+      url: "/v2/disputes",
+      headers: { authorization: `Bearer ${bearer(worker)}` },
+      payload: {
+        taskId: task.id,
+        submissionId: submission.id,
+        reasonMd: "reopen dispute"
+      }
+    });
+    expect(disputeRes.statusCode).toBe(200);
+    const dispute = disputeRes.json() as { id: string };
+
+    await repo.overrideDisputeDirect(dispute.id, "COMPLETED");
+    await repo.overrideDisputeDirect(dispute.id, "NOT_COMPLETED");
+
+    const confirmRes = await app!.inject({
+      method: "POST",
+      url: `/v2/submissions/${submission.id}/confirm`,
+      headers: { authorization: `Bearer ${bearer(publisher)}` }
+    });
+    expect(confirmRes.statusCode).toBe(409);
+    expect(errorCode(confirmRes.json())).toBe("SUBMISSION_NOT_CONFIRMABLE");
+  });
+
+  it("blocks manual termination while a task has an open dispute in persistence mode", async () => {
+    const publisher = addr("persist-terminate-open-dispute-pub");
+    const worker = addr("persist-terminate-open-dispute-worker");
+
+    const taskRes = await app!.inject({
+      method: "POST",
+      url: "/v2/tasks",
+      headers: { authorization: `Bearer ${bearer(publisher)}` },
+      payload: {
+        title: "terminate-blocked-by-open-dispute",
+        descriptionMd: "desc",
+        acceptanceCriteria: "criteria",
+        deadlineUtc: futureDeadline(),
+        displayTimezone: "UTC",
+        slotsTotal: 1,
+        rewardPerSlot: 10,
+        allowRepeatCompletionsBySameAgent: false
+      }
+    });
+    expect(taskRes.statusCode).toBe(200);
+    const task = taskRes.json() as { id: string };
+
+    const intentionRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/intentions`,
+      headers: { authorization: `Bearer ${bearer(worker)}` }
+    });
+    expect(intentionRes.statusCode).toBe(200);
+
+    const submitRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/submissions`,
+      headers: { authorization: `Bearer ${bearer(worker)}` },
+      payload: { payloadMd: "payload" }
+    });
+    expect(submitRes.statusCode).toBe(200);
+    const submission = submitRes.json() as { id: string };
+    await rejectSubmission(submission.id, publisher);
+
+    const disputeRes = await app!.inject({
+      method: "POST",
+      url: "/v2/disputes",
+      headers: { authorization: `Bearer ${bearer(worker)}` },
+      payload: {
+        taskId: task.id,
+        submissionId: submission.id,
+        reasonMd: "open dispute"
+      }
+    });
+    expect(disputeRes.statusCode).toBe(200);
+
+    const terminateRes = await app!.inject({
+      method: "POST",
+      url: `/v2/tasks/${task.id}/terminate`,
+      headers: { authorization: `Bearer ${bearer(publisher)}` }
+    });
+    expect(terminateRes.statusCode).toBe(409);
+    expect(errorCode(terminateRes.json())).toBe("TASK_NOT_TERMINABLE");
   });
 
   it("keeps single-open-dispute guard through restart and finalization", async () => {

@@ -3,8 +3,10 @@ import type {
   ActivityEvent,
   ActivityEventType,
   Address,
+  AgentBanReason,
   AgentDirectoryItem,
   AgentProfile,
+  AgentStatus,
   Cycle,
   CycleStatus,
   CycleWorkload,
@@ -25,6 +27,9 @@ export interface AgentDirectoryRow {
   address: string;
   name: string;
   bio: string;
+  status: unknown;
+  bannedAt: Date | null;
+  banReasonCode: unknown;
   publisherRep: number;
   workerRep: number;
   supervisorRep: number;
@@ -46,6 +51,9 @@ interface AgentProfileRow {
   address: string;
   name: string;
   bio: string;
+  status: unknown;
+  bannedAt: Date | null;
+  banReasonCode: unknown;
   publisherRep: number;
   workerRep: number;
   supervisorRep: number;
@@ -224,6 +232,9 @@ export const mapAgentProfile = (item: AgentProfileRow): AgentProfile => ({
   address: asAddress(item.address),
   name: item.name,
   bio: item.bio,
+  status: item.status as AgentStatus,
+  bannedAt: item.bannedAt ? toIso(item.bannedAt) : null,
+  banReasonCode: item.banReasonCode ? (item.banReasonCode as AgentBanReason) : null,
   reputation: {
     publisher: item.publisherRep,
     worker: item.workerRep,
@@ -373,6 +384,9 @@ export const mapAgentDirectoryItem = (item: AgentDirectoryRow): AgentDirectoryIt
   address: asAddress(item.address),
   name: item.name,
   bio: item.bio,
+  status: item.status as AgentStatus,
+  bannedAt: item.bannedAt ? toIso(item.bannedAt) : null,
+  banReasonCode: item.banReasonCode ? (item.banReasonCode as AgentBanReason) : null,
   reputation: {
     publisher: item.publisherRep,
     worker: item.workerRep,

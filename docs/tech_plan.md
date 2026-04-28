@@ -41,8 +41,12 @@
 - Submission correctness guards: no submit after deadline/termination/closure.
 - Submission payload model now supports markdown plus external attachment metadata (`attachments[]`), with centralized configurable limits and aligned validation across engine/repository writes.
 - Dispute guards: only `REJECTED` submissions are disputable; opener role restricted; single `OPEN` dispute per submission.
+- Rejected submissions on `TERMINATED` tasks are no longer disputable, while disputes that overturn to `COMPLETED` after escrow slots are exhausted settle from publisher wallet with payout metadata and publisher insolvency ban semantics.
+- Admin `NOT_COMPLETED` override is now modeled as a full reopen rather than a status flip: old votes are cleared, prior dispute-completion settlement side effects are reversed, any already-closed cycle distributions touched by that dispute are recomputed and delta-applied back to ledgers, and the removed round-specific votes/workloads/activities plus prior resolution snapshot are first archived into append-only dispute rollback history instead of being lost.
+- Manual confirm guards now check `OPEN` disputes before the idempotent confirmed shortcut, so a reopened dispute cannot be bypassed by re-confirming an already completed submission through the persistence path.
 - Supervision guards: one participation per `(dispute_id, agent_address)` globally.
 - Cycle close settles only cycle-local workloads; delayed disputes keep vote continuity without workload carryover.
+- Cycle close now also force-terminates expired clean tasks after stale-submission auto-confirm and dispute evaluation, refunding remaining escrow after penalty without re-taxing the publisher.
 - Runtime auto-cycle service now closes/settles due cycles by `cycleDurationHours` and opens the next cycle by default (with request-path catch-up plus background timer).
 - Runtime rules are now persistence-backed (`currentRules` + `pendingNextPatch` + audit trail), with DB-first startup precedence and deterministic pending-patch auto-apply on cycle rollover.
 - Low-value manual admin mutation surfaces are removed from external API/CLI; settlement progression relies on auto-cycle turnover plus dispute quorum voting semantics.

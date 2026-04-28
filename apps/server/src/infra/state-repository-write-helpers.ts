@@ -40,6 +40,11 @@ interface UpdateAgentProfileWriteDeps {
   lockRuntimeWithTx(
     tx: Prisma.TransactionClient
   ): Promise<{ id: string; activeCycleId: string; updatedAt: Date }>;
+  assertAgentActiveForWriteWithTx(
+    tx: Prisma.TransactionClient,
+    address: Address,
+    now: Date
+  ): Promise<void>;
   ensureAgentAndLedgerWithTx(
     tx: Prisma.TransactionClient,
     address: Address,
@@ -57,6 +62,11 @@ interface CommonWriteDeps {
   lockRuntimeWithTx(
     tx: Prisma.TransactionClient
   ): Promise<{ id: string; activeCycleId: string; updatedAt: Date }>;
+  assertAgentActiveForWriteWithTx(
+    tx: Prisma.TransactionClient,
+    address: Address,
+    now: Date
+  ): Promise<void>;
   ensureAgentAndLedgerWithTx(
     tx: Prisma.TransactionClient,
     address: Address,
@@ -153,7 +163,11 @@ interface ConfirmSubmissionWriteDeps extends CommonWriteDeps {
     },
     now: Date,
     cycleId: string,
-    actor: Address
+    actor: Address,
+    options?: {
+      grantPublisherCredits?: boolean;
+      disputeId?: string | null;
+    }
   ): Promise<void>;
 }
 
@@ -167,6 +181,16 @@ interface CloseCycleWriteDeps extends ConfirmSubmissionWriteDeps {
     now: Date,
     cycleId: string
   ): Promise<boolean>;
+  sweepBannedPublisherCleanTasksWithTx(
+    tx: Prisma.TransactionClient,
+    now: Date,
+    cycleId: string
+  ): Promise<void>;
+  autoTerminateExpiredCleanTasksWithTx(
+    tx: Prisma.TransactionClient,
+    now: Date,
+    cycleId: string
+  ): Promise<void>;
   nextCycleId(currentCycleId: string): string;
 }
 
@@ -182,6 +206,12 @@ interface OverrideDisputeWriteDeps {
     outcome: DomainVoteChoice,
     now: Date,
     cycleId: string
+  ): Promise<void>;
+  reopenDisputeAsNotCompletedWithTx(
+    tx: Prisma.TransactionClient,
+    disputeId: string,
+    now: Date,
+    activeCycleId: string
   ): Promise<void>;
 }
 
@@ -381,7 +411,7 @@ export const writeUpdateAgentProfileDirect = async (
     prisma.$transaction(async (tx) => {
       const now = new Date();
       const runtime = await deps.lockRuntimeWithTx(tx);
-      await deps.ensureAgentAndLedgerWithTx(tx, address, now);
+      await deps.assertAgentActiveForWriteWithTx(tx, address, now);
       const current = await tx.agentProfile.findUnique({ where: { address } });
       if (!current) {
         throw new DomainError("AGENT_NOT_FOUND", `Agent ${address} not found`, 404);
@@ -420,6 +450,7 @@ export const writeRejectSubmissionDirect = async (
     prisma.$transaction(async (tx) => {
       const runtime = await deps.lockRuntimeWithTx(tx);
       const now = new Date();
+      await deps.assertAgentActiveForWriteWithTx(tx, input.publisher, now);
       await tx.$queryRaw`SELECT id FROM "Submission" WHERE id = ${input.submissionId} FOR UPDATE`;
       const submissionRow = await tx.submission.findUnique({ where: { id: input.submissionId } });
       if (!submissionRow) {
@@ -491,12 +522,19 @@ export const writeAddTaskIntentionDirect = async (
     prisma.$transaction(async (tx) => {
       const now = new Date();
       const runtime = await deps.lockRuntimeWithTx(tx);
-      await deps.ensureAgentAndLedgerWithTx(tx, agent, now);
+      await deps.assertAgentActiveForWriteWithTx(tx, agent, now);
 
       await tx.$queryRaw`SELECT id FROM "Task" WHERE id = ${taskId} FOR UPDATE`;
       const taskRow = await tx.task.findUnique({ where: { id: taskId } });
       if (!taskRow) {
         throw new DomainError("TASK_NOT_FOUND", `Task ${taskId} does not exist`, 404);
+      }
+      const publisher = await tx.agentProfile.findUnique({
+        where: { address: taskRow.publisherAddress },
+        select: { status: true }
+      });
+      if (publisher?.status === "BANNED") {
+        throw new DomainError("TASK_FROZEN", "task is frozen because publisher account is banned", 409);
       }
 
       if (taskRow.status === DomainTaskStatus.TERMINATED || taskRow.status === DomainTaskStatus.CLOSED) {
@@ -569,12 +607,19 @@ export const writeSubmitTaskDirect = async (
     prisma.$transaction(async (tx) => {
       const now = new Date();
       const runtime = await deps.lockRuntimeWithTx(tx);
-      await deps.ensureAgentAndLedgerWithTx(tx, input.agent, now);
+      await deps.assertAgentActiveForWriteWithTx(tx, input.agent, now);
 
       await tx.$queryRaw`SELECT id FROM "Task" WHERE id = ${input.taskId} FOR UPDATE`;
       const taskRow = await tx.task.findUnique({ where: { id: input.taskId } });
       if (!taskRow) {
         throw new DomainError("TASK_NOT_FOUND", `Task ${input.taskId} does not exist`, 404);
+      }
+      const publisher = await tx.agentProfile.findUnique({
+        where: { address: taskRow.publisherAddress },
+        select: { status: true }
+      });
+      if (publisher?.status === "BANNED") {
+        throw new DomainError("TASK_FROZEN", "task is frozen because publisher account is banned", 409);
       }
       if (
         input.payloadMd.trim().length === 0 ||
@@ -701,7 +746,7 @@ export const writePublishTaskDirect = async (
     prisma.$transaction(async (tx) => {
       const now = new Date();
       const runtime = await deps.lockRuntimeWithTx(tx);
-      await deps.ensureAgentAndLedgerWithTx(tx, input.publisher, now);
+      await deps.assertAgentActiveForWriteWithTx(tx, input.publisher, now);
 
       const normalizedTitle = input.title.trim();
       if (normalizedTitle.length === 0 || input.title.length > input.config.taskTitleMaxLength) {
@@ -878,6 +923,7 @@ export const writeTerminateTaskDirect = async (
     prisma.$transaction(async (tx) => {
       const runtime = await deps.lockRuntimeWithTx(tx);
       const now = new Date();
+      await deps.assertAgentActiveForWriteWithTx(tx, publisher, now);
       await tx.$queryRaw`SELECT id FROM "Task" WHERE id = ${taskId} FOR UPDATE`;
       const taskRow = await tx.task.findUnique({ where: { id: taskId } });
       if (!taskRow) {
@@ -888,6 +934,20 @@ export const writeTerminateTaskDirect = async (
       }
       if (taskRow.status === DomainTaskStatus.TERMINATED || taskRow.status === DomainTaskStatus.CLOSED) {
         throw new DomainError("TASK_NOT_TERMINABLE", "task is already closed", 409);
+      }
+      const hasOpenDispute = await tx.dispute.findFirst({
+        where: {
+          taskId: taskRow.id,
+          status: DomainDisputeStatus.OPEN
+        },
+        select: { id: true }
+      });
+      if (hasOpenDispute) {
+        throw new DomainError(
+          "TASK_NOT_TERMINABLE",
+          "task has an open dispute and cannot be manually terminated",
+          409
+        );
       }
 
       const penalty = computeTerminationPenalty(taskRow.rewardEscrowRemaining, config);
@@ -958,7 +1018,7 @@ export const writeOpenDisputeDirect = async (
       prisma.$transaction(async (tx) => {
         const runtime = await deps.lockRuntimeWithTx(tx);
         const now = new Date();
-        await deps.ensureAgentAndLedgerWithTx(tx, input.opener, now);
+        await deps.assertAgentActiveForWriteWithTx(tx, input.opener, now);
         const task = await tx.task.findUnique({ where: { id: input.taskId } });
         if (!task) {
           throw new DomainError("TASK_NOT_FOUND", `Task ${input.taskId} does not exist`, 404);
@@ -969,6 +1029,13 @@ export const writeOpenDisputeDirect = async (
         }
         if (submission.taskId !== task.id) {
           throw new DomainError("MISMATCH", "submission does not belong to task", 400);
+        }
+        if (task.status === DomainTaskStatus.TERMINATED) {
+          throw new DomainError(
+            "SUBMISSION_NOT_DISPUTABLE",
+            "submission task is terminated and can no longer be disputed",
+            409
+          );
         }
         if (input.reasonMd.trim().length === 0 || input.reasonMd.length > input.disputeReasonMaxLength) {
           throw new DomainError(
@@ -1066,7 +1133,7 @@ export const writeRespondDisputeDirect = async (
     prisma.$transaction(async (tx) => {
       const now = new Date();
       const runtime = await deps.lockRuntimeWithTx(tx);
-      await deps.ensureAgentAndLedgerWithTx(tx, input.responder, now);
+      await deps.assertAgentActiveForWriteWithTx(tx, input.responder, now);
       await tx.$queryRaw`SELECT id FROM "Dispute" WHERE id = ${input.disputeId} FOR UPDATE`;
       const dispute = await tx.dispute.findUnique({ where: { id: input.disputeId } });
       if (!dispute) {
@@ -1156,6 +1223,7 @@ export const writeConfirmSubmissionDirect = async (
     prisma.$transaction(async (tx) => {
       const now = new Date();
       const runtime = await deps.lockRuntimeWithTx(tx);
+      await deps.assertAgentActiveForWriteWithTx(tx, publisher, now);
       await tx.$queryRaw`SELECT id FROM "Submission" WHERE id = ${submissionId} FOR UPDATE`;
       const submissionRow = await tx.submission.findUnique({ where: { id: submissionId } });
       if (!submissionRow) {
@@ -1169,6 +1237,20 @@ export const writeConfirmSubmissionDirect = async (
       }
       if (taskRow.publisherAddress !== publisher) {
         throw new DomainError("FORBIDDEN", "only the publisher can confirm submission", 403);
+      }
+      const hasOpenDispute = await tx.dispute.findFirst({
+        where: {
+          submissionId: submissionRow.id,
+          status: DomainDisputeStatus.OPEN
+        },
+        select: { id: true }
+      });
+      if (hasOpenDispute) {
+        throw new DomainError(
+          "SUBMISSION_NOT_CONFIRMABLE",
+          "submission has an open dispute and cannot be manually confirmed",
+          409
+        );
       }
       if (submissionRow.status === DomainSubmissionStatus.CONFIRMED) {
         await appendSuccessAuditIfPresent(tx, deps, auditContext, {
@@ -1263,7 +1345,7 @@ export const writeVoteDisputeDirect = async (
       prisma.$transaction(async (tx) => {
         const now = new Date();
         const runtime = await deps.lockRuntimeWithTx(tx);
-        await deps.ensureAgentAndLedgerWithTx(tx, input.agent, now);
+        await deps.assertAgentActiveForWriteWithTx(tx, input.agent, now);
 
         await tx.$queryRaw`SELECT id FROM "Dispute" WHERE id = ${input.disputeId} FOR UPDATE`;
         const dispute = await tx.dispute.findUnique({ where: { id: input.disputeId } });
@@ -1457,6 +1539,8 @@ const writeCloseCurrentCycleInternal = async (
         );
       }
 
+      await deps.sweepBannedPublisherCleanTasksWithTx(tx, now, runtime.activeCycleId);
+
       const finalizedDisputes: string[] = [];
       const openDisputes = await tx.dispute.findMany({
         where: { status: DomainDisputeStatus.OPEN },
@@ -1474,6 +1558,9 @@ const writeCloseCurrentCycleInternal = async (
           finalizedDisputes.push(dispute.id);
         }
       }
+
+      await deps.sweepBannedPublisherCleanTasksWithTx(tx, now, runtime.activeCycleId);
+      await deps.autoTerminateExpiredCleanTasksWithTx(tx, now, runtime.activeCycleId);
 
       const rewardPool = cycle.mintedAmount + cycle.taxPool + cycle.penaltyPool;
       const workloads = await tx.cycleWorkload.findMany({
@@ -1608,13 +1695,7 @@ export const writeOverrideDisputeDirect = async (
             );
           }
         } else {
-          await tx.dispute.update({
-            where: { id: disputeId },
-            data: {
-              status: DomainDisputeStatus.OPEN,
-              updatedAt: now
-            }
-          });
+          await deps.reopenDisputeAsNotCompletedWithTx(tx, disputeId, now, runtime.activeCycleId);
         }
 
         await deps.touchRuntimeStateWithTx(tx);

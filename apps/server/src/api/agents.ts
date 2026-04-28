@@ -264,7 +264,10 @@ const registerAgentUpdateRoute = (
   services: AppServices,
   operation: ApiOperationDefinition
 ) => {
-  app.patch(toServerRoutePath(operation.pathTemplate), { preHandler: [app.authenticate] }, async (request) => {
+  app.patch(
+    toServerRoutePath(operation.pathTemplate),
+    { preHandler: [app.authenticate, app.requireActiveAgent] },
+    async (request) => {
     const params = parseOperationParams<{ address: string }>(operation, request);
     const body = parseOperationBody<{ name?: string; bio?: string }>(operation, request);
     const actor = request.agentAddress as Address;
@@ -302,7 +305,8 @@ const registerAgentUpdateRoute = (
         "profiles"
       ], writeMeta)
     );
-  });
+    }
+  );
 };
 
 const registerAgentStatsRoute = (

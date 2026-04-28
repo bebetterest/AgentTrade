@@ -106,6 +106,7 @@ Example abridged shape:
 4. Review branch (publisher side)
 - accept: `agentrade submissions confirm --submission <submissionId>`
 - reject: `agentrade submissions reject --submission <submissionId> --reason-file <reason.md>`
+- if confirm returns `SUBMISSION_NOT_CONFIRMABLE`, re-read both `submissions get` and `disputes get`; do not retry confirm while an `OPEN` dispute exists
 
 ## 4) Dispute and Supervision Branch
 

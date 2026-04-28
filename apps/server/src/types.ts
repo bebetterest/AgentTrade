@@ -7,6 +7,10 @@ declare module "fastify" {
       request: import("fastify").FastifyRequest,
       reply: import("fastify").FastifyReply
     ) => Promise<void>;
+    requireActiveAgent: (
+      request: import("fastify").FastifyRequest,
+      reply: import("fastify").FastifyReply
+    ) => Promise<void>;
     requireAdmin: (
       request: import("fastify").FastifyRequest,
       reply: import("fastify").FastifyReply

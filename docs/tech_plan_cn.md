@@ -41,8 +41,12 @@
 - 提交正确性约束：截止后/终止后/关闭后禁止提交。
 - 提交模型已扩展为 markdown 正文 + 外部附件元数据（`attachments[]`），并通过集中配置项控制数量/长度/大小上限，且引擎与仓储写路径校验语义一致。
 - 争议约束：仅 `REJECTED` submission 可争议；发起者受角色限制；同 submission 仅一个 `OPEN` 争议。
+- `TERMINATED` task 上被 reject 的 submission 不再可争议；若争议最终反转为 `COMPLETED` 时 escrow slot 已耗尽，则改走 publisher 钱包赔付，并带上赔付元数据与 publisher 资不抵债封禁语义。
+- 管理员 `NOT_COMPLETED` override 现已被建模为完整 reopen，而不是单纯改状态：旧票会被清空，既有 dispute 完成结算副作用会被回滚，任何已关闭且受该 dispute 影响的 cycle 分配也会重算并把差额冲回 ledger；同时，被移除的旧轮次 votes/workloads/activities 以及旧 resolution snapshot 会先写入 append-only 的 dispute rollback history，而不是直接丢失。
+- 手工 confirm 护栏现会在“已确认幂等成功”快捷路径之前先检查 `OPEN` dispute，因此即使是“先完成、后 reopen”的 dispute，也不能再通过持久化路径重复 confirm 原 submission。
 - 监督约束：`(dispute_id, agent_address)` 全局仅一次参与。
 - 周期关闭仅结算当期工作量；延迟争议保留投票连续性但不滚动历史工作量。
+- 周期关闭现在还会在“超时自动确认 submission + 评估 dispute”之后，强制终止已过期且干净的 task，并按 penalty 后退款给 publisher，不重复征税。
 - 运行时默认启用自动周期推进：按 `cycleDurationHours` 到期自动结算并开启下一周期（请求路径补偿 + 后台定时器双保障）。
 - 运行规则现已持久化（`currentRules` + `pendingNextPatch` + 审计轨迹），启动采用 DB 优先，并在换周期时确定性自动应用 pending patch。
 - 对外 API/CLI 已移除低价值手工管理员变更入口；结算推进依赖自动换周期与争议法定票数结案语义。

@@ -262,7 +262,10 @@ const registerTaskCreateRoute = (
   services: AppServices,
   operation: ApiOperationDefinition
 ) => {
-  app.post(toServerRoutePath(operation.pathTemplate), { preHandler: [app.authenticate] }, async (request) => {
+  app.post(
+    toServerRoutePath(operation.pathTemplate),
+    { preHandler: [app.authenticate, app.requireActiveAgent] },
+    async (request) => {
     const body = parseOperationBody<{
       title: string;
       descriptionMd: string;
@@ -308,7 +311,8 @@ const registerTaskCreateRoute = (
         writeMeta
       )
     );
-  });
+    }
+  );
 };
 
 const registerTaskIntendRoute = (
@@ -316,7 +320,10 @@ const registerTaskIntendRoute = (
   services: AppServices,
   operation: ApiOperationDefinition
 ) => {
-  app.post(toServerRoutePath(operation.pathTemplate), { preHandler: [app.authenticate] }, async (request) => {
+  app.post(
+    toServerRoutePath(operation.pathTemplate),
+    { preHandler: [app.authenticate, app.requireActiveAgent] },
+    async (request) => {
     const params = parseOperationParams<{ id: string }>(operation, request);
     const agent = request.agentAddress as Address;
     const writeMeta = services.writeMeta({
@@ -351,7 +358,8 @@ const registerTaskIntendRoute = (
         writeMeta
       )
     );
-  });
+    }
+  );
 };
 
 const registerTaskSubmitRoute = (
@@ -359,7 +367,10 @@ const registerTaskSubmitRoute = (
   services: AppServices,
   operation: ApiOperationDefinition
 ) => {
-  app.post(toServerRoutePath(operation.pathTemplate), { preHandler: [app.authenticate] }, async (request) => {
+  app.post(
+    toServerRoutePath(operation.pathTemplate),
+    { preHandler: [app.authenticate, app.requireActiveAgent] },
+    async (request) => {
     const params = parseOperationParams<{ id: string }>(operation, request);
     const body = parseOperationBody<{ payloadMd: string; attachments?: SubmissionAttachment[] }>(operation, request);
     validateSubmissionPayloadLength(body.payloadMd, services.config);
@@ -405,7 +416,8 @@ const registerTaskSubmitRoute = (
         "tasks"
       ], writeMeta)
     );
-  });
+    }
+  );
 };
 
 const registerTaskTerminateRoute = (
@@ -413,7 +425,10 @@ const registerTaskTerminateRoute = (
   services: AppServices,
   operation: ApiOperationDefinition
 ) => {
-  app.post(toServerRoutePath(operation.pathTemplate), { preHandler: [app.authenticate] }, async (request) => {
+  app.post(
+    toServerRoutePath(operation.pathTemplate),
+    { preHandler: [app.authenticate, app.requireActiveAgent] },
+    async (request) => {
     const params = parseOperationParams<{ id: string }>(operation, request);
     const publisher = request.agentAddress as Address;
     const writeMeta = services.writeMeta({
@@ -448,7 +463,8 @@ const registerTaskTerminateRoute = (
         "cycles"
       ], writeMeta)
     );
-  });
+    }
+  );
 };
 
 const registerSubmissionConfirmRoute = (
@@ -456,7 +472,10 @@ const registerSubmissionConfirmRoute = (
   services: AppServices,
   operation: ApiOperationDefinition
 ) => {
-  app.post(toServerRoutePath(operation.pathTemplate), { preHandler: [app.authenticate] }, async (request) => {
+  app.post(
+    toServerRoutePath(operation.pathTemplate),
+    { preHandler: [app.authenticate, app.requireActiveAgent] },
+    async (request) => {
     const params = parseOperationParams<{ id: string }>(operation, request);
     const publisher = request.agentAddress as Address;
     const writeMeta = services.writeMeta({
@@ -490,7 +509,8 @@ const registerSubmissionConfirmRoute = (
         "submissions"
       ], writeMeta)
     );
-  });
+    }
+  );
 };
 
 const registerSubmissionRejectRoute = (
@@ -498,7 +518,10 @@ const registerSubmissionRejectRoute = (
   services: AppServices,
   operation: ApiOperationDefinition
 ) => {
-  app.post(toServerRoutePath(operation.pathTemplate), { preHandler: [app.authenticate] }, async (request) => {
+  app.post(
+    toServerRoutePath(operation.pathTemplate),
+    { preHandler: [app.authenticate, app.requireActiveAgent] },
+    async (request) => {
     const params = parseOperationParams<{ id: string }>(operation, request);
     const body = parseOperationBody<{ reasonMd: string }>(operation, request);
     validateDisputeReasonLength(body.reasonMd, services.config);
@@ -534,7 +557,8 @@ const registerSubmissionRejectRoute = (
         "submissions"
       ], writeMeta)
     );
-  });
+    }
+  );
 };
 
 export const registerTaskRoutes = (app: FastifyInstance, services: AppServices): void => {

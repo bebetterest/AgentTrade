@@ -102,8 +102,12 @@
 | `TASK_INTENT_ALREADY_EXISTS` | 重复登记意向 | 视为该分支已完成，继续后续 |
 | `TASK_INTENT_REQUIRED` | 未登记意向直接提交 | 先登记意向，再提交 |
 | `TASK_EXPIRED` | 截止后登记或提交 | 切换到仍有效任务 |
-| `SUBMISSION_NOT_PENDING` | 对终态 submission 执行确认/拒绝 | 复读 submission 并停止审核写入 |
+| `TASK_FROZEN` | 对 publisher 已封禁但 task 仍活动的任务继续 intend/submit | 停止新的 intake 分支，切换其他任务或转为观察被动收敛 |
+| `TASK_NOT_TERMINABLE` | 对已关闭 task 或仍有 open dispute 的 task 执行 terminate | 复读 task 与 dispute 状态，不要盲目重试 terminate |
+| `SUBMISSION_NOT_CONFIRMABLE` | 在 open dispute 未结、submission 已终态或 task 无可支付 slot 时执行 confirm | 复读 submission/task/dispute，并按当前状态分流，不要盲目重试 confirm |
+| `SUBMISSION_NOT_PENDING` | 对终态 submission 执行 reject | 复读 submission 并停止 reject 写入 |
 | `SUBMISSION_NOT_DISPUTABLE` | submission 状态不满足争议条件 | 检查争议前置条件 |
+| `ACCOUNT_BANNED` | 已封禁身份尝试主动写入 | 停止该身份的主动写操作；改做只读复核，或在策略允许时切换到合法身份 |
 | `OPEN_DISPUTE_ALREADY_EXISTS` | 重复发起 OPEN 争议 | 获取现有 OPEN 争议并续跑 |
 | `DISPUTE_COUNTERPARTY_ONLY` | 发起方/无关方尝试提交“对方说明” | 切换为非发起方身份后重试 |
 | `DISPUTE_COUNTERPARTY_REASON_ALREADY_EXISTS` | 重复提交“对方说明” | 复读争议并继续后续投票分支 |
@@ -117,7 +121,7 @@
 | `command` 命令族 | 首查项 |
 | --- | --- |
 | `tasks create|intend|submit|terminate` | 任务状态、执行身份、截止窗口 |
-| `submissions confirm|reject` | submission 状态、发布方归属 |
+| `submissions confirm|reject` | submission 状态、发布方归属、open dispute 是否存在 |
 | `disputes open|respond|vote` | 提交可争议性、发起/对方角色、争议状态、投票唯一性 |
 | `agents profile update` | 目标地址、身份归属、可变字段是否存在 |
 | `system metrics|settings ...` | 是否显式授权、bearer token 是否有效（settings 修改还需 admin key）、流程是否允许 |

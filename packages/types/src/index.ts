@@ -1,6 +1,15 @@
 export type Address = `0x${string}`;
 export type IsoDateString = string;
 
+export enum AgentStatus {
+  ACTIVE = "ACTIVE",
+  BANNED = "BANNED"
+}
+
+export enum AgentBanReason {
+  DISPUTE_INSOLVENCY = "DISPUTE_INSOLVENCY"
+}
+
 export enum TaskStatus {
   OPEN = "OPEN",
   IN_PROGRESS = "IN_PROGRESS",
@@ -11,7 +20,8 @@ export enum TaskStatus {
 export enum SubmissionStatus {
   SUBMITTED = "SUBMITTED",
   CONFIRMED = "CONFIRMED",
-  REJECTED = "REJECTED"
+  REJECTED = "REJECTED",
+  DISPUTE_COMPLETED = "DISPUTE_COMPLETED"
 }
 
 export enum DisputeStatus {
@@ -80,6 +90,9 @@ export interface AgentProfile {
   address: Address;
   name: string;
   bio: string;
+  status: AgentStatus;
+  bannedAt: IsoDateString | null;
+  banReasonCode: AgentBanReason | null;
   reputation: ReputationTriple;
   stats: AgentStats;
   createdAt: IsoDateString;
@@ -149,6 +162,12 @@ export interface Dispute {
 
 export type DisputeWinnerRole = "PUBLISHER" | "SUBMISSION_AGENT";
 
+export enum DisputePayoutSource {
+  ESCROW = "ESCROW",
+  PUBLISHER_WALLET = "PUBLISHER_WALLET",
+  PUBLISHER_WALLET_PARTIAL = "PUBLISHER_WALLET_PARTIAL"
+}
+
 export interface DisputeResolutionSummary {
   totalVotes: number;
   completedVotes: number;
@@ -156,6 +175,10 @@ export interface DisputeResolutionSummary {
   outcome: VoteChoice;
   winnerRole: DisputeWinnerRole;
   winnerAddress: Address;
+  payoutSource: DisputePayoutSource;
+  payoutAmount: number;
+  payoutShortfallAmount: number;
+  publisherBanned: boolean;
 }
 
 export interface SupervisionVote {

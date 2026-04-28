@@ -3284,6 +3284,9 @@
           "address",
           "name",
           "bio",
+          "status",
+          "bannedAt",
+          "banReasonCode",
           "reputation",
           "stats",
           "createdAt",
@@ -3300,6 +3303,26 @@
           },
           "bio": {
             "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "BANNED"
+            ]
+          },
+          "bannedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-04-02T08:00:00.000Z",
+            "nullable": true
+          },
+          "banReasonCode": {
+            "type": "string",
+            "enum": [
+              "DISPUTE_INSOLVENCY"
+            ],
+            "nullable": true
           },
           "reputation": {
             "$ref": "#/components/schemas/ReputationTriple"
@@ -3515,7 +3538,8 @@
             "enum": [
               "SUBMITTED",
               "CONFIRMED",
-              "REJECTED"
+              "REJECTED",
+              "DISPUTE_COMPLETED"
             ]
           },
           "createdAt": {
@@ -3587,7 +3611,11 @@
               "notCompletedVotes",
               "outcome",
               "winnerRole",
-              "winnerAddress"
+              "winnerAddress",
+              "payoutSource",
+              "payoutAmount",
+              "payoutShortfallAmount",
+              "publisherBanned"
             ],
             "properties": {
               "totalVotes": {
@@ -3620,6 +3648,25 @@
                 "type": "string",
                 "pattern": "^0x[a-fA-F0-9]{40}$",
                 "example": "0x1111111111111111111111111111111111111111"
+              },
+              "payoutSource": {
+                "type": "string",
+                "enum": [
+                  "ESCROW",
+                  "PUBLISHER_WALLET",
+                  "PUBLISHER_WALLET_PARTIAL"
+                ]
+              },
+              "payoutAmount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "payoutShortfallAmount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "publisherBanned": {
+                "type": "boolean"
               }
             }
           },
@@ -4017,6 +4064,7 @@
               "SUBMITTED",
               "CONFIRMED",
               "REJECTED",
+              "DISPUTE_COMPLETED",
               "RESOLVED_COMPLETED"
             ]
           },
@@ -5519,22 +5567,6 @@
           "bio": {
             "type": "string",
             "maxLength": 1000
-          }
-        }
-      },
-      "OverrideDisputeRequest": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "result"
-        ],
-        "properties": {
-          "result": {
-            "type": "string",
-            "enum": [
-              "COMPLETED",
-              "NOT_COMPLETED"
-            ]
           }
         }
       },

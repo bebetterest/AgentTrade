@@ -1,8 +1,11 @@
 import { defaultConfig, type AppConfig } from "@agentrade/config";
 import {
   ActivityEventType,
+  AgentBanReason,
+  AgentStatus,
   type CloseCycleResult,
   CycleStatus,
+  DisputePayoutSource,
   DisputeStatus,
   SubmissionStatus,
   TaskStatus,
@@ -33,6 +36,44 @@ interface UpdateProfilePayload {
   bio?: string;
 }
 
+interface DisputeResolutionMetaRecord {
+  disputeId: string;
+  payoutSource: DisputePayoutSource;
+  payoutAmount: number;
+  payoutShortfallAmount: number;
+  publisherBanned: boolean;
+  rollback?: DisputeResolutionRollbackRecord | null;
+}
+
+interface ForcedTerminationRollbackRecord {
+  taskId: string;
+  cycleId: string;
+  previousStatus: TaskStatus;
+  previousRewardEscrowRemaining: number;
+  penalty: number;
+  refund: number;
+}
+
+interface DisputeResolutionRollbackRecord {
+  resolutionCycleId: string;
+  taskStatusBeforeResolution: TaskStatus;
+  taskRewardEscrowRemainingBeforeResolution: number;
+  publisherWasBannedBeforeResolution: boolean;
+  publisherBanSourceDisputeIdBeforeResolution: string | null;
+  forcedTerminations: ForcedTerminationRollbackRecord[];
+}
+
+interface DisputeRollbackHistoryRecord {
+  id: string;
+  disputeId: string;
+  previousStatus: DisputeStatus;
+  previousResolution: DisputeResolutionMetaRecord | null;
+  archivedVotes: SupervisionVote[];
+  archivedWorkloads: CycleWorkload[];
+  archivedActivities: ActivityEvent[];
+  reopenedAt: string;
+}
+
 export interface EngineStateSnapshot {
   version: 1;
   activeCycleId: string;
@@ -46,8 +87,11 @@ export interface EngineStateSnapshot {
   cycleWorkloads: CycleWorkload[];
   cycles: Cycle[];
   activities: ActivityEvent[];
+  disputeResolutionMeta?: DisputeResolutionMetaRecord[];
+  disputeRollbackHistory?: DisputeRollbackHistoryRecord[];
   intentions?: TaskIntention[];
   latestSubmissionByTaskAndAgent: Array<[string, string]>;
+  banSourceDisputeByPublisher?: Array<[Address, string]>;
 }
 
 export class AgentradeEngine {
@@ -59,13 +103,16 @@ export class AgentradeEngine {
   private tasks = new Map<string, Task>();
   private submissions = new Map<string, Submission>();
   private disputes = new Map<string, Dispute>();
+  private disputeResolutionMeta = new Map<string, DisputeResolutionMetaRecord>();
   private votes = new Map<string, SupervisionVote>();
   private votesByDisputeAndAgent = new Map<string, string>();
   private cycleWorkloads = new Map<string, CycleWorkload>();
   private cycles = new Map<string, Cycle>();
   private activities = new Map<string, ActivityEvent>();
+  private disputeRollbackHistory: DisputeRollbackHistoryRecord[] = [];
   private taskIntentions = new Map<string, TaskIntention>();
   private latestSubmissionByTaskAndAgent = new Map<string, string>();
+  private banSourceDisputeByPublisher = new Map<Address, string>();
   private activeCycleId!: string;
 
   constructor(
@@ -122,8 +169,11 @@ export class AgentradeEngine {
       cycleWorkloads: [...this.cycleWorkloads.values()],
       cycles: [...this.cycles.values()],
       activities: [...this.activities.values()],
+      disputeResolutionMeta: [...this.disputeResolutionMeta.values()],
+      disputeRollbackHistory: this.disputeRollbackHistory.map((item) => this.cloneJson(item)),
       intentions: [...this.taskIntentions.values()],
-      latestSubmissionByTaskAndAgent: [...this.latestSubmissionByTaskAndAgent.entries()]
+      latestSubmissionByTaskAndAgent: [...this.latestSubmissionByTaskAndAgent.entries()],
+      banSourceDisputeByPublisher: [...this.banSourceDisputeByPublisher.entries()]
     };
   }
 
@@ -191,6 +241,13 @@ export class AgentradeEngine {
     const submission = this.requireSubmission(dispute.submissionId);
     const winnerRole = outcome === VoteChoice.COMPLETED ? "SUBMISSION_AGENT" : "PUBLISHER";
     const winnerAddress = outcome === VoteChoice.COMPLETED ? submission.agent : task.publisher;
+    const resolutionMeta = this.disputeResolutionMeta.get(disputeId) ?? {
+      disputeId,
+      payoutSource: DisputePayoutSource.ESCROW,
+      payoutAmount: task.rewardPerSlot,
+      payoutShortfallAmount: 0,
+      publisherBanned: false
+    };
 
     return {
       totalVotes: votes.length,
@@ -198,7 +255,11 @@ export class AgentradeEngine {
       notCompletedVotes,
       outcome,
       winnerRole,
-      winnerAddress
+      winnerAddress,
+      payoutSource: resolutionMeta.payoutSource,
+      payoutAmount: resolutionMeta.payoutAmount,
+      payoutShortfallAmount: resolutionMeta.payoutShortfallAmount,
+      publisherBanned: resolutionMeta.publisherBanned
     };
   }
 
@@ -211,6 +272,7 @@ export class AgentradeEngine {
   }
 
   updateAgentProfile(address: Address, payload: UpdateProfilePayload): AgentProfile {
+    this.requireActiveAgentForWrite(address);
     const profile = this.requireAgent(address);
     profile.name = payload.name ?? profile.name;
     profile.bio = payload.bio ?? profile.bio;
@@ -237,7 +299,7 @@ export class AgentradeEngine {
     rewardPerSlot: number;
     allowRepeatCompletionsBySameAgent: boolean;
   }): Task {
-    this.requireAgent(input.publisher);
+    this.requireActiveAgentForWrite(input.publisher);
     const normalizedTitle = input.title.trim();
     if (normalizedTitle.length === 0 || input.title.length > this.config.taskTitleMaxLength) {
       throw new DomainError(
@@ -372,10 +434,13 @@ export class AgentradeEngine {
   }
 
   addTaskIntention(taskId: string, agent: Address): TaskIntention {
-    this.requireAgent(agent);
+    this.requireActiveAgentForWrite(agent);
     const task = this.getTask(taskId);
     if (task.status === TaskStatus.TERMINATED || task.status === TaskStatus.CLOSED) {
       throw new DomainError("TASK_NOT_INTENTABLE", "task is not open for intentions", 409);
+    }
+    if (this.isTaskFrozen(task)) {
+      throw new DomainError("TASK_FROZEN", "task is frozen because publisher account is banned", 409);
     }
     if (new Date(task.deadlineUtc).getTime() <= this.clock.now().getTime()) {
       throw new DomainError("TASK_NOT_INTENTABLE", "task deadline has passed", 409);
@@ -415,7 +480,7 @@ export class AgentradeEngine {
     payloadMd: string,
     attachments: SubmissionAttachment[] = []
   ): Submission {
-    this.requireAgent(agent);
+    this.requireActiveAgentForWrite(agent);
     const task = this.getTask(taskId);
     if (payloadMd.trim().length === 0 || payloadMd.length > this.config.taskSubmissionPayloadMaxLength) {
       throw new DomainError(
@@ -427,6 +492,9 @@ export class AgentradeEngine {
     this.validateSubmissionAttachments(attachments);
     if (task.status === TaskStatus.TERMINATED || task.status === TaskStatus.CLOSED) {
       throw new DomainError("TASK_NOT_SUBMITTABLE", "task is not open for submissions", 409);
+    }
+    if (this.isTaskFrozen(task)) {
+      throw new DomainError("TASK_FROZEN", "task is frozen because publisher account is banned", 409);
     }
     const confirmedSlots = this.getConfirmedSlots(task);
     if (confirmedSlots >= task.slotsTotal || task.rewardEscrowRemaining < task.rewardPerSlot) {
@@ -485,16 +553,25 @@ export class AgentradeEngine {
   }
 
   confirmSubmission(submissionId: string, publisher: Address): Submission {
+    this.requireActiveAgentForWrite(publisher);
     const submission = this.requireSubmission(submissionId);
     const task = this.getTask(submission.taskId);
     if (task.publisher !== publisher) {
       throw new DomainError("FORBIDDEN", "only the publisher can confirm submission", 403);
+    }
+    if (this.hasOpenDisputeForSubmission(submission.id)) {
+      throw new DomainError(
+        "SUBMISSION_NOT_CONFIRMABLE",
+        "submission has an open dispute and cannot be manually confirmed",
+        409
+      );
     }
     this.confirmSubmissionInternal(submission, task, publisher);
     return submission;
   }
 
   rejectSubmission(submissionId: string, publisher: Address, reasonMd: string): Submission {
+    this.requireActiveAgentForWrite(publisher);
     const submission = this.requireSubmission(submissionId);
     const task = this.getTask(submission.taskId);
     if (task.publisher !== publisher) {
@@ -526,37 +603,19 @@ export class AgentradeEngine {
   }
 
   terminateTask(taskId: string, publisher: Address): Task {
+    this.requireActiveAgentForWrite(publisher);
     const task = this.getTask(taskId);
     if (task.publisher !== publisher) {
       throw new DomainError("FORBIDDEN", "only the publisher can terminate task", 403);
     }
-    if (task.status === TaskStatus.TERMINATED || task.status === TaskStatus.CLOSED) {
-      throw new DomainError("TASK_NOT_TERMINABLE", "task is already closed", 409);
+    if (this.hasOpenDisputeForTask(task.id)) {
+      throw new DomainError(
+        "TASK_NOT_TERMINABLE",
+        "task has an open dispute and cannot be manually terminated",
+        409
+      );
     }
-
-    const penalty = computeTerminationPenalty(task.rewardEscrowRemaining, this.config);
-    const refund = Math.max(0, task.rewardEscrowRemaining - penalty);
-    const publisherBalance = this.requireBalance(task.publisher);
-    publisherBalance.available += refund;
-    publisherBalance.updatedAt = this.nowIso();
-
-    const cycle = this.requireCycle(this.activeCycleId);
-    cycle.penaltyPool += penalty;
-
-    task.rewardEscrowRemaining = 0;
-    task.competitionRatio = this.computeCompetitionRatio(task.intentCount, this.getRemainingSlots(task));
-    task.status = TaskStatus.TERMINATED;
-    task.updatedAt = this.nowIso();
-    const publisherProfile = this.requireAgent(task.publisher);
-    publisherProfile.stats.tasksTerminated += 1;
-    this.shiftReputation(task.publisher, "publisher", -1);
-    this.recordActivity({
-      type: ActivityEventType.TASK_TERMINATED,
-      taskId: task.id,
-      disputeId: null,
-      actor: publisher
-    });
-    return task;
+    return this.terminateTaskInternal(task, publisher).task;
   }
 
   openDispute(input: {
@@ -565,7 +624,7 @@ export class AgentradeEngine {
     opener: Address;
     reasonMd: string;
   }): Dispute {
-    this.requireAgent(input.opener);
+    this.requireActiveAgentForWrite(input.opener);
     const task = this.getTask(input.taskId);
     const submission = this.requireSubmission(input.submissionId);
     if (submission.taskId !== task.id) {
@@ -583,6 +642,13 @@ export class AgentradeEngine {
         "DISPUTE_FORBIDDEN_OPENER",
         "only task publisher or submission agent can open dispute",
         403
+      );
+    }
+    if (task.status === TaskStatus.TERMINATED) {
+      throw new DomainError(
+        "SUBMISSION_NOT_DISPUTABLE",
+        "submission cannot be disputed after parent task is terminated",
+        409
       );
     }
     if (submission.status !== SubmissionStatus.REJECTED) {
@@ -630,7 +696,7 @@ export class AgentradeEngine {
     agent: Address;
     vote: VoteChoice;
   }): { vote: SupervisionVote; workload: CycleWorkload } {
-    this.requireAgent(input.agent);
+    this.requireActiveAgentForWrite(input.agent);
     const dispute = this.getDispute(input.disputeId);
     if (dispute.status !== DisputeStatus.OPEN) {
       throw new DomainError("DISPUTE_CLOSED", "dispute is already resolved", 409);
@@ -688,7 +754,7 @@ export class AgentradeEngine {
     responder: Address;
     reasonMd: string;
   }): Dispute {
-    this.requireAgent(input.responder);
+    this.requireActiveAgentForWrite(input.responder);
     const dispute = this.getDispute(input.disputeId);
     if (dispute.status !== DisputeStatus.OPEN) {
       throw new DomainError("DISPUTE_CLOSED", "dispute is already resolved", 409);
@@ -723,6 +789,7 @@ export class AgentradeEngine {
 
   closeCurrentCycle(): CloseCycleResult {
     this.autoConfirmStaleSubmissions();
+    this.sweepBannedPublisherCleanTasks();
     const finalizedDisputes: string[] = [];
     for (const dispute of this.disputes.values()) {
       const before = dispute.status;
@@ -731,6 +798,8 @@ export class AgentradeEngine {
         finalizedDisputes.push(dispute.id);
       }
     }
+    this.sweepBannedPublisherCleanTasks();
+    this.autoTerminateExpiredCleanTasks();
 
     const cycle = this.requireCycle(this.activeCycleId);
     const rewardPool = cycle.mintedAmount + cycle.taxPool + cycle.penaltyPool;
@@ -773,16 +842,31 @@ export class AgentradeEngine {
 
   overrideDispute(disputeId: string, result: "COMPLETED" | "NOT_COMPLETED"): Dispute {
     const dispute = this.getDispute(disputeId);
+    const now = this.nowIso();
     if (result === "COMPLETED") {
       if (dispute.status !== DisputeStatus.RESOLVED_COMPLETED) {
         dispute.status = DisputeStatus.RESOLVED_COMPLETED;
         this.finalizeDisputeWithOutcome(dispute, VoteChoice.COMPLETED);
       }
     } else {
-      // Admin can force the dispute back into supervision flow.
+      const affectedCycleIds = this.collectDisputeAffectedCycleIds(dispute.id);
+      const distributionsBefore = this.captureClosedCycleDistributions(affectedCycleIds);
+      const wasResolvedCompleted = dispute.status === DisputeStatus.RESOLVED_COMPLETED;
+      const rollbackHistory = this.captureDisputeRollbackHistory(dispute.id, now);
+      if (wasResolvedCompleted) {
+        this.rollbackResolvedCompletedDispute(dispute);
+      }
+      this.clearDisputeVotes(dispute.id, {
+        reverseResolvedOutcome: wasResolvedCompleted,
+        now
+      });
+      if (rollbackHistory) {
+        this.disputeRollbackHistory.push(rollbackHistory);
+      }
       dispute.status = DisputeStatus.OPEN;
+      this.reconcileClosedCycleDistributions(distributionsBefore);
     }
-    dispute.updatedAt = this.nowIso();
+    dispute.updatedAt = now;
     return dispute;
   }
 
@@ -863,8 +947,34 @@ export class AgentradeEngine {
     const submission = this.requireSubmission(dispute.submissionId);
     const task = this.getTask(dispute.taskId);
     if (outcome === VoteChoice.COMPLETED) {
-      if (submission.status !== SubmissionStatus.CONFIRMED) {
-        this.confirmSubmissionInternal(submission, task, task.publisher);
+      if (
+        submission.status !== SubmissionStatus.CONFIRMED &&
+        submission.status !== SubmissionStatus.DISPUTE_COMPLETED
+      ) {
+        const rollback: DisputeResolutionRollbackRecord = {
+          resolutionCycleId: this.activeCycleId,
+          taskStatusBeforeResolution: task.status,
+          taskRewardEscrowRemainingBeforeResolution: task.rewardEscrowRemaining,
+          publisherWasBannedBeforeResolution: this.requireAgent(task.publisher).status === AgentStatus.BANNED,
+          publisherBanSourceDisputeIdBeforeResolution: this.getBanSourceDisputeId(task.publisher),
+          forcedTerminations: []
+        };
+        if (this.hasPayableSlot(task)) {
+          this.confirmSubmissionInternal(submission, task, task.publisher, {
+            grantPublisherCredits: false,
+            disputeId: dispute.id
+          });
+          this.disputeResolutionMeta.set(dispute.id, {
+            disputeId: dispute.id,
+            payoutSource: DisputePayoutSource.ESCROW,
+            payoutAmount: task.rewardPerSlot,
+            payoutShortfallAmount: 0,
+            publisherBanned: this.requireAgent(task.publisher).status === AgentStatus.BANNED,
+            rollback
+          });
+        } else {
+          this.resolveCompletedDisputeFromPublisherWallet(dispute, submission, task, rollback);
+        }
       }
     }
 
@@ -893,8 +1003,7 @@ export class AgentradeEngine {
       if (task.status === TaskStatus.TERMINATED || task.status === TaskStatus.CLOSED) {
         continue;
       }
-      const confirmedSlots = this.getConfirmedSlots(task);
-      if (confirmedSlots >= task.slotsTotal || task.rewardEscrowRemaining < task.rewardPerSlot) {
+      if (!this.hasPayableSlot(task)) {
         task.status = TaskStatus.CLOSED;
         task.updatedAt = this.nowIso();
         continue;
@@ -903,7 +1012,15 @@ export class AgentradeEngine {
     }
   }
 
-  private confirmSubmissionInternal(submission: Submission, task: Task, actor: Address): void {
+  private confirmSubmissionInternal(
+    submission: Submission,
+    task: Task,
+    actor: Address,
+    options?: {
+      grantPublisherCredits?: boolean;
+      disputeId?: string | null;
+    }
+  ): void {
     if (submission.status === SubmissionStatus.CONFIRMED) {
       return;
     }
@@ -917,8 +1034,7 @@ export class AgentradeEngine {
         409
       );
     }
-    const confirmedSlotsBefore = this.getConfirmedSlots(task);
-    if (confirmedSlotsBefore >= task.slotsTotal || task.rewardEscrowRemaining < task.rewardPerSlot) {
+    if (!this.hasPayableSlot(task)) {
       task.status = TaskStatus.CLOSED;
       task.updatedAt = this.nowIso();
       throw new DomainError("SUBMISSION_NOT_CONFIRMABLE", "task has no remaining payable slots", 409);
@@ -943,27 +1059,527 @@ export class AgentradeEngine {
     const workerProfile = this.requireAgent(submission.agent);
     workerProfile.stats.tasksCompleted += 1;
     this.shiftReputation(submission.agent, "worker", 2);
-    this.shiftReputation(task.publisher, "publisher", 1);
+    if (options?.grantPublisherCredits ?? true) {
+      this.shiftReputation(task.publisher, "publisher", 1);
+      this.recordCycleWorkload({
+        cycleId: this.activeCycleId,
+        taskId: task.id,
+        disputeId: null,
+        agent: task.publisher,
+        workload: this.config.taskCompletionPublisherWorkload
+      });
+    }
     this.recordCycleWorkload({
       cycleId: this.activeCycleId,
       taskId: task.id,
-      disputeId: null,
-      agent: task.publisher,
-      workload: this.config.taskCompletionPublisherWorkload
-    });
-    this.recordCycleWorkload({
-      cycleId: this.activeCycleId,
-      taskId: task.id,
-      disputeId: null,
+      disputeId: options?.disputeId ?? null,
       agent: submission.agent,
       workload: this.config.taskCompletionWorkerWorkload
     });
     this.recordActivity({
       type: ActivityEventType.TASK_COMPLETED,
       taskId: task.id,
-      disputeId: null,
+      disputeId: options?.disputeId ?? null,
       actor
     });
+  }
+
+  private resolveCompletedDisputeFromPublisherWallet(
+    dispute: Dispute,
+    submission: Submission,
+    task: Task,
+    rollback: DisputeResolutionRollbackRecord
+  ): void {
+    const now = this.nowIso();
+    const publisherBalance = this.requireBalance(task.publisher);
+    const payoutAmount = Math.max(0, Math.min(task.rewardPerSlot, publisherBalance.available));
+    const payoutShortfallAmount = Math.max(0, task.rewardPerSlot - payoutAmount);
+
+    publisherBalance.available -= payoutAmount;
+    publisherBalance.updatedAt = now;
+
+    submission.status = SubmissionStatus.DISPUTE_COMPLETED;
+    submission.updatedAt = now;
+    if (!task.completedAgents.includes(submission.agent)) {
+      task.completedAgents.push(submission.agent);
+    }
+    if (!this.hasPayableSlot(task)) {
+      task.status = TaskStatus.CLOSED;
+    }
+    task.competitionRatio = this.computeCompetitionRatio(task.intentCount, this.getRemainingSlots(task));
+    task.updatedAt = now;
+
+    const workerBalance = this.requireBalance(submission.agent);
+    workerBalance.available += payoutAmount;
+    workerBalance.updatedAt = now;
+    const workerProfile = this.requireAgent(submission.agent);
+    workerProfile.stats.tasksCompleted += 1;
+    this.shiftReputation(submission.agent, "worker", 2);
+    this.recordCycleWorkload({
+      cycleId: this.activeCycleId,
+      taskId: task.id,
+      disputeId: dispute.id,
+      agent: submission.agent,
+      workload: this.config.taskCompletionWorkerWorkload
+    });
+    this.recordActivity({
+      type: ActivityEventType.TASK_COMPLETED,
+      taskId: task.id,
+      disputeId: dispute.id,
+      actor: task.publisher
+    });
+
+    if (payoutShortfallAmount > 0) {
+      this.banAgent(task.publisher, AgentBanReason.DISPUTE_INSOLVENCY, dispute.id);
+      rollback.forcedTerminations = this.sweepBannedPublisherCleanTasks(dispute.id);
+    }
+
+    this.disputeResolutionMeta.set(dispute.id, {
+      disputeId: dispute.id,
+      payoutSource:
+        payoutShortfallAmount > 0
+          ? DisputePayoutSource.PUBLISHER_WALLET_PARTIAL
+          : DisputePayoutSource.PUBLISHER_WALLET,
+      payoutAmount,
+      payoutShortfallAmount,
+      publisherBanned: this.requireAgent(task.publisher).status === AgentStatus.BANNED,
+      rollback
+    });
+  }
+
+  private collectDisputeAffectedCycleIds(disputeId: string): Set<string> {
+    const cycleIds = new Set<string>();
+    for (const vote of this.votes.values()) {
+      if (vote.disputeId === disputeId) {
+        cycleIds.add(vote.createdCycleId);
+      }
+    }
+    for (const workload of this.cycleWorkloads.values()) {
+      if (workload.disputeId === disputeId) {
+        cycleIds.add(workload.cycleId);
+      }
+    }
+    const rollback = this.disputeResolutionMeta.get(disputeId)?.rollback;
+    for (const item of rollback?.forcedTerminations ?? []) {
+      cycleIds.add(item.cycleId);
+    }
+    return cycleIds;
+  }
+
+  private captureDisputeRollbackHistory(
+    disputeId: string,
+    reopenedAt: string
+  ): DisputeRollbackHistoryRecord | null {
+    const dispute = this.getDispute(disputeId);
+    const archivedVotes = [...this.votes.values()]
+      .filter((item) => item.disputeId === disputeId)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
+      .map((item) => ({ ...item }));
+    const archivedWorkloads = [...this.cycleWorkloads.values()]
+      .filter((item) => item.disputeId === disputeId)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
+      .map((item) => ({ ...item }));
+    const archivedActivities = [...this.activities.values()]
+      .filter(
+        (item) =>
+          item.disputeId === disputeId &&
+          (item.type === ActivityEventType.TASK_COMPLETED || item.type === ActivityEventType.TASK_TERMINATED)
+      )
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))
+      .map((item) => ({ ...item }));
+    const previousResolution = this.disputeResolutionMeta.get(disputeId);
+    if (
+      dispute.status === DisputeStatus.OPEN &&
+      archivedVotes.length === 0 &&
+      archivedWorkloads.length === 0 &&
+      archivedActivities.length === 0 &&
+      !previousResolution
+    ) {
+      return null;
+    }
+    return {
+      id: nanoid(),
+      disputeId,
+      previousStatus: dispute.status,
+      previousResolution: previousResolution ? this.cloneJson(previousResolution) : null,
+      archivedVotes,
+      archivedWorkloads,
+      archivedActivities,
+      reopenedAt
+    };
+  }
+
+  private captureClosedCycleDistributions(
+    cycleIds: Iterable<string>
+  ): Map<string, Map<Address, number>> {
+    const snapshot = new Map<string, Map<Address, number>>();
+    for (const cycleId of cycleIds) {
+      const cycle = this.cycles.get(cycleId);
+      if (!cycle || cycle.status !== CycleStatus.CLOSED) {
+        continue;
+      }
+      snapshot.set(cycleId, this.computeCycleDistribution(cycleId));
+    }
+    return snapshot;
+  }
+
+  private reconcileClosedCycleDistributions(
+    distributionsBefore: Map<string, Map<Address, number>>
+  ): void {
+    const now = this.nowIso();
+    for (const [cycleId, before] of distributionsBefore.entries()) {
+      const after = this.computeCycleDistribution(cycleId);
+      const agents = new Set<Address>([...before.keys(), ...after.keys()]);
+      for (const agent of agents) {
+        const delta = (after.get(agent) ?? 0) - (before.get(agent) ?? 0);
+        if (delta === 0) {
+          continue;
+        }
+        const balance = this.requireBalance(agent);
+        balance.available += delta;
+        balance.updatedAt = now;
+      }
+    }
+  }
+
+  private computeCycleDistribution(cycleId: string): Map<Address, number> {
+    const cycle = this.requireCycle(cycleId);
+    const rewardPool = cycle.mintedAmount + cycle.taxPool + cycle.penaltyPool;
+    const grouped = new Map<string, number>();
+    for (const workload of this.cycleWorkloads.values()) {
+      if (workload.cycleId !== cycleId) {
+        continue;
+      }
+      grouped.set(workload.agent, (grouped.get(workload.agent) ?? 0) + workload.workload);
+    }
+    return new Map(
+      [...allocateIntegerPool(rewardPool, grouped).entries()].map(([agent, amount]) => [agent as Address, amount])
+    );
+  }
+
+  private rollbackResolvedCompletedDispute(dispute: Dispute): void {
+    const meta = this.disputeResolutionMeta.get(dispute.id);
+    const submission = this.requireSubmission(dispute.submissionId);
+    const task = this.getTask(dispute.taskId);
+    const rollback = meta?.rollback;
+    const now = this.nowIso();
+    const payoutAmount = meta?.payoutAmount ?? (submission.status === SubmissionStatus.CONFIRMED ? task.rewardPerSlot : 0);
+    const payoutSource = meta?.payoutSource ?? DisputePayoutSource.ESCROW;
+
+    if (
+      submission.status === SubmissionStatus.CONFIRMED ||
+      submission.status === SubmissionStatus.DISPUTE_COMPLETED
+    ) {
+      submission.status = SubmissionStatus.REJECTED;
+      submission.updatedAt = now;
+    }
+
+    task.rewardEscrowRemaining = rollback?.taskRewardEscrowRemainingBeforeResolution ?? task.rewardEscrowRemaining;
+    task.status = rollback?.taskStatusBeforeResolution ?? TaskStatus.IN_PROGRESS;
+    this.removeCompletedAgentIfUnreferenced(task, submission.agent, submission.id);
+    task.competitionRatio = this.computeCompetitionRatio(task.intentCount, this.getRemainingSlots(task));
+    task.updatedAt = now;
+
+    const workerBalance = this.requireBalance(submission.agent);
+    workerBalance.available -= payoutAmount;
+    workerBalance.updatedAt = now;
+    if (payoutSource !== DisputePayoutSource.ESCROW) {
+      const publisherBalance = this.requireBalance(task.publisher);
+      publisherBalance.available += payoutAmount;
+      publisherBalance.updatedAt = now;
+    }
+
+    const workerProfile = this.requireAgent(submission.agent);
+    workerProfile.stats.tasksCompleted = Math.max(0, workerProfile.stats.tasksCompleted - 1);
+    this.shiftReputation(submission.agent, "worker", -2);
+
+    this.removeDisputeCompletionArtifacts(dispute.id);
+    for (const forcedTermination of rollback?.forcedTerminations ?? []) {
+      this.rollbackForcedTermination(dispute.id, forcedTermination);
+    }
+    const publisherRemainsBanned = this.restorePublisherBanState(task.publisher, dispute.id, rollback, now);
+    this.disputeResolutionMeta.delete(dispute.id);
+    if (publisherRemainsBanned) {
+      this.sweepBannedPublisherCleanTasks();
+    }
+  }
+
+  private rollbackForcedTermination(disputeId: string, rollback: ForcedTerminationRollbackRecord): void {
+    const task = this.getTask(rollback.taskId);
+    const now = this.nowIso();
+    const publisherBalance = this.requireBalance(task.publisher);
+    publisherBalance.available -= rollback.refund;
+    publisherBalance.updatedAt = now;
+
+    const cycle = this.requireCycle(rollback.cycleId);
+    cycle.penaltyPool -= rollback.penalty;
+
+    task.rewardEscrowRemaining = rollback.previousRewardEscrowRemaining;
+    task.status = rollback.previousStatus;
+    task.competitionRatio = this.computeCompetitionRatio(task.intentCount, this.getRemainingSlots(task));
+    task.updatedAt = now;
+
+    const publisherProfile = this.requireAgent(task.publisher);
+    publisherProfile.stats.tasksTerminated = Math.max(0, publisherProfile.stats.tasksTerminated - 1);
+    this.shiftReputation(task.publisher, "publisher", 1);
+
+    for (const [activityId, activity] of this.activities.entries()) {
+      if (
+        activity.type === ActivityEventType.TASK_TERMINATED &&
+        activity.disputeId === disputeId &&
+        activity.taskId === task.id
+      ) {
+        this.activities.delete(activityId);
+      }
+    }
+  }
+
+  private removeDisputeCompletionArtifacts(disputeId: string): void {
+    for (const [workloadId, workload] of this.cycleWorkloads.entries()) {
+      if (workload.disputeId === disputeId && workload.taskId !== null) {
+        this.cycleWorkloads.delete(workloadId);
+      }
+    }
+    for (const [activityId, activity] of this.activities.entries()) {
+      if (activity.type === ActivityEventType.TASK_COMPLETED && activity.disputeId === disputeId) {
+        this.activities.delete(activityId);
+      }
+    }
+  }
+
+  private clearDisputeVotes(
+    disputeId: string,
+    options: { reverseResolvedOutcome: boolean; now: string }
+  ): void {
+    const votes = [...this.votes.values()].filter((item) => item.disputeId === disputeId);
+    for (const vote of votes) {
+      const profile = this.requireAgent(vote.agent);
+      profile.stats.supervisionVotes = Math.max(0, profile.stats.supervisionVotes - 1);
+      this.shiftReputation(vote.agent, "supervisor", -0.5);
+      if (options.reverseResolvedOutcome) {
+        this.shiftReputation(vote.agent, "supervisor", vote.vote === VoteChoice.COMPLETED ? -1 : 1);
+      }
+      this.votes.delete(vote.id);
+      this.votesByDisputeAndAgent.delete(`${disputeId}:${vote.agent}`);
+    }
+    for (const [workloadId, workload] of this.cycleWorkloads.entries()) {
+      if (workload.disputeId === disputeId && workload.taskId === null) {
+        this.cycleWorkloads.delete(workloadId);
+      }
+    }
+  }
+
+  private removeCompletedAgentIfUnreferenced(task: Task, agent: Address, revertedSubmissionId: string): void {
+    if (!task.completedAgents.includes(agent)) {
+      return;
+    }
+    const hasOtherCompletion = [...this.submissions.values()].some(
+      (item) =>
+        item.id !== revertedSubmissionId &&
+        item.taskId === task.id &&
+        item.agent === agent &&
+        (item.status === SubmissionStatus.CONFIRMED || item.status === SubmissionStatus.DISPUTE_COMPLETED)
+    );
+    if (!hasOtherCompletion) {
+      task.completedAgents = task.completedAgents.filter((item) => item !== agent);
+    }
+  }
+
+  private restorePublisherBanState(
+    publisher: Address,
+    disputeId: string,
+    rollback: DisputeResolutionRollbackRecord | null | undefined,
+    now: string
+  ): boolean {
+    const profile = this.requireAgent(publisher);
+    const alternateBanSourceDisputeId = this.findAlternateBanSourceDisputeId(publisher, disputeId);
+    if (rollback?.publisherWasBannedBeforeResolution) {
+      profile.status = AgentStatus.BANNED;
+      profile.updatedAt = now;
+      const restoredBanSourceDisputeId =
+        rollback.publisherBanSourceDisputeIdBeforeResolution ?? alternateBanSourceDisputeId;
+      if (restoredBanSourceDisputeId) {
+        this.banSourceDisputeByPublisher.set(publisher, restoredBanSourceDisputeId);
+      } else {
+        this.banSourceDisputeByPublisher.delete(publisher);
+      }
+      return true;
+    }
+    if (alternateBanSourceDisputeId) {
+      profile.status = AgentStatus.BANNED;
+      profile.banReasonCode = AgentBanReason.DISPUTE_INSOLVENCY;
+      profile.updatedAt = now;
+      this.banSourceDisputeByPublisher.set(publisher, alternateBanSourceDisputeId);
+      return true;
+    }
+    if (this.getBanSourceDisputeId(publisher) !== disputeId) {
+      return profile.status === AgentStatus.BANNED;
+    }
+    profile.status = AgentStatus.ACTIVE;
+    profile.bannedAt = null;
+    profile.banReasonCode = null;
+    profile.updatedAt = now;
+    this.banSourceDisputeByPublisher.delete(publisher);
+    return false;
+  }
+
+  private appendForcedTerminationRollback(disputeId: string, rollback: ForcedTerminationRollbackRecord): void {
+    const existing = this.disputeResolutionMeta.get(disputeId);
+    if (!existing) {
+      return;
+    }
+    const nextRollback = existing.rollback ?? {
+      resolutionCycleId: this.activeCycleId,
+      taskStatusBeforeResolution: TaskStatus.IN_PROGRESS,
+      taskRewardEscrowRemainingBeforeResolution: 0,
+      publisherWasBannedBeforeResolution: false,
+      publisherBanSourceDisputeIdBeforeResolution: null,
+      forcedTerminations: []
+    };
+    nextRollback.forcedTerminations.push(rollback);
+    existing.rollback = nextRollback;
+    this.disputeResolutionMeta.set(disputeId, existing);
+  }
+
+  private getBanSourceDisputeId(publisher: Address): string | null {
+    return this.banSourceDisputeByPublisher.get(publisher) ?? null;
+  }
+
+  private findAlternateBanSourceDisputeId(publisher: Address, excludingDisputeId: string): string | null {
+    for (const dispute of this.disputes.values()) {
+      if (dispute.id === excludingDisputeId || dispute.status !== DisputeStatus.RESOLVED_COMPLETED) {
+        continue;
+      }
+      if (this.getTask(dispute.taskId).publisher !== publisher) {
+        continue;
+      }
+      if (this.disputeResolutionMeta.get(dispute.id)?.payoutSource === DisputePayoutSource.PUBLISHER_WALLET_PARTIAL) {
+        return dispute.id;
+      }
+    }
+    return null;
+  }
+
+  private hasPayableSlot(task: Task): boolean {
+    return this.getConfirmedSlots(task) < task.slotsTotal && task.rewardEscrowRemaining >= task.rewardPerSlot;
+  }
+
+  private isTaskFrozen(task: Task): boolean {
+    return this.requireAgent(task.publisher).status === AgentStatus.BANNED;
+  }
+
+  private isTaskActive(task: Task): boolean {
+    return task.status === TaskStatus.OPEN || task.status === TaskStatus.IN_PROGRESS;
+  }
+
+  private isTaskCleanForForcedTermination(task: Task): boolean {
+    for (const submission of this.submissions.values()) {
+      if (submission.taskId === task.id && submission.status === SubmissionStatus.SUBMITTED) {
+        return false;
+      }
+    }
+    for (const dispute of this.disputes.values()) {
+      if (dispute.taskId === task.id && dispute.status === DisputeStatus.OPEN) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private hasOpenDisputeForSubmission(submissionId: string): boolean {
+    return [...this.disputes.values()].some(
+      (item) => item.submissionId === submissionId && item.status === DisputeStatus.OPEN
+    );
+  }
+
+  private hasOpenDisputeForTask(taskId: string): boolean {
+    return [...this.disputes.values()].some(
+      (item) => item.taskId === taskId && item.status === DisputeStatus.OPEN
+    );
+  }
+
+  private sweepBannedPublisherCleanTasks(disputeIdOverride?: string): ForcedTerminationRollbackRecord[] {
+    const forcedTerminations: ForcedTerminationRollbackRecord[] = [];
+    for (const task of this.tasks.values()) {
+      if (!this.isTaskActive(task) || !this.isTaskFrozen(task) || !this.isTaskCleanForForcedTermination(task)) {
+        continue;
+      }
+      const disputeId = disputeIdOverride ?? this.getBanSourceDisputeId(task.publisher);
+      const terminated = this.terminateTaskInternal(task, task.publisher, {
+        disputeId
+      });
+      if (!disputeId || !terminated.rollback) {
+        continue;
+      }
+      if (disputeIdOverride) {
+        forcedTerminations.push(terminated.rollback);
+      } else {
+        this.appendForcedTerminationRollback(disputeId, terminated.rollback);
+      }
+    }
+    return forcedTerminations;
+  }
+
+  private autoTerminateExpiredCleanTasks(): void {
+    const nowMs = this.clock.now().getTime();
+    for (const task of this.tasks.values()) {
+      if (!this.isTaskActive(task) || !this.isTaskCleanForForcedTermination(task)) {
+        continue;
+      }
+      if (new Date(task.deadlineUtc).getTime() > nowMs) {
+        continue;
+      }
+      this.terminateTaskInternal(task, task.publisher);
+    }
+  }
+
+  private terminateTaskInternal(
+    task: Task,
+    actor: Address,
+    options?: { disputeId?: string | null }
+  ): { task: Task; rollback: ForcedTerminationRollbackRecord | null } {
+    if (task.status === TaskStatus.TERMINATED || task.status === TaskStatus.CLOSED) {
+      throw new DomainError("TASK_NOT_TERMINABLE", "task is already closed", 409);
+    }
+
+    const previousStatus = task.status;
+    const previousRewardEscrowRemaining = task.rewardEscrowRemaining;
+    const penalty = computeTerminationPenalty(task.rewardEscrowRemaining, this.config);
+    const refund = Math.max(0, task.rewardEscrowRemaining - penalty);
+    const publisherBalance = this.requireBalance(task.publisher);
+    publisherBalance.available += refund;
+    publisherBalance.updatedAt = this.nowIso();
+
+    const cycle = this.requireCycle(this.activeCycleId);
+    cycle.penaltyPool += penalty;
+
+    task.rewardEscrowRemaining = 0;
+    task.competitionRatio = this.computeCompetitionRatio(task.intentCount, this.getRemainingSlots(task));
+    task.status = TaskStatus.TERMINATED;
+    task.updatedAt = this.nowIso();
+    const publisherProfile = this.requireAgent(task.publisher);
+    publisherProfile.stats.tasksTerminated += 1;
+    this.shiftReputation(task.publisher, "publisher", -1);
+    this.recordActivity({
+      type: ActivityEventType.TASK_TERMINATED,
+      taskId: task.id,
+      disputeId: options?.disputeId ?? null,
+      actor
+    });
+    return {
+      task,
+      rollback:
+        options?.disputeId
+          ? {
+              taskId: task.id,
+              cycleId: this.activeCycleId,
+              previousStatus,
+              previousRewardEscrowRemaining,
+              penalty,
+              refund
+            }
+          : null
+    };
   }
 
   private getConfirmedSlots(task: Task): number {
@@ -1093,6 +1709,14 @@ export class AgentradeEngine {
     return cycle;
   }
 
+  private requireActiveAgentForWrite(address: Address): AgentProfile {
+    const profile = this.requireAgent(address);
+    if (profile.status === AgentStatus.BANNED) {
+      throw new DomainError("ACCOUNT_BANNED", "account is banned from active operations", 403);
+    }
+    return profile;
+  }
+
   private requireAgent(address: Address): AgentProfile {
     let profile = this.profiles.get(address);
     if (!profile) {
@@ -1101,6 +1725,9 @@ export class AgentradeEngine {
         address,
         name: "",
         bio: "",
+        status: AgentStatus.ACTIVE,
+        bannedAt: null,
+        banReasonCode: null,
         reputation: { publisher: 50, worker: 50, supervisor: 50 },
         stats: {
           tasksPublished: 0,
@@ -1125,6 +1752,26 @@ export class AgentradeEngine {
     return profile;
   }
 
+  private banAgent(address: Address, reason: AgentBanReason, sourceDisputeId?: string): AgentProfile {
+    const profile = this.requireAgent(address);
+    if (profile.status !== AgentStatus.BANNED) {
+      profile.status = AgentStatus.BANNED;
+      profile.bannedAt = this.nowIso();
+      profile.banReasonCode = reason;
+      profile.updatedAt = this.nowIso();
+      if (sourceDisputeId) {
+        this.banSourceDisputeByPublisher.set(address, sourceDisputeId);
+      }
+    } else if (!profile.banReasonCode) {
+      profile.banReasonCode = reason;
+      profile.updatedAt = this.nowIso();
+    }
+    if (sourceDisputeId && !this.banSourceDisputeByPublisher.has(address)) {
+      this.banSourceDisputeByPublisher.set(address, sourceDisputeId);
+    }
+    return profile;
+  }
+
   private requireBalance(address: Address): LedgerBalance {
     this.requireAgent(address);
     const balance = this.balances.get(address);
@@ -1145,7 +1792,17 @@ export class AgentradeEngine {
   }
 
   private restoreFromSnapshot(snapshot: EngineStateSnapshot): void {
-    this.profiles = new Map(snapshot.profiles.map((item) => [item.address, item]));
+    this.profiles = new Map(
+      snapshot.profiles.map((item) => [
+        item.address,
+        {
+          ...item,
+          status: item.status ?? AgentStatus.ACTIVE,
+          bannedAt: item.bannedAt ?? null,
+          banReasonCode: item.banReasonCode ?? null
+        }
+      ])
+    );
     this.balances = new Map(snapshot.balances.map((item) => [item.address, item]));
     this.tasks = new Map(snapshot.tasks.map((item) => [item.id, item]));
     this.submissions = new Map(
@@ -1170,15 +1827,20 @@ export class AgentradeEngine {
         }
       ])
     );
+    this.disputeResolutionMeta = new Map(
+      (snapshot.disputeResolutionMeta ?? []).map((item) => [item.disputeId, item])
+    );
     this.votes = new Map(snapshot.votes.map((item) => [item.id, item]));
     this.votesByDisputeAndAgent = new Map(snapshot.votesByDisputeAndAgent);
     this.cycleWorkloads = new Map(snapshot.cycleWorkloads.map((item) => [item.id, item]));
     this.cycles = new Map(snapshot.cycles.map((item) => [item.id, item]));
     this.activities = new Map(snapshot.activities.map((item) => [item.id, item]));
+    this.disputeRollbackHistory = (snapshot.disputeRollbackHistory ?? []).map((item) => this.cloneJson(item));
     this.taskIntentions = new Map(
       (snapshot.intentions ?? []).map((item) => [`${item.taskId}:${item.agent}`, item])
     );
     this.latestSubmissionByTaskAndAgent = new Map(snapshot.latestSubmissionByTaskAndAgent);
+    this.banSourceDisputeByPublisher = new Map(snapshot.banSourceDisputeByPublisher ?? []);
     this.activeCycleId = snapshot.activeCycleId;
 
     for (const task of this.tasks.values()) {
@@ -1201,6 +1863,10 @@ export class AgentradeEngine {
       }
     }
     return count;
+  }
+
+  private cloneJson<T>(value: T): T {
+    return JSON.parse(JSON.stringify(value)) as T;
   }
 
   private getRemainingSlots(task: Task): number {

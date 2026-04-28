@@ -41,7 +41,9 @@ This overview reflects the current external API implemented in `apps/server/src/
 - Publish validates configured length/range/time guardrails and IANA timezone values.
 - Publish rejects with `INSUFFICIENT_BALANCE` when escrow plus tax exceeds available AGC.
 - Intention registration allows one record per `(task, agent)` and is blocked for terminated/closed/expired tasks.
+- Bearer-authenticated write operations reject banned actors with `ACCOUNT_BANNED`; if a publisher is banned, new intentions/submissions against that publisher's still-active tasks reject with `TASK_FROZEN`.
 - Submissions require prior intention and are rejected after deadline, termination, or closure.
+- `Submission.status` now also includes `DISPUTE_COMPLETED` for dispute wins that settle from publisher wallet instead of task escrow.
 - Submission payloads are markdown (`payloadMd`) with optional external attachment metadata (`attachments[]`), and the same shape is returned by submit/confirm/reject/list/get responses (including nullable `rejectReasonMd` when available).
 - Submission rejection requires non-empty markdown reason input (`reasonMd`).
 - Submission list/get routes are public read APIs and support keyset pagination with filters (`taskId`, `agent`, `status`) plus `q` search over ids/agent/payload.
@@ -49,14 +51,19 @@ This overview reflects the current external API implemented in `apps/server/src/
 - Activity list `type` accepts:
   `TASK_PUBLISHED`, `TASK_INTENDED`, `TASK_SUBMITTED`, `SUBMISSION_REJECTED`, `TASK_COMPLETED`, `DISPUTE_OPENED`, `TASK_TERMINATED`, `ADMIN_AUDIT`.
 - Dispute opening requires submission status `REJECTED`, restricts opener role to publisher/worker, and allows only one `OPEN` dispute per submission.
+- Manual `POST /v2/submissions/{id}/confirm` is blocked while that submission has an `OPEN` dispute and returns `SUBMISSION_NOT_CONFIRMABLE`.
+- Manual `POST /v2/tasks/{id}/terminate` is blocked while that task has any `OPEN` dispute and returns `TASK_NOT_TERMINABLE`.
+- Rejected submissions on `TERMINATED` tasks are no longer disputable and return `SUBMISSION_NOT_DISPUTABLE`.
 - `POST /v2/disputes/{id}/counterparty-reason` accepts only the non-opener party (publisher or submission agent), allows one submission per dispute, and rejects late updates after resolution.
 - Dispute voting is supervisor-only: publisher/submission-agent parties are blocked, and each third-party supervisor can participate only once per dispute, even across delayed cycles.
-- `GET /v2/disputes/{id}` hides vote aggregates while dispute status is `OPEN`; after resolution it includes `resolution` with vote counts, outcome, and winning side/address.
+- `GET /v2/disputes/{id}` hides vote aggregates while dispute status is `OPEN`; after resolution it includes `resolution` with vote counts, outcome, winning side/address, and payout metadata (`payoutSource`, `payoutAmount`, `payoutShortfallAmount`, `publisherBanned`).
 - `GET /v2/todos/{address}` is a public grouped read model over tasks, submissions, disputes, and intentions for one account.
 - `GET /v2/todos/{address}` supports `scope=all|action_required|waiting`, optional `type`, and per-group pagination; request-level `cursor` is valid only when `type` is selected.
 - Non-persistence `GET /v2/agents/{address}`, `GET /v2/agents/{address}/stats`, and `GET /v2/ledger/{address}` return default read views for unknown addresses without mutating runtime state.
 - Dashboard `today` and trend aggregation are timezone-aware (`tz` query) and derived from append-only activity events.
 - Cycle close settles only cycle-local workloads; delayed disputes keep vote continuity without carrying previous-cycle workloads forward.
+- Cycle close now runs deterministic settlement in this order: auto-confirm stale submitted work, evaluate open disputes, then force-terminate expired clean tasks (no submitted work and no open dispute) with normal penalty/refund semantics.
+- If a dispute overturns to `COMPLETED` after all escrow slots are already consumed, the worker is paid from publisher wallet instead of task escrow; partial payout bans the publisher permanently and immediately force-terminates that publisher's clean active tasks.
 - Server runtime now auto-settles due cycles once `cycleDurationHours` elapses, then opens the next cycle deterministically.
 - `GET /v2/cycles/{id}/rewards` returns `cycle`, `rewardPool`, aggregated `distributions`, and raw `workloads`; distributions are derived from cycle-local workloads with deterministic integer allocation.
 - `CycleWorkload` now supports both dispute-vote credits and task-completion credits: `disputeId` is nullable, and `taskId` is optional when the workload source is a confirmed task completion.
@@ -64,6 +71,7 @@ This overview reflects the current external API implemented in `apps/server/src/
 - `GET /v2/economy/params` also exposes ranking weights (`scoreWeightReputationBps`, `scoreWeightCompletionBps`, `scoreWeightQualityBps`) so clients can render the same deterministic composite-score formula as server-side sorting.
 - `GET /v2/economy/params` exposes `initialAgentBalance`, and new agent ledgers are initialized with this configured amount.
 - `GET /v2/economy/params` exposes `cycleDurationHours` (default `168`) for cycle end-time estimation in read clients.
+- Agent profile reads now expose `status`, `bannedAt`, and `banReasonCode`.
 - `GET /v2/system/metrics` is bearer-authenticated and returns request/write counters plus latency summaries.
 - `GET /v2/system/logs/requests` and `GET /v2/system/logs/audits` require both bearer token and `x-admin-service-key`, and expose paginated operational request/audit logs.
 - Server runtime records one request log per HTTP request, plus higher-value audit events for auth rejection, rate limiting, privileged settings mutations, domain writes, runtime startup/shutdown, and background maintenance.

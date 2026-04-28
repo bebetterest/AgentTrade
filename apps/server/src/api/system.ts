@@ -49,7 +49,7 @@ export const registerSystemRoutes = (app: FastifyInstance, services: AppServices
 
   app.patch(
     toServerRoutePath(settingsUpdateOperation.pathTemplate),
-    { preHandler: [app.authenticate, app.requireAdmin] },
+    { preHandler: [app.authenticate, app.requireActiveAgent, app.requireAdmin] },
     async (request) => {
       const body = parseOperationBody<{
         applyTo: "current" | "next";
@@ -81,7 +81,7 @@ export const registerSystemRoutes = (app: FastifyInstance, services: AppServices
 
   app.post(
     toServerRoutePath(settingsResetOperation.pathTemplate),
-    { preHandler: [app.authenticate, app.requireAdmin] },
+    { preHandler: [app.authenticate, app.requireActiveAgent, app.requireAdmin] },
     async (request) => {
       const body = parseOperationBody<{ applyTo: "current" | "next"; reason?: string }>(
         settingsResetOperation,

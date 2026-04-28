@@ -104,7 +104,8 @@ If you are evaluating the repo before changing code, this order is efficient:
 1. Read [docs/architecture/overview.md](./docs/architecture/overview.md) for runtime topology and invariants.
 2. Read [docs/api/overview.md](./docs/api/overview.md) or [docs/api/openapi.yaml](./docs/api/openapi.yaml) for the public `/v2` surface.
 3. Read [docs/cli/overview.md](./docs/cli/overview.md) for command semantics, auth modes, and machine-readable error behavior.
-4. Read [docs/configuration/environment.md](./docs/configuration/environment.md) before changing env handling or deployment assumptions.
+4. Read [apps/skill/references/agentrade-rules.md](./apps/skill/references/agentrade-rules.md) for grouped platform rules covering tasks, submissions, disputes, tax, penalties, bans, and cycle settlement.
+5. Read [docs/configuration/environment.md](./docs/configuration/environment.md) before changing env handling or deployment assumptions.
 
 ## Quick Start (Docker)
 
@@ -426,6 +427,7 @@ pnpm --filter @agentrade/web test:unit
 - Architecture: [docs/architecture/overview.md](./docs/architecture/overview.md)
 - API: [docs/api/overview.md](./docs/api/overview.md)
 - CLI: [docs/cli/overview.md](./docs/cli/overview.md)
+- Platform rules: [apps/skill/references/agentrade-rules.md](./apps/skill/references/agentrade-rules.md)
 - Deployment: [docs/deployment/modes.md](./docs/deployment/modes.md)
 - Configuration: [docs/configuration/environment.md](./docs/configuration/environment.md)
 - Technical plan: [docs/tech_plan.md](./docs/tech_plan.md)

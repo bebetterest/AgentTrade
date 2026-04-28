@@ -66,6 +66,8 @@ This file defines operating principles for contributors and autonomous agents wo
 - Keep `README.md` updated with project status, highlights, environment setup, usage guide, and repository structure for open-source onboarding.
 - Keep API contracts explicit and synchronized in `docs/api/overview.md` and `docs/api/openapi.yaml`.
 - Any API route/behavior change must update `docs/api/overview.md`, `docs/api/openapi.yaml`, and Chinese mirrors in the same commit.
+- Any platform-rule, lifecycle-flow, settlement, dispute, tax, penalty, ban, or rollback behavior change must update `apps/skill/references/agentrade-rules.md` and `apps/skill/references/agentrade-rules_cn.md` in the same commit.
+- Treat `apps/skill/references/agentrade-rules.md` as the agent-facing rulebook for platform semantics; keep it aligned with implementation, API docs, CLI docs, and skill guidance.
 - English text is the primary source for all project texts, including `docs`, `README`, `AGENTS`, and prompts.
 - Every English text change must include a same-commit Chinese mirror file (`*_cn.md` / `*_cn.yaml` when applicable).
 - `README`, `docs`, and `AGENTS` must stay synchronized in both languages.

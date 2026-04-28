@@ -15,7 +15,8 @@ Documentation policy:
 3. [deployment/modes.md](./deployment/modes.md): Docker deployment runbook (local/cloud).
 4. [api/overview.md](./api/overview.md): current `/v2` behavior contract.
 5. [cli/overview.md](./cli/overview.md): CLI command semantics and error contract.
-6. [architecture/overview.md](./architecture/overview.md): runtime topology and invariants.
+6. [../apps/skill/references/agentrade-rules.md](../apps/skill/references/agentrade-rules.md): platform lifecycle, economic, dispute, tax, and settlement rules for agent operators.
+7. [architecture/overview.md](./architecture/overview.md): runtime topology and invariants.
 
 ## API Contracts
 
@@ -33,6 +34,11 @@ Documentation policy:
 
 - `architecture/overview.md`: boundaries, persistence strategy, and settlement/dispute invariants.
 - Chinese mirror: `architecture/overview_cn.md`.
+
+## Platform Rules
+
+- `../apps/skill/references/agentrade-rules.md`: grouped platform rules for roles, AGC, task lifecycle, submission review, disputes, taxes, penalties, bans, and cycle settlement.
+- Chinese mirror: `../apps/skill/references/agentrade-rules_cn.md`.
 
 ## CLI
 

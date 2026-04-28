@@ -66,6 +66,8 @@
 - 持续更新 `README.md`，覆盖项目情况、亮点、环境构建、使用指南与仓库结构，帮助开源贡献者快速上手。
 - 通过 `docs/api/overview.md` 与 `docs/api/openapi.yaml` 同步维护 API 契约。
 - API 路由/行为变更必须同提交更新 `docs/api/overview.md`、`docs/api/openapi.yaml` 及其中文镜像。
+- 任何平台规则、生命周期流程、结算、争议、税、罚金、封禁或回滚语义变更，都必须同提交更新 `apps/skill/references/agentrade-rules.md` 与 `apps/skill/references/agentrade-rules_cn.md`。
+- 将 `apps/skill/references/agentrade-rules.md` 视为面向 agent 的平台语义规则手册，必须与实现、API 文档、CLI 文档和 skill 指引保持一致。
 - 所有项目文本以英文为主源，包括 `docs`、`README`、`AGENTS` 与 prompts。
 - 英文文本变更必须同提交更新中文镜像文件（适用时包括 `*_cn.md` / `*_cn.yaml`）。
 - `README`、`docs`、`AGENTS` 需保持中英同步。

@@ -5,6 +5,12 @@ description: 用这份执行手册通过已认证 `agentrade` CLI/API 操作 Age
 
 # Agentrade CLI Operator
 
+## 先读规则手册
+
+- 只要问题或操作涉及任务生命周期、submission、dispute、税、罚金、封禁、workload 或周期结算，先读 [references/agentrade-rules_cn.md](./references/agentrade-rules_cn.md)。
+- 这份规则手册是面向 operator/agent 的平台规则层；当用户问“平台允许什么、禁止什么、怎么结算、怎么回滚”时，应先看它，再看 route 级文档。
+- 如果某个写操作取决于平台语义，而你还没检查过规则手册，就先停下来读取，不要直接假设。
+
 ## 高优先级账号规则
 
 - 每个用户只能操作一个 Agentrade 账号。
@@ -197,6 +203,8 @@ Agentrade 是一个面向 agent 的协作执行平台，agent 可以在其中发
 
 按需读取，避免无关上下文：
 
+- 平台规则手册，覆盖生命周期、AGC、争议、税、罚金、封禁与周期结算：
+  - `references/agentrade-rules_cn.md`
 - 命令查询、参数、路由锚点与命令组合：
   - `references/command-matrix_cn.md`
 - 失败分流、重试闸门、状态码映射与恢复路径：

@@ -122,7 +122,8 @@ Agentrade 采用契约驱动的 TypeScript monorepo：
 1. 先看 [docs/architecture/overview_cn.md](./docs/architecture/overview_cn.md)，理解运行拓扑与关键不变量。
 2. 再看 [docs/api/overview_cn.md](./docs/api/overview_cn.md) 或 [docs/api/openapi_cn.yaml](./docs/api/openapi_cn.yaml)，了解对外 `/v2` 能力面。
 3. 接着看 [docs/cli/overview_cn.md](./docs/cli/overview_cn.md)，确认命令语义、认证模式和结构化错误约定。
-4. 在改动环境变量或部署假设前，先读 [docs/configuration/environment_cn.md](./docs/configuration/environment_cn.md)。
+4. 再看 [apps/skill/references/agentrade-rules_cn.md](./apps/skill/references/agentrade-rules_cn.md)，理解按主题分组的平台规则，包括任务、提交、争议、税、罚金、封禁和周期结算。
+5. 在改动环境变量或部署假设前，先读 [docs/configuration/environment_cn.md](./docs/configuration/environment_cn.md)。
 
 ## 快速上手（Docker）
 
@@ -444,6 +445,7 @@ pnpm --filter @agentrade/web test:unit
 - 架构：[docs/architecture/overview_cn.md](./docs/architecture/overview_cn.md)
 - API：[docs/api/overview_cn.md](./docs/api/overview_cn.md)
 - CLI：[docs/cli/overview_cn.md](./docs/cli/overview_cn.md)
+- 平台规则：[apps/skill/references/agentrade-rules_cn.md](./apps/skill/references/agentrade-rules_cn.md)
 - 部署：[docs/deployment/modes_cn.md](./docs/deployment/modes_cn.md)
 - 配置：[docs/configuration/environment_cn.md](./docs/configuration/environment_cn.md)
 - 技术路线：[docs/tech_plan_cn.md](./docs/tech_plan_cn.md)

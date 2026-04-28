@@ -1,5 +1,6 @@
 export interface AppConfig {
   appName: string;
+  logLevel: AppLogLevel;
   host: string;
   port: number;
   apiDefaultVersion: string;
@@ -7,6 +8,11 @@ export interface AppConfig {
   redisUrl: string;
   enablePersistence: boolean;
   enableRedisRateLimit: boolean;
+  enableRequestLogPersistence: boolean;
+  enableAuditLogPersistence: boolean;
+  requestLogRetentionDays: number;
+  auditLogRetentionDays: number;
+  logCleanupIntervalMinutes: number;
   trustProxy: boolean;
   corsAllowedOrigins: string[];
   jwtSecret: string;
@@ -62,6 +68,18 @@ export interface CliRuntimeDefaults {
   timeoutMs: number;
   retries: number;
 }
+
+export const APP_LOG_LEVEL_VALUES = [
+  "fatal",
+  "error",
+  "warn",
+  "info",
+  "debug",
+  "trace",
+  "silent"
+] as const;
+
+export type AppLogLevel = (typeof APP_LOG_LEVEL_VALUES)[number];
 
 export const cliRuntimeDefaults: CliRuntimeDefaults = {
   baseUrl: "https://agentrade.info/api",
@@ -199,6 +217,25 @@ const envCsv = (key: string, fallback: string[]): string[] => {
     throw new Error(`invalid runtime config: ${key} must contain at least one origin`);
   }
   return values;
+};
+
+const envEnumStrict = <TValue extends string>(
+  key: string,
+  fallback: TValue,
+  values: readonly TValue[]
+): TValue => {
+  const raw = process.env[key];
+  if (raw === undefined) {
+    return fallback;
+  }
+  const normalized = raw.trim().toLowerCase();
+  const match = values.find((value) => value.toLowerCase() === normalized);
+  if (!match) {
+    throw new Error(
+      `invalid runtime config: ${key} must be one of ${values.join(", ")}`
+    );
+  }
+  return match;
 };
 
 const PLACEHOLDER_VALUES = {
@@ -421,6 +458,7 @@ const assertRuntimeConfig = (config: AppConfig): void => {
 
 export const defaultConfig: AppConfig = {
   appName: "Agentrade",
+  logLevel: "info",
   host: "0.0.0.0",
   port: 3000,
   apiDefaultVersion: "v2",
@@ -428,6 +466,11 @@ export const defaultConfig: AppConfig = {
   redisUrl: "redis://localhost:6379",
   enablePersistence: true,
   enableRedisRateLimit: true,
+  enableRequestLogPersistence: true,
+  enableAuditLogPersistence: true,
+  requestLogRetentionDays: 30,
+  auditLogRetentionDays: 180,
+  logCleanupIntervalMinutes: 60,
   trustProxy: false,
   corsAllowedOrigins: [
     "http://localhost:3000",
@@ -518,17 +561,46 @@ export const toPublicEconomyParams = (config: AppConfig): PublicEconomyParams =>
 });
 
 export const loadConfig = (): AppConfig => {
+  const enablePersistence = envBooleanStrict(
+    "ENABLE_PERSISTENCE",
+    defaultConfig.enablePersistence
+  );
+
   const config: AppConfig = {
     appName: envString("APP_NAME", defaultConfig.appName),
+    logLevel: envEnumStrict("LOG_LEVEL", defaultConfig.logLevel, APP_LOG_LEVEL_VALUES),
     host: envString("HOST", defaultConfig.host),
     port: envNumberStrict("PORT", defaultConfig.port, { integer: true, min: 1, max: 65535 }),
     apiDefaultVersion: envString("API_DEFAULT_VERSION", defaultConfig.apiDefaultVersion),
     databaseUrl: envString("DATABASE_URL", defaultConfig.databaseUrl),
     redisUrl: envString("REDIS_URL", defaultConfig.redisUrl),
-    enablePersistence: envBooleanStrict("ENABLE_PERSISTENCE", defaultConfig.enablePersistence),
+    enablePersistence,
     enableRedisRateLimit: envBooleanStrict(
       "ENABLE_REDIS_RATE_LIMIT",
       defaultConfig.enableRedisRateLimit
+    ),
+    enableRequestLogPersistence: envBooleanStrict(
+      "ENABLE_REQUEST_LOG_PERSISTENCE",
+      enablePersistence
+    ),
+    enableAuditLogPersistence: envBooleanStrict(
+      "ENABLE_AUDIT_LOG_PERSISTENCE",
+      enablePersistence
+    ),
+    requestLogRetentionDays: envNumberStrict(
+      "REQUEST_LOG_RETENTION_DAYS",
+      defaultConfig.requestLogRetentionDays,
+      { integer: true, min: 1 }
+    ),
+    auditLogRetentionDays: envNumberStrict(
+      "AUDIT_LOG_RETENTION_DAYS",
+      defaultConfig.auditLogRetentionDays,
+      { integer: true, min: 1 }
+    ),
+    logCleanupIntervalMinutes: envNumberStrict(
+      "LOG_CLEANUP_INTERVAL_MINUTES",
+      defaultConfig.logCleanupIntervalMinutes,
+      { integer: true, min: 1 }
     ),
     trustProxy: envBooleanStrict("TRUST_PROXY", defaultConfig.trustProxy),
     corsAllowedOrigins: envCsv("CORS_ALLOWED_ORIGINS", defaultConfig.corsAllowedOrigins),

@@ -70,6 +70,7 @@ export const applyRateLimit = (
     const ip = request.ip;
     const allowed = await limiter.check(ip, Date.now());
     if (!allowed) {
+      request.serverErrorCode = "RATE_LIMITED";
       await reply.code(429).send({
         error: {
           code: "RATE_LIMITED",

@@ -2,7 +2,15 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { defaultConfig } from "@agentrade/config";
 import type { Address } from "@agentrade/types";
-import { ActivityEventType, DisputeStatus, SubmissionStatus, TaskStatus, VoteChoice } from "@agentrade/types";
+import {
+  ActivityEventType,
+  DisputeStatus,
+  ServerAuditCategory,
+  ServerAuditOutcome,
+  SubmissionStatus,
+  TaskStatus,
+  VoteChoice
+} from "@agentrade/types";
 import { AgentradeEngine } from "../src/domain/engine.js";
 import { parseCursorOffset, toAgentScore } from "../src/api/services.js";
 import { MutableClock } from "../src/utils/time.js";
@@ -146,6 +154,66 @@ runDbSuite("PrismaStateRepository", () => {
     await prisma.$disconnect();
     expect(after).not.toBeNull();
     expect(after!.updatedAt.toISOString()).toBe(before!.updatedAt.toISOString());
+  });
+
+  it("stores, queries, and cleans up server request and audit logs", async () => {
+    const actor = addr("log-actor-1");
+    await repo.appendRequestLogDirect({
+      requestId: "req-log-1",
+      method: "POST",
+      path: "/v2/tasks",
+      routeId: "/v2/tasks",
+      statusCode: 200,
+      durationMs: 12.345,
+      clientIp: "203.0.113.20",
+      forwardedFor: "203.0.113.20",
+      userAgent: "vitest",
+      actorAddress: actor,
+      errorCode: null,
+      createdAt: new Date("2026-03-01T00:00:00.000Z")
+    });
+    await repo.appendAuditLogDirect({
+      category: ServerAuditCategory.SECURITY,
+      action: "auth.bearer.rejected",
+      outcome: ServerAuditOutcome.REJECTED,
+      requestId: "req-log-1",
+      clientIp: "203.0.113.20",
+      actorAddress: actor,
+      method: "GET",
+      routeId: "/v2/system/metrics",
+      targetType: "route",
+      targetId: "/v2/system/metrics",
+      cycleId: null,
+      message: "bearer authentication rejected",
+      details: {
+        reason: "missing_bearer_token"
+      },
+      createdAt: new Date("2026-03-01T00:00:00.000Z")
+    });
+
+    const requestLogs = await repo.queryRequestLogsDirect({
+      limit: 20,
+      actor,
+      routeId: "/v2/tasks"
+    });
+    expect(requestLogs.items).toHaveLength(1);
+    expect(requestLogs.items[0]!.clientIp).toBe("203.0.113.20");
+    expect(requestLogs.items[0]!.durationMs).toBe(12.345);
+
+    const auditLogs = await repo.queryAuditLogsDirect({
+      limit: 20,
+      category: ServerAuditCategory.SECURITY,
+      action: "auth.bearer.rejected",
+      outcome: ServerAuditOutcome.REJECTED
+    });
+    expect(auditLogs.items).toHaveLength(1);
+    expect(auditLogs.items[0]!.details).toEqual({
+      reason: "missing_bearer_token"
+    });
+
+    const cleanup = await repo.cleanupExpiredLogs(new Date("2026-10-01T00:00:00.000Z"));
+    expect(cleanup.deletedRequestLogs).toBeGreaterThanOrEqual(1);
+    expect(cleanup.deletedAuditLogs).toBeGreaterThanOrEqual(1);
   });
 
   it("deletes entities that were removed from snapshot during sync", async () => {

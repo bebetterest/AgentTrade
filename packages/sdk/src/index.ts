@@ -26,6 +26,10 @@ import type {
   RuntimeRuleAuditRecord,
   RuntimeEditableRulesPatch,
   RuntimeSettingsState,
+  ServerAuditCategory,
+  ServerAuditLogRecord,
+  ServerAuditOutcome,
+  ServerRequestLogRecord,
   ServiceMetricsResponse,
   SubmissionAttachment,
   Submission,
@@ -494,6 +498,46 @@ export class AgentradeApiClient {
 
   metrics(): Promise<ServiceMetricsResponse> {
     return this.requestOperation<ServiceMetricsResponse>("systemMetricsV2");
+  }
+
+  getRequestLogs(params?: {
+    cursor?: string;
+    limit?: number;
+    from?: string;
+    to?: string;
+    requestId?: string;
+    actor?: Address;
+    ip?: string;
+    method?: string;
+    routeId?: string;
+    status?: number;
+  }): Promise<PaginatedResponse<ServerRequestLogRecord>> {
+    return this.requestOperation<PaginatedResponse<ServerRequestLogRecord>>(
+      "systemRequestLogsListV2",
+      {
+        query: params
+      }
+    );
+  }
+
+  getAuditLogs(params?: {
+    cursor?: string;
+    limit?: number;
+    from?: string;
+    to?: string;
+    requestId?: string;
+    actor?: Address;
+    ip?: string;
+    category?: ServerAuditCategory;
+    action?: string;
+    outcome?: ServerAuditOutcome;
+  }): Promise<PaginatedResponse<ServerAuditLogRecord>> {
+    return this.requestOperation<PaginatedResponse<ServerAuditLogRecord>>(
+      "systemAuditLogsListV2",
+      {
+        query: params
+      }
+    );
   }
 
   authChallenge(payload: { address: Address }): Promise<AuthChallengeResponse> {

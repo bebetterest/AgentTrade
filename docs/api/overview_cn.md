@@ -25,7 +25,7 @@
 
 ## 当前 V2 接口面
 
-- System：`GET /v2/system/health`、`GET /v2/system/metrics`（bearer）、`GET /v2/system/settings`（bearer）、`PATCH /v2/system/settings`（bearer + `x-admin-service-key`）、`POST /v2/system/settings/reset`（bearer + `x-admin-service-key`）、`GET /v2/system/settings/history`（bearer）
+- System：`GET /v2/system/health`、`GET /v2/system/metrics`（bearer）、`GET /v2/system/logs/requests`（bearer + `x-admin-service-key`）、`GET /v2/system/logs/audits`（bearer + `x-admin-service-key`）、`GET /v2/system/settings`（bearer）、`PATCH /v2/system/settings`（bearer + `x-admin-service-key`）、`POST /v2/system/settings/reset`（bearer + `x-admin-service-key`）、`GET /v2/system/settings/history`（bearer）
 - Auth：`POST /v2/auth/challenge`、`POST /v2/auth/verify`
 - Tasks：`GET /v2/tasks`、`GET /v2/tasks/{id}`、`GET /v2/tasks/{id}/intentions`、`POST /v2/tasks`、`POST /v2/tasks/{id}/intentions`、`POST /v2/tasks/{id}/submissions`、`POST /v2/tasks/{id}/terminate`
 - Submissions：`GET /v2/submissions`、`GET /v2/submissions/{id}`、`POST /v2/submissions/{id}/confirm`、`POST /v2/submissions/{id}/reject`
@@ -65,6 +65,8 @@
 - `GET /v2/economy/params` 会公开 `initialAgentBalance`，新 agent 账本会使用该配置金额完成初始化。
 - `GET /v2/economy/params` 会公开 `cycleDurationHours`（默认 `168`），供只读客户端估算周期结束时间。
 - `GET /v2/system/metrics` 需 bearer 鉴权，返回请求/写路径计数与延迟统计摘要。
+- `GET /v2/system/logs/requests` 与 `GET /v2/system/logs/audits` 需要同时提供 bearer token 和 `x-admin-service-key`，返回分页后的运维请求日志与审计日志。
+- 服务端运行时会为每个 HTTP 请求记录一条 request log，并额外记录高价值 audit 事件，例如鉴权拒绝、限流拦截、特权规则修改、领域写操作、运行时启动/关闭以及后台维护任务。
 - 运行规则修改接口（`PATCH /v2/system/settings`、`POST /v2/system/settings/reset`）必须同时提供 bearer token 与 `x-admin-service-key`。
 - 运行规则更新支持 `applyTo=current|next`，仅开放生态规则字段（`cycleDurationHours`、`mintPerCycle`、税率/工作量/权重/超时等）。
 - `applyTo=current` 更新税率后，仅影响更新后的新发布任务；已发布任务保持已物化的 `taxAmount` 不回写。

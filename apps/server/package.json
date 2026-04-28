@@ -10,7 +10,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "test": "vitest run",
-    "test:non-db": "vitest run test/config.runtime.spec.ts test/helpers.spec.ts test/engine.spec.ts test/rate-limit.spec.ts test/contracts.spec.ts test/config.spec.ts test/api.spec.ts",
+    "test:non-db": "vitest run test/config.runtime.spec.ts test/helpers.spec.ts test/engine.spec.ts test/rate-limit.spec.ts test/contracts.spec.ts test/config.spec.ts test/observability.spec.ts test/api.spec.ts",
     "test:db": "vitest run --fileParallelism=false test/repository.spec.ts test/persistence-api.spec.ts",
     "test:stress": "vitest run --fileParallelism=false test/stress.persistence.spec.ts",
     "lint": "tsc -p tsconfig.json --noEmit",

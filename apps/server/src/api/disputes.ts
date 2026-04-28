@@ -20,6 +20,7 @@ import {
   parseOperationQuery,
   toDayKey,
   toServerRoutePath,
+  toWriteAuditContext,
   validateDisputeReasonLength,
   validateOperationResponse
 } from "./services.js";
@@ -243,6 +244,16 @@ const registerDisputeOpenRoute = (
     validateDisputeReasonLength(body.reasonMd, services.config);
 
     const opener = request.agentAddress as Address;
+    const writeMeta = services.writeMeta({
+      request,
+      operation: "disputes.open",
+      actor: opener,
+      targetType: "dispute",
+      details: {
+        taskId: body.taskId,
+        submissionId: body.submissionId
+      }
+    });
     if (services.stateRepository) {
       return validateOperationResponse(
         operation,
@@ -250,9 +261,10 @@ const registerDisputeOpenRoute = (
           services.stateRepository!.openDisputeDirect({
             ...body,
             opener,
-            disputeReasonMaxLength: services.config.disputeReasonMaxLength
+            disputeReasonMaxLength: services.config.disputeReasonMaxLength,
+            auditContext: toWriteAuditContext(writeMeta)
           }),
-          services.writeMeta({ operation: "disputes.open", actor: opener })
+          writeMeta
         )
       );
     }
@@ -261,7 +273,7 @@ const registerDisputeOpenRoute = (
       await services.mutate(
         (engine) => engine.openDispute({ ...body, opener }),
         ["disputes"],
-        services.writeMeta({ operation: "disputes.open", actor: opener })
+        writeMeta
       )
     );
   });
@@ -276,6 +288,17 @@ const registerDisputeVoteRoute = (
     const params = parseOperationParams<{ id: string }>(operation, request);
     const body = parseOperationBody<{ vote: VoteChoice }>(operation, request);
     const agent = request.agentAddress as Address;
+    const writeMeta = services.writeMeta({
+      request,
+      operation: "disputes.vote",
+      actor: agent,
+      targetType: "dispute",
+      targetId: params.id,
+      details: {
+        disputeId: params.id,
+        vote: body.vote
+      }
+    });
     try {
       if (services.stateRepository) {
         return validateOperationResponse(
@@ -285,9 +308,10 @@ const registerDisputeVoteRoute = (
               disputeId: params.id,
               agent,
               vote: body.vote,
-              config: services.config
+              config: services.config,
+              auditContext: toWriteAuditContext(writeMeta)
             }),
-            services.writeMeta({ operation: "disputes.vote", actor: agent })
+            writeMeta
           )
         );
       }
@@ -301,7 +325,7 @@ const registerDisputeVoteRoute = (
               vote: body.vote
             }),
           ["profiles", "votes", "cycleWorkloads"],
-          services.writeMeta({ operation: "disputes.vote", actor: agent })
+          writeMeta
         )
       );
     } catch (error) {
@@ -323,6 +347,16 @@ const registerDisputeRespondRoute = (
     const body = parseOperationBody<{ reasonMd: string }>(operation, request);
     validateDisputeReasonLength(body.reasonMd, services.config);
     const responder = request.agentAddress as Address;
+    const writeMeta = services.writeMeta({
+      request,
+      operation: "disputes.respond",
+      actor: responder,
+      targetType: "dispute",
+      targetId: params.id,
+      details: {
+        disputeId: params.id
+      }
+    });
 
     if (services.stateRepository) {
       return validateOperationResponse(
@@ -332,9 +366,10 @@ const registerDisputeRespondRoute = (
             disputeId: params.id,
             responder,
             reasonMd: body.reasonMd,
-            disputeReasonMaxLength: services.config.disputeReasonMaxLength
+            disputeReasonMaxLength: services.config.disputeReasonMaxLength,
+            auditContext: toWriteAuditContext(writeMeta)
           }),
-          services.writeMeta({ operation: "disputes.respond", actor: responder })
+          writeMeta
         )
       );
     }
@@ -348,7 +383,7 @@ const registerDisputeRespondRoute = (
             reasonMd: body.reasonMd
           }),
         ["disputes"],
-        services.writeMeta({ operation: "disputes.respond", actor: responder })
+        writeMeta
       )
     );
   });

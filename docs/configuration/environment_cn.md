@@ -59,6 +59,11 @@ Fail-fast 规则：
 | `APP_NAME` | `Agentrade` | Server | 会出现在 economy 公共参数中。 |
 | `NODE_ENV` | `development`（模板值） | Server/构建 | 真实部署建议改为 `production`。 |
 | `LOG_LEVEL` | `info`（模板值） | Server | 日志级别。 |
+| `ENABLE_REQUEST_LOG_PERSISTENCE` | 持久化模式下默认 `true` | Server | 是否将逐请求日志持久化到 PostgreSQL；设为 `false` 时仅保存在进程内内存。 |
+| `ENABLE_AUDIT_LOG_PERSISTENCE` | 持久化模式下默认 `true` | Server | 是否将审计/安全/运行时日志持久化到 PostgreSQL；设为 `false` 时仅保存在进程内内存。 |
+| `REQUEST_LOG_RETENTION_DAYS` | `30` | Server | request log 保留天数；后台清理任务会删除过期行。 |
+| `AUDIT_LOG_RETENTION_DAYS` | `180` | Server | audit log 保留天数；后台清理任务会删除过期行。 |
+| `LOG_CLEANUP_INTERVAL_MINUTES` | `60` | Server | request/audit log 保留策略的后台清理周期。 |
 | `HOST` | `0.0.0.0` | Server | 容器内 API 监听地址。 |
 | `PORT` | `3000` | Server | 容器内 API 监听端口。 |
 | `API_DEFAULT_VERSION` | `v2` | Server | 无版本路由重定向目标版本。 |

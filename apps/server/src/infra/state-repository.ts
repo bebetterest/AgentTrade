@@ -15,6 +15,8 @@ import {
   type AgentDirectoryItem,
   ActivityEventType as DomainActivityEventType,
   type AgentProfile,
+  type ServerAuditLogRecord,
+  type ServerRequestLogRecord,
   type CloseCycleResult,
   type Cycle,
   type CycleRewardsResponse,
@@ -104,7 +106,20 @@ import {
   type TaskListQuery
 } from "./state-repository-query-helpers.js";
 import {
+  type AuditLogCreateInput,
+  type AuditLogQuery,
+  buildAuditLogRecord,
+  type CleanupLogsResult,
+  type RequestLogCreateInput,
+  type RequestLogQuery,
+  buildRequestLogRecord,
+  buildWriteSuccessAuditLog,
+  type WriteAuditContext,
+  sanitizeAuditDetails
+} from "../observability/server-logs.js";
+import {
   encodeKeysetCursor,
+  clampPageLimit,
   nextCursorOffset,
   parseListCursor
 } from "../pagination/cursor.js";
@@ -433,11 +448,289 @@ export class PrismaStateRepository {
     };
   }
 
+  async appendRequestLogDirect(input: RequestLogCreateInput): Promise<ServerRequestLogRecord> {
+    const record = buildRequestLogRecord(input);
+    await this.prisma.serverRequestLog.create({
+      data: {
+        id: record.id,
+        requestId: record.requestId,
+        method: record.method,
+        path: record.path,
+        routeId: record.routeId,
+        statusCode: record.statusCode,
+        durationMs: record.durationMs,
+        clientIp: record.clientIp,
+        forwardedFor: record.forwardedFor ?? undefined,
+        userAgent: record.userAgent ?? undefined,
+        actorAddress: record.actorAddress ?? undefined,
+        errorCode: record.errorCode ?? undefined,
+        createdAt: new Date(record.createdAt)
+      }
+    });
+    return record;
+  }
+
+  async appendAuditLogDirect(input: AuditLogCreateInput): Promise<ServerAuditLogRecord> {
+    const record = buildAuditLogRecord(input);
+    await this.prisma.serverAuditLog.create({
+      data: {
+        id: record.id,
+        category: record.category,
+        action: record.action,
+        severity: record.severity,
+        outcome: record.outcome,
+        requestId: record.requestId ?? undefined,
+        clientIp: record.clientIp ?? undefined,
+        actorAddress: record.actorAddress ?? undefined,
+        method: record.method ?? undefined,
+        routeId: record.routeId ?? undefined,
+        targetType: record.targetType ?? undefined,
+        targetId: record.targetId ?? undefined,
+        cycleId: record.cycleId ?? undefined,
+        message: record.message,
+        details: record.details
+          ? (sanitizeAuditDetails(record.details) as Prisma.InputJsonValue)
+          : undefined,
+        createdAt: new Date(record.createdAt)
+      }
+    });
+    return record;
+  }
+
+  async queryRequestLogsDirect(query: RequestLogQuery): Promise<PaginatedResponse<ServerRequestLogRecord>> {
+    const boundedLimit = clampPageLimit(query.limit);
+    const cursor = query.cursor
+      ? parseListCursor(query.cursor, {
+          resource: "server-request-logs",
+          sort: "createdAt",
+          order: "desc"
+        })
+      : null;
+    const keysetWhere =
+      cursor?.mode === "keyset"
+        ? (() => {
+            const cursorId = cursor.values.id;
+            const cursorPrimary = cursor.values.primary;
+            if (typeof cursorId !== "string" || cursorId.length === 0) {
+              throw new DomainError("INVALID_CURSOR", "cursor id must be a non-empty string", 400);
+            }
+            if (typeof cursorPrimary !== "string" || cursorPrimary.length === 0) {
+              throw new DomainError(
+                "INVALID_CURSOR",
+                "cursor primary must be a non-empty ISO datetime string",
+                400
+              );
+            }
+            const createdAt = new Date(cursorPrimary);
+            if (Number.isNaN(createdAt.getTime())) {
+              throw new DomainError("INVALID_CURSOR", "cursor primary must be valid ISO datetime", 400);
+            }
+            return {
+              OR: [
+                { createdAt: { lt: createdAt } },
+                {
+                  AND: [{ createdAt }, { id: { lt: cursorId } }]
+                }
+              ]
+            } satisfies Prisma.ServerRequestLogWhereInput;
+          })()
+        : null;
+
+    const filters: Prisma.ServerRequestLogWhereInput[] = [];
+    if (keysetWhere) {
+      filters.push(keysetWhere);
+    }
+    if (query.from || query.to) {
+      filters.push({
+        createdAt: {
+          ...(query.from ? { gte: new Date(query.from) } : {}),
+          ...(query.to ? { lte: new Date(query.to) } : {})
+        }
+      });
+    }
+    if (query.requestId) {
+      filters.push({ requestId: query.requestId });
+    }
+    if (query.actor) {
+      filters.push({
+        actorAddress: {
+          equals: query.actor,
+          mode: "insensitive"
+        }
+      });
+    }
+    if (query.ip) {
+      filters.push({ clientIp: query.ip });
+    }
+    if (query.method) {
+      filters.push({
+        method: {
+          equals: query.method,
+          mode: "insensitive"
+        }
+      });
+    }
+    if (query.routeId) {
+      filters.push({ routeId: query.routeId });
+    }
+    if (query.status !== undefined) {
+      filters.push({ statusCode: query.status });
+    }
+
+    const rows = await this.prisma.serverRequestLog.findMany({
+      where: filters.length > 0 ? { AND: filters } : undefined,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      ...(cursor?.mode === "legacy-offset"
+        ? { skip: cursor.offset, take: boundedLimit + 1 }
+        : { take: boundedLimit + 1 })
+    });
+    const mapped = rows.map((item) => this.mapServerRequestLog(item));
+    const hasMore = mapped.length > boundedLimit;
+    const items = hasMore ? mapped.slice(0, boundedLimit) : mapped;
+    const nextCursor =
+      hasMore && items.length > 0
+        ? encodeKeysetCursor({
+            resource: "server-request-logs",
+            sort: "createdAt",
+            order: "desc",
+            offset: nextCursorOffset(cursor ?? { mode: "start", offset: 0 }, items.length),
+            values: {
+              primary: items[items.length - 1]!.createdAt,
+              id: items[items.length - 1]!.id
+            }
+          })
+        : null;
+    return { items, nextCursor };
+  }
+
+  async queryAuditLogsDirect(query: AuditLogQuery): Promise<PaginatedResponse<ServerAuditLogRecord>> {
+    const boundedLimit = clampPageLimit(query.limit);
+    const cursor = query.cursor
+      ? parseListCursor(query.cursor, {
+          resource: "server-audit-logs",
+          sort: "createdAt",
+          order: "desc"
+        })
+      : null;
+    const keysetWhere =
+      cursor?.mode === "keyset"
+        ? (() => {
+            const cursorId = cursor.values.id;
+            const cursorPrimary = cursor.values.primary;
+            if (typeof cursorId !== "string" || cursorId.length === 0) {
+              throw new DomainError("INVALID_CURSOR", "cursor id must be a non-empty string", 400);
+            }
+            if (typeof cursorPrimary !== "string" || cursorPrimary.length === 0) {
+              throw new DomainError(
+                "INVALID_CURSOR",
+                "cursor primary must be a non-empty ISO datetime string",
+                400
+              );
+            }
+            const createdAt = new Date(cursorPrimary);
+            if (Number.isNaN(createdAt.getTime())) {
+              throw new DomainError("INVALID_CURSOR", "cursor primary must be valid ISO datetime", 400);
+            }
+            return {
+              OR: [
+                { createdAt: { lt: createdAt } },
+                {
+                  AND: [{ createdAt }, { id: { lt: cursorId } }]
+                }
+              ]
+            } satisfies Prisma.ServerAuditLogWhereInput;
+          })()
+        : null;
+
+    const filters: Prisma.ServerAuditLogWhereInput[] = [];
+    if (keysetWhere) {
+      filters.push(keysetWhere);
+    }
+    if (query.from || query.to) {
+      filters.push({
+        createdAt: {
+          ...(query.from ? { gte: new Date(query.from) } : {}),
+          ...(query.to ? { lte: new Date(query.to) } : {})
+        }
+      });
+    }
+    if (query.requestId) {
+      filters.push({ requestId: query.requestId });
+    }
+    if (query.actor) {
+      filters.push({
+        actorAddress: {
+          equals: query.actor,
+          mode: "insensitive"
+        }
+      });
+    }
+    if (query.ip) {
+      filters.push({ clientIp: query.ip });
+    }
+    if (query.category) {
+      filters.push({ category: query.category });
+    }
+    if (query.action) {
+      filters.push({ action: query.action });
+    }
+    if (query.outcome) {
+      filters.push({ outcome: query.outcome });
+    }
+
+    const rows = await this.prisma.serverAuditLog.findMany({
+      where: filters.length > 0 ? { AND: filters } : undefined,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      ...(cursor?.mode === "legacy-offset"
+        ? { skip: cursor.offset, take: boundedLimit + 1 }
+        : { take: boundedLimit + 1 })
+    });
+    const mapped = rows.map((item) => this.mapServerAuditLog(item));
+    const hasMore = mapped.length > boundedLimit;
+    const items = hasMore ? mapped.slice(0, boundedLimit) : mapped;
+    const nextCursor =
+      hasMore && items.length > 0
+        ? encodeKeysetCursor({
+            resource: "server-audit-logs",
+            sort: "createdAt",
+            order: "desc",
+            offset: nextCursorOffset(cursor ?? { mode: "start", offset: 0 }, items.length),
+            values: {
+              primary: items[items.length - 1]!.createdAt,
+              id: items[items.length - 1]!.id
+            }
+          })
+        : null;
+    return { items, nextCursor };
+  }
+
+  async cleanupExpiredLogs(now = new Date()): Promise<CleanupLogsResult> {
+    const requestCutoff = new Date(
+      now.getTime() - this.config.requestLogRetentionDays * 24 * 60 * 60 * 1000
+    );
+    const auditCutoff = new Date(
+      now.getTime() - this.config.auditLogRetentionDays * 24 * 60 * 60 * 1000
+    );
+    const [requestResult, auditResult] = await this.prisma.$transaction([
+      this.prisma.serverRequestLog.deleteMany({
+        where: { createdAt: { lt: requestCutoff } }
+      }),
+      this.prisma.serverAuditLog.deleteMany({
+        where: { createdAt: { lt: auditCutoff } }
+      })
+    ]);
+    return {
+      deletedRequestLogs: requestResult.count,
+      deletedAuditLogs: auditResult.count
+    };
+  }
+
   async updateRuntimeRulesDirect(input: {
     applyTo: "current" | "next";
     patch: RuntimeEditableRulesPatch;
     reason?: string;
     actor?: string;
+    auditContext?: WriteAuditContext;
   }): Promise<RuntimeSettingsState> {
     return this.executeWithRetry(async () =>
       this.prisma.$transaction(async (tx) => {
@@ -492,6 +785,22 @@ export class PrismaStateRepository {
           }
         });
 
+        if (input.auditContext) {
+          await this.appendAuditLogWithTx(
+            tx,
+            buildWriteSuccessAuditLog(input.auditContext, {
+              targetId: RUNTIME_RULE_STATE_ID,
+              cycleId: runtime.activeCycleId,
+              message: "system.settings.update succeeded",
+              details: {
+                applyTo: input.applyTo,
+                reason: input.reason?.trim().length ? input.reason.trim() : null,
+                patchKeys: Object.keys(input.patch)
+              }
+            })
+          );
+        }
+
         return this.toRuntimeSettingsState(updated);
       })
     );
@@ -502,6 +811,7 @@ export class PrismaStateRepository {
     defaults: RuntimeEditableRules;
     reason?: string;
     actor?: string;
+    auditContext?: WriteAuditContext;
   }): Promise<RuntimeSettingsState> {
     validateRuntimeEditableRules(input.defaults);
     return this.executeWithRetry(async () =>
@@ -552,6 +862,21 @@ export class PrismaStateRepository {
               normalizedPending === null ? Prisma.JsonNull : (normalizedPending as Prisma.InputJsonValue)
           }
         });
+
+        if (input.auditContext) {
+          await this.appendAuditLogWithTx(
+            tx,
+            buildWriteSuccessAuditLog(input.auditContext, {
+              targetId: RUNTIME_RULE_STATE_ID,
+              cycleId: runtime.activeCycleId,
+              message: "system.settings.reset succeeded",
+              details: {
+                applyTo: input.applyTo,
+                reason: input.reason?.trim().length ? input.reason.trim() : null
+              }
+            })
+          );
+        }
 
         return this.toRuntimeSettingsState(updated);
       })
@@ -887,7 +1212,8 @@ export class PrismaStateRepository {
 
   async updateAgentProfileDirect(
     address: Address,
-    payload: { name?: string; bio?: string }
+    payload: { name?: string; bio?: string },
+    auditContext?: WriteAuditContext
   ): Promise<AgentProfile> {
     const profile = await writeUpdateAgentProfileDirect(
       this.prisma,
@@ -896,10 +1222,12 @@ export class PrismaStateRepository {
         lockRuntimeWithTx: (tx) => this.lockRuntimeWithTx(tx),
         ensureAgentAndLedgerWithTx: (tx, nextAddress, now) =>
           this.ensureAgentAndLedgerWithTx(tx, nextAddress, now),
-        touchRuntimeStateWithTx: (tx) => this.touchRuntimeStateWithTx(tx)
+        touchRuntimeStateWithTx: (tx) => this.touchRuntimeStateWithTx(tx),
+        appendAuditLogWithTx: (tx, input) => this.appendAuditLogWithTx(tx, input).then(() => undefined)
       },
       address,
-      payload
+      payload,
+      auditContext
     );
     return mapAgentProfile(profile);
   }
@@ -1294,7 +1622,8 @@ export class PrismaStateRepository {
         touchRuntimeStateWithTx: (tx) => this.touchRuntimeStateWithTx(tx),
         applyProfileDeltaWithTx: (tx, address, now, delta) =>
           this.applyProfileDeltaWithTx(tx, address, now, delta),
-        appendActivityEventWithTx: (tx, activity) => this.appendActivityEventWithTx(tx, activity)
+        appendActivityEventWithTx: (tx, activity) => this.appendActivityEventWithTx(tx, activity),
+        appendAuditLogWithTx: (tx, audit) => this.appendAuditLogWithTx(tx, audit).then(() => undefined)
       },
       input
     );
@@ -1312,7 +1641,8 @@ export class PrismaStateRepository {
         touchRuntimeStateWithTx: (tx) => this.touchRuntimeStateWithTx(tx),
         applyProfileDeltaWithTx: (tx, address, now, input) =>
           this.applyProfileDeltaWithTx(tx, address, now, input),
-        appendActivityEventWithTx: (tx, input) => this.appendActivityEventWithTx(tx, input)
+        appendActivityEventWithTx: (tx, input) => this.appendActivityEventWithTx(tx, input),
+        appendAuditLogWithTx: (tx, audit) => this.appendAuditLogWithTx(tx, audit).then(() => undefined)
       },
       input
     );
@@ -1320,7 +1650,12 @@ export class PrismaStateRepository {
     return mapSubmission(submission);
   }
 
-  async terminateTaskDirect(taskId: string, publisher: Address, config: AppConfig): Promise<Task> {
+  async terminateTaskDirect(
+    taskId: string,
+    publisher: Address,
+    config: AppConfig,
+    auditContext?: WriteAuditContext
+  ): Promise<Task> {
     const task = await writeTerminateTaskDirect(
       this.prisma,
       {
@@ -1331,11 +1666,13 @@ export class PrismaStateRepository {
         touchRuntimeStateWithTx: (tx) => this.touchRuntimeStateWithTx(tx),
         applyProfileDeltaWithTx: (tx, address, now, delta) =>
           this.applyProfileDeltaWithTx(tx, address, now, delta),
-        appendActivityEventWithTx: (tx, activity) => this.appendActivityEventWithTx(tx, activity)
+        appendActivityEventWithTx: (tx, activity) => this.appendActivityEventWithTx(tx, activity),
+        appendAuditLogWithTx: (tx, audit) => this.appendAuditLogWithTx(tx, audit).then(() => undefined)
       },
       taskId,
       publisher,
-      config
+      config,
+      auditContext
     );
     const intentCount = await this.prisma.taskIntention.count({ where: { taskId: task.id } });
     return mapTask({ ...task, intentCount });
@@ -1352,7 +1689,8 @@ export class PrismaStateRepository {
         touchRuntimeStateWithTx: (tx) => this.touchRuntimeStateWithTx(tx),
         applyProfileDeltaWithTx: (tx, address, now, delta) =>
           this.applyProfileDeltaWithTx(tx, address, now, delta),
-        appendActivityEventWithTx: (tx, activity) => this.appendActivityEventWithTx(tx, activity)
+        appendActivityEventWithTx: (tx, activity) => this.appendActivityEventWithTx(tx, activity),
+        appendAuditLogWithTx: (tx, audit) => this.appendAuditLogWithTx(tx, audit).then(() => undefined)
       },
       input
     );
@@ -1367,7 +1705,8 @@ export class PrismaStateRepository {
         lockRuntimeWithTx: (tx) => this.lockRuntimeWithTx(tx),
         ensureAgentAndLedgerWithTx: (tx, address, now) =>
           this.ensureAgentAndLedgerWithTx(tx, address, now),
-        touchRuntimeStateWithTx: (tx) => this.touchRuntimeStateWithTx(tx)
+        touchRuntimeStateWithTx: (tx) => this.touchRuntimeStateWithTx(tx),
+        appendAuditLogWithTx: (tx, audit) => this.appendAuditLogWithTx(tx, audit).then(() => undefined)
       },
       input
     );
@@ -1386,6 +1725,7 @@ export class PrismaStateRepository {
           this.touchRuntimeStateWithTx(tx, activeCycleId),
         getConfirmedSlots: (slotsTotal, rewardPerSlot, rewardEscrowRemaining) =>
           this.getConfirmedSlots(slotsTotal, rewardPerSlot, rewardEscrowRemaining),
+        appendAuditLogWithTx: (tx, audit) => this.appendAuditLogWithTx(tx, audit).then(() => undefined),
         confirmSubmissionInternalWithTx: (tx, submission, task, now, cycleId, actor) =>
           this.confirmSubmissionInternalWithTx(tx, submission, task, now, cycleId, actor),
         evaluateDisputeWithTx: (tx, disputeId, nextConfig, now, cycleId) =>
@@ -1408,6 +1748,7 @@ export class PrismaStateRepository {
           this.touchRuntimeStateWithTx(tx, activeCycleId),
         getConfirmedSlots: (slotsTotal, rewardPerSlot, rewardEscrowRemaining) =>
           this.getConfirmedSlots(slotsTotal, rewardPerSlot, rewardEscrowRemaining),
+        appendAuditLogWithTx: (tx, audit) => this.appendAuditLogWithTx(tx, audit).then(() => undefined),
         confirmSubmissionInternalWithTx: (tx, submission, task, now, cycleId, actor) =>
           this.confirmSubmissionInternalWithTx(tx, submission, task, now, cycleId, actor),
         evaluateDisputeWithTx: (tx, disputeId, nextConfig, now, cycleId) =>
@@ -1439,7 +1780,11 @@ export class PrismaStateRepository {
     return mapDispute(dispute);
   }
 
-  async addTaskIntentionDirect(taskId: string, agent: Address): Promise<TaskIntention> {
+  async addTaskIntentionDirect(
+    taskId: string,
+    agent: Address,
+    auditContext?: WriteAuditContext
+  ): Promise<TaskIntention> {
     const intention = await writeAddTaskIntentionDirect(
       this.prisma,
       {
@@ -1450,10 +1795,12 @@ export class PrismaStateRepository {
         touchRuntimeStateWithTx: (tx) => this.touchRuntimeStateWithTx(tx),
         applyProfileDeltaWithTx: (tx, address, now, input) =>
           this.applyProfileDeltaWithTx(tx, address, now, input),
-        appendActivityEventWithTx: (tx, input) => this.appendActivityEventWithTx(tx, input)
+        appendActivityEventWithTx: (tx, input) => this.appendActivityEventWithTx(tx, input),
+        appendAuditLogWithTx: (tx, audit) => this.appendAuditLogWithTx(tx, audit).then(() => undefined)
       },
       taskId,
-      agent
+      agent,
+      auditContext
     );
 
     return mapTaskIntention(intention);
@@ -1470,7 +1817,8 @@ export class PrismaStateRepository {
         touchRuntimeStateWithTx: (tx) => this.touchRuntimeStateWithTx(tx),
         getConfirmedSlots: (slotsTotal, rewardPerSlot, rewardEscrowRemaining) =>
           this.getConfirmedSlots(slotsTotal, rewardPerSlot, rewardEscrowRemaining),
-        appendActivityEventWithTx: (tx, input) => this.appendActivityEventWithTx(tx, input)
+        appendActivityEventWithTx: (tx, input) => this.appendActivityEventWithTx(tx, input),
+        appendAuditLogWithTx: (tx, audit) => this.appendAuditLogWithTx(tx, audit).then(() => undefined)
       },
       input
     );
@@ -1478,7 +1826,11 @@ export class PrismaStateRepository {
     return mapSubmission(submission);
   }
 
-  async confirmSubmissionDirect(submissionId: string, publisher: Address): Promise<Submission> {
+  async confirmSubmissionDirect(
+    submissionId: string,
+    publisher: Address,
+    auditContext?: WriteAuditContext
+  ): Promise<Submission> {
     const submission = await writeConfirmSubmissionDirect(
       this.prisma,
       {
@@ -1489,11 +1841,13 @@ export class PrismaStateRepository {
         touchRuntimeStateWithTx: (tx) => this.touchRuntimeStateWithTx(tx),
         getConfirmedSlots: (slotsTotal, rewardPerSlot, rewardEscrowRemaining) =>
           this.getConfirmedSlots(slotsTotal, rewardPerSlot, rewardEscrowRemaining),
+        appendAuditLogWithTx: (tx, audit) => this.appendAuditLogWithTx(tx, audit).then(() => undefined),
         confirmSubmissionInternalWithTx: (tx, nextSubmission, task, now, cycleId, actor) =>
           this.confirmSubmissionInternalWithTx(tx, nextSubmission, task, now, cycleId, actor)
       },
       submissionId,
-      publisher
+      publisher,
+      auditContext
     );
     return mapSubmission(submission);
   }
@@ -1509,6 +1863,7 @@ export class PrismaStateRepository {
         ensureAgentAndLedgerWithTx: (tx, address, now) =>
           this.ensureAgentAndLedgerWithTx(tx, address, now),
         touchRuntimeStateWithTx: (tx) => this.touchRuntimeStateWithTx(tx),
+        appendAuditLogWithTx: (tx, audit) => this.appendAuditLogWithTx(tx, audit).then(() => undefined),
         applyProfileDeltaWithTx: (tx, address, now, delta) =>
           this.applyProfileDeltaWithTx(tx, address, now, delta)
       },
@@ -1860,6 +2215,112 @@ export class PrismaStateRepository {
         : null,
       createdAt: row.createdAt.toISOString()
     };
+  }
+
+  private mapServerRequestLog(row: {
+    id: string;
+    requestId: string;
+    method: string;
+    path: string;
+    routeId: string;
+    statusCode: number;
+    durationMs: number;
+    clientIp: string;
+    forwardedFor: string | null;
+    userAgent: string | null;
+    actorAddress: string | null;
+    errorCode: string | null;
+    createdAt: Date;
+  }): ServerRequestLogRecord {
+    return {
+      id: row.id,
+      requestId: row.requestId,
+      method: row.method,
+      path: row.path,
+      routeId: row.routeId,
+      statusCode: row.statusCode,
+      durationMs: Number(row.durationMs.toFixed(3)),
+      clientIp: row.clientIp,
+      forwardedFor: row.forwardedFor,
+      userAgent: row.userAgent,
+      actorAddress: row.actorAddress ? asAddress(row.actorAddress) : null,
+      errorCode: row.errorCode,
+      createdAt: row.createdAt.toISOString()
+    };
+  }
+
+  private mapServerAuditLog(row: {
+    id: string;
+    category: string;
+    action: string;
+    severity: string;
+    outcome: string;
+    requestId: string | null;
+    clientIp: string | null;
+    actorAddress: string | null;
+    method: string | null;
+    routeId: string | null;
+    targetType: string | null;
+    targetId: string | null;
+    cycleId: string | null;
+    message: string;
+    details: Prisma.JsonValue | null;
+    createdAt: Date;
+  }): ServerAuditLogRecord {
+    return {
+      id: row.id,
+      category: row.category as ServerAuditLogRecord["category"],
+      action: row.action,
+      severity: row.severity as ServerAuditLogRecord["severity"],
+      outcome: row.outcome as ServerAuditLogRecord["outcome"],
+      requestId: row.requestId,
+      clientIp: row.clientIp,
+      actorAddress: row.actorAddress ? asAddress(row.actorAddress) : null,
+      method: row.method,
+      routeId: row.routeId,
+      targetType: row.targetType,
+      targetId: row.targetId,
+      cycleId: row.cycleId,
+      message: row.message,
+      details:
+        row.details && typeof row.details === "object" && !Array.isArray(row.details)
+          ? (row.details as Record<string, unknown>)
+          : null,
+      createdAt: row.createdAt.toISOString()
+    };
+  }
+
+  private async appendAuditLogWithTx(
+    tx: Prisma.TransactionClient,
+    input: AuditLogCreateInput
+  ): Promise<ServerAuditLogRecord> {
+    const record = buildAuditLogRecord(input);
+    if (!this.config.enableAuditLogPersistence) {
+      return record;
+    }
+    const row = await tx.serverAuditLog.create({
+      data: {
+        id: record.id,
+        category: record.category,
+        action: record.action,
+        severity: record.severity,
+        outcome: record.outcome,
+        requestId: record.requestId ?? undefined,
+        clientIp: record.clientIp ?? undefined,
+        actorAddress: record.actorAddress ?? undefined,
+        method: record.method ?? undefined,
+        routeId: record.routeId ?? undefined,
+        targetType: record.targetType ?? undefined,
+        targetId: record.targetId ?? undefined,
+        cycleId: record.cycleId ?? undefined,
+        message: record.message,
+        details: record.details
+          ? (sanitizeAuditDetails(record.details) as Prisma.InputJsonValue)
+          : undefined,
+        createdAt: new Date(record.createdAt)
+      }
+    });
+    return this.mapServerAuditLog(row);
   }
 
   private async lockRuntimeRuleStateWithTx(tx: Prisma.TransactionClient): Promise<{

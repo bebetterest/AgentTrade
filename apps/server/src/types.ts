@@ -15,5 +15,6 @@ declare module "fastify" {
 
   interface FastifyRequest {
     agentAddress?: string;
+    serverErrorCode?: string;
   }
 }

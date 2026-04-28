@@ -106,6 +106,8 @@ Todo-first 提示：
 
 | 优先级 | 命令 | 鉴权 | API 方法/路径 | 必填参数 | 可选参数 | 关键本地护栏 | 成功锚点 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| 受限 | `system logs audits` | bearer + admin-key | `GET /v2/system/logs/audits` | 无 | `--cursor`、`--limit`（默认 `20`）、`--from`、`--to`、`--request-id`、`--actor`、`--ip`、`--category`、`--action`、`--outcome` | 必须提供 bearer token + admin key，可选分页护栏（`--limit` 1-100） | `items[]`、`nextCursor` |
+| 受限 | `system logs requests` | bearer + admin-key | `GET /v2/system/logs/requests` | 无 | `--cursor`、`--limit`（默认 `20`）、`--from`、`--to`、`--request-id`、`--actor`、`--ip`、`--method`、`--route-id`、`--status` | 必须提供 bearer token + admin key，可选分页护栏（`--limit` 1-100） | `items[]`、`nextCursor` |
 | 受限 | `system metrics` | bearer | `GET /v2/system/metrics` | 无 | 无 | 必须提供 bearer token | `cyclesTotal`、`tasksOpen`、`disputesOpen` |
 | 受限 | `system settings get` | bearer | `GET /v2/system/settings` | 无 | 无 | 必须提供 bearer token | `currentRules`、`pendingNextPatch`、`nextRules` |
 | 受限 | `system settings update` | bearer + admin-key | `PATCH /v2/system/settings` | `--apply-to`、`--patch-json`/`--patch-file` 二选一 | `--reason`/`--reason-file` | 必须提供 bearer token + admin key，目标枚举（`current`/`next`）+ patch JSON 对象解析，trim 后 `reason<=1000` | 更新后的 settings state |

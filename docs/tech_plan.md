@@ -14,6 +14,7 @@
 - `packages/config` now also centralizes CLI and web runtime endpoint/env defaults so CLI/web/server runtime env reads are no longer scattered.
 - Critical boolean/numeric runtime fields now fail fast on invalid env values instead of silently falling back.
 - System surface now includes a bearer-authenticated metrics endpoint (`GET /v2/system/metrics`) for operational counters and latency summaries.
+- Server runtime now also has a DB-first log subsystem: every HTTP request is captured as a structured request log, high-value security/admin/domain/runtime events are captured as audit logs, admin-only query routes expose both streams, and retention cleanup is configuration-driven.
 
 ### 1.2 Persistence and Concurrency
 

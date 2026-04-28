@@ -27,6 +27,88 @@ export const registerSystemCommands = (program: Command): void => {
     await executeBearerOperationCommand(command, cliOperationBindings["system metrics"]);
   });
 
+  const logs = system.command("logs").description("Server log query commands");
+  logs
+    .command("requests")
+    .description("List server request logs (token + admin key required)")
+    .option("--cursor <cursor>", OPAQUE_CURSOR_HELP)
+    .option("--limit <n>", "page size (1-100, default: 20)")
+    .option("--from <iso>", "inclusive start time (ISO datetime)")
+    .option("--to <iso>", "inclusive end time (ISO datetime)")
+    .option("--request-id <id>", "request id filter")
+    .option("--actor <address>", "actor address filter")
+    .option("--ip <ip>", "client IP filter")
+    .option("--method <method>", "HTTP method filter")
+    .option("--route-id <route>", "route id filter")
+    .option("--status <code>", "HTTP status code filter")
+    .action(async (options, command: Command) => {
+      await executeAdminOperationCommand(
+        command,
+        cliOperationBindings["system logs requests"],
+        async () => ({
+          query: {
+            ...(options.cursor ? { cursor: ensureNonEmpty(String(options.cursor), "--cursor") } : {}),
+            ...(options.limit ? { limit: ensurePageLimit(String(options.limit), "--limit") } : {}),
+            ...(options.from ? { from: ensureNonEmpty(String(options.from), "--from") } : {}),
+            ...(options.to ? { to: ensureNonEmpty(String(options.to), "--to") } : {}),
+            ...(options.requestId
+              ? { requestId: ensureNonEmpty(String(options.requestId), "--request-id") }
+              : {}),
+            ...(options.actor ? { actor: ensureNonEmpty(String(options.actor), "--actor") } : {}),
+            ...(options.ip ? { ip: ensureNonEmpty(String(options.ip), "--ip") } : {}),
+            ...(options.method ? { method: ensureNonEmpty(String(options.method), "--method") } : {}),
+            ...(options.routeId
+              ? { routeId: ensureNonEmpty(String(options.routeId), "--route-id") }
+              : {}),
+            ...(options.status ? { status: Number(ensureNonEmpty(String(options.status), "--status")) } : {})
+          }
+        })
+      );
+    });
+
+  logs
+    .command("audits")
+    .description("List server audit logs (token + admin key required)")
+    .option("--cursor <cursor>", OPAQUE_CURSOR_HELP)
+    .option("--limit <n>", "page size (1-100, default: 20)")
+    .option("--from <iso>", "inclusive start time (ISO datetime)")
+    .option("--to <iso>", "inclusive end time (ISO datetime)")
+    .option("--request-id <id>", "request id filter")
+    .option("--actor <address>", "actor address filter")
+    .option("--ip <ip>", "client IP filter")
+    .option(
+      "--category <category>",
+      "audit category: RUNTIME | AUTH | SECURITY | ADMIN | DOMAIN_WRITE | BACKGROUND_JOB"
+    )
+    .option("--action <action>", "audit action filter")
+    .option("--outcome <outcome>", "audit outcome: SUCCESS | FAILURE | REJECTED")
+    .action(async (options, command: Command) => {
+      await executeAdminOperationCommand(
+        command,
+        cliOperationBindings["system logs audits"],
+        async () => ({
+          query: {
+            ...(options.cursor ? { cursor: ensureNonEmpty(String(options.cursor), "--cursor") } : {}),
+            ...(options.limit ? { limit: ensurePageLimit(String(options.limit), "--limit") } : {}),
+            ...(options.from ? { from: ensureNonEmpty(String(options.from), "--from") } : {}),
+            ...(options.to ? { to: ensureNonEmpty(String(options.to), "--to") } : {}),
+            ...(options.requestId
+              ? { requestId: ensureNonEmpty(String(options.requestId), "--request-id") }
+              : {}),
+            ...(options.actor ? { actor: ensureNonEmpty(String(options.actor), "--actor") } : {}),
+            ...(options.ip ? { ip: ensureNonEmpty(String(options.ip), "--ip") } : {}),
+            ...(options.category
+              ? { category: ensureNonEmpty(String(options.category), "--category") }
+              : {}),
+            ...(options.action ? { action: ensureNonEmpty(String(options.action), "--action") } : {}),
+            ...(options.outcome
+              ? { outcome: ensureNonEmpty(String(options.outcome), "--outcome") }
+              : {})
+          }
+        })
+      );
+    });
+
   const settings = system.command("settings").description("Runtime settings commands");
   settings.command("get").description("Get runtime settings (token required)").action(async (_options, command: Command) => {
     await executeBearerOperationCommand(command, cliOperationBindings["system settings get"]);

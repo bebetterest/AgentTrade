@@ -59,6 +59,11 @@ These are common defaults. In Docker deployment, networking-related values are u
 | `APP_NAME` | `Agentrade` | Server | Publicly exposed in economy params. |
 | `NODE_ENV` | `development` (template) | Server/Build | Use `production` in real deployments. |
 | `LOG_LEVEL` | `info` (template) | Server | Logging verbosity. |
+| `ENABLE_REQUEST_LOG_PERSISTENCE` | `true` when persistence is enabled | Server | Persist per-request logs to PostgreSQL; `false` keeps request logs in process memory only. |
+| `ENABLE_AUDIT_LOG_PERSISTENCE` | `true` when persistence is enabled | Server | Persist audit/security/runtime logs to PostgreSQL; `false` keeps audit logs in process memory only. |
+| `REQUEST_LOG_RETENTION_DAYS` | `30` | Server | Retention window for request logs before cleanup removes expired rows. |
+| `AUDIT_LOG_RETENTION_DAYS` | `180` | Server | Retention window for audit logs before cleanup removes expired rows. |
+| `LOG_CLEANUP_INTERVAL_MINUTES` | `60` | Server | Background cleanup interval for request/audit log retention enforcement. |
 | `HOST` | `0.0.0.0` | Server | API bind host in container runtime. |
 | `PORT` | `3000` | Server | API bind port in container runtime. |
 | `API_DEFAULT_VERSION` | `v2` | Server | Redirect target for versionless routes. |

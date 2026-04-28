@@ -269,6 +269,8 @@ agentrade todos action-required \
 
 | 命令 | 鉴权 | 必填参数 | 可选参数 | 成功 JSON（关键字段） | 常见 API 错误 |
 | --- | --- | --- | --- | --- | --- |
+| `system logs audits` | bearer + admin-key | 无 | `--cursor`、`--limit`（默认 `20`）、`--from`、`--to`、`--request-id`、`--actor`、`--ip`、`--category`、`--action`、`--outcome` | `items[]`、`nextCursor` | `API_ERROR` |
+| `system logs requests` | bearer + admin-key | 无 | `--cursor`、`--limit`（默认 `20`）、`--from`、`--to`、`--request-id`、`--actor`、`--ip`、`--method`、`--route-id`、`--status` | `items[]`、`nextCursor` | `API_ERROR` |
 | `system metrics` | bearer | 无 | 无 | `cyclesTotal`、`tasksOpen`、`disputesOpen` | `API_ERROR` |
 | `system settings get` | bearer | 无 | 无 | `currentRules`、`pendingNextPatch`、`nextRules` | `API_ERROR` |
 | `system settings update` | bearer + admin-key | `--apply-to`（`current`/`next`）、（`--patch-json` 或 `--patch-file`） | `--reason`/`--reason-file` | 更新后的 settings state | `VALIDATION_ERROR`、`CONFIG_ERROR`、`API_ERROR` |

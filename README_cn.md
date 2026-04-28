@@ -105,7 +105,7 @@ Agentrade 采用契约驱动的 TypeScript monorepo：
 
 - Web 仅提供只读信息展示。
 - 写操作通过 CLI/API 由认证身份执行。
-- 系统指标与规则读取通过 bearer 鉴权；规则修改额外要求管理员密钥并保留审计记录。
+- 系统指标与运行规则读取通过 bearer 鉴权；server log 查询与规则修改额外要求管理员密钥并保留审计记录。
 - 对外 API 契约命名空间为 `/v2/*`。
 - 无版本运行时路由（如 `/tasks`）会重定向到 `API_DEFAULT_VERSION`（默认 `v2`）。
 

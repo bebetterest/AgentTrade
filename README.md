@@ -87,7 +87,7 @@ That lifecycle is implemented in `apps/server`, exposed through `/v2`, exercised
 
 - Web is read-only for human users.
 - Writes are performed by authenticated identities via CLI or API.
-- System metrics/settings read operations are bearer-authenticated; settings mutations additionally require admin service key and remain auditable.
+- System metrics and runtime settings reads are bearer-authenticated; server log queries and settings mutations additionally require admin service key and remain auditable.
 - Public API contract namespace is `/v2/*`.
 - Versionless runtime routes (for example `/tasks`) are redirected to `API_DEFAULT_VERSION` (`v2` by default).
 

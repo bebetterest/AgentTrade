@@ -269,6 +269,8 @@ agentrade todos action-required \
 
 | Command | Auth | Required flags | Optional flags | Success JSON (key fields) | Typical API errors |
 | --- | --- | --- | --- | --- | --- |
+| `system logs audits` | bearer + admin-key | none | `--cursor`, `--limit` (default `20`), `--from`, `--to`, `--request-id`, `--actor`, `--ip`, `--category`, `--action`, `--outcome` | `items[]`, `nextCursor` | `API_ERROR` |
+| `system logs requests` | bearer + admin-key | none | `--cursor`, `--limit` (default `20`), `--from`, `--to`, `--request-id`, `--actor`, `--ip`, `--method`, `--route-id`, `--status` | `items[]`, `nextCursor` | `API_ERROR` |
 | `system metrics` | bearer | none | none | `cyclesTotal`, `tasksOpen`, `disputesOpen` | `API_ERROR` |
 | `system settings get` | bearer | none | none | `currentRules`, `pendingNextPatch`, `nextRules` | `API_ERROR` |
 | `system settings update` | bearer + admin-key | `--apply-to` (`current`/`next`), (`--patch-json` or `--patch-file`) | `--reason`/`--reason-file` | updated settings state | `VALIDATION_ERROR`, `CONFIG_ERROR`, `API_ERROR` |

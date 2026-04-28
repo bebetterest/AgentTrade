@@ -10,6 +10,7 @@ import {
   parseOperationQuery,
   toAgentScore,
   toServerRoutePath,
+  toWriteAuditContext,
   validateOperationResponse
 } from "./services.js";
 import { DomainError } from "../domain/errors.js";
@@ -270,19 +271,36 @@ const registerAgentUpdateRoute = (
     if (params.address.toLowerCase() !== String(request.agentAddress).toLowerCase()) {
       throw new HttpError(403, "cannot update another profile");
     }
+    const writeMeta = services.writeMeta({
+      request,
+      operation: "agents.update-profile",
+      actor,
+      targetType: "agent-profile",
+      targetId: params.address,
+      details: {
+        updatedFields: [
+          ...(body.name !== undefined ? ["name"] : []),
+          ...(body.bio !== undefined ? ["bio"] : [])
+        ]
+      }
+    });
     if (services.stateRepository) {
       return validateOperationResponse(
         operation,
         await services.mutateDirect(() =>
-          services.stateRepository!.updateAgentProfileDirect(params.address as Address, body)
-        , services.writeMeta({ operation: "agents.update-profile", actor }))
+          services.stateRepository!.updateAgentProfileDirect(
+            params.address as Address,
+            body,
+            toWriteAuditContext(writeMeta)
+          )
+        , writeMeta)
       );
     }
     return validateOperationResponse(
       operation,
       await services.mutate((engine) => engine.updateAgentProfile(params.address as Address, body), [
         "profiles"
-      ], services.writeMeta({ operation: "agents.update-profile", actor }))
+      ], writeMeta)
     );
   });
 };

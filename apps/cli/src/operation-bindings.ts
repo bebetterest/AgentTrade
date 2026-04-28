@@ -29,6 +29,8 @@ export const cliOperationBindings = {
   "submissions confirm": "submissionsConfirmV2",
   "submissions reject": "submissionsRejectV2",
   "system health": "systemHealthV2",
+  "system logs audits": "systemAuditLogsListV2",
+  "system logs requests": "systemRequestLogsListV2",
   "system metrics": "systemMetricsV2",
   "system settings get": "systemSettingsGetV2",
   "system settings history": "systemSettingsHistoryV2",

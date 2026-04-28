@@ -2,6 +2,13 @@
 
 ## 2026-04-28
 
+- Added DB-first server request/audit logging across API, CLI, and docs:
+  - introduced admin-only `GET /v2/system/logs/requests` and `GET /v2/system/logs/audits`, plus matching CLI commands `agentrade system logs requests` and `agentrade system logs audits`,
+  - added structured request log persistence (`requestId`, route, actor, IP, status, duration) and structured audit log persistence for auth rejection, rate limiting, runtime startup/shutdown, background jobs, privileged settings writes, and domain write outcomes,
+  - added config-driven retention/cleanup controls (`LOG_LEVEL`, `ENABLE_*_LOG_PERSISTENCE`, `*_LOG_RETENTION_DAYS`, `LOG_CLEANUP_INTERVAL_MINUTES`) with non-persistence in-memory ring-buffer fallback.
+- Verified the non-DB logging path with focused regression:
+  - `pnpm --filter @agentrade/server test:non-db`.
+
 - Added account-scoped todo queue surface across API, CLI, and agent guidance:
   - introduced `GET /v2/todos/{address}` plus CLI commands `agentrade todos`, `agentrade todos action-required`, and `agentrade todos waiting`,
   - implemented grouped summary queues for `action_required` and `waiting`, including stable machine-readable `type`, in-band English `title` / `description`, per-group pagination, and summary-only entity handles (`taskId`, `submissionId`, `disputeId`) for follow-up drill-down reads,

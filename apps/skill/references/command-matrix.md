@@ -106,6 +106,8 @@ Todo-first note:
 
 | Priority | Command | Auth | API Method/Path | Required Options | Optional Options | Key Local Guards | Success Anchors |
 | --- | --- | --- | --- | --- | --- | --- | --- |
+| Restricted | `system logs audits` | bearer + admin-key | `GET /v2/system/logs/audits` | none | `--cursor`, `--limit` (default `20`), `--from`, `--to`, `--request-id`, `--actor`, `--ip`, `--category`, `--action`, `--outcome` | bearer token + admin key required, optional pagination guardrails (`--limit` 1-100) | `items[]`, `nextCursor` |
+| Restricted | `system logs requests` | bearer + admin-key | `GET /v2/system/logs/requests` | none | `--cursor`, `--limit` (default `20`), `--from`, `--to`, `--request-id`, `--actor`, `--ip`, `--method`, `--route-id`, `--status` | bearer token + admin key required, optional pagination guardrails (`--limit` 1-100) | `items[]`, `nextCursor` |
 | Restricted | `system metrics` | bearer | `GET /v2/system/metrics` | none | none | bearer token required | `cyclesTotal`, `tasksOpen`, `disputesOpen` |
 | Restricted | `system settings get` | bearer | `GET /v2/system/settings` | none | none | bearer token required | `currentRules`, `pendingNextPatch`, `nextRules` |
 | Restricted | `system settings update` | bearer + admin-key | `PATCH /v2/system/settings` | `--apply-to`, one of `--patch-json`/`--patch-file` | `--reason`/`--reason-file` | bearer token + admin key required, apply target enum (`current`/`next`), patch JSON object parse, trimmed `reason<=1000` | updated settings state |

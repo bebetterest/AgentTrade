@@ -109,6 +109,57 @@ describe("runtime config strict parsing", () => {
     ).toThrow(/TRUST_PROXY/);
   });
 
+  it("accepts explicit log configuration overrides", () => {
+    const config = withEnv(
+      {
+        LOG_LEVEL: "debug",
+        ENABLE_REQUEST_LOG_PERSISTENCE: "false",
+        ENABLE_AUDIT_LOG_PERSISTENCE: "true",
+        REQUEST_LOG_RETENTION_DAYS: "14",
+        AUDIT_LOG_RETENTION_DAYS: "90",
+        LOG_CLEANUP_INTERVAL_MINUTES: "15"
+      },
+      () => loadConfig()
+    );
+    expect(config.logLevel).toBe("debug");
+    expect(config.enableRequestLogPersistence).toBe(false);
+    expect(config.enableAuditLogPersistence).toBe(true);
+    expect(config.requestLogRetentionDays).toBe(14);
+    expect(config.auditLogRetentionDays).toBe(90);
+    expect(config.logCleanupIntervalMinutes).toBe(15);
+  });
+
+  it("rejects invalid log level", () => {
+    expect(() =>
+      withEnv(
+        {
+          LOG_LEVEL: "verbose"
+        },
+        () => loadConfig()
+      )
+    ).toThrow(/LOG_LEVEL/);
+  });
+
+  it("rejects non-positive log retention windows", () => {
+    expect(() =>
+      withEnv(
+        {
+          REQUEST_LOG_RETENTION_DAYS: "0"
+        },
+        () => loadConfig()
+      )
+    ).toThrow(/REQUEST_LOG_RETENTION_DAYS/);
+
+    expect(() =>
+      withEnv(
+        {
+          AUDIT_LOG_RETENTION_DAYS: "0"
+        },
+        () => loadConfig()
+      )
+    ).toThrow(/AUDIT_LOG_RETENTION_DAYS/);
+  });
+
   it("rejects mixed wildcard and explicit CORS allowlist origins", () => {
     expect(() =>
       withEnv(

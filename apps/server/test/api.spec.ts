@@ -228,6 +228,95 @@ describe("API integration", () => {
     expect(payload.latencies.writes.count).toBe(0);
   });
 
+  it("records request logs and exposes them only to admin-authenticated queries", async () => {
+    const publisher = addr("log-publisher-1");
+    const created = await app!.inject({
+      method: "POST",
+      url: "/v2/tasks",
+      headers: { authorization: `Bearer ${bearer(publisher)}` },
+      payload: {
+        title: "request-log-task",
+        descriptionMd: "desc",
+        acceptanceCriteria: "criteria",
+        deadlineUtc: futureDeadline(),
+        displayTimezone: "UTC",
+        slotsTotal: 1,
+        rewardPerSlot: 12,
+        allowRepeatCompletionsBySameAgent: false
+      }
+    });
+    expect(created.statusCode).toBe(200);
+
+    const bearerOnly = await app!.inject({
+      method: "GET",
+      url: "/v2/system/logs/requests",
+      headers: {
+        authorization: `Bearer ${bearer(systemOperator)}`
+      }
+    });
+    expect(bearerOnly.statusCode).toBe(401);
+
+    const response = await app!.inject({
+      method: "GET",
+      url: `/v2/system/logs/requests?actor=${publisher}&routeId=%2Fv2%2Ftasks&method=POST&status=200`,
+      headers: bearerAndAdmin(systemOperator)
+    });
+    expect(response.statusCode).toBe(200);
+    const payload = response.json() as {
+      items: Array<{
+        requestId: string;
+        method: string;
+        path: string;
+        routeId: string;
+        statusCode: number;
+        actorAddress: string | null;
+      }>;
+      nextCursor: string | null;
+    };
+    expect(payload.items.length).toBeGreaterThan(0);
+    expect(payload.items.some((item) => item.requestId === created.headers["x-request-id"])).toBe(true);
+    expect(payload.items.some((item) => item.actorAddress === publisher)).toBe(true);
+    expect(payload.items.every((item) => item.method === "POST")).toBe(true);
+    expect(payload.items.every((item) => item.path === "/v2/tasks")).toBe(true);
+    expect(payload.items.every((item) => item.routeId === "/v2/tasks")).toBe(true);
+    expect(payload.items.every((item) => item.statusCode === 200)).toBe(true);
+  });
+
+  it("records security audit logs for rejected bearer auth and exposes them via admin query", async () => {
+    const rejected = await app!.inject({
+      method: "GET",
+      url: "/v2/system/metrics"
+    });
+    expect(rejected.statusCode).toBe(401);
+
+    const response = await app!.inject({
+      method: "GET",
+      url: "/v2/system/logs/audits?category=SECURITY&action=auth.bearer.rejected&outcome=REJECTED",
+      headers: bearerAndAdmin(systemOperator)
+    });
+    expect(response.statusCode).toBe(200);
+    const payload = response.json() as {
+      items: Array<{
+        category: string;
+        action: string;
+        outcome: string;
+        requestId: string | null;
+        details: Record<string, unknown> | null;
+      }>;
+      nextCursor: string | null;
+    };
+    expect(payload.items.length).toBeGreaterThan(0);
+    expect(
+      payload.items.some(
+        (item) =>
+          item.category === "SECURITY" &&
+          item.action === "auth.bearer.rejected" &&
+          item.outcome === "REJECTED" &&
+          item.details?.reason === "missing_bearer_token"
+      )
+    ).toBe(true);
+  });
+
   it("rejects task creation with past deadline", async () => {
     const publisher = addr("val-deadline-1");
     const response = await app!.inject({
@@ -620,6 +709,24 @@ describe("API integration", () => {
       expect(ipBFirst.statusCode).toBe(200);
       expect(ipASecond.statusCode).toBe(429);
       expect(errorCode(ipASecond.json())).toBe("RATE_LIMITED");
+
+      const requestLogs = await app!.inject({
+        method: "GET",
+        url: "/v2/system/logs/requests?routeId=%2Fv2%2Ftasks&method=GET",
+        headers: bearerAndAdmin(systemOperator)
+      });
+      expect(requestLogs.statusCode).toBe(200);
+      const logsPayload = requestLogs.json() as {
+        items: Array<{ clientIp: string; routeId: string; method: string }>;
+      };
+      expect(
+        logsPayload.items.some(
+          (item) =>
+            item.routeId === "/v2/tasks" &&
+            item.method === "GET" &&
+            item.clientIp === "203.0.113.10"
+        )
+      ).toBe(true);
     } finally {
       delete process.env.TRUST_PROXY;
     }

@@ -13,6 +13,9 @@ import {
   type LedgerBalance,
   type PaginatedResponse,
   type RuntimeRuleAuditRecord,
+  type ServerAuditCategory,
+  type ServerAuditLogRecord,
+  type ServerRequestLogRecord,
   type RuntimeSettingsState,
   type Submission,
   type SubmissionAttachment,
@@ -24,6 +27,12 @@ import type { AgentradeEngine } from "../domain/engine.js";
 import type { PrismaStateRepository, PersistenceMutationScope } from "../infra/state-repository.js";
 import type { ServiceMetricsCollector } from "../observability/metrics.js";
 import { computeAgentCompositeScore } from "../domain/helpers.js";
+import type {
+  AuditLogCreateInput,
+  AuditLogQuery,
+  RequestLogQuery,
+  WriteAuditContext
+} from "../observability/server-logs.js";
 import {
   clampPageLimit,
   encodeKeysetCursor,
@@ -46,7 +55,16 @@ export interface AppServices {
   stateRepository: PrismaStateRepository | null;
   metrics: ServiceMetricsCollector;
   challenges: Map<string, AuthChallenge>;
-  writeMeta(input: { operation: string; actor?: Address; cycleId?: string }): WriteOperationMeta;
+  writeMeta(input: {
+    request?: FastifyRequest;
+    operation: string;
+    actor?: Address;
+    cycleId?: string;
+    auditCategory?: ServerAuditCategory;
+    targetType?: string;
+    targetId?: string;
+    details?: Record<string, unknown> | null;
+  }): WriteOperationMeta;
   read<T>(operation: (engine: AgentradeEngine) => T | Promise<T>): Promise<T>;
   mutate<T>(
     operation: (engine: AgentradeEngine) => T | Promise<T>,
@@ -65,16 +83,21 @@ export interface AppServices {
     cursor?: string;
     limit: number;
   }): Promise<PaginatedResponse<RuntimeRuleAuditRecord>>;
+  listRequestLogs(input: RequestLogQuery): Promise<PaginatedResponse<ServerRequestLogRecord>>;
+  listAuditLogs(input: AuditLogQuery): Promise<PaginatedResponse<ServerAuditLogRecord>>;
+  recordAudit(input: AuditLogCreateInput): Promise<void>;
   updateRuntimeSettings(input: {
     applyTo: "current" | "next";
     patch: RuntimeEditableRulesPatch;
     reason?: string;
     actor?: string;
+    auditContext?: WriteAuditContext;
   }): Promise<RuntimeSettingsState>;
   resetRuntimeSettings(input: {
     applyTo: "current" | "next";
     reason?: string;
     actor?: string;
+    auditContext?: WriteAuditContext;
   }): Promise<RuntimeSettingsState>;
   defaultAgentProfile(address: Address): AgentProfile;
   defaultLedger(address: Address): LedgerBalance;
@@ -84,7 +107,29 @@ export interface WriteOperationMeta {
   operation: string;
   actor?: Address;
   cycleId?: string;
+  auditCategory: ServerAuditCategory;
+  requestId?: string | null;
+  clientIp?: string | null;
+  method?: string | null;
+  routeId?: string | null;
+  targetType?: string | null;
+  targetId?: string | null;
+  details?: Record<string, unknown> | null;
 }
+
+export const toWriteAuditContext = (meta: WriteOperationMeta): WriteAuditContext => ({
+  category: meta.auditCategory,
+  action: meta.operation,
+  requestId: meta.requestId ?? null,
+  clientIp: meta.clientIp ?? null,
+  actorAddress: meta.actor ?? null,
+  method: meta.method ?? null,
+  routeId: meta.routeId ?? null,
+  targetType: meta.targetType ?? null,
+  targetId: meta.targetId ?? null,
+  cycleId: meta.cycleId ?? null,
+  details: meta.details ?? null
+});
 
 export const isAddress = (value: string): value is Address => isEvmAddress(value);
 

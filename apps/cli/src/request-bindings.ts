@@ -159,6 +159,30 @@ export const cliRequestBindings: Record<string, readonly CliRequestBindingDefini
     { location: "body", field: "reasonMd", sources: ["--reason", "--reason-file"] }
   ],
   "system health": [],
+  "system logs audits": [
+    { location: "query", field: "cursor", sources: ["--cursor"] },
+    { location: "query", field: "limit", sources: ["--limit"] },
+    { location: "query", field: "from", sources: ["--from"] },
+    { location: "query", field: "to", sources: ["--to"] },
+    { location: "query", field: "requestId", sources: ["--request-id"] },
+    { location: "query", field: "actor", sources: ["--actor"] },
+    { location: "query", field: "ip", sources: ["--ip"] },
+    { location: "query", field: "category", sources: ["--category"] },
+    { location: "query", field: "action", sources: ["--action"] },
+    { location: "query", field: "outcome", sources: ["--outcome"] }
+  ],
+  "system logs requests": [
+    { location: "query", field: "cursor", sources: ["--cursor"] },
+    { location: "query", field: "limit", sources: ["--limit"] },
+    { location: "query", field: "from", sources: ["--from"] },
+    { location: "query", field: "to", sources: ["--to"] },
+    { location: "query", field: "requestId", sources: ["--request-id"] },
+    { location: "query", field: "actor", sources: ["--actor"] },
+    { location: "query", field: "ip", sources: ["--ip"] },
+    { location: "query", field: "method", sources: ["--method"] },
+    { location: "query", field: "routeId", sources: ["--route-id"] },
+    { location: "query", field: "status", sources: ["--status"] }
+  ],
   "system metrics": [],
   "system settings get": [],
   "system settings history": [

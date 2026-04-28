@@ -3,6 +3,9 @@ import {
   ActivityEventType,
   CycleStatus,
   DisputeStatus,
+  ServerAuditCategory,
+  ServerAuditOutcome,
+  ServerAuditSeverity,
   SubmissionStatus,
   TaskStatus,
   TODO_ACTION_REQUIRED_TYPES,
@@ -944,6 +947,159 @@ export const serviceMetricsResponseSchema = defineSchema(
   }
 );
 
+export const serverRequestLogRecordSchema = defineSchema(
+  "ServerRequestLogRecord",
+  z.object({
+    id: z.string(),
+    requestId: z.string(),
+    method: z.string(),
+    path: z.string(),
+    routeId: z.string(),
+    statusCode: z.number().int(),
+    durationMs: z.number(),
+    clientIp: z.string(),
+    forwardedFor: z.string().nullable(),
+    userAgent: z.string().nullable(),
+    actorAddress: addressSchema.nullable(),
+    errorCode: z.string().nullable(),
+    createdAt: isoDateSchema
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "id",
+      "requestId",
+      "method",
+      "path",
+      "routeId",
+      "statusCode",
+      "durationMs",
+      "clientIp",
+      "forwardedFor",
+      "userAgent",
+      "actorAddress",
+      "errorCode",
+      "createdAt"
+    ],
+    properties: {
+      id: { ...stringField },
+      requestId: { ...stringField },
+      method: { ...stringField },
+      path: { ...stringField },
+      routeId: { ...stringField },
+      statusCode: { ...integerField, minimum: 100, maximum: 599 },
+      durationMs: { ...numberField },
+      clientIp: { ...stringField },
+      forwardedFor: { ...stringField, nullable: true },
+      userAgent: { ...stringField, nullable: true },
+      actorAddress: { ...addressField, nullable: true },
+      errorCode: { ...stringField, nullable: true },
+      createdAt: { ...isoDateField }
+    }
+  }
+);
+
+export const serverAuditLogRecordSchema = defineSchema(
+  "ServerAuditLogRecord",
+  z.object({
+    id: z.string(),
+    category: z.nativeEnum(ServerAuditCategory),
+    action: z.string(),
+    severity: z.nativeEnum(ServerAuditSeverity),
+    outcome: z.nativeEnum(ServerAuditOutcome),
+    requestId: z.string().nullable(),
+    clientIp: z.string().nullable(),
+    actorAddress: addressSchema.nullable(),
+    method: z.string().nullable(),
+    routeId: z.string().nullable(),
+    targetType: z.string().nullable(),
+    targetId: z.string().nullable(),
+    cycleId: z.string().nullable(),
+    message: z.string(),
+    details: z.record(z.string(), z.unknown()).nullable(),
+    createdAt: isoDateSchema
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "id",
+      "category",
+      "action",
+      "severity",
+      "outcome",
+      "requestId",
+      "clientIp",
+      "actorAddress",
+      "method",
+      "routeId",
+      "targetType",
+      "targetId",
+      "cycleId",
+      "message",
+      "details",
+      "createdAt"
+    ],
+    properties: {
+      id: { ...stringField },
+      category: { type: "string", enum: Object.values(ServerAuditCategory) },
+      action: { ...stringField },
+      severity: { type: "string", enum: Object.values(ServerAuditSeverity) },
+      outcome: { type: "string", enum: Object.values(ServerAuditOutcome) },
+      requestId: { ...stringField, nullable: true },
+      clientIp: { ...stringField, nullable: true },
+      actorAddress: { ...addressField, nullable: true },
+      method: { ...stringField, nullable: true },
+      routeId: { ...stringField, nullable: true },
+      targetType: { ...stringField, nullable: true },
+      targetId: { ...stringField, nullable: true },
+      cycleId: { ...stringField, nullable: true },
+      message: { ...stringField },
+      details: {
+        type: "object",
+        nullable: true,
+        additionalProperties: {}
+      },
+      createdAt: { ...isoDateField }
+    }
+  }
+);
+
+export const paginatedServerRequestLogResponseSchema = defineSchema(
+  "PaginatedServerRequestLogResponse",
+  z.object({
+    items: z.array(serverRequestLogRecordSchema.schema),
+    nextCursor: z.string().nullable()
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: ["items", "nextCursor"],
+    properties: {
+      items: { type: "array", items: schemaRef(serverRequestLogRecordSchema) },
+      nextCursor: { type: "string", nullable: true }
+    }
+  }
+);
+
+export const paginatedServerAuditLogResponseSchema = defineSchema(
+  "PaginatedServerAuditLogResponse",
+  z.object({
+    items: z.array(serverAuditLogRecordSchema.schema),
+    nextCursor: z.string().nullable()
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: ["items", "nextCursor"],
+    properties: {
+      items: { type: "array", items: schemaRef(serverAuditLogRecordSchema) },
+      nextCursor: { type: "string", nullable: true }
+    }
+  }
+);
+
 export const authChallengeRequestSchema = defineSchema(
   "AuthChallengeRequest",
   z.object({
@@ -1773,6 +1929,32 @@ export const runtimeRuleAuditHistoryQuerySchemaV2 = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20)
 });
 
+export const systemRequestLogsQuerySchemaV2 = z.object({
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  from: isoDateSchema.optional(),
+  to: isoDateSchema.optional(),
+  requestId: nonEmptyStringSchema.optional(),
+  actor: addressSchema.optional(),
+  ip: nonEmptyStringSchema.optional(),
+  method: nonEmptyStringSchema.optional(),
+  routeId: nonEmptyStringSchema.optional(),
+  status: z.coerce.number().int().min(100).max(599).optional()
+});
+
+export const systemAuditLogsQuerySchemaV2 = z.object({
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  from: isoDateSchema.optional(),
+  to: isoDateSchema.optional(),
+  requestId: nonEmptyStringSchema.optional(),
+  actor: addressSchema.optional(),
+  ip: nonEmptyStringSchema.optional(),
+  category: z.nativeEnum(ServerAuditCategory).optional(),
+  action: nonEmptyStringSchema.optional(),
+  outcome: z.nativeEnum(ServerAuditOutcome).optional()
+});
+
 export const todosQuerySchemaV2 = z
   .object({
     scope: z.enum(TODO_SCOPE_VALUES).default("all"),
@@ -1845,6 +2027,10 @@ export const namedSchemas = [
   healthStatusSchema,
   latencySummarySchema,
   serviceMetricsResponseSchema,
+  serverRequestLogRecordSchema,
+  serverAuditLogRecordSchema,
+  paginatedServerRequestLogResponseSchema,
+  paginatedServerAuditLogResponseSchema,
   authChallengeRequestSchema,
   authChallengeResponseSchema,
   authVerifyRequestSchema,

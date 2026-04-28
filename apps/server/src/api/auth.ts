@@ -3,7 +3,12 @@ import { nanoid } from "nanoid";
 import { verifyMessage } from "viem";
 import type { FastifyInstance } from "fastify";
 import { getApiOperation, type ApiOperationDefinition } from "@agentrade/contracts";
-import type { Address } from "@agentrade/types";
+import {
+  type Address,
+  ServerAuditCategory,
+  ServerAuditOutcome,
+  ServerAuditSeverity
+} from "@agentrade/types";
 import type { AppServices } from "./services.js";
 import {
   isAddress,
@@ -12,6 +17,7 @@ import {
   validateOperationResponse
 } from "./services.js";
 import { DomainError } from "../domain/errors.js";
+import { extractRequestNetworkContext } from "../observability/server-logs.js";
 import { HttpError } from "../utils/http-error.js";
 
 const authChallengeOperation = getApiOperation("authChallengeV2");
@@ -97,6 +103,23 @@ const registerAuthChallengeRoute = (
       message,
       createdAt: nowMs
     });
+    await services.recordAudit({
+      category: ServerAuditCategory.AUTH,
+      action: "auth.challenge.create",
+      severity: ServerAuditSeverity.INFO,
+      outcome: ServerAuditOutcome.SUCCESS,
+      requestId: request.id,
+      clientIp: extractRequestNetworkContext(request).clientIp,
+      actorAddress: body.address as Address,
+      method: request.method,
+      routeId: request.routeOptions?.url ?? "unmatched",
+      targetType: "auth-challenge",
+      targetId: addressKey,
+      message: "auth challenge created",
+      details: {
+        address: body.address
+      }
+    });
     return validateOperationResponse(operation, {
       nonce,
       message
@@ -111,6 +134,37 @@ const registerAuthVerifyRoute = (
   maintenance: ChallengeMaintenance
 ) => {
   app.post(toServerRoutePath(operation.pathTemplate), async (request) => {
+    const network = extractRequestNetworkContext(request);
+    const auditBase = {
+      category: ServerAuditCategory.AUTH,
+      requestId: request.id,
+      clientIp: network.clientIp,
+      method: request.method,
+      routeId: request.routeOptions?.url ?? "unmatched"
+    } as const;
+    const rejectVerify = async (
+      code: string,
+      message: string,
+      statusCode: number,
+      details: Record<string, unknown>,
+      actorAddress?: Address
+    ): Promise<never> => {
+      await services.recordAudit({
+        ...auditBase,
+        action: "auth.verify",
+        severity: ServerAuditSeverity.WARN,
+        outcome: ServerAuditOutcome.REJECTED,
+        actorAddress: actorAddress ?? null,
+        targetType: "auth-verify",
+        targetId: actorAddress ?? null,
+        message: "auth verify rejected",
+        details: {
+          code,
+          ...details
+        }
+      });
+      throw new DomainError(code, message, statusCode);
+    };
     const body = parseOperationBody<{
       address: string;
       nonce: string;
@@ -118,20 +172,46 @@ const registerAuthVerifyRoute = (
       signature: string;
     }>(operation, request);
     if (!isAddress(body.address)) {
-      throw new DomainError("INVALID_ADDRESS", "invalid address", 400);
+      return rejectVerify("INVALID_ADDRESS", "invalid address", 400, {
+        reason: "invalid_address"
+      });
     }
     const addressKey = body.address.toLowerCase();
     const nowMs = Date.now();
     const challenge = services.challenges.get(addressKey);
     if (!challenge) {
-      throw new DomainError("CHALLENGE_NOT_FOUND", "challenge not found", 401);
+      return rejectVerify(
+        "CHALLENGE_NOT_FOUND",
+        "challenge not found",
+        401,
+        {
+          reason: "challenge_not_found"
+        },
+        body.address as Address
+      );
     }
     if (nowMs - challenge.createdAt >= maintenance.ttlMs) {
       services.challenges.delete(addressKey);
-      throw new DomainError("CHALLENGE_EXPIRED", "challenge expired", 401);
+      return rejectVerify(
+        "CHALLENGE_EXPIRED",
+        "challenge expired",
+        401,
+        {
+          reason: "challenge_expired"
+        },
+        body.address as Address
+      );
     }
     if (challenge.nonce !== body.nonce || challenge.message !== body.message) {
-      throw new DomainError("CHALLENGE_MISMATCH", "challenge mismatch", 401);
+      return rejectVerify(
+        "CHALLENGE_MISMATCH",
+        "challenge mismatch",
+        401,
+        {
+          reason: "challenge_mismatch"
+        },
+        body.address as Address
+      );
     }
     const valid = await verifyMessage({
       address: body.address as Address,
@@ -139,10 +219,32 @@ const registerAuthVerifyRoute = (
       signature: body.signature as `0x${string}`
     }).catch(() => false);
     if (!valid) {
-      throw new DomainError("INVALID_SIGNATURE", "invalid signature", 401);
+      return rejectVerify(
+        "INVALID_SIGNATURE",
+        "invalid signature",
+        401,
+        {
+          reason: "invalid_signature"
+        },
+        body.address as Address
+      );
     }
     const token = jwt.sign({ sub: body.address }, services.config.jwtSecret, { expiresIn: "15m" });
     services.challenges.delete(addressKey);
+    await services.recordAudit({
+      ...auditBase,
+      action: "auth.verify",
+      severity: ServerAuditSeverity.INFO,
+      outcome: ServerAuditOutcome.SUCCESS,
+      actorAddress: body.address as Address,
+      targetType: "auth-verify",
+      targetId: addressKey,
+      message: "auth verify succeeded",
+      details: {
+        address: body.address,
+        expiresIn: "15m"
+      }
+    });
     return validateOperationResponse(operation, {
       token,
       expiresIn: "15m"

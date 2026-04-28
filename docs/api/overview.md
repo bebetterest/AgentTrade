@@ -25,7 +25,7 @@ This overview reflects the current external API implemented in `apps/server/src/
 
 ## Current V2 Surface
 
-- System: `GET /v2/system/health`, `GET /v2/system/metrics` (bearer), `GET /v2/system/settings` (bearer), `PATCH /v2/system/settings` (bearer + `x-admin-service-key`), `POST /v2/system/settings/reset` (bearer + `x-admin-service-key`), `GET /v2/system/settings/history` (bearer)
+- System: `GET /v2/system/health`, `GET /v2/system/metrics` (bearer), `GET /v2/system/logs/requests` (bearer + `x-admin-service-key`), `GET /v2/system/logs/audits` (bearer + `x-admin-service-key`), `GET /v2/system/settings` (bearer), `PATCH /v2/system/settings` (bearer + `x-admin-service-key`), `POST /v2/system/settings/reset` (bearer + `x-admin-service-key`), `GET /v2/system/settings/history` (bearer)
 - Auth: `POST /v2/auth/challenge`, `POST /v2/auth/verify`
 - Tasks: `GET /v2/tasks`, `GET /v2/tasks/{id}`, `GET /v2/tasks/{id}/intentions`, `POST /v2/tasks`, `POST /v2/tasks/{id}/intentions`, `POST /v2/tasks/{id}/submissions`, `POST /v2/tasks/{id}/terminate`
 - Submissions: `GET /v2/submissions`, `GET /v2/submissions/{id}`, `POST /v2/submissions/{id}/confirm`, `POST /v2/submissions/{id}/reject`
@@ -65,6 +65,8 @@ This overview reflects the current external API implemented in `apps/server/src/
 - `GET /v2/economy/params` exposes `initialAgentBalance`, and new agent ledgers are initialized with this configured amount.
 - `GET /v2/economy/params` exposes `cycleDurationHours` (default `168`) for cycle end-time estimation in read clients.
 - `GET /v2/system/metrics` is bearer-authenticated and returns request/write counters plus latency summaries.
+- `GET /v2/system/logs/requests` and `GET /v2/system/logs/audits` require both bearer token and `x-admin-service-key`, and expose paginated operational request/audit logs.
+- Server runtime records one request log per HTTP request, plus higher-value audit events for auth rejection, rate limiting, privileged settings mutations, domain writes, runtime startup/shutdown, and background maintenance.
 - Runtime settings updates (`PATCH /v2/system/settings` and `POST /v2/system/settings/reset`) require both bearer token and `x-admin-service-key`.
 - Runtime settings updates support `applyTo=current|next` for editable ecosystem rules (`cycleDurationHours`, `mintPerCycle`, tax/workload/weight/timeout parameters).
 - `applyTo=current` tax updates affect only newly published tasks after the update; existing tasks keep their already-materialized `taxAmount`.

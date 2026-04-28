@@ -160,6 +160,80 @@ runDbSuite("API persistence mode", () => {
     expect(tasks.json().items[0].title).toBe("persistent-task");
   });
 
+  it("falls back to in-memory audit logs when audit log persistence is disabled", async () => {
+    const publisher = addr("audit-fallback-publisher");
+    const previous = process.env.ENABLE_AUDIT_LOG_PERSISTENCE;
+    const prisma = new PrismaClient({
+      datasources: {
+        db: {
+          url: TEST_DB_URL!
+        }
+      }
+    });
+
+    try {
+      await app!.close();
+      app = null;
+      process.env.ENABLE_AUDIT_LOG_PERSISTENCE = "false";
+      app = await buildApp();
+      await app.ready();
+
+      const create = await app.inject({
+        method: "POST",
+        url: "/v2/tasks",
+        headers: { authorization: `Bearer ${bearer(publisher)}` },
+        payload: {
+          title: "audit-fallback-task",
+          descriptionMd: "desc",
+          acceptanceCriteria: "ok",
+          deadlineUtc: futureDeadline(),
+          displayTimezone: "UTC",
+          slotsTotal: 1,
+          rewardPerSlot: 10,
+          allowRepeatCompletionsBySameAgent: false
+        }
+      });
+      expect(create.statusCode).toBe(200);
+
+      const logs = await app.inject({
+        method: "GET",
+        url: `/v2/system/logs/audits?action=tasks.create&actor=${publisher}`,
+        headers: bearerAndAdmin(systemOperator)
+      });
+      expect(logs.statusCode).toBe(200);
+      const payload = logs.json() as {
+        items: Array<{ action: string; actorAddress: string | null; outcome: string }>;
+      };
+      expect(payload.items).toHaveLength(1);
+      expect(payload.items[0]).toMatchObject({
+        action: "tasks.create",
+        actorAddress: publisher,
+        outcome: "SUCCESS"
+      });
+
+      const persistedCount = await prisma.serverAuditLog.count({
+        where: {
+          action: "tasks.create",
+          actorAddress: publisher
+        }
+      });
+      expect(persistedCount).toBe(0);
+    } finally {
+      await prisma.$disconnect();
+      if (app) {
+        await app.close();
+        app = null;
+      }
+      if (previous === undefined) {
+        delete process.env.ENABLE_AUDIT_LOG_PERSISTENCE;
+      } else {
+        process.env.ENABLE_AUDIT_LOG_PERSISTENCE = previous;
+      }
+      app = await buildApp();
+      await app.ready();
+    }
+  });
+
   it("persists agent profile updates across app restarts", async () => {
     const agent = addr("profile-persist");
     const patchRes = await app!.inject({

@@ -194,6 +194,8 @@ type CliSpecEntityKind =
   | "economy"
   | "ledgerAccount"
   | "runtimeSettings"
+  | "serverAuditLog"
+  | "serverRequestLog"
   | "serviceHealth"
   | "serviceMetrics"
   | "submission"
@@ -3109,6 +3111,40 @@ const getEntityHints = (
           }
         ]
       };
+    case "system logs audits":
+      return {
+        primaryEntity: "serverAuditLog",
+        bindings: [
+          {
+            entity: "serverAuditLog",
+            relation: "listed",
+            outputPaths: ["data.items[].requestId"]
+          },
+          {
+            entity: "agent",
+            relation: "related",
+            inputSources: ["--actor"],
+            outputPaths: ["data.items[].actorAddress"]
+          }
+        ]
+      };
+    case "system logs requests":
+      return {
+        primaryEntity: "serverRequestLog",
+        bindings: [
+          {
+            entity: "serverRequestLog",
+            relation: "listed",
+            outputPaths: ["data.items[].requestId"]
+          },
+          {
+            entity: "agent",
+            relation: "related",
+            inputSources: ["--actor"],
+            outputPaths: ["data.items[].actorAddress"]
+          }
+        ]
+      };
     case "system metrics":
       return {
         primaryEntity: "serviceMetrics",
@@ -4429,6 +4465,8 @@ const getHandoffHints = (
         }
       ]);
     case "system health":
+    case "system logs audits":
+    case "system logs requests":
     case "system metrics":
     case "system settings get":
     case "system settings history":
@@ -5077,6 +5115,20 @@ const getWorkflowHints = (
         actorRoles: ["any"],
         prerequisiteCommands: [],
         nextCommands: ["auth login", "tasks list"]
+      };
+    case "system logs audits":
+      return {
+        phase: "system",
+        actorRoles: ["operator"],
+        prerequisiteCommands: ["auth login", "system health"],
+        nextCommands: ["system logs requests", "system metrics", "system settings history"]
+      };
+    case "system logs requests":
+      return {
+        phase: "system",
+        actorRoles: ["operator"],
+        prerequisiteCommands: ["auth login", "system health"],
+        nextCommands: ["system logs audits", "system metrics", "system settings history"]
       };
     case "system metrics":
       return {

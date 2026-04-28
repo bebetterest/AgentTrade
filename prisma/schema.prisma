@@ -57,6 +57,27 @@ enum RuntimeRuleAuditEventType {
   AUTO_APPLY_NEXT
 }
 
+enum ServerAuditCategory {
+  RUNTIME
+  AUTH
+  SECURITY
+  ADMIN
+  DOMAIN_WRITE
+  BACKGROUND_JOB
+}
+
+enum ServerAuditSeverity {
+  INFO
+  WARN
+  ERROR
+}
+
+enum ServerAuditOutcome {
+  SUCCESS
+  FAILURE
+  REJECTED
+}
+
 model AgentProfile {
   address      String   @id
   name         String
@@ -294,4 +315,54 @@ model RuntimeRuleAudit {
   @@index([createdAt, id])
   @@index([eventType, createdAt])
   @@index([cycleId, createdAt])
+}
+
+model ServerRequestLog {
+  id           String   @id
+  requestId    String
+  method       String
+  path         String
+  routeId      String
+  statusCode   Int
+  durationMs   Float
+  clientIp     String
+  forwardedFor String?
+  userAgent    String?
+  actorAddress String?
+  errorCode    String?
+  createdAt    DateTime @default(now())
+
+  @@index([createdAt, id])
+  @@index([clientIp, createdAt])
+  @@index([actorAddress, createdAt])
+  @@index([statusCode, createdAt])
+  @@index([routeId, createdAt])
+  @@index([requestId, createdAt])
+}
+
+model ServerAuditLog {
+  id           String              @id
+  category     ServerAuditCategory
+  action       String
+  severity     ServerAuditSeverity
+  outcome      ServerAuditOutcome
+  requestId    String?
+  clientIp     String?
+  actorAddress String?
+  method       String?
+  routeId      String?
+  targetType   String?
+  targetId     String?
+  cycleId      String?
+  message      String
+  details      Json?
+  createdAt    DateTime            @default(now())
+
+  @@index([createdAt, id])
+  @@index([category, createdAt])
+  @@index([action, createdAt])
+  @@index([actorAddress, createdAt])
+  @@index([clientIp, createdAt])
+  @@index([requestId, createdAt])
+  @@index([targetType, targetId, createdAt])
 }

@@ -24,6 +24,11 @@ import {
 import { nanoid } from "nanoid";
 import { DomainError } from "../domain/errors.js";
 import {
+  buildWriteSuccessAuditLog,
+  type AuditLogCreateInput,
+  type WriteAuditContext
+} from "../observability/server-logs.js";
+import {
   allocateIntegerPool,
   computeSupervisorVoteWeight,
   computeTaxAmount,
@@ -32,13 +37,19 @@ import {
 
 interface UpdateAgentProfileWriteDeps {
   executeWithRetry<T>(operation: () => Promise<T>): Promise<T>;
-  lockRuntimeWithTx(tx: Prisma.TransactionClient): Promise<unknown>;
+  lockRuntimeWithTx(
+    tx: Prisma.TransactionClient
+  ): Promise<{ id: string; activeCycleId: string; updatedAt: Date }>;
   ensureAgentAndLedgerWithTx(
     tx: Prisma.TransactionClient,
     address: Address,
     now: Date
   ): Promise<void>;
   touchRuntimeStateWithTx(tx: Prisma.TransactionClient): Promise<void>;
+  appendAuditLogWithTx(
+    tx: Prisma.TransactionClient,
+    input: AuditLogCreateInput
+  ): Promise<void>;
 }
 
 interface CommonWriteDeps {
@@ -52,6 +63,10 @@ interface CommonWriteDeps {
     now: Date
   ): Promise<void>;
   touchRuntimeStateWithTx(tx: Prisma.TransactionClient, activeCycleId?: string): Promise<void>;
+  appendAuditLogWithTx(
+    tx: Prisma.TransactionClient,
+    input: AuditLogCreateInput
+  ): Promise<void>;
 }
 
 interface RejectSubmissionWriteDeps extends CommonWriteDeps {
@@ -181,6 +196,7 @@ export interface PublishTaskDirectInput {
   rewardPerSlot: number;
   allowRepeatCompletionsBySameAgent: boolean;
   config: AppConfig;
+  auditContext?: WriteAuditContext;
 }
 
 export interface OpenDisputeDirectInput {
@@ -189,6 +205,7 @@ export interface OpenDisputeDirectInput {
   opener: Address;
   reasonMd: string;
   disputeReasonMaxLength: number;
+  auditContext?: WriteAuditContext;
 }
 
 export interface SubmitTaskDirectInput {
@@ -202,6 +219,7 @@ export interface SubmitTaskDirectInput {
   taskSubmissionAttachmentUrlMaxLength: number;
   taskSubmissionAttachmentMaxSizeBytes: number;
   resubmitCooldownMinutes: number;
+  auditContext?: WriteAuditContext;
 }
 
 export interface RejectSubmissionDirectInput {
@@ -209,6 +227,7 @@ export interface RejectSubmissionDirectInput {
   publisher: Address;
   reasonMd: string;
   rejectReasonMaxLength: number;
+  auditContext?: WriteAuditContext;
 }
 
 export interface TaskIntentionListDirectInput {
@@ -222,6 +241,7 @@ export interface VoteDisputeDirectInput {
   agent: Address;
   vote: DomainVoteChoice;
   config: AppConfig;
+  auditContext?: WriteAuditContext;
 }
 
 export interface RespondDisputeDirectInput {
@@ -229,6 +249,7 @@ export interface RespondDisputeDirectInput {
   responder: Address;
   reasonMd: string;
   disputeReasonMaxLength: number;
+  auditContext?: WriteAuditContext;
 }
 
 const asAddress = (value: string): Address => value as Address;
@@ -245,6 +266,33 @@ const toJsonAddressArray = (value: string[]): Prisma.InputJsonValue =>
 const toJsonSubmissionAttachments = (
   value: SubmissionAttachment[]
 ): Prisma.InputJsonValue => value as unknown as Prisma.InputJsonValue;
+
+const appendSuccessAuditIfPresent = async (
+  tx: Prisma.TransactionClient,
+  deps: {
+    appendAuditLogWithTx(tx: Prisma.TransactionClient, input: AuditLogCreateInput): Promise<void>;
+  },
+  auditContext: WriteAuditContext | undefined,
+  input: {
+    targetId?: string | null;
+    cycleId?: string | null;
+    message?: string;
+    details?: Record<string, unknown> | null;
+  } = {}
+): Promise<void> => {
+  if (!auditContext) {
+    return;
+  }
+  await deps.appendAuditLogWithTx(
+    tx,
+    buildWriteSuccessAuditLog(auditContext, {
+      targetId: input.targetId,
+      cycleId: input.cycleId,
+      message: input.message,
+      details: input.details
+    })
+  );
+};
 
 const validateSubmissionAttachments = (
   attachments: SubmissionAttachment[],
@@ -326,12 +374,13 @@ export const writeUpdateAgentProfileDirect = async (
   prisma: PrismaClient,
   deps: UpdateAgentProfileWriteDeps,
   address: Address,
-  payload: { name?: string; bio?: string }
+  payload: { name?: string; bio?: string },
+  auditContext?: WriteAuditContext
 ): Promise<PrismaAgentProfile> => {
   return deps.executeWithRetry(async () =>
     prisma.$transaction(async (tx) => {
       const now = new Date();
-      await deps.lockRuntimeWithTx(tx);
+      const runtime = await deps.lockRuntimeWithTx(tx);
       await deps.ensureAgentAndLedgerWithTx(tx, address, now);
       const current = await tx.agentProfile.findUnique({ where: { address } });
       if (!current) {
@@ -346,6 +395,17 @@ export const writeUpdateAgentProfileDirect = async (
         }
       });
       await deps.touchRuntimeStateWithTx(tx);
+      await appendSuccessAuditIfPresent(tx, deps, auditContext, {
+        targetId: address,
+        cycleId: runtime.activeCycleId,
+        message: "agents.update-profile succeeded",
+        details: {
+          updatedFields: [
+            ...(payload.name !== undefined ? ["name"] : []),
+            ...(payload.bio !== undefined ? ["bio"] : [])
+          ]
+        }
+      });
       return updated;
     })
   );
@@ -405,6 +465,16 @@ export const writeRejectSubmissionDirect = async (
         createdAt: now
       });
       await deps.touchRuntimeStateWithTx(tx);
+      await appendSuccessAuditIfPresent(tx, deps, input.auditContext, {
+        targetId: updated.id,
+        cycleId: runtime.activeCycleId,
+        message: "submissions.reject succeeded",
+        details: {
+          taskId: task.id,
+          submissionId: updated.id,
+          status: updated.status
+        }
+      });
       return updated;
     })
   );
@@ -414,7 +484,8 @@ export const writeAddTaskIntentionDirect = async (
   prisma: PrismaClient,
   deps: AddTaskIntentionWriteDeps,
   taskId: string,
-  agent: Address
+  agent: Address,
+  auditContext?: WriteAuditContext
 ): Promise<PrismaTaskIntention> => {
   return deps.executeWithRetry(async () =>
     prisma.$transaction(async (tx) => {
@@ -475,6 +546,15 @@ export const writeAddTaskIntentionDirect = async (
         createdAt: now
       });
       await deps.touchRuntimeStateWithTx(tx);
+      await appendSuccessAuditIfPresent(tx, deps, auditContext, {
+        targetId: created.id,
+        cycleId: runtime.activeCycleId,
+        message: "tasks.intend succeeded",
+        details: {
+          taskId,
+          intentionId: created.id
+        }
+      });
       return created;
     })
   );
@@ -592,6 +672,16 @@ export const writeSubmitTaskDirect = async (
         createdAt: now
       });
       await deps.touchRuntimeStateWithTx(tx);
+      await appendSuccessAuditIfPresent(tx, deps, input.auditContext, {
+        targetId: created.id,
+        cycleId: runtime.activeCycleId,
+        message: "tasks.submit succeeded",
+        details: {
+          taskId: taskRow.id,
+          submissionId: created.id,
+          attachmentCount: attachments.length
+        }
+      });
       return { kind: "created" as const, submission: created };
     })
   );
@@ -761,6 +851,16 @@ export const writePublishTaskDirect = async (
         createdAt: now
       });
       await deps.touchRuntimeStateWithTx(tx);
+      await appendSuccessAuditIfPresent(tx, deps, input.auditContext, {
+        targetId: created.id,
+        cycleId: runtime.activeCycleId,
+        message: "tasks.create succeeded",
+        details: {
+          taskId: created.id,
+          slotsTotal: input.slotsTotal,
+          rewardPerSlot: input.rewardPerSlot
+        }
+      });
       return created;
     })
   );
@@ -771,7 +871,8 @@ export const writeTerminateTaskDirect = async (
   deps: ActivityWriteDeps,
   taskId: string,
   publisher: Address,
-  config: AppConfig
+  config: AppConfig,
+  auditContext?: WriteAuditContext
 ): Promise<PrismaTask> => {
   return deps.executeWithRetry(async () =>
     prisma.$transaction(async (tx) => {
@@ -832,6 +933,16 @@ export const writeTerminateTaskDirect = async (
         createdAt: now
       });
       await deps.touchRuntimeStateWithTx(tx);
+      await appendSuccessAuditIfPresent(tx, deps, auditContext, {
+        targetId: updated.id,
+        cycleId: runtime.activeCycleId,
+        message: "tasks.terminate succeeded",
+        details: {
+          taskId: updated.id,
+          penalty,
+          refund
+        }
+      });
       return updated;
     })
   );
@@ -920,6 +1031,16 @@ export const writeOpenDisputeDirect = async (
           createdAt: now
         });
         await deps.touchRuntimeStateWithTx(tx);
+        await appendSuccessAuditIfPresent(tx, deps, input.auditContext, {
+          targetId: created.id,
+          cycleId: runtime.activeCycleId,
+          message: "disputes.open succeeded",
+          details: {
+            taskId: task.id,
+            submissionId: submission.id,
+            disputeId: created.id
+          }
+        });
         return created;
       })
     );
@@ -944,7 +1065,7 @@ export const writeRespondDisputeDirect = async (
   return deps.executeWithRetry(async () =>
     prisma.$transaction(async (tx) => {
       const now = new Date();
-      await deps.lockRuntimeWithTx(tx);
+      const runtime = await deps.lockRuntimeWithTx(tx);
       await deps.ensureAgentAndLedgerWithTx(tx, input.responder, now);
       await tx.$queryRaw`SELECT id FROM "Dispute" WHERE id = ${input.disputeId} FOR UPDATE`;
       const dispute = await tx.dispute.findUnique({ where: { id: input.disputeId } });
@@ -1009,6 +1130,16 @@ export const writeRespondDisputeDirect = async (
         }
       });
       await deps.touchRuntimeStateWithTx(tx);
+      await appendSuccessAuditIfPresent(tx, deps, input.auditContext, {
+        targetId: updated.id,
+        cycleId: runtime.activeCycleId,
+        message: "disputes.respond succeeded",
+        details: {
+          disputeId: updated.id,
+          taskId: task.id,
+          submissionId: submission.id
+        }
+      });
       return updated;
     })
   );
@@ -1018,7 +1149,8 @@ export const writeConfirmSubmissionDirect = async (
   prisma: PrismaClient,
   deps: ConfirmSubmissionWriteDeps,
   submissionId: string,
-  publisher: Address
+  publisher: Address,
+  auditContext?: WriteAuditContext
 ): Promise<PrismaSubmission> => {
   const txResult = await deps.executeWithRetry(async () =>
     prisma.$transaction(async (tx) => {
@@ -1039,6 +1171,16 @@ export const writeConfirmSubmissionDirect = async (
         throw new DomainError("FORBIDDEN", "only the publisher can confirm submission", 403);
       }
       if (submissionRow.status === DomainSubmissionStatus.CONFIRMED) {
+        await appendSuccessAuditIfPresent(tx, deps, auditContext, {
+          targetId: submissionRow.id,
+          cycleId: runtime.activeCycleId,
+          message: "submissions.confirm succeeded",
+          details: {
+            taskId: taskRow.id,
+            submissionId: submissionRow.id,
+            alreadyConfirmed: true
+          }
+        });
         return { kind: "confirmed" as const, submission: submissionRow };
       }
       if (
@@ -1091,6 +1233,16 @@ export const writeConfirmSubmissionDirect = async (
       );
       await deps.touchRuntimeStateWithTx(tx);
       const submission = await tx.submission.findUniqueOrThrow({ where: { id: submissionRow.id } });
+      await appendSuccessAuditIfPresent(tx, deps, auditContext, {
+        targetId: submission.id,
+        cycleId: runtime.activeCycleId,
+        message: "submissions.confirm succeeded",
+        details: {
+          taskId: taskRow.id,
+          submissionId: submission.id,
+          alreadyConfirmed: false
+        }
+      });
       return { kind: "confirmed" as const, submission };
     })
   );
@@ -1214,6 +1366,17 @@ export const writeVoteDisputeDirect = async (
           supervisionVotes: 1
         });
         await deps.touchRuntimeStateWithTx(tx);
+        await appendSuccessAuditIfPresent(tx, deps, input.auditContext, {
+          targetId: vote.id,
+          cycleId: runtime.activeCycleId,
+          message: "disputes.vote succeeded",
+          details: {
+            disputeId: input.disputeId,
+            voteId: vote.id,
+            workloadId: workload.id,
+            vote: input.vote
+          }
+        });
         return { vote, workload };
       })
     );

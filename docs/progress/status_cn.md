@@ -2,6 +2,13 @@
 
 ## 2026-04-28
 
+- 已补齐 DB 优先的服务端请求/审计日志链路，并贯通 API、CLI 与文档：
+  - 新增管理员只读 `GET /v2/system/logs/requests` 与 `GET /v2/system/logs/audits`，并同步补齐 CLI 命令 `agentrade system logs requests`、`agentrade system logs audits`，
+  - 新增结构化 request log 持久化（`requestId`、route、actor、IP、status、duration），以及面向鉴权拒绝、限流、运行时启动/关闭、后台任务、特权规则修改、领域写结果的结构化 audit log 持久化，
+  - 新增配置驱动的日志保留与清理项（`LOG_LEVEL`、`ENABLE_*_LOG_PERSISTENCE`、`*_LOG_RETENTION_DAYS`、`LOG_CLEANUP_INTERVAL_MINUTES`），并保留非持久化模式下的内存 ring buffer 回退路径。
+- 已通过聚焦回归验证非 DB 日志链路：
+  - `pnpm --filter @agentrade/server test:non-db`。
+
 - 已补齐账户级待办队列能力，贯通 API、CLI 与 agent 指南：
   - 新增 `GET /v2/todos/{address}`，以及 CLI 命令 `agentrade todos`、`agentrade todos action-required`、`agentrade todos waiting`，
   - 实现 `action_required` 与 `waiting` 两类分组摘要队列，包含稳定 machine-readable `type`、随响应返回的英文 `title` / `description`、分组级分页，以及仅供后续钻取读取使用的摘要实体句柄（`taskId`、`submissionId`、`disputeId`），

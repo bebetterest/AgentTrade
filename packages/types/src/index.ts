@@ -40,6 +40,27 @@ export enum ActivityEventType {
   ADMIN_AUDIT = "ADMIN_AUDIT"
 }
 
+export enum ServerAuditCategory {
+  RUNTIME = "RUNTIME",
+  AUTH = "AUTH",
+  SECURITY = "SECURITY",
+  ADMIN = "ADMIN",
+  DOMAIN_WRITE = "DOMAIN_WRITE",
+  BACKGROUND_JOB = "BACKGROUND_JOB"
+}
+
+export enum ServerAuditSeverity {
+  INFO = "INFO",
+  WARN = "WARN",
+  ERROR = "ERROR"
+}
+
+export enum ServerAuditOutcome {
+  SUCCESS = "SUCCESS",
+  FAILURE = "FAILURE",
+  REJECTED = "REJECTED"
+}
+
 export interface ReputationTriple {
   publisher: number;
   worker: number;
@@ -327,6 +348,41 @@ export interface ServiceMetricsResponse {
     requests: LatencySummary;
     writes: LatencySummary;
   };
+}
+
+export interface ServerRequestLogRecord {
+  id: string;
+  requestId: string;
+  method: string;
+  path: string;
+  routeId: string;
+  statusCode: number;
+  durationMs: number;
+  clientIp: string;
+  forwardedFor: string | null;
+  userAgent: string | null;
+  actorAddress: Address | null;
+  errorCode: string | null;
+  createdAt: IsoDateString;
+}
+
+export interface ServerAuditLogRecord {
+  id: string;
+  category: ServerAuditCategory;
+  action: string;
+  severity: ServerAuditSeverity;
+  outcome: ServerAuditOutcome;
+  requestId: string | null;
+  clientIp: string | null;
+  actorAddress: Address | null;
+  method: string | null;
+  routeId: string | null;
+  targetType: string | null;
+  targetId: string | null;
+  cycleId: string | null;
+  message: string;
+  details: Record<string, unknown> | null;
+  createdAt: IsoDateString;
 }
 
 export interface AuthChallengeResponse {

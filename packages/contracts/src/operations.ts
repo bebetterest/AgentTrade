@@ -27,6 +27,8 @@ import {
   openApiSchemaComponents,
   paginatedActivityResponseSchema,
   paginatedAgentDirectoryResponseSchema,
+  paginatedServerAuditLogResponseSchema,
+  paginatedServerRequestLogResponseSchema,
   paginatedCycleResponseSchema,
   paginatedDisputeResponseSchema,
   paginatedRuntimeRuleAuditResponseSchema,
@@ -37,6 +39,8 @@ import {
   rejectSubmissionRequestSchema,
   respondDisputeRequestSchema,
   runtimeRuleAuditHistoryQuerySchemaV2,
+  systemAuditLogsQuerySchemaV2,
+  systemRequestLogsQuerySchemaV2,
   runtimeSettingsResetRequestSchema,
   runtimeSettingsStateSchema,
   runtimeSettingsUpdateRequestSchema,
@@ -332,6 +336,41 @@ const todosParameters = [
 
 const cycleListParametersV2 = [queryCursorParam, queryLimitParam];
 const runtimeRuleHistoryParametersV2 = [queryCursorParam, queryLimitParam];
+const systemRequestLogParametersV2 = [
+  queryCursorParam,
+  queryLimitParam,
+  queryStringParam("from", { type: "string", format: "date-time" }, { en: "Start time (inclusive)", zh: "开始时间（含）" }),
+  queryStringParam("to", { type: "string", format: "date-time" }, { en: "End time (inclusive)", zh: "结束时间（含）" }),
+  queryStringParam("requestId", { type: "string", minLength: 1 }, { en: "Request id filter", zh: "请求 id 筛选" }),
+  queryStringParam("actor", { type: "string", pattern: "^0x[a-fA-F0-9]{40}$" }, { en: "Actor address filter", zh: "操作地址筛选" }),
+  queryStringParam("ip", { type: "string", minLength: 1 }, { en: "Client IP filter", zh: "客户端 IP 筛选" }),
+  queryStringParam("method", { type: "string", minLength: 1 }, { en: "HTTP method filter", zh: "HTTP 方法筛选" }),
+  queryStringParam("routeId", { type: "string", minLength: 1 }, { en: "Route id filter", zh: "路由标识筛选" }),
+  queryStringParam("status", { type: "integer", minimum: 100, maximum: 599 }, { en: "HTTP status code filter", zh: "HTTP 状态码筛选" })
+] as const;
+const systemAuditLogParametersV2 = [
+  queryCursorParam,
+  queryLimitParam,
+  queryStringParam("from", { type: "string", format: "date-time" }, { en: "Start time (inclusive)", zh: "开始时间（含）" }),
+  queryStringParam("to", { type: "string", format: "date-time" }, { en: "End time (inclusive)", zh: "结束时间（含）" }),
+  queryStringParam("requestId", { type: "string", minLength: 1 }, { en: "Request id filter", zh: "请求 id 筛选" }),
+  queryStringParam("actor", { type: "string", pattern: "^0x[a-fA-F0-9]{40}$" }, { en: "Actor address filter", zh: "操作地址筛选" }),
+  queryStringParam("ip", { type: "string", minLength: 1 }, { en: "Client IP filter", zh: "客户端 IP 筛选" }),
+  queryStringParam(
+    "category",
+    {
+      type: "string",
+      enum: ["RUNTIME", "AUTH", "SECURITY", "ADMIN", "DOMAIN_WRITE", "BACKGROUND_JOB"]
+    },
+    { en: "Audit category filter", zh: "审计类别筛选" }
+  ),
+  queryStringParam("action", { type: "string", minLength: 1 }, { en: "Audit action filter", zh: "审计动作筛选" }),
+  queryStringParam(
+    "outcome",
+    { type: "string", enum: ["SUCCESS", "FAILURE", "REJECTED"] },
+    { en: "Audit outcome filter", zh: "审计结果筛选" }
+  )
+] as const;
 
 export const apiOperations = [
   defineOperationSpec({
@@ -354,6 +393,32 @@ export const apiOperations = [
     pathTemplate: "/v2/system/metrics",
     responseSchema: serviceMetricsResponseSchema.schema,
     responseComponent: serviceMetricsResponseSchema,
+    errorStatuses: [401, 500]
+  }),
+  defineOperationSpec({
+    baseOperationId: "systemRequestLogsList",
+    method: "GET",
+    tag: "System",
+    auth: "bearer_admin",
+    summary: { en: "List server request logs", zh: "读取服务请求日志" },
+    pathTemplate: "/v2/system/logs/requests",
+    querySchema: systemRequestLogsQuerySchemaV2,
+    responseSchema: paginatedServerRequestLogResponseSchema.schema,
+    responseComponent: paginatedServerRequestLogResponseSchema,
+    parameters: [...systemRequestLogParametersV2],
+    errorStatuses: [401, 500]
+  }),
+  defineOperationSpec({
+    baseOperationId: "systemAuditLogsList",
+    method: "GET",
+    tag: "System",
+    auth: "bearer_admin",
+    summary: { en: "List server audit logs", zh: "读取服务审计日志" },
+    pathTemplate: "/v2/system/logs/audits",
+    querySchema: systemAuditLogsQuerySchemaV2,
+    responseSchema: paginatedServerAuditLogResponseSchema.schema,
+    responseComponent: paginatedServerAuditLogResponseSchema,
+    parameters: [...systemAuditLogParametersV2],
     errorStatuses: [401, 500]
   }),
   defineOperationSpec({

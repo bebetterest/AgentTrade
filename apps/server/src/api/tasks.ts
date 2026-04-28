@@ -9,6 +9,7 @@ import {
   parseOperationParams,
   parseOperationQuery,
   toServerRoutePath,
+  toWriteAuditContext,
   validateCreateTaskInput,
   validateDisputeReasonLength,
   validateOperationResponse,
@@ -275,6 +276,12 @@ const registerTaskCreateRoute = (
     validateCreateTaskInput(body, services.config);
 
     const publisher = request.agentAddress as Address;
+    const writeMeta = services.writeMeta({
+      request,
+      operation: "tasks.create",
+      actor: publisher,
+      targetType: "task"
+    });
     if (services.stateRepository) {
       return validateOperationResponse(
         operation,
@@ -282,9 +289,10 @@ const registerTaskCreateRoute = (
           services.stateRepository!.publishTaskDirect({
             publisher,
             ...body,
-            config: services.config
+            config: services.config,
+            auditContext: toWriteAuditContext(writeMeta)
           }),
-          services.writeMeta({ operation: "tasks.create", actor: publisher })
+          writeMeta
         )
       );
     }
@@ -297,7 +305,7 @@ const registerTaskCreateRoute = (
             ...body
           }),
         ["profiles", "balances", "tasks", "cycles"],
-        services.writeMeta({ operation: "tasks.create", actor: publisher })
+        writeMeta
       )
     );
   });
@@ -311,12 +319,27 @@ const registerTaskIntendRoute = (
   app.post(toServerRoutePath(operation.pathTemplate), { preHandler: [app.authenticate] }, async (request) => {
     const params = parseOperationParams<{ id: string }>(operation, request);
     const agent = request.agentAddress as Address;
+    const writeMeta = services.writeMeta({
+      request,
+      operation: "tasks.intend",
+      actor: agent,
+      targetType: "task",
+      targetId: params.id,
+      details: {
+        taskId: params.id
+      }
+    });
     if (services.stateRepository) {
       return validateOperationResponse(
         operation,
         await services.mutateDirect(
-          () => services.stateRepository!.addTaskIntentionDirect(params.id, agent),
-          services.writeMeta({ operation: "tasks.intend", actor: agent })
+          () =>
+            services.stateRepository!.addTaskIntentionDirect(
+              params.id,
+              agent,
+              toWriteAuditContext(writeMeta)
+            ),
+          writeMeta
         )
       );
     }
@@ -325,7 +348,7 @@ const registerTaskIntendRoute = (
       await services.mutate(
         (engine) => engine.addTaskIntention(params.id, agent),
         ["profiles", "tasks"],
-        services.writeMeta({ operation: "tasks.intend", actor: agent })
+        writeMeta
       )
     );
   });
@@ -343,6 +366,17 @@ const registerTaskSubmitRoute = (
     validateSubmissionAttachments(body.attachments, services.config);
 
     const agent = request.agentAddress as Address;
+    const writeMeta = services.writeMeta({
+      request,
+      operation: "tasks.submit",
+      actor: agent,
+      targetType: "task",
+      targetId: params.id,
+      details: {
+        taskId: params.id,
+        attachmentCount: body.attachments?.length ?? 0
+      }
+    });
     if (services.stateRepository) {
       return validateOperationResponse(
         operation,
@@ -357,9 +391,10 @@ const registerTaskSubmitRoute = (
             taskSubmissionAttachmentNameMaxLength: services.config.taskSubmissionAttachmentNameMaxLength,
             taskSubmissionAttachmentUrlMaxLength: services.config.taskSubmissionAttachmentUrlMaxLength,
             taskSubmissionAttachmentMaxSizeBytes: services.config.taskSubmissionAttachmentMaxSizeBytes,
-            resubmitCooldownMinutes: services.config.resubmitCooldownMinutes
+            resubmitCooldownMinutes: services.config.resubmitCooldownMinutes,
+            auditContext: toWriteAuditContext(writeMeta)
           }),
-          services.writeMeta({ operation: "tasks.submit", actor: agent })
+          writeMeta
         )
       );
     }
@@ -368,7 +403,7 @@ const registerTaskSubmitRoute = (
       await services.mutate((engine) => engine.submitTask(params.id, agent, body.payloadMd, body.attachments ?? []), [
         "submissions",
         "tasks"
-      ], services.writeMeta({ operation: "tasks.submit", actor: agent }))
+      ], writeMeta)
     );
   });
 };
@@ -381,12 +416,27 @@ const registerTaskTerminateRoute = (
   app.post(toServerRoutePath(operation.pathTemplate), { preHandler: [app.authenticate] }, async (request) => {
     const params = parseOperationParams<{ id: string }>(operation, request);
     const publisher = request.agentAddress as Address;
+    const writeMeta = services.writeMeta({
+      request,
+      operation: "tasks.terminate",
+      actor: publisher,
+      targetType: "task",
+      targetId: params.id,
+      details: {
+        taskId: params.id
+      }
+    });
     if (services.stateRepository) {
       return validateOperationResponse(
         operation,
         await services.mutateDirect(() =>
-          services.stateRepository!.terminateTaskDirect(params.id, publisher, services.config)
-        , services.writeMeta({ operation: "tasks.terminate", actor: publisher }))
+          services.stateRepository!.terminateTaskDirect(
+            params.id,
+            publisher,
+            services.config,
+            toWriteAuditContext(writeMeta)
+          )
+        , writeMeta)
       );
     }
     return validateOperationResponse(
@@ -396,7 +446,7 @@ const registerTaskTerminateRoute = (
         "balances",
         "tasks",
         "cycles"
-      ], services.writeMeta({ operation: "tasks.terminate", actor: publisher }))
+      ], writeMeta)
     );
   });
 };
@@ -409,12 +459,26 @@ const registerSubmissionConfirmRoute = (
   app.post(toServerRoutePath(operation.pathTemplate), { preHandler: [app.authenticate] }, async (request) => {
     const params = parseOperationParams<{ id: string }>(operation, request);
     const publisher = request.agentAddress as Address;
+    const writeMeta = services.writeMeta({
+      request,
+      operation: "submissions.confirm",
+      actor: publisher,
+      targetType: "submission",
+      targetId: params.id,
+      details: {
+        submissionId: params.id
+      }
+    });
     if (services.stateRepository) {
       return validateOperationResponse(
         operation,
         await services.mutateDirect(() =>
-          services.stateRepository!.confirmSubmissionDirect(params.id, publisher)
-        , services.writeMeta({ operation: "submissions.confirm", actor: publisher }))
+          services.stateRepository!.confirmSubmissionDirect(
+            params.id,
+            publisher,
+            toWriteAuditContext(writeMeta)
+          )
+        , writeMeta)
       );
     }
     return validateOperationResponse(
@@ -424,7 +488,7 @@ const registerSubmissionConfirmRoute = (
         "balances",
         "tasks",
         "submissions"
-      ], services.writeMeta({ operation: "submissions.confirm", actor: publisher }))
+      ], writeMeta)
     );
   });
 };
@@ -439,6 +503,16 @@ const registerSubmissionRejectRoute = (
     const body = parseOperationBody<{ reasonMd: string }>(operation, request);
     validateDisputeReasonLength(body.reasonMd, services.config);
     const publisher = request.agentAddress as Address;
+    const writeMeta = services.writeMeta({
+      request,
+      operation: "submissions.reject",
+      actor: publisher,
+      targetType: "submission",
+      targetId: params.id,
+      details: {
+        submissionId: params.id
+      }
+    });
     if (services.stateRepository) {
       return validateOperationResponse(
         operation,
@@ -447,9 +521,10 @@ const registerSubmissionRejectRoute = (
             submissionId: params.id,
             publisher,
             reasonMd: body.reasonMd,
-            rejectReasonMaxLength: services.config.disputeReasonMaxLength
+            rejectReasonMaxLength: services.config.disputeReasonMaxLength,
+            auditContext: toWriteAuditContext(writeMeta)
           })
-        , services.writeMeta({ operation: "submissions.reject", actor: publisher }))
+        , writeMeta)
       );
     }
     return validateOperationResponse(
@@ -457,7 +532,7 @@ const registerSubmissionRejectRoute = (
       await services.mutate((engine) => engine.rejectSubmission(params.id, publisher, body.reasonMd), [
         "profiles",
         "submissions"
-      ], services.writeMeta({ operation: "submissions.reject", actor: publisher }))
+      ], writeMeta)
     );
   });
 };

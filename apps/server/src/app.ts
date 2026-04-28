@@ -23,6 +23,11 @@ import {
   type LedgerBalance,
   type PaginatedResponse,
   type RuntimeRuleAuditRecord,
+  ServerAuditCategory,
+  ServerAuditOutcome,
+  ServerAuditSeverity,
+  type ServerAuditLogRecord,
+  type ServerRequestLogRecord,
   type RuntimeSettingsState,
   type Submission,
   type Task
@@ -57,6 +62,16 @@ import {
   resolveVersionlessApiRedirect
 } from "./api/versioning.js";
 import { ServiceMetricsCollector } from "./observability/metrics.js";
+import {
+  type AuditLogCreateInput,
+  buildFastifyLoggerOptions,
+  buildWriteFailureAuditLog,
+  buildWriteSuccessAuditLog,
+  extractRequestNetworkContext,
+  InMemoryServerLogStore,
+  type RequestLogCreateInput,
+  type WriteAuditContext
+} from "./observability/server-logs.js";
 import { HttpError } from "./utils/http-error.js";
 import "./types.js";
 
@@ -64,7 +79,8 @@ export const buildApp = async () => {
   const config = loadConfig();
   assertSupportedApiDefaultVersion(config);
   const app = Fastify({
-    logger: !process.env.VITEST,
+    logger: process.env.VITEST ? false : buildFastifyLoggerOptions(config),
+    disableRequestLogging: true,
     trustProxy: config.trustProxy
   });
   const corsOrigin =
@@ -72,12 +88,97 @@ export const buildApp = async () => {
       ? true
       : config.corsAllowedOrigins;
 
-  await app.register(helmet);
-  const limiter = await createRateLimiter(config, app.log);
-  const metrics = new ServiceMetricsCollector();
   const stateRepository = config.enablePersistence
     ? new PrismaStateRepository(config.databaseUrl, config)
     : null;
+  const inMemoryServerLogs = new InMemoryServerLogStore();
+  let logQueue: Promise<void> = Promise.resolve();
+  const enqueueLogWrite = async <T>(operation: () => Promise<T>): Promise<T> => {
+    const next = logQueue.then(operation, operation);
+    logQueue = next.then(
+      () => undefined,
+      () => undefined
+    );
+    return next;
+  };
+  const appendRequestLog = async (
+    input: RequestLogCreateInput
+  ): Promise<ServerRequestLogRecord> =>
+    enqueueLogWrite(async () => {
+      if (stateRepository && config.enableRequestLogPersistence) {
+        return stateRepository.appendRequestLogDirect(input);
+      }
+      return inMemoryServerLogs.appendRequestLog(input);
+    });
+  const appendAuditLog = async (
+    input: AuditLogCreateInput
+  ): Promise<ServerAuditLogRecord> =>
+    enqueueLogWrite(async () => {
+      const record =
+        stateRepository && config.enableAuditLogPersistence
+          ? await stateRepository.appendAuditLogDirect(input)
+          : inMemoryServerLogs.appendAuditLog(input);
+      const payload = {
+        category: record.category,
+        action: record.action,
+        outcome: record.outcome,
+        requestId: record.requestId,
+        clientIp: record.clientIp,
+        actorAddress: record.actorAddress,
+        targetType: record.targetType,
+        targetId: record.targetId,
+        cycleId: record.cycleId,
+        details: record.details
+      };
+      if (record.severity === ServerAuditSeverity.ERROR) {
+        app.log.error(payload, record.message);
+      } else if (record.severity === ServerAuditSeverity.WARN) {
+        app.log.warn(payload, record.message);
+      } else {
+        app.log.info(payload, record.message);
+      }
+      return record;
+    });
+  const recordAudit = async (input: AuditLogCreateInput): Promise<void> => {
+    try {
+      await appendAuditLog(input);
+    } catch (error) {
+      app.log.error({ error }, "audit log append failed");
+    }
+  };
+  const listRequestLogs = async (
+    input: Parameters<InMemoryServerLogStore["queryRequestLogs"]>[0]
+  ): Promise<PaginatedResponse<ServerRequestLogRecord>> => {
+    if (stateRepository && config.enableRequestLogPersistence) {
+      return stateRepository.queryRequestLogsDirect(input);
+    }
+    return inMemoryServerLogs.queryRequestLogs(input);
+  };
+  const listAuditLogs = async (
+    input: Parameters<InMemoryServerLogStore["queryAuditLogs"]>[0]
+  ): Promise<PaginatedResponse<ServerAuditLogRecord>> => {
+    if (stateRepository && config.enableAuditLogPersistence) {
+      return stateRepository.queryAuditLogsDirect(input);
+    }
+    return inMemoryServerLogs.queryAuditLogs(input);
+  };
+  const cleanupLogs = async (now = new Date()) =>
+    enqueueLogWrite(async () => {
+      const [persisted, inMemory] = await Promise.all([
+        stateRepository && (config.enableRequestLogPersistence || config.enableAuditLogPersistence)
+          ? stateRepository.cleanupExpiredLogs(now)
+          : Promise.resolve({ deletedRequestLogs: 0, deletedAuditLogs: 0 }),
+        Promise.resolve(inMemoryServerLogs.cleanup(now, config))
+      ]);
+      return {
+        deletedRequestLogs: persisted.deletedRequestLogs + inMemory.deletedRequestLogs,
+        deletedAuditLogs: persisted.deletedAuditLogs + inMemory.deletedAuditLogs
+      };
+    });
+
+  await app.register(helmet);
+  const limiter = await createRateLimiter(config, app.log, appendAuditLog);
+  const metrics = new ServiceMetricsCollector();
   const safeSecretEqual = (expected: string, received: string): boolean => {
     const expectedBuffer = Buffer.from(expected);
     const receivedBuffer = Buffer.from(received);
@@ -131,6 +232,17 @@ export const buildApp = async () => {
     if (snapshot) {
       inMemoryEngine = AgentradeEngine.fromSnapshot(config, snapshot);
       app.log.info("loaded engine state from normalized persistence tables");
+      await recordAudit({
+        category: ServerAuditCategory.RUNTIME,
+        action: "runtime.persistence.load",
+        severity: ServerAuditSeverity.INFO,
+        outcome: ServerAuditOutcome.SUCCESS,
+        cycleId: snapshot.activeCycleId,
+        message: "loaded engine state from normalized persistence tables",
+        details: {
+          activeCycleId: snapshot.activeCycleId
+        }
+      });
     }
     runtimeRevision = await stateRepository.getRuntimeRevision();
   }
@@ -166,16 +278,38 @@ export const buildApp = async () => {
     }
   };
 
+  const buildWriteAuditContext = (meta: WriteOperationMeta): WriteAuditContext => ({
+    category: meta.auditCategory,
+    action: meta.operation,
+    requestId: meta.requestId ?? null,
+    clientIp: meta.clientIp ?? null,
+    actorAddress: meta.actor ?? null,
+    method: meta.method ?? null,
+    routeId: meta.routeId ?? null,
+    targetType: meta.targetType ?? null,
+    targetId: meta.targetId ?? null,
+    cycleId: meta.cycleId ?? null,
+    details: meta.details ?? null
+  });
+
   const normalizeWriteMeta = (
     meta: WriteOperationMeta | undefined,
     fallbackOperation: string
   ): WriteOperationMeta => ({
     operation: meta?.operation ?? fallbackOperation,
     actor: meta?.actor,
-    cycleId: meta?.cycleId ?? resolveCurrentCycleId()
+    cycleId: meta?.cycleId ?? resolveCurrentCycleId(),
+    auditCategory: meta?.auditCategory ?? ServerAuditCategory.DOMAIN_WRITE,
+    requestId: meta?.requestId ?? null,
+    clientIp: meta?.clientIp ?? null,
+    method: meta?.method ?? null,
+    routeId: meta?.routeId ?? null,
+    targetType: meta?.targetType ?? null,
+    targetId: meta?.targetId ?? null,
+    details: meta?.details ?? null
   });
 
-  const recordWriteOutcome = (
+  const recordWriteOutcome = async (
     meta: WriteOperationMeta,
     input: {
       startedAtNs: bigint;
@@ -184,7 +318,7 @@ export const buildApp = async () => {
       outcome: "success" | "error";
       error?: unknown;
     }
-  ): void => {
+  ): Promise<void> => {
     const durationMs = Number(process.hrtime.bigint() - input.startedAtNs) / 1_000_000;
     const deadlock = input.outcome === "error" && isDeadlockError(input.error);
     metrics.recordWrite({
@@ -205,9 +339,30 @@ export const buildApp = async () => {
     };
     if (input.outcome === "success") {
       app.log.info(payload, "write operation completed");
+      if (!stateRepository || !config.enableAuditLogPersistence) {
+        await recordAudit(
+          buildWriteSuccessAuditLog(buildWriteAuditContext(meta), {
+            cycleId: meta.cycleId ?? null,
+            details: {
+              ...(meta.details ?? {}),
+              retryCount: input.retryCount,
+              conflictOrDeadlock: input.conflict || deadlock
+            }
+          })
+        );
+      }
       return;
     }
     app.log.warn({ ...payload, code: errorCode(input.error) }, "write operation failed");
+    await recordAudit(
+      buildWriteFailureAuditLog(buildWriteAuditContext(meta), {
+        errorCode: errorCode(input.error),
+        details: {
+          retryCount: input.retryCount,
+          conflictOrDeadlock: input.conflict || deadlock
+        }
+      })
+    );
   };
 
   let mutationQueue: Promise<void> = Promise.resolve();
@@ -233,7 +388,7 @@ export const buildApp = async () => {
     try {
       if (!stateRepository) {
         const result = await enqueueMutation(async () => operation(inMemoryEngine));
-        recordWriteOutcome(writeMeta, {
+        await recordWriteOutcome(writeMeta, {
           startedAtNs,
           retryCount,
           conflict,
@@ -290,7 +445,7 @@ export const buildApp = async () => {
         throw new HttpError(409, "persistence conflict: retry limit reached");
       });
 
-      recordWriteOutcome(writeMeta, {
+      await recordWriteOutcome(writeMeta, {
         startedAtNs,
         retryCount,
         conflict,
@@ -298,7 +453,7 @@ export const buildApp = async () => {
       });
       return result;
     } catch (error) {
-      recordWriteOutcome(writeMeta, {
+      await recordWriteOutcome(writeMeta, {
         startedAtNs,
         retryCount,
         conflict,
@@ -325,7 +480,7 @@ export const buildApp = async () => {
         runtimeRevision = null;
         return next;
       });
-      recordWriteOutcome(writeMeta, {
+      await recordWriteOutcome(writeMeta, {
         startedAtNs,
         retryCount: 0,
         conflict: false,
@@ -333,7 +488,7 @@ export const buildApp = async () => {
       });
       return result;
     } catch (error) {
-      recordWriteOutcome(writeMeta, {
+      await recordWriteOutcome(writeMeta, {
         startedAtNs,
         retryCount: 0,
         conflict: false,
@@ -458,9 +613,23 @@ export const buildApp = async () => {
           },
           "auto cycle close settled due cycle(s)"
         );
+        await recordAudit({
+          category: ServerAuditCategory.BACKGROUND_JOB,
+          action: "cycles.auto-close",
+          severity: ServerAuditSeverity.INFO,
+          outcome: ServerAuditOutcome.SUCCESS,
+          cycleId: lastOpenedCycleId,
+          message: "auto cycle close settled due cycle(s)",
+          details: {
+            trigger,
+            closedCount,
+            lastClosedCycleId,
+            lastOpenedCycleId
+          }
+        });
       }
     })()
-      .catch((error) => {
+      .catch(async (error) => {
         app.log.warn(
           {
             trigger,
@@ -468,6 +637,18 @@ export const buildApp = async () => {
           },
           "auto cycle close failed"
         );
+        await recordAudit({
+          category: ServerAuditCategory.BACKGROUND_JOB,
+          action: "cycles.auto-close",
+          severity: ServerAuditSeverity.WARN,
+          outcome: ServerAuditOutcome.FAILURE,
+          cycleId: resolveCurrentCycleId() ?? null,
+          message: "auto cycle close failed",
+          details: {
+            trigger,
+            errorCode: errorCode(error)
+          }
+        });
       })
       .finally(() => {
         autoCycleCloseInFlight = null;
@@ -581,6 +762,7 @@ export const buildApp = async () => {
     patch: RuntimeEditableRulesPatch;
     reason?: string;
     actor?: string;
+    auditContext?: WriteAuditContext;
   }): Promise<RuntimeSettingsState> => {
     if (Object.keys(input.patch).length === 0) {
       return readRuntimeSettings();
@@ -592,61 +774,105 @@ export const buildApp = async () => {
             applyTo: input.applyTo,
             patch: input.patch,
             reason: input.reason,
-            actor: input.actor
+            actor: input.actor,
+            auditContext: input.auditContext
           }),
-        { operation: "system.settings.update" }
+        {
+          operation: "system.settings.update",
+          actor: input.actor && isAddress(input.actor) ? input.actor : undefined,
+          auditCategory: ServerAuditCategory.ADMIN,
+          requestId: input.auditContext?.requestId ?? null,
+          clientIp: input.auditContext?.clientIp ?? null,
+          method: input.auditContext?.method ?? null,
+          routeId: input.auditContext?.routeId ?? null,
+          targetType: input.auditContext?.targetType ?? null,
+          targetId: input.auditContext?.targetId ?? null,
+          details: {
+            applyTo: input.applyTo,
+            patchKeys: Object.keys(input.patch)
+          }
+        }
       );
       return setRuntimeSettingsState(nextState);
     }
 
-    const beforeRules = runtimeSettingsState.currentRules;
-    const beforePending = runtimeSettingsState.pendingNextPatch;
-    let nextCurrentRules = beforeRules;
-    let nextPendingPatch = beforePending ?? {};
-    if (input.applyTo === "current") {
-      nextCurrentRules = mergeRuntimeEditableRules(beforeRules, input.patch);
-      validateRuntimeEditableRules(nextCurrentRules);
-      if (input.patch.mintPerCycle !== undefined) {
-        inMemoryEngine.getActiveCycle().mintedAmount = nextCurrentRules.mintPerCycle;
+    try {
+      const beforeRules = runtimeSettingsState.currentRules;
+      const beforePending = runtimeSettingsState.pendingNextPatch;
+      let nextCurrentRules = beforeRules;
+      let nextPendingPatch = beforePending ?? {};
+      if (input.applyTo === "current") {
+        nextCurrentRules = mergeRuntimeEditableRules(beforeRules, input.patch);
+        validateRuntimeEditableRules(nextCurrentRules);
+        if (input.patch.mintPerCycle !== undefined) {
+          inMemoryEngine.getActiveCycle().mintedAmount = nextCurrentRules.mintPerCycle;
+        }
+      } else {
+        const currentNextRules = mergeRuntimeEditableRules(beforeRules, nextPendingPatch);
+        const mergedNextRules = mergeRuntimeEditableRules(currentNextRules, input.patch);
+        validateRuntimeEditableRules(mergedNextRules);
+        nextPendingPatch = diffRuntimePatch(beforeRules, mergedNextRules);
       }
-    } else {
-      const currentNextRules = mergeRuntimeEditableRules(beforeRules, nextPendingPatch);
-      const mergedNextRules = mergeRuntimeEditableRules(currentNextRules, input.patch);
-      validateRuntimeEditableRules(mergedNextRules);
-      nextPendingPatch = diffRuntimePatch(beforeRules, mergedNextRules);
+      const normalizedPending =
+        Object.keys(nextPendingPatch).length > 0 ? nextPendingPatch : null;
+      const nextRules = normalizedPending
+        ? mergeRuntimeEditableRules(nextCurrentRules, normalizedPending)
+        : nextCurrentRules;
+      const nextState: RuntimeSettingsState = {
+        currentRules: nextCurrentRules,
+        pendingNextPatch: normalizedPending,
+        nextRules,
+        updatedAt: new Date().toISOString()
+      };
+      setRuntimeSettingsState(nextState);
+      nonPersistenceRuntimeAuditLog.unshift({
+        id: `runtime-audit-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        eventType: "UPDATE",
+        applyTo: input.applyTo,
+        reason: input.reason?.trim().length ? input.reason.trim() : null,
+        actor: input.actor?.trim().length ? input.actor.trim() : null,
+        cycleId: resolveCurrentCycleId() ?? null,
+        beforeRules,
+        afterRules: nextCurrentRules,
+        patch: input.patch,
+        pendingNextPatch: normalizedPending,
+        createdAt: nextState.updatedAt
+      });
+      if (input.auditContext) {
+        await recordAudit(
+          buildWriteSuccessAuditLog(input.auditContext, {
+            targetId: "singleton",
+            cycleId: resolveCurrentCycleId() ?? null,
+            message: "system.settings.update succeeded",
+            details: {
+              applyTo: input.applyTo,
+              patchKeys: Object.keys(input.patch)
+            }
+          })
+        );
+      }
+      return nextState;
+    } catch (error) {
+      if (input.auditContext) {
+        await recordAudit(
+          buildWriteFailureAuditLog(input.auditContext, {
+            errorCode: errorCode(error),
+            details: {
+              applyTo: input.applyTo,
+              patchKeys: Object.keys(input.patch)
+            }
+          })
+        );
+      }
+      throw error;
     }
-    const normalizedPending =
-      Object.keys(nextPendingPatch).length > 0 ? nextPendingPatch : null;
-    const nextRules = normalizedPending
-      ? mergeRuntimeEditableRules(nextCurrentRules, normalizedPending)
-      : nextCurrentRules;
-    const nextState: RuntimeSettingsState = {
-      currentRules: nextCurrentRules,
-      pendingNextPatch: normalizedPending,
-      nextRules,
-      updatedAt: new Date().toISOString()
-    };
-    setRuntimeSettingsState(nextState);
-    nonPersistenceRuntimeAuditLog.unshift({
-      id: `runtime-audit-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-      eventType: "UPDATE",
-      applyTo: input.applyTo,
-      reason: input.reason?.trim().length ? input.reason.trim() : null,
-      actor: input.actor?.trim().length ? input.actor.trim() : null,
-      cycleId: resolveCurrentCycleId() ?? null,
-      beforeRules,
-      afterRules: nextCurrentRules,
-      patch: input.patch,
-      pendingNextPatch: normalizedPending,
-      createdAt: nextState.updatedAt
-    });
-    return nextState;
   };
 
   const resetRuntimeSettings = async (input: {
     applyTo: "current" | "next";
     reason?: string;
     actor?: string;
+    auditContext?: WriteAuditContext;
   }): Promise<RuntimeSettingsState> => {
     if (stateRepository) {
       const nextState = await mutateDirect(
@@ -655,60 +881,103 @@ export const buildApp = async () => {
             applyTo: input.applyTo,
             defaults: runtimeRulesSeed,
             reason: input.reason,
-            actor: input.actor
+            actor: input.actor,
+            auditContext: input.auditContext
           }),
-        { operation: "system.settings.reset" }
+        {
+          operation: "system.settings.reset",
+          actor: input.actor && isAddress(input.actor) ? input.actor : undefined,
+          auditCategory: ServerAuditCategory.ADMIN,
+          requestId: input.auditContext?.requestId ?? null,
+          clientIp: input.auditContext?.clientIp ?? null,
+          method: input.auditContext?.method ?? null,
+          routeId: input.auditContext?.routeId ?? null,
+          targetType: input.auditContext?.targetType ?? null,
+          targetId: input.auditContext?.targetId ?? null,
+          details: {
+            applyTo: input.applyTo
+          }
+        }
       );
       return setRuntimeSettingsState(nextState);
     }
 
-    const beforeRules = runtimeSettingsState.currentRules;
-    const nextCurrentRules =
-      input.applyTo === "current" ? runtimeRulesSeed : beforeRules;
-    if (input.applyTo === "current" && nextCurrentRules.mintPerCycle !== beforeRules.mintPerCycle) {
-      inMemoryEngine.getActiveCycle().mintedAmount = nextCurrentRules.mintPerCycle;
+    try {
+      const beforeRules = runtimeSettingsState.currentRules;
+      const nextCurrentRules =
+        input.applyTo === "current" ? runtimeRulesSeed : beforeRules;
+      if (
+        input.applyTo === "current" &&
+        nextCurrentRules.mintPerCycle !== beforeRules.mintPerCycle
+      ) {
+        inMemoryEngine.getActiveCycle().mintedAmount = nextCurrentRules.mintPerCycle;
+      }
+      const pendingTarget =
+        input.applyTo === "next"
+          ? runtimeRulesSeed
+          : mergeRuntimeEditableRules(
+              nextCurrentRules,
+              runtimeSettingsState.pendingNextPatch ?? {}
+            );
+      const pendingPatch: RuntimeEditableRulesPatch = {};
+      if (input.applyTo === "next") {
+        Object.assign(pendingPatch, diffRuntimePatch(nextCurrentRules, pendingTarget));
+      }
+      const normalizedPending =
+        input.applyTo === "next" && Object.keys(pendingPatch).length > 0 ? pendingPatch : null;
+      const nextRules = normalizedPending
+        ? mergeRuntimeEditableRules(nextCurrentRules, normalizedPending)
+        : nextCurrentRules;
+      const nextState: RuntimeSettingsState = {
+        currentRules: nextCurrentRules,
+        pendingNextPatch: normalizedPending,
+        nextRules,
+        updatedAt: new Date().toISOString()
+      };
+      setRuntimeSettingsState(nextState);
+      const patch =
+        input.applyTo === "current"
+          ? diffRuntimePatch(beforeRules, nextCurrentRules)
+          : normalizedPending ?? {};
+      nonPersistenceRuntimeAuditLog.unshift({
+        id: `runtime-audit-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        eventType: "RESET",
+        applyTo: input.applyTo,
+        reason: input.reason?.trim().length ? input.reason.trim() : null,
+        actor: input.actor?.trim().length ? input.actor.trim() : null,
+        cycleId: resolveCurrentCycleId() ?? null,
+        beforeRules,
+        afterRules: nextCurrentRules,
+        patch,
+        pendingNextPatch: normalizedPending,
+        createdAt: nextState.updatedAt
+      });
+      if (input.auditContext) {
+        await recordAudit(
+          buildWriteSuccessAuditLog(input.auditContext, {
+            targetId: "singleton",
+            cycleId: resolveCurrentCycleId() ?? null,
+            message: "system.settings.reset succeeded",
+            details: {
+              applyTo: input.applyTo
+            }
+          })
+        );
+      }
+      return nextState;
+    } catch (error) {
+      if (input.auditContext) {
+        await recordAudit(
+          buildWriteFailureAuditLog(input.auditContext, {
+            errorCode: errorCode(error),
+            details: {
+              applyTo: input.applyTo
+            }
+          })
+        );
+      }
+      throw error;
     }
-    const pendingTarget =
-      input.applyTo === "next"
-        ? runtimeRulesSeed
-        : mergeRuntimeEditableRules(
-            nextCurrentRules,
-            runtimeSettingsState.pendingNextPatch ?? {}
-          );
-    const pendingPatch: RuntimeEditableRulesPatch = {};
-    if (input.applyTo === "next") {
-      Object.assign(pendingPatch, diffRuntimePatch(nextCurrentRules, pendingTarget));
-    }
-    const normalizedPending =
-      input.applyTo === "next" && Object.keys(pendingPatch).length > 0 ? pendingPatch : null;
-    const nextRules = normalizedPending
-      ? mergeRuntimeEditableRules(nextCurrentRules, normalizedPending)
-      : nextCurrentRules;
-    const nextState: RuntimeSettingsState = {
-      currentRules: nextCurrentRules,
-      pendingNextPatch: normalizedPending,
-      nextRules,
-      updatedAt: new Date().toISOString()
-    };
-    setRuntimeSettingsState(nextState);
-    const patch =
-      input.applyTo === "current"
-        ? diffRuntimePatch(beforeRules, nextCurrentRules)
-        : normalizedPending ?? {};
-    nonPersistenceRuntimeAuditLog.unshift({
-      id: `runtime-audit-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-      eventType: "RESET",
-      applyTo: input.applyTo,
-      reason: input.reason?.trim().length ? input.reason.trim() : null,
-      actor: input.actor?.trim().length ? input.actor.trim() : null,
-      cycleId: resolveCurrentCycleId() ?? null,
-      beforeRules,
-      afterRules: nextCurrentRules,
-      patch,
-      pendingNextPatch: normalizedPending,
-      createdAt: nextState.updatedAt
-    });
-    return nextState;
   };
 
   const challenges = new Map<string, { address: Address; nonce: string; message: string; createdAt: number }>();
@@ -718,7 +987,26 @@ export const buildApp = async () => {
     stateRepository,
     metrics,
     challenges,
-    writeMeta: (input) => normalizeWriteMeta(input, input.operation),
+    writeMeta: (input) => {
+      const request = input.request;
+      const network = request ? extractRequestNetworkContext(request) : null;
+      return normalizeWriteMeta(
+        {
+          operation: input.operation,
+          actor: input.actor,
+          cycleId: input.cycleId,
+          auditCategory: input.auditCategory ?? ServerAuditCategory.DOMAIN_WRITE,
+          requestId: request?.id ?? null,
+          clientIp: network?.clientIp ?? null,
+          method: request?.method ?? null,
+          routeId: request?.routeOptions?.url ?? null,
+          targetType: input.targetType ?? null,
+          targetId: input.targetId ?? null,
+          details: input.details ?? null
+        },
+        input.operation
+      );
+    },
     read,
     mutate,
     mutateDirect,
@@ -730,6 +1018,9 @@ export const buildApp = async () => {
     readActiveCycle,
     readRuntimeSettings,
     listRuntimeRuleHistory,
+    listRequestLogs,
+    listAuditLogs,
+    recordAudit,
     updateRuntimeSettings,
     resetRuntimeSettings,
     defaultAgentProfile,
@@ -740,6 +1031,20 @@ export const buildApp = async () => {
   app.decorate("authenticate", async (request) => {
     const authHeader = request.headers.authorization;
     if (!authHeader?.startsWith("Bearer ")) {
+      await recordAudit({
+        category: ServerAuditCategory.SECURITY,
+        action: "auth.bearer.rejected",
+        severity: ServerAuditSeverity.WARN,
+        outcome: ServerAuditOutcome.REJECTED,
+        requestId: request.id,
+        clientIp: extractRequestNetworkContext(request).clientIp,
+        method: request.method,
+        routeId: request.routeOptions?.url ?? "unmatched",
+        message: "bearer authentication rejected",
+        details: {
+          reason: "missing_bearer_token"
+        }
+      });
       throw new HttpError(401, "missing bearer token");
     }
     const token = authHeader.replace("Bearer ", "");
@@ -747,18 +1052,76 @@ export const buildApp = async () => {
       const payload = jwt.verify(token, config.jwtSecret) as { sub: string };
       request.agentAddress = payload.sub;
     } catch {
+      await recordAudit({
+        category: ServerAuditCategory.SECURITY,
+        action: "auth.bearer.rejected",
+        severity: ServerAuditSeverity.WARN,
+        outcome: ServerAuditOutcome.REJECTED,
+        requestId: request.id,
+        clientIp: extractRequestNetworkContext(request).clientIp,
+        method: request.method,
+        routeId: request.routeOptions?.url ?? "unmatched",
+        message: "bearer authentication rejected",
+        details: {
+          reason: "invalid_token"
+        }
+      });
       throw new HttpError(401, "invalid token");
     }
     if (!request.agentAddress || !isAddress(request.agentAddress)) {
+      await recordAudit({
+        category: ServerAuditCategory.SECURITY,
+        action: "auth.bearer.rejected",
+        severity: ServerAuditSeverity.WARN,
+        outcome: ServerAuditOutcome.REJECTED,
+        requestId: request.id,
+        clientIp: extractRequestNetworkContext(request).clientIp,
+        method: request.method,
+        routeId: request.routeOptions?.url ?? "unmatched",
+        message: "bearer authentication rejected",
+        details: {
+          reason: "invalid_token_subject"
+        }
+      });
       throw new HttpError(401, "invalid token subject");
     }
   });
   app.decorate("requireAdmin", async (request) => {
     const adminHeader = request.headers["x-admin-service-key"];
     if (Array.isArray(adminHeader)) {
+      await recordAudit({
+        category: ServerAuditCategory.SECURITY,
+        action: "auth.admin.rejected",
+        severity: ServerAuditSeverity.WARN,
+        outcome: ServerAuditOutcome.REJECTED,
+        requestId: request.id,
+        clientIp: extractRequestNetworkContext(request).clientIp,
+        actorAddress: request.agentAddress && isAddress(request.agentAddress) ? request.agentAddress : null,
+        method: request.method,
+        routeId: request.routeOptions?.url ?? "unmatched",
+        message: "admin service key rejected",
+        details: {
+          reason: "invalid_admin_header"
+        }
+      });
       throw new HttpError(401, "invalid admin service key");
     }
     if (!adminHeader || !safeSecretEqual(config.adminServiceKey, adminHeader)) {
+      await recordAudit({
+        category: ServerAuditCategory.SECURITY,
+        action: "auth.admin.rejected",
+        severity: ServerAuditSeverity.WARN,
+        outcome: ServerAuditOutcome.REJECTED,
+        requestId: request.id,
+        clientIp: extractRequestNetworkContext(request).clientIp,
+        actorAddress: request.agentAddress && isAddress(request.agentAddress) ? request.agentAddress : null,
+        method: request.method,
+        routeId: request.routeOptions?.url ?? "unmatched",
+        message: "admin service key rejected",
+        details: {
+          reason: "invalid_admin_service_key"
+        }
+      });
       throw new HttpError(401, "invalid admin service key");
     }
   });
@@ -786,10 +1149,49 @@ export const buildApp = async () => {
       : 0;
     const path = getRequestPathname(request.raw.url ?? request.url);
     const routeId = request.routeOptions?.url ?? "unmatched";
+    const network = extractRequestNetworkContext(request);
+    const actorAddress =
+      request.agentAddress && isAddress(request.agentAddress) ? request.agentAddress : null;
     metrics.recordRequest({
       statusCode: reply.statusCode,
       durationMs
     });
+    try {
+      await appendRequestLog({
+        requestId: request.id,
+        method: request.method,
+        path,
+        routeId,
+        statusCode: reply.statusCode,
+        durationMs,
+        clientIp: network.clientIp,
+        forwardedFor: network.forwardedFor,
+        userAgent: network.userAgent,
+        actorAddress,
+        errorCode: request.serverErrorCode ?? null
+      });
+    } catch (error) {
+      app.log.error({ error }, "request log append failed");
+    }
+    if (reply.statusCode === 429 && request.serverErrorCode === "RATE_LIMITED") {
+      await recordAudit({
+        category: ServerAuditCategory.SECURITY,
+        action: "rate-limit.rejected",
+        severity: ServerAuditSeverity.WARN,
+        outcome: ServerAuditOutcome.REJECTED,
+        requestId: request.id,
+        clientIp: network.clientIp,
+        actorAddress,
+        method: request.method,
+        routeId,
+        targetType: "route",
+        targetId: routeId,
+        message: "request rate limited",
+        details: {
+          path
+        }
+      });
+    }
     app.log.info(
       {
         requestId: request.id,
@@ -805,15 +1207,70 @@ export const buildApp = async () => {
   await app.register(cors, { origin: corsOrigin });
 
   await settleDueCycles("startup");
+  await recordAudit({
+    category: ServerAuditCategory.RUNTIME,
+    action: "runtime.startup",
+    severity: ServerAuditSeverity.INFO,
+    outcome: ServerAuditOutcome.SUCCESS,
+    cycleId: resolveCurrentCycleId() ?? null,
+    message: "server runtime initialized",
+    details: {
+      enablePersistence: config.enablePersistence,
+      enableRequestLogPersistence: config.enableRequestLogPersistence,
+      enableAuditLogPersistence: config.enableAuditLogPersistence
+    }
+  });
   const autoCycleCloseTimer = setInterval(() => {
     void settleDueCycles("timer");
   }, AUTO_CYCLE_CLOSE_INTERVAL_MS);
   if (typeof autoCycleCloseTimer.unref === "function") {
     autoCycleCloseTimer.unref();
   }
+  const logCleanupIntervalMs = config.logCleanupIntervalMinutes * 60_000;
+  const logCleanupTimer = setInterval(() => {
+    void cleanupLogs()
+      .then((result) =>
+        recordAudit({
+          category: ServerAuditCategory.BACKGROUND_JOB,
+          action: "logs.cleanup",
+          severity: ServerAuditSeverity.INFO,
+          outcome: ServerAuditOutcome.SUCCESS,
+          cycleId: resolveCurrentCycleId() ?? null,
+          message: "log cleanup completed",
+          details: { ...result }
+        })
+      )
+      .catch((error) =>
+        recordAudit({
+          category: ServerAuditCategory.BACKGROUND_JOB,
+          action: "logs.cleanup",
+          severity: ServerAuditSeverity.WARN,
+          outcome: ServerAuditOutcome.FAILURE,
+          cycleId: resolveCurrentCycleId() ?? null,
+          message: "log cleanup failed",
+          details: {
+            errorCode: errorCode(error)
+          }
+        })
+      );
+  }, logCleanupIntervalMs);
+  if (typeof logCleanupTimer.unref === "function") {
+    logCleanupTimer.unref();
+  }
 
   app.addHook("onClose", async () => {
     clearInterval(autoCycleCloseTimer);
+    clearInterval(logCleanupTimer);
+    await recordAudit({
+      category: ServerAuditCategory.RUNTIME,
+      action: "runtime.shutdown",
+      severity: ServerAuditSeverity.INFO,
+      outcome: ServerAuditOutcome.SUCCESS,
+      cycleId: resolveCurrentCycleId() ?? null,
+      message: "server runtime shutting down"
+    });
+    await cleanupLogs();
+    await logQueue;
     if (limiter.close) {
       await limiter.close();
     }
@@ -822,25 +1279,45 @@ export const buildApp = async () => {
     }
   });
 
-  app.setErrorHandler((error, request, reply) => {
+  app.setErrorHandler(async (error, request, reply) => {
     if (error instanceof DomainError) {
+      request.serverErrorCode = error.code;
       reply.code(error.statusCode).send(
         toV2ErrorEnvelope(error.statusCode, error.code, error.message, request.id)
       );
       return;
     }
     if (error instanceof HttpError) {
+      request.serverErrorCode = "HTTP_ERROR";
       reply.code(error.statusCode).send(
         toV2ErrorEnvelope(error.statusCode, "HTTP_ERROR", error.message, request.id)
       );
       return;
     }
     if (error instanceof z.ZodError) {
+      request.serverErrorCode = "VALIDATION_ERROR";
       reply.code(400).send(
         toV2ErrorEnvelope(400, "VALIDATION_ERROR", "request validation failed", request.id, error.issues)
       );
       return;
     }
+    request.serverErrorCode = "INTERNAL_ERROR";
+    await recordAudit({
+      category: ServerAuditCategory.SECURITY,
+      action: "request.unhandled-error",
+      severity: ServerAuditSeverity.ERROR,
+      outcome: ServerAuditOutcome.FAILURE,
+      requestId: request.id,
+      clientIp: extractRequestNetworkContext(request).clientIp,
+      actorAddress: request.agentAddress && isAddress(request.agentAddress) ? request.agentAddress : null,
+      method: request.method,
+      routeId: request.routeOptions?.url ?? "unmatched",
+      message: "unexpected server error",
+      details: {
+        errorCode: errorCode(error),
+        errorName: error instanceof Error ? error.name : null
+      }
+    });
     reply.code(500).send(
       toV2ErrorEnvelope(500, "INTERNAL_ERROR", "unexpected server error", request.id)
     );
@@ -861,6 +1338,7 @@ export const buildApp = async () => {
 
     const unsupportedVersion = findUnsupportedApiVersion(rawUrl);
     if (unsupportedVersion) {
+      request.serverErrorCode = "API_VERSION_UNSUPPORTED";
       reply.code(400).send(
         toV2ErrorEnvelope(
           400,
@@ -877,6 +1355,7 @@ export const buildApp = async () => {
       return;
     }
 
+    request.serverErrorCode = "ROUTE_NOT_FOUND";
     reply.code(404).send(
       toV2ErrorEnvelope(
         404,

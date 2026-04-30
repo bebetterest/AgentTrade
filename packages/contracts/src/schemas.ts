@@ -79,11 +79,22 @@ const boolField = { type: "boolean" } satisfies OpenApiSchemaObject;
 const stringField = { type: "string" } satisfies OpenApiSchemaObject;
 const nonEmptyStringField = { type: "string", minLength: 1 } satisfies OpenApiSchemaObject;
 const integerField = { type: "integer" } satisfies OpenApiSchemaObject;
+const safeIntegerField = {
+  ...integerField,
+  minimum: 0,
+  maximum: Number.MAX_SAFE_INTEGER
+} satisfies OpenApiSchemaObject;
+const decimalIntegerStringField = {
+  type: "string",
+  pattern: "^\\d+$"
+} satisfies OpenApiSchemaObject;
 const numberField = { type: "number" } satisfies OpenApiSchemaObject;
 
 const addressSchema = z.string().regex(new RegExp(ADDRESS_PATTERN));
 const isoDateSchema = z.string().datetime();
 const nonEmptyStringSchema = z.string().trim().min(1);
+const safeIntegerSchema = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
+const decimalIntegerStringSchema = z.string().regex(/^\d+$/);
 const nullableIsoDateOpenApi = { ...isoDateField, nullable: true } satisfies OpenApiSchemaObject;
 
 const addressArrayOpenApi = { type: "array", items: { ...addressField } } satisfies OpenApiSchemaObject;
@@ -940,7 +951,19 @@ export const serviceMetricsResponseSchema = defineSchema(
       writeTotal: z.number().int(),
       writeErrorTotal: z.number().int(),
       writeConflictTotal: z.number().int(),
-      writeDeadlockTotal: z.number().int()
+      writeDeadlockTotal: z.number().int(),
+      requestLogDroppedTotal: z.number().int(),
+      requestLogFlushTotal: z.number().int(),
+      requestLogFlushErrorTotal: z.number().int(),
+      workerJobSuccessTotal: safeIntegerSchema,
+      workerJobErrorTotal: safeIntegerSchema,
+      workerJobLockMissTotal: safeIntegerSchema,
+      workerJobSuccessTotalExact: decimalIntegerStringSchema,
+      workerJobErrorTotalExact: decimalIntegerStringSchema,
+      workerJobLockMissTotalExact: decimalIntegerStringSchema
+    }),
+    gauges: z.object({
+      requestLogBufferSize: z.number().int()
     }),
     latencies: z.object({
       requests: latencySummarySchema.schema,
@@ -950,7 +973,7 @@ export const serviceMetricsResponseSchema = defineSchema(
   {
     type: "object",
     additionalProperties: false,
-    required: ["generatedAt", "startedAt", "counters", "latencies"],
+    required: ["generatedAt", "startedAt", "counters", "gauges", "latencies"],
     properties: {
       generatedAt: { ...isoDateField },
       startedAt: { ...isoDateField },
@@ -964,7 +987,16 @@ export const serviceMetricsResponseSchema = defineSchema(
           "writeTotal",
           "writeErrorTotal",
           "writeConflictTotal",
-          "writeDeadlockTotal"
+          "writeDeadlockTotal",
+          "requestLogDroppedTotal",
+          "requestLogFlushTotal",
+          "requestLogFlushErrorTotal",
+          "workerJobSuccessTotal",
+          "workerJobErrorTotal",
+          "workerJobLockMissTotal",
+          "workerJobSuccessTotalExact",
+          "workerJobErrorTotalExact",
+          "workerJobLockMissTotalExact"
         ],
         properties: {
           requestsTotal: { ...integerField },
@@ -973,7 +1005,24 @@ export const serviceMetricsResponseSchema = defineSchema(
           writeTotal: { ...integerField },
           writeErrorTotal: { ...integerField },
           writeConflictTotal: { ...integerField },
-          writeDeadlockTotal: { ...integerField }
+          writeDeadlockTotal: { ...integerField },
+          requestLogDroppedTotal: { ...integerField },
+          requestLogFlushTotal: { ...integerField },
+          requestLogFlushErrorTotal: { ...integerField },
+          workerJobSuccessTotal: { ...safeIntegerField },
+          workerJobErrorTotal: { ...safeIntegerField },
+          workerJobLockMissTotal: { ...safeIntegerField },
+          workerJobSuccessTotalExact: { ...decimalIntegerStringField },
+          workerJobErrorTotalExact: { ...decimalIntegerStringField },
+          workerJobLockMissTotalExact: { ...decimalIntegerStringField }
+        }
+      },
+      gauges: {
+        type: "object",
+        additionalProperties: false,
+        required: ["requestLogBufferSize"],
+        properties: {
+          requestLogBufferSize: { ...integerField }
         }
       },
       latencies: {

@@ -4,7 +4,7 @@ import type { FastifyInstance } from "fastify";
 import { PrismaClient } from "@prisma/client";
 import type { Address } from "@agentrade/types";
 import { VoteChoice } from "@agentrade/types";
-import { defaultConfig } from "@agentrade/config";
+import { defaultConfig, pickRuntimeEditableRules } from "@agentrade/config";
 import { buildApp } from "../src/app.js";
 import { parseCursorOffset } from "../src/api/services.js";
 import { PrismaStateRepository } from "../src/infra/state-repository.js";
@@ -25,6 +25,9 @@ const indexedAddr = (offset: number, index: number): Address =>
   `0x${(BigInt(offset) + BigInt(index) + 1n).toString(16).padStart(40, "0")}` as Address;
 const futureDeadline = (hours = 24): string =>
   new Date(Date.now() + hours * 3_600_000).toISOString();
+const sleep = async (ms: number): Promise<void> => {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+};
 const errorCode = (payload: unknown): string | null => {
   if (!payload || typeof payload !== "object") {
     return null;
@@ -42,6 +45,7 @@ runDbSuite("Persistence Stress", () => {
   const secret = "persist-stress-secret";
   const oldEnv = { ...process.env };
   let app: FastifyInstance | null = null;
+  let workerApp: FastifyInstance | null = null;
   let repo: PrismaStateRepository;
 
   const bearer = (address: Address): string => jwt.sign({ sub: address }, secret, { expiresIn: "1h" });
@@ -79,12 +83,19 @@ runDbSuite("Persistence Stress", () => {
     });
     await prisma.$disconnect();
 
-    const activeAfterRes = await app!.inject({
-      method: "GET",
-      url: "/v2/cycles/active"
-    });
-    expect(activeAfterRes.statusCode).toBe(200);
-    const activeAfter = activeAfterRes.json() as { id: string };
+    let activeAfter = activeBefore;
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      await sleep(25);
+      const activeAfterRes = await app!.inject({
+        method: "GET",
+        url: "/v2/cycles/active"
+      });
+      expect(activeAfterRes.statusCode).toBe(200);
+      activeAfter = activeAfterRes.json() as { id: string };
+      if (activeAfter.id !== activeBefore.id) {
+        break;
+      }
+    }
     expect(activeAfter.id).not.toBe(activeBefore.id);
     return { closedCycleId: activeBefore.id, openedCycleId: activeAfter.id };
   };
@@ -126,13 +137,24 @@ runDbSuite("Persistence Stress", () => {
     process.env.TASK_SLOTS_MAX = "100";
     process.env.TASK_REWARD_PER_SLOT_MAX = "1000000";
     process.env.TASK_DEADLINE_MAX_HOURS = "4320";
+    process.env.CYCLE_CLOSE_POLL_INTERVAL_MS = "20";
     process.env.DATABASE_URL = TEST_DB_URL;
     repo = new PrismaStateRepository(TEST_DB_URL!);
   });
 
   beforeEach(async () => {
     await repo.sync(new AgentradeEngine(defaultConfig).toSnapshot());
-    app = await buildApp();
+    await repo.resetRuntimeRulesDirect({
+      applyTo: "current",
+      defaults: pickRuntimeEditableRules(defaultConfig)
+    });
+    await repo.resetRuntimeRulesDirect({
+      applyTo: "next",
+      defaults: pickRuntimeEditableRules(defaultConfig)
+    });
+    workerApp = await buildApp({ runtimeRole: "worker" });
+    await workerApp.ready();
+    app = await buildApp({ runtimeRole: "api" });
     await app.ready();
   });
 
@@ -140,6 +162,10 @@ runDbSuite("Persistence Stress", () => {
     if (app) {
       await app.close();
       app = null;
+    }
+    if (workerApp) {
+      await workerApp.close();
+      workerApp = null;
     }
   });
 
@@ -238,13 +264,20 @@ runDbSuite("Persistence Stress", () => {
     const rewardsBody = rewards.json() as {
       rewardPool: number;
       distributions: Array<{ agent: string; amount: number }>;
-      workloads: Array<{ disputeId: string; settledAt: string | null }>;
+      workloads: Array<{ disputeId: string | null; taskId?: string | null; settledAt: string | null }>;
     };
     expect(rewardsBody.rewardPool).toBeGreaterThan(0);
     expect(rewardsBody.distributions.length).toBeGreaterThan(0);
-    const disputeWorkloads = rewardsBody.workloads.filter((item) => item.disputeId === dispute.id);
-    expect(disputeWorkloads.length).toBe(supervisors.length);
-    expect(disputeWorkloads.every((item) => item.settledAt !== null)).toBe(true);
+    const supervisionWorkloads = rewardsBody.workloads.filter(
+      (item) => item.disputeId === dispute.id && item.taskId === null
+    );
+    expect(supervisionWorkloads).toHaveLength(supervisors.length);
+    expect(supervisionWorkloads.every((item) => item.settledAt !== null)).toBe(true);
+    const completionWorkloads = rewardsBody.workloads.filter(
+      (item) => item.disputeId === dispute.id && item.taskId === task.id
+    );
+    expect(completionWorkloads).toHaveLength(1);
+    expect(completionWorkloads[0]?.settledAt).not.toBeNull();
   }, 30_000);
 
   it("allows only one successful vote under duplicate concurrent participation attempts", async () => {
@@ -311,13 +344,15 @@ runDbSuite("Persistence Stress", () => {
     const rewardsBody = rewards.json() as {
       rewardPool: number;
       distributions: Array<{ agent: string; amount: number }>;
-      workloads: Array<{ disputeId: string; settledAt: string | null }>;
+      workloads: Array<{ disputeId: string | null; taskId?: string | null; settledAt: string | null }>;
     };
     expect(rewardsBody.rewardPool).toBeGreaterThan(0);
     expect(rewardsBody.distributions.length).toBeGreaterThan(0);
-    const disputeWorkloads = rewardsBody.workloads.filter((item) => item.disputeId === dispute.id);
-    expect(disputeWorkloads).toHaveLength(1);
-    expect(disputeWorkloads[0].settledAt).not.toBeNull();
+    const supervisionWorkloads = rewardsBody.workloads.filter(
+      (item) => item.disputeId === dispute.id && item.taskId === null
+    );
+    expect(supervisionWorkloads).toHaveLength(1);
+    expect(supervisionWorkloads[0]?.settledAt).not.toBeNull();
   }, 30_000);
 
   it("allows only one successful dispute creation under duplicate concurrent requests", async () => {

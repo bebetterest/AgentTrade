@@ -391,7 +391,19 @@ test("cli command contract: method/path/auth/body coverage for all command group
               writeTotal: 4,
               writeErrorTotal: 0,
               writeConflictTotal: 0,
-              writeDeadlockTotal: 0
+              writeDeadlockTotal: 0,
+              requestLogDroppedTotal: 0,
+              requestLogFlushTotal: 0,
+              requestLogFlushErrorTotal: 0,
+              workerJobSuccessTotal: 0,
+              workerJobErrorTotal: 0,
+              workerJobLockMissTotal: 0,
+              workerJobSuccessTotalExact: "0",
+              workerJobErrorTotalExact: "0",
+              workerJobLockMissTotalExact: "0"
+            },
+            gauges: {
+              requestLogBufferSize: 0
             },
             latencies: {
               requests: { count: 10, avgMs: 5, p50Ms: 4, p95Ms: 8, p99Ms: 9, maxMs: 10 },

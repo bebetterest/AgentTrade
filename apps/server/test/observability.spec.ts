@@ -4,6 +4,7 @@ import {
   InMemoryServerLogStore,
   sanitizeAuditDetails
 } from "../src/observability/server-logs.js";
+import { ServiceMetricsCollector } from "../src/observability/metrics.js";
 
 describe("server log observability helpers", () => {
   it("redacts normalized sensitive audit detail keys recursively", () => {
@@ -86,7 +87,7 @@ describe("server log observability helpers", () => {
     const store = new InMemoryServerLogStore();
     store.appendRequestLog({
       requestId: "req-1",
-      method: "GET",
+      method: "get",
       path: "/v2/tasks",
       routeId: "/v2/tasks",
       statusCode: 200,
@@ -113,5 +114,33 @@ describe("server log observability helpers", () => {
     });
 
     expect(filtered.items.map((item) => item.requestId)).toEqual(["req-1"]);
+    expect(filtered.items[0]!.method).toBe("GET");
+  });
+
+  it("keeps latency metrics bounded with a fixed-size rolling sample", () => {
+    const metrics = new ServiceMetricsCollector();
+    for (let index = 0; index < 5000; index += 1) {
+      metrics.recordRequest({ statusCode: 200, durationMs: index });
+    }
+
+    const snapshot = metrics.snapshot();
+    expect(snapshot.latencies.requests.count).toBe(4096);
+    expect(snapshot.latencies.requests.maxMs).toBe(4999);
+  });
+
+  it("keeps exact worker counters when persisted totals exceed safe integers", () => {
+    const metrics = new ServiceMetricsCollector();
+    const persistedSuccess = BigInt(Number.MAX_SAFE_INTEGER) + 2n;
+
+    metrics.recordWorkerJob("success");
+    const snapshot = metrics.snapshot({
+      workerJobSuccessTotal: Number.MAX_SAFE_INTEGER,
+      workerJobSuccessTotalExact: persistedSuccess.toString()
+    });
+
+    expect(snapshot.counters.workerJobSuccessTotal).toBe(Number.MAX_SAFE_INTEGER);
+    expect(snapshot.counters.workerJobSuccessTotalExact).toBe((persistedSuccess + 1n).toString());
+    expect(snapshot.counters.workerJobErrorTotalExact).toBe("0");
+    expect(snapshot.counters.workerJobLockMissTotalExact).toBe("0");
   });
 });

@@ -4,11 +4,17 @@ import type { FastifyInstance } from "fastify";
 import { PrismaClient } from "@prisma/client";
 import type { Address } from "@agentrade/types";
 import { AgentBanReason, AgentStatus, DisputePayoutSource, VoteChoice } from "@agentrade/types";
-import { defaultConfig } from "@agentrade/config";
+import { defaultConfig, pickRuntimeEditableRules } from "@agentrade/config";
 import { buildApp } from "../src/app.js";
 import { parseCursorOffset } from "../src/api/services.js";
 import { PrismaStateRepository } from "../src/infra/state-repository.js";
 import { AgentradeEngine } from "../src/domain/engine.js";
+import { dayKeyToUtcStart } from "../src/utils/timezone.js";
+import { encodeKeysetCursor } from "../src/pagination/cursor.js";
+
+type TestFastifyInstance = FastifyInstance & {
+  cleanupLogsForTests?: (now?: Date) => Promise<void>;
+};
 
 const TEST_DB_URL = process.env.TEST_DATABASE_URL;
 const REQUIRE_DB_URL = process.env.REQUIRE_TEST_DATABASE_URL === "true";
@@ -23,6 +29,9 @@ const addr = (seed: string): Address =>
   `0x${Buffer.from(seed).toString("hex").slice(0, 40).padEnd(40, "0")}` as Address;
 const futureDeadline = (hours = 24): string =>
   new Date(Date.now() + hours * 3_600_000).toISOString();
+const sleep = async (ms: number): Promise<void> => {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+};
 const errorCode = (payload: unknown): string | null => {
   if (!payload || typeof payload !== "object") {
     return null;
@@ -42,6 +51,7 @@ runDbSuite("API persistence mode", () => {
   const systemOperator = addr("persist-system-operator");
   const oldEnv = { ...process.env };
   let app: FastifyInstance | null = null;
+  let workerApp: FastifyInstance | null = null;
   let repo: PrismaStateRepository;
 
   const bearer = (address: Address): string => jwt.sign({ sub: address }, secret, { expiresIn: "1h" });
@@ -84,12 +94,19 @@ runDbSuite("API persistence mode", () => {
     });
     await prisma.$disconnect();
 
-    const activeAfterRes = await app!.inject({
-      method: "GET",
-      url: "/v2/cycles/active"
-    });
-    expect(activeAfterRes.statusCode).toBe(200);
-    const activeAfter = activeAfterRes.json() as { id: string };
+    let activeAfter = activeBefore;
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      await sleep(25);
+      const activeAfterRes = await app!.inject({
+        method: "GET",
+        url: "/v2/cycles/active"
+      });
+      expect(activeAfterRes.statusCode).toBe(200);
+      activeAfter = activeAfterRes.json() as { id: string };
+      if (activeAfter.id !== activeBefore.id) {
+        break;
+      }
+    }
     expect(activeAfter.id).not.toBe(activeBefore.id);
 
     return { closedCycleId: activeBefore.id, openedCycleId: activeAfter.id };
@@ -110,13 +127,24 @@ runDbSuite("API persistence mode", () => {
     process.env.TASK_SLOTS_MAX = "100";
     process.env.TASK_REWARD_PER_SLOT_MAX = "1000000";
     process.env.TASK_DEADLINE_MAX_HOURS = "4320";
+    process.env.CYCLE_CLOSE_POLL_INTERVAL_MS = "20";
     process.env.DATABASE_URL = TEST_DB_URL;
     repo = new PrismaStateRepository(TEST_DB_URL!);
   });
 
   beforeEach(async () => {
     await repo.sync(new AgentradeEngine(defaultConfig).toSnapshot());
-    app = await buildApp();
+    await repo.resetRuntimeRulesDirect({
+      applyTo: "current",
+      defaults: pickRuntimeEditableRules(defaultConfig)
+    });
+    await repo.resetRuntimeRulesDirect({
+      applyTo: "next",
+      defaults: pickRuntimeEditableRules(defaultConfig)
+    });
+    workerApp = await buildApp({ runtimeRole: "worker" });
+    await workerApp.ready();
+    app = await buildApp({ runtimeRole: "api" });
     await app.ready();
   });
 
@@ -124,6 +152,10 @@ runDbSuite("API persistence mode", () => {
     if (app) {
       await app.close();
       app = null;
+    }
+    if (workerApp) {
+      await workerApp.close();
+      workerApp = null;
     }
   });
 
@@ -158,6 +190,123 @@ runDbSuite("API persistence mode", () => {
     expect(tasks.statusCode).toBe(200);
     expect(tasks.json().items.length).toBe(1);
     expect(tasks.json().items[0].title).toBe("persistent-task");
+  });
+
+  it("filters persisted request and audit logs by actor case-insensitively", async () => {
+    const publisher = addr("log-filter-publisher");
+    const create = await app!.inject({
+      method: "POST",
+      url: "/v2/tasks",
+      headers: { authorization: `Bearer ${bearer(publisher)}` },
+      payload: {
+        title: "log-filter-task",
+        descriptionMd: "desc",
+        acceptanceCriteria: "ok",
+        deadlineUtc: futureDeadline(),
+        displayTimezone: "UTC",
+        slotsTotal: 1,
+        rewardPerSlot: 10,
+        allowRepeatCompletionsBySameAgent: false
+      }
+    });
+    expect(create.statusCode).toBe(200);
+
+    const actorQuery = `0x${publisher.slice(2).toUpperCase()}`;
+    const requestLogs = await app!.inject({
+      method: "GET",
+      url: `/v2/system/logs/requests?actor=${actorQuery}&routeId=%2Fv2%2Ftasks&method=post&status=200`,
+      headers: bearerAndAdmin(systemOperator)
+    });
+    expect(requestLogs.statusCode).toBe(200);
+    const requestPayload = requestLogs.json() as {
+      items: Array<{ actorAddress: string | null; method: string; routeId: string }>;
+    };
+    expect(requestPayload.items.some((item) => item.actorAddress === publisher)).toBe(true);
+
+    const auditLogs = await app!.inject({
+      method: "GET",
+      url: `/v2/system/logs/audits?category=DOMAIN_WRITE&action=tasks.create&outcome=SUCCESS&actor=${actorQuery}`,
+      headers: bearerAndAdmin(systemOperator)
+    });
+    expect(auditLogs.statusCode).toBe(200);
+    const auditPayload = auditLogs.json() as {
+      items: Array<{ action: string; actorAddress: string | null; outcome: string }>;
+    };
+    expect(auditPayload.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          action: "tasks.create",
+          actorAddress: publisher,
+          outcome: "SUCCESS"
+        })
+      ])
+    );
+  });
+
+  it("cleans API-local in-memory logs when persistence log sinks are disabled", async () => {
+    const previous = {
+      ENABLE_REQUEST_LOG_PERSISTENCE: process.env.ENABLE_REQUEST_LOG_PERSISTENCE,
+      ENABLE_AUDIT_LOG_PERSISTENCE: process.env.ENABLE_AUDIT_LOG_PERSISTENCE,
+      REQUEST_LOG_RETENTION_DAYS: process.env.REQUEST_LOG_RETENTION_DAYS,
+      AUDIT_LOG_RETENTION_DAYS: process.env.AUDIT_LOG_RETENTION_DAYS
+    };
+
+    try {
+      if (workerApp) {
+        await workerApp.close();
+        workerApp = null;
+      }
+      if (app) {
+        await app.close();
+        app = null;
+      }
+      process.env.ENABLE_REQUEST_LOG_PERSISTENCE = "false";
+      process.env.ENABLE_AUDIT_LOG_PERSISTENCE = "false";
+      process.env.REQUEST_LOG_RETENTION_DAYS = "1";
+      process.env.AUDIT_LOG_RETENTION_DAYS = "1";
+      app = await buildApp({ runtimeRole: "api" });
+      await app.ready();
+
+      const health = await app.inject({ method: "GET", url: "/v2/system/health" });
+      expect(health.statusCode).toBe(200);
+      const healthRequestId = health.headers["x-request-id"];
+
+      const beforeCleanup = await app.inject({
+        method: "GET",
+        url: `/v2/system/logs/requests?requestId=${healthRequestId}`,
+        headers: bearerAndAdmin(systemOperator)
+      });
+      expect(beforeCleanup.statusCode).toBe(200);
+      expect(
+        (beforeCleanup.json() as { items: Array<{ requestId: string }> }).items.some(
+          (item) => item.requestId === healthRequestId
+        )
+      ).toBe(true);
+
+      const cleanupForTests = (app as TestFastifyInstance).cleanupLogsForTests;
+      expect(cleanupForTests).toBeTypeOf("function");
+      await cleanupForTests!(new Date(Date.now() + 2 * 24 * 3_600_000));
+
+      const afterCleanup = await app.inject({
+        method: "GET",
+        url: `/v2/system/logs/requests?requestId=${healthRequestId}`,
+        headers: bearerAndAdmin(systemOperator)
+      });
+      expect(afterCleanup.statusCode).toBe(200);
+      expect(
+        (afterCleanup.json() as { items: Array<{ requestId: string }> }).items.some(
+          (item) => item.requestId === healthRequestId
+        )
+      ).toBe(false);
+    } finally {
+      for (const [key, value] of Object.entries(previous)) {
+        if (value === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = value;
+        }
+      }
+    }
   });
 
   it("falls back to in-memory audit logs when audit log persistence is disabled", async () => {
@@ -232,6 +381,244 @@ runDbSuite("API persistence mode", () => {
       app = await buildApp();
       await app.ready();
     }
+  });
+
+  it("drops oldest buffered request logs without failing requests when buffer capacity is exceeded", async () => {
+    const previous = {
+      REQUEST_LOG_BATCH_SIZE: process.env.REQUEST_LOG_BATCH_SIZE,
+      REQUEST_LOG_FLUSH_INTERVAL_MS: process.env.REQUEST_LOG_FLUSH_INTERVAL_MS,
+      REQUEST_LOG_BUFFER_CAPACITY: process.env.REQUEST_LOG_BUFFER_CAPACITY
+    };
+
+    try {
+      await app!.close();
+      app = null;
+      process.env.REQUEST_LOG_BATCH_SIZE = "1000";
+      process.env.REQUEST_LOG_FLUSH_INTERVAL_MS = "60000";
+      process.env.REQUEST_LOG_BUFFER_CAPACITY = "1";
+      app = await buildApp({ runtimeRole: "api" });
+      await app.ready();
+
+      const first = await app.inject({ method: "GET", url: "/v2/system/health" });
+      expect(first.statusCode).toBe(200);
+      const second = await app.inject({ method: "GET", url: "/v2/system/health" });
+      expect(second.statusCode).toBe(200);
+
+      const logs = await app.inject({
+        method: "GET",
+        url: "/v2/system/logs/requests?routeId=%2Fv2%2Fsystem%2Fhealth&method=GET",
+        headers: bearerAndAdmin(systemOperator)
+      });
+      expect(logs.statusCode).toBe(200);
+      const logsPayload = logs.json() as {
+        items: Array<{ requestId: string; routeId: string }>;
+      };
+      expect(logsPayload.items.some((item) => item.requestId === first.headers["x-request-id"])).toBe(
+        false
+      );
+      expect(logsPayload.items.some((item) => item.requestId === second.headers["x-request-id"])).toBe(
+        true
+      );
+
+      const metrics = await app.inject({
+        method: "GET",
+        url: "/v2/system/metrics",
+        headers: { authorization: `Bearer ${bearer(systemOperator)}` }
+      });
+      expect(metrics.statusCode).toBe(200);
+      const metricsPayload = metrics.json() as {
+        counters: { requestLogDroppedTotal: number };
+        gauges: { requestLogBufferSize: number };
+      };
+      expect(metricsPayload.counters.requestLogDroppedTotal).toBeGreaterThanOrEqual(1);
+      expect(metricsPayload.gauges.requestLogBufferSize).toBe(1);
+    } finally {
+      if (app) {
+        await app.close();
+        app = null;
+      }
+      for (const [key, value] of Object.entries(previous)) {
+        if (value === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = value;
+        }
+      }
+      app = await buildApp({ runtimeRole: "api" });
+      await app.ready();
+    }
+  });
+
+  it("keeps buffered request log timestamps at enqueue time instead of flush time", async () => {
+    const previous = {
+      REQUEST_LOG_BATCH_SIZE: process.env.REQUEST_LOG_BATCH_SIZE,
+      REQUEST_LOG_FLUSH_INTERVAL_MS: process.env.REQUEST_LOG_FLUSH_INTERVAL_MS,
+      REQUEST_LOG_BUFFER_CAPACITY: process.env.REQUEST_LOG_BUFFER_CAPACITY
+    };
+
+    try {
+      await app!.close();
+      app = null;
+      process.env.REQUEST_LOG_BATCH_SIZE = "1000";
+      process.env.REQUEST_LOG_FLUSH_INTERVAL_MS = "60000";
+      process.env.REQUEST_LOG_BUFFER_CAPACITY = "10";
+      app = await buildApp({ runtimeRole: "api" });
+      await app.ready();
+
+      const health = await app.inject({ method: "GET", url: "/v2/system/health" });
+      expect(health.statusCode).toBe(200);
+      const completedAt = new Date();
+      await sleep(50);
+
+      const logs = await app.inject({
+        method: "GET",
+        url: "/v2/system/logs/requests?routeId=%2Fv2%2Fsystem%2Fhealth&method=GET",
+        headers: bearerAndAdmin(systemOperator)
+      });
+      expect(logs.statusCode).toBe(200);
+      const logsPayload = logs.json() as {
+        items: Array<{ requestId: string; createdAt: string }>;
+      };
+      const healthLog = logsPayload.items.find(
+        (item) => item.requestId === health.headers["x-request-id"]
+      );
+      expect(healthLog).toBeDefined();
+      expect(new Date(healthLog!.createdAt).getTime()).toBeLessThanOrEqual(completedAt.getTime());
+    } finally {
+      if (app) {
+        await app.close();
+        app = null;
+      }
+      for (const [key, value] of Object.entries(previous)) {
+        if (value === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = value;
+        }
+      }
+      app = await buildApp({ runtimeRole: "api" });
+      await app.ready();
+    }
+  });
+
+  it("exposes persisted worker job counters through API metrics", async () => {
+    if (workerApp) {
+      await workerApp.close();
+      workerApp = null;
+    }
+    const readMetrics = async () => {
+      const response = await app!.inject({
+        method: "GET",
+        url: "/v2/system/metrics",
+        headers: { authorization: `Bearer ${bearer(systemOperator)}` }
+      });
+      expect(response.statusCode).toBe(200);
+      return response.json() as {
+        counters: {
+          workerJobSuccessTotal: number;
+          workerJobErrorTotal: number;
+          workerJobLockMissTotal: number;
+          workerJobSuccessTotalExact: string;
+          workerJobErrorTotalExact: string;
+          workerJobLockMissTotalExact: string;
+        };
+      };
+    };
+
+    const before = await readMetrics();
+    await repo.incrementWorkerJobMetricDirect("success");
+    await repo.incrementWorkerJobMetricDirect("error");
+    await repo.incrementWorkerJobMetricDirect("lock_miss");
+
+    const after = await readMetrics();
+    expect(after.counters.workerJobSuccessTotal - before.counters.workerJobSuccessTotal).toBe(1);
+    expect(after.counters.workerJobErrorTotal - before.counters.workerJobErrorTotal).toBe(1);
+    expect(after.counters.workerJobLockMissTotal - before.counters.workerJobLockMissTotal).toBe(1);
+    expect(
+      BigInt(after.counters.workerJobSuccessTotalExact) -
+        BigInt(before.counters.workerJobSuccessTotalExact)
+    ).toBe(1n);
+    expect(
+      BigInt(after.counters.workerJobErrorTotalExact) -
+        BigInt(before.counters.workerJobErrorTotalExact)
+    ).toBe(1n);
+    expect(
+      BigInt(after.counters.workerJobLockMissTotalExact) -
+        BigInt(before.counters.workerJobLockMissTotalExact)
+    ).toBe(1n);
+  });
+
+  it("fails worker startup instead of initializing persistence when bootstrap has not completed", async () => {
+    if (workerApp) {
+      await workerApp.close();
+      workerApp = null;
+    }
+    const prisma = new PrismaClient({
+      datasources: {
+        db: {
+          url: TEST_DB_URL!
+        }
+      }
+    });
+    await prisma.runtimeRuleState.deleteMany();
+    await prisma.runtimeState.deleteMany();
+    const auditCountBefore = await prisma.serverAuditLog.count();
+
+    try {
+      await expect(buildApp({ runtimeRole: "worker" })).rejects.toThrow(
+        /worker runtime requires initialized persistence state/
+      );
+      await expect(prisma.runtimeRuleState.count()).resolves.toBe(0);
+      await expect(prisma.runtimeState.count()).resolves.toBe(0);
+      await expect(prisma.serverAuditLog.count()).resolves.toBe(auditCountBefore);
+    } finally {
+      await prisma.$disconnect();
+    }
+  });
+
+  it("does not auto-close due cycles on ordinary persistence read requests", async () => {
+    if (workerApp) {
+      await workerApp.close();
+      workerApp = null;
+    }
+    const activeBeforeRes = await app!.inject({
+      method: "GET",
+      url: "/v2/cycles/active"
+    });
+    expect(activeBeforeRes.statusCode).toBe(200);
+    const activeBefore = activeBeforeRes.json() as { id: string };
+
+    const prisma = new PrismaClient({
+      datasources: {
+        db: {
+          url: TEST_DB_URL!
+        }
+      }
+    });
+    try {
+      await prisma.cycle.update({
+        where: { id: activeBefore.id },
+        data: { startedAt: new Date(Date.now() - 8 * 24 * 3_600_000) }
+      });
+    } finally {
+      await prisma.$disconnect();
+    }
+
+    const activeAfterRes = await app!.inject({
+      method: "GET",
+      url: "/v2/cycles/active"
+    });
+    expect(activeAfterRes.statusCode).toBe(200);
+    expect((activeAfterRes.json() as { id: string }).id).toBe(activeBefore.id);
+
+    const cycleRes = await app!.inject({
+      method: "GET",
+      url: `/v2/cycles/${activeBefore.id}`
+    });
+    expect(cycleRes.statusCode).toBe(200);
+    const cycle = cycleRes.json() as { status: string; closedAt: string | null };
+    expect(cycle.status).toBe("OPEN");
+    expect(cycle.closedAt).toBeNull();
   });
 
   it("persists agent profile updates across app restarts", async () => {
@@ -349,6 +736,183 @@ runDbSuite("API persistence mode", () => {
     }
   });
 
+  it("uses refreshed runtime score weights for persisted agent directory reads", async () => {
+    const reputationAgent = addr("score-refresh-reputation");
+    const performanceAgent = addr("score-refresh-performance");
+    const prisma = new PrismaClient({
+      datasources: {
+        db: {
+          url: TEST_DB_URL!
+        }
+      }
+    });
+    try {
+      await prisma.agentProfile.createMany({
+        data: [
+          {
+            address: reputationAgent,
+            name: "score-refresh reputation",
+            bio: "high reputation, low completion",
+            status: "ACTIVE",
+            bannedAt: null,
+            banReasonCode: null,
+            publisherRep: 100,
+            workerRep: 100,
+            supervisorRep: 100,
+            tasksPublishedCount: 0,
+            tasksIntentedCount: 10,
+            tasksCompletedCount: 0,
+            tasksTerminatedCount: 0,
+            submissionsRejectedCount: 10,
+            supervisionVotesCount: 0
+          },
+          {
+            address: performanceAgent,
+            name: "score-refresh performance",
+            bio: "low reputation, high completion",
+            status: "ACTIVE",
+            bannedAt: null,
+            banReasonCode: null,
+            publisherRep: 0,
+            workerRep: 0,
+            supervisorRep: 0,
+            tasksPublishedCount: 0,
+            tasksIntentedCount: 10,
+            tasksCompletedCount: 10,
+            tasksTerminatedCount: 0,
+            submissionsRejectedCount: 0,
+            supervisionVotesCount: 0
+          }
+        ]
+      });
+    } finally {
+      await prisma.$disconnect();
+    }
+
+    const beforeRes = await app!.inject({
+      method: "GET",
+      url: "/v2/agents?q=score-refresh&activeOnly=false&sort=score&order=desc&limit=10"
+    });
+    expect(beforeRes.statusCode).toBe(200);
+    const before = beforeRes.json() as {
+      items: Array<{ address: string; score: number }>;
+    };
+    expect(before.items.map((item) => item.address).slice(0, 2)).toEqual([
+      performanceAgent,
+      reputationAgent
+    ]);
+
+    const updateRes = await app!.inject({
+      method: "PATCH",
+      url: "/v2/system/settings",
+      headers: bearerAndAdmin(systemOperator),
+      payload: {
+        applyTo: "current",
+        patch: {
+          scoreWeightReputationBps: 10000,
+          scoreWeightCompletionBps: 0,
+          scoreWeightQualityBps: 0
+        },
+        reason: "agent directory score refresh test"
+      }
+    });
+    expect(updateRes.statusCode).toBe(200);
+
+    const afterRes = await app!.inject({
+      method: "GET",
+      url: "/v2/agents?q=score-refresh&activeOnly=false&sort=score&order=desc&limit=10"
+    });
+    expect(afterRes.statusCode).toBe(200);
+    const after = afterRes.json() as {
+      items: Array<{ address: string; score: number }>;
+    };
+    expect(after.items.map((item) => item.address).slice(0, 2)).toEqual([
+      reputationAgent,
+      performanceAgent
+    ]);
+    expect(after.items[0]!.score).toBe(100);
+  });
+
+  it("worker auto-close applies fresh pending runtime rules from the database", async () => {
+    const beforeRes = await app!.inject({
+      method: "GET",
+      url: "/v2/system/settings",
+      headers: { authorization: `Bearer ${bearer(systemOperator)}` }
+    });
+    expect(beforeRes.statusCode).toBe(200);
+    const before = beforeRes.json() as {
+      currentRules: { mintPerCycle: number; taxRateBps: number };
+    };
+    const nextMintPerCycle = before.currentRules.mintPerCycle + 123;
+    const nextTaxRateBps = before.currentRules.taxRateBps + 100;
+
+    const nextUpdateRes = await app!.inject({
+      method: "PATCH",
+      url: "/v2/system/settings",
+      headers: bearerAndAdmin(systemOperator),
+      payload: {
+        applyTo: "next",
+        patch: { mintPerCycle: nextMintPerCycle, taxRateBps: nextTaxRateBps },
+        reason: "worker fresh runtime rules test"
+      }
+    });
+    expect(nextUpdateRes.statusCode).toBe(200);
+
+    const close = await forceAutoCloseCurrentCycle();
+    const openedCycleRes = await app!.inject({
+      method: "GET",
+      url: `/v2/cycles/${close.openedCycleId}`
+    });
+    expect(openedCycleRes.statusCode).toBe(200);
+    expect((openedCycleRes.json() as { mintedAmount: number }).mintedAmount).toBe(nextMintPerCycle);
+
+    const afterRes = await app!.inject({
+      method: "GET",
+      url: "/v2/system/settings",
+      headers: { authorization: `Bearer ${bearer(systemOperator)}` }
+    });
+    expect(afterRes.statusCode).toBe(200);
+    const after = afterRes.json() as {
+      currentRules: { mintPerCycle: number; taxRateBps: number };
+      pendingNextPatch: { mintPerCycle?: number; taxRateBps?: number } | null;
+      nextRules: { mintPerCycle: number; taxRateBps: number };
+    };
+    expect(after.currentRules.mintPerCycle).toBe(nextMintPerCycle);
+    expect(after.currentRules.taxRateBps).toBe(nextTaxRateBps);
+    expect(after.pendingNextPatch).toBeNull();
+    expect(after.nextRules.mintPerCycle).toBe(nextMintPerCycle);
+    expect(after.nextRules.taxRateBps).toBe(nextTaxRateBps);
+
+    const economyRes = await app!.inject({
+      method: "GET",
+      url: "/v2/economy/params"
+    });
+    expect(economyRes.statusCode).toBe(200);
+    const economy = economyRes.json() as { taxRateBps: number; taxMin: number };
+    expect(economy.taxRateBps).toBe(nextTaxRateBps);
+
+    const taskReward = 100;
+    const taskCreateRes = await app!.inject({
+      method: "POST",
+      url: "/v2/tasks",
+      headers: { authorization: `Bearer ${bearer(addr("worker-fresh-rules-publisher"))}` },
+      payload: {
+        title: "worker-fresh-rules-task",
+        descriptionMd: "desc",
+        acceptanceCriteria: "ok",
+        deadlineUtc: futureDeadline(),
+        displayTimezone: "UTC",
+        slotsTotal: 1,
+        rewardPerSlot: taskReward,
+        allowRepeatCompletionsBySameAgent: false
+      }
+    });
+    expect(taskCreateRes.statusCode).toBe(200);
+    expect((taskCreateRes.json() as { taxAmount: number }).taxAmount).toBe(
+      Math.max(economy.taxMin, Math.floor((taskReward * nextTaxRateBps) / 10_000))
+    );
+  });
+
   it("uses configured initial balance when creating new agent ledger in persistence mode", async () => {
     await app!.close();
     app = null;
@@ -437,27 +1001,8 @@ runDbSuite("API persistence mode", () => {
     expect(workerBeforeAutoCloseRes.statusCode).toBe(200);
     const workerBeforeAutoClose = (workerBeforeAutoCloseRes.json() as { available: number }).available;
 
-    const prisma = new PrismaClient({
-      datasources: {
-        db: {
-          url: TEST_DB_URL!
-        }
-      }
-    });
-    await prisma.cycle.update({
-      where: { id: "cycle-1" },
-      data: {
-        startedAt: new Date(Date.now() - 8 * 24 * 3_600_000)
-      }
-    });
-    await prisma.$disconnect();
-
-    const activeAfterAutoClose = await app!.inject({
-      method: "GET",
-      url: "/v2/cycles/active"
-    });
-    expect(activeAfterAutoClose.statusCode).toBe(200);
-    expect((activeAfterAutoClose.json() as { id: string }).id).toBe("cycle-2");
+    const close = await forceAutoCloseCurrentCycle();
+    expect(close.openedCycleId).toBe("cycle-2");
 
     const cycle1Res = await app!.inject({
       method: "GET",
@@ -571,12 +1116,8 @@ runDbSuite("API persistence mode", () => {
     ]);
     await prisma.$disconnect();
 
-    const activeAfterAutoClose = await app!.inject({
-      method: "GET",
-      url: "/v2/cycles/active"
-    });
-    expect(activeAfterAutoClose.statusCode).toBe(200);
-    expect((activeAfterAutoClose.json() as { id: string }).id).toBe("cycle-2");
+    const close = await forceAutoCloseCurrentCycle();
+    expect(close.openedCycleId).toBe("cycle-2");
 
     const submissionAfterAutoCloseRes = await app!.inject({
       method: "GET",
@@ -1187,13 +1728,15 @@ runDbSuite("API persistence mode", () => {
     const rewards1 = rewards1Res.json() as {
       rewardPool: number;
       distributions: Array<{ agent: string; amount: number }>;
-      workloads: Array<{ disputeId: string; settledAt: string | null }>;
+      workloads: Array<{ disputeId: string | null; taskId?: string | null; settledAt: string | null }>;
     };
     expect(rewards1.rewardPool).toBeGreaterThan(0);
     expect(rewards1.distributions.length).toBeGreaterThan(0);
     expect(rewards1.distributions.every((item) => item.amount > 0)).toBe(true);
-    const disputeCycle1Workloads = rewards1.workloads.filter((item) => item.disputeId === dispute.id);
-    expect(disputeCycle1Workloads.length).toBe(supervisors.length);
+    const disputeCycle1Workloads = rewards1.workloads.filter(
+      (item) => item.disputeId === dispute.id && item.taskId === null
+    );
+    expect(disputeCycle1Workloads).toHaveLength(supervisors.length);
     expect(disputeCycle1Workloads.every((item) => item.settledAt !== null)).toBe(true);
 
     const afterClose1Res = await app!.inject({
@@ -2864,6 +3407,46 @@ runDbSuite("API persistence mode", () => {
     expect(trends.points.reduce((sum, item) => sum + item.tasksIntented, 0)).toBe(2);
     expect(trends.points.reduce((sum, item) => sum + item.tasksCompleted, 0)).toBe(1);
     expect(trends.points.reduce((sum, item) => sum + item.disputesOpened, 0)).toBe(1);
+
+    const losAngelesTrendsRes = await app!.inject({
+      method: "GET",
+      url: "/v2/dashboard/trends?tz=America/Los_Angeles&window=7d"
+    });
+    expect(losAngelesTrendsRes.statusCode).toBe(200);
+    const losAngelesTrends = losAngelesTrendsRes.json() as {
+      points: Array<{ bucketStart: string; label: string }>;
+    };
+    for (const point of losAngelesTrends.points) {
+      expect(point.bucketStart).toBe(
+        dayKeyToUtcStart(point.label, "America/Los_Angeles").toISOString()
+      );
+    }
+
+    const shanghaiTrendsRes = await app!.inject({
+      method: "GET",
+      url: "/v2/dashboard/trends?tz=Asia/Shanghai&window=7d"
+    });
+    expect(shanghaiTrendsRes.statusCode).toBe(200);
+    const shanghaiTrends = shanghaiTrendsRes.json() as {
+      points: Array<{
+        bucketStart: string;
+        label: string;
+        tasksPublished: number;
+        tasksIntented: number;
+        tasksCompleted: number;
+        disputesOpened: number;
+      }>;
+    };
+    expect(shanghaiTrends.points).toHaveLength(7);
+    for (const point of shanghaiTrends.points) {
+      expect(point.bucketStart).toBe(
+        dayKeyToUtcStart(point.label, "Asia/Shanghai").toISOString()
+      );
+    }
+    expect(shanghaiTrends.points.reduce((sum, item) => sum + item.tasksPublished, 0)).toBe(4);
+    expect(shanghaiTrends.points.reduce((sum, item) => sum + item.tasksIntented, 0)).toBe(2);
+    expect(shanghaiTrends.points.reduce((sum, item) => sum + item.tasksCompleted, 0)).toBe(1);
+    expect(shanghaiTrends.points.reduce((sum, item) => sum + item.disputesOpened, 0)).toBe(1);
   });
 
   it("groups account todos across action-required and waiting scopes in persistence mode", async () => {
@@ -3037,12 +3620,39 @@ runDbSuite("API persistence mode", () => {
     });
     expect(pageTwo.statusCode).toBe(200);
     const pageTwoPayload = pageTwo.json() as {
-      groups: Array<{ items: Array<{ submissionId: string | null }> }>;
+      groups: Array<{
+        totalCount: number;
+        nextCursor: string | null;
+        items: Array<{ submissionId: string | null; updatedAt: string }>;
+      }>;
     };
     expect(pageTwoPayload.groups[0]?.items).toHaveLength(1);
     expect(pageTwoPayload.groups[0]?.items[0]?.submissionId).not.toBe(
       pageOnePayload.groups[0]?.items[0]?.submissionId
     );
+    expect(pageTwoPayload.groups[0]?.totalCount).toBe(2);
+
+    const exhaustedCursor = encodeKeysetCursor({
+      resource: "todos:published_task_submission_pending_review",
+      sort: "updatedAt",
+      order: "desc",
+      offset: 2,
+      values: {
+        primary: pageTwoPayload.groups[0]!.items[0]!.updatedAt,
+        id: pageTwoPayload.groups[0]!.items[0]!.submissionId!
+      }
+    });
+    const exhaustedPage = await app!.inject({
+      method: "GET",
+      url: `/v2/todos/${target}?scope=action_required&type=published_task_submission_pending_review&cursor=${encodeURIComponent(exhaustedCursor)}&limit=1`
+    });
+    expect(exhaustedPage.statusCode).toBe(200);
+    const exhaustedPayload = exhaustedPage.json() as {
+      groups: Array<{ totalCount: number; nextCursor: string | null; items: unknown[] }>;
+    };
+    expect(exhaustedPayload.groups[0]?.totalCount).toBe(2);
+    expect(exhaustedPayload.groups[0]?.items).toHaveLength(0);
+    expect(exhaustedPayload.groups[0]?.nextCursor).toBeNull();
 
     const invalidCursor = await app!.inject({
       method: "GET",

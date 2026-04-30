@@ -1,5 +1,60 @@
 # 进度状态
 
+## 2026-04-29
+
+- 已对服务端性能改造后的持久化运行时协同继续收口：
+  - 修复了 worker 专属后台任务的 PostgreSQL advisory lock 归属问题：现在通过独立单连接 Prisma client 执行加锁/解锁，避免连接池切换导致锁残留，
+  - 进一步收紧 worker 自动关周期协调：现在一次 advisory lock 会覆盖整轮到期周期 sweep，避免多个 worker 在同一个后台关周期任务内交替执行，并保持关周期 audit/metric 记账完整，
+  - 将延迟指标采样改为固定容量环形缓冲，避免请求/写入吞吐较高且样本窗口填满后反复执行数组头部 splice，
+  - 删除了一个遗留未使用的 todo helper，并重新梳理 shutdown 顺序，使 `app.close()` 会先等待在途的自动关周期/日志清理任务，再断开持久化连接，
+  - 将持久化 `todos` 读路径从逐 group 查询收敛为三类资源族 SQL（`submission`、`task`、`dispute`），组内 total 改为独立分组汇总并与 keyset 分页排名分离，避免每行窗口计数，同时保留原有 group 结构与 cursor 语义，
+  - 将 latest-rejected todo 分支改为用 PostgreSQL `DISTINCT ON` 直接取每个 task 的最新提交，并补齐匹配的 `lower(agentAddress), taskId, createdAt DESC, id DESC` 索引，在保留“更新提交会压掉旧 rejected 提醒”语义的同时避免分区级 row-number 排序，
+  - 将 intended-but-never-submitted todo 分支改为先从按 actor 过滤的 `TaskIntention` 行进入，再回连 active task，并补齐 `lower(agentAddress), taskId` 索引，避免 agent todo 读取先扫描全部活跃任务再判断是否已表达意向，
+  - 已将 dispute todo 的角色过滤拆为 opener/counterparty 分支，使 response-required 分组可走地址相关的 Task/Submission 与 open-Dispute 索引；waiting-resolution 的 counterparty 路径现在直接使用持久化的 `counterpartyResponderAddress`，并补齐 lower 地址 keyset 索引，
+  - 进一步减少关周期事务的数据库往返：stale submission 对应 task 改为批量读取，open dispute 先用批量投票统计预过滤，奖励接收账户先批量补齐再逐地址加余额，
+  - 为新的 todo 资源族 SQL 补齐 actor intention、submitted submission 与 open dispute 会用到的 lower/partial 索引，为 Agent 目录计数排序补充 btree 索引，并为 tasks、submissions、disputes、activities、request log、audit log 的混合大小写地址过滤 + keyset 排序补齐复合表达式索引，其中已覆盖按地址过滤分页时支持的 task/submission/dispute 排序变体，
+  - 将按 `cycleId/taskId/disputeId` 作用域读取 activity 的索引扩展为 `createdAt, id` 结尾，使活动流钻取能直接满足 API 使用的确定性 keyset 排序，不再额外做 tie-break 排序，
+  - 已将持久化 request log 的 HTTP method 统一规范化为大写，并新增窄范围 `routeId, method, statusCode, createdAt, id` 索引，使常用管理员日志筛选可以用等值条件加 keyset 排序，不再对已存储 method 列执行 `lower()`，
+  - 已新增有界 request/audit log 保留期清理批次（`LOG_CLEANUP_BATCH_SIZE`），并补齐 `routeId, method, createdAt, id` request-log 索引，使仅按 route/method 筛选的管理员查询和大表日志清理都保持短而确定的数据库工作单元，
+  - 已新增 `ServerAuditLog(category, action, outcome, createdAt, id)` 索引与 keyset 回归，使常用管理员 audit 组合筛选与持久化 SQL 排序一致，不再依赖更宽的单列扫描后过滤，
+  - 已新增与空值排序语义匹配的 `AgentProfile(latestActivityAt ASC NULLS FIRST, address ASC)` 索引，使 Agent 目录 `latest` 排序可用同一个 btree 方向覆盖 `ASC NULLS FIRST` 与反向扫描的 `DESC NULLS LAST`，
+  - 已将 Agent 目录 `reputation` keyset 分页改为用精确声誉和作为内部排序键，同时在 cursor `primary` 中继续保留平均值，并新增匹配的 `AgentProfile((publisherRep + workerRep + supervisorRep), address)` 表达式索引，避免小数平均值边界漂移，
+  - 已将 `tasks`、`submissions`、`disputes`、`activities`、request log、audit log 的精确地址/actor 过滤改为显式 `lower(column) = lower(input)` SQL，确保新增函数索引能被查询实际使用，
+  - 已将持久化 dashboard 趋势聚合改为应用层预计算 UTC 日 bucket，SQL 中不再用 `timezone(createdAt)` 分组，同时保持 UTC、Asia/Shanghai 与 America/Los_Angeles 的 bucket 语义，
+  - 已新增混合大小写地址回归，覆盖优化后的列表读取与持久化 request/audit log actor 查询，
+  - 已删除剩余的请求路径周期结算 hook，包括非持久化兜底路径；到期周期结算现在只走 startup/timer/worker 路径，并用回归测试确认普通读请求不会自动关周期，
+  - 已移除到期关周期持久化兜底路径中最后一层 `mutationQueue` 包装，使进程本地队列严格只用于内存态写入，
+  - 已将 worker 关周期时的运行规则解析移入已加锁的关周期事务，因此即使 worker 早于 API 侧 `applyTo=next` 设置更新启动，也会使用数据库中的最新规则完成 due 判断、下一周期铸币与 pending 规则应用，
+  - 已放宽规范化仓储的 Prisma 交互事务等待/超时窗口，使突发并发写入能在显式 `RuntimeState` 锁后排队等待，而不是在宿主 CPU/连接竞争下过早失败，
+  - 将持久化 worker job 指标计数扩大为 `BIGINT`，新增精确十进制字符串 API 字段，并让旧数字字段在 JS 安全整数边界饱和，避免长时间运行后对外发布失真总数，
+  - 已删除未使用的单条 request log 仓储写入 helper，使 request log 持久化只暴露 API 缓冲区实际使用的批量插入路径，
+  - 已同步澄清当前架构文档：进程内 mutation queue 现在仅属于内存模式，持久化模式 API 写路径继续保持仓储事务直写。
+- 已加固新的 `server + worker` Docker 拓扑：
+  - schema bootstrap（`prisma/pre_migrations/*.sql`、`prisma db push`，然后再次幂等执行 `prisma/pre_migrations/*.sql`）现由 `server` 独占负责，
+  - Compose 现在只把 API 镜像构建为 `agentrade-server:latest` 一次，`worker` 直接复用同一镜像，不再声明第二份 worker build，
+  - 共享 Compose 运行时 env 现在会同时向 `server` 与 `worker` 传递 `CYCLE_DURATION_HOURS`，确保非 env-file 部署下周期关闭时间覆盖也保持一致，
+  - `worker` 在 Compose 中跳过 bootstrap，并等待 `server` healthy 后再启动，避免空库启动或升级时的竞态，
+  - `worker` 现在会禁用仓储 guard DDL，并且启动时只读取已初始化的运行态/规则；如果 API/bootstrap 尚未完成会立即失败，
+  - `worker` 现在也会在 `ENABLE_PERSISTENCE=false` 时立即失败，因为拆分运行时拓扑只支持通过 PostgreSQL 进行后台协调，
+  - 部署文档现在明确 `DATABASE_URL` 对应 PostgreSQL 角色必须允许安装 `pg_trgm`，同时 pre-migration 会在创建 GIN/trigram 搜索索引前动态解析已安装的 `gin_trgm_ops` operator class schema，
+  - worker bootstrap 回归现在还会断言 fail-fast 启动不会创建运行态/规则，也不会写入启动审计日志，
+  - `worker` 不再初始化 Redis 限流，也不再等待 Redis healthy；后台协调继续只依赖 PostgreSQL，
+  - worker job 的成功/失败/抢锁失败计数现已持久化到 PostgreSQL，并合并进 API `/v2/system/metrics`，因此 worker 不暴露 HTTP listener 也能保持后台维护可观测。
+- 已将本地 Docker DB 准备流程与部署 bootstrap 路径对齐：
+  - `docker:test:*` 脚本现在会在 `prisma db push` 后执行 `prisma/pre_migrations/*.sql` 下的所有 SQL 文件，覆盖新增性能索引与 metric counter 表，不再只执行旧的 open-dispute guard。
+  - 性能 backfill 现在会先判断关联表是否存在，并对持久化聚合列做全量校准；这样部分升级 schema 不会在 `prisma db push` 创建新表前失败，重复执行时也会修正陈旧计数/时间戳。
+- 已用聚焦校验重新验证收口后的路径：
+  - `pnpm --filter @agentrade/server lint`
+  - `pnpm --filter @agentrade/server test:non-db`
+  - `pnpm --filter @agentrade/server build`
+  - `pnpm db:test:prepare:pre-migrations:local`
+  - `vitest run --no-file-parallelism --maxWorkers=1 --minWorkers=1 test/repository.spec.ts`
+  - `vitest run --no-file-parallelism --maxWorkers=1 --minWorkers=1 test/persistence-api.spec.ts`
+  - `vitest run --no-file-parallelism --maxWorkers=1 --minWorkers=1 test/stress.persistence.spec.ts`
+  - `docker compose -f docker-compose.yml config`
+  - `sh scripts/compose-stack.sh local config`
+  - `docker build -f apps/server/Dockerfile --target runtime -t agentrade-server:codex-check .`
+
 ## 2026-04-28
 
 - 已优化 auth 与账户待办相关的服务端读路径：
@@ -23,7 +78,7 @@
 - 已补齐 DB 优先的服务端请求/审计日志链路，并贯通 API、CLI 与文档：
   - 新增管理员只读 `GET /v2/system/logs/requests` 与 `GET /v2/system/logs/audits`，并同步补齐 CLI 命令 `agentrade system logs requests`、`agentrade system logs audits`，
   - 新增结构化 request log 持久化（`requestId`、route、actor、IP、status、duration），以及面向鉴权拒绝、限流、运行时启动/关闭、后台任务、特权规则修改、领域写结果的结构化 audit log 持久化，
-  - 新增配置驱动的日志保留与清理项（`LOG_LEVEL`、`ENABLE_*_LOG_PERSISTENCE`、`*_LOG_RETENTION_DAYS`、`LOG_CLEANUP_INTERVAL_MINUTES`），并保留非持久化模式下的内存 ring buffer 回退路径。
+  - 新增配置驱动的日志保留与清理项（`LOG_LEVEL`、`ENABLE_*_LOG_PERSISTENCE`、`*_LOG_RETENTION_DAYS`、`LOG_CLEANUP_INTERVAL_MINUTES`、`LOG_CLEANUP_BATCH_SIZE`），并保留非持久化模式下的内存 ring buffer 回退路径。
 - 已通过聚焦回归验证非 DB 日志链路：
   - `pnpm --filter @agentrade/server test:non-db`。
 
@@ -148,10 +203,10 @@
   - 同步 SDK/CLI 鉴权头解析与命令/测试契约（含 `MISSING_ADMIN_KEY` 错误分流）。
 - 已完成服务端“默认自动周期推进”能力：
   - 新增 `CYCLE_DURATION_HOURS` 配置（默认 `168`），并通过公开 economy params 对外暴露，
-  - 增加“请求路径补偿 + 后台定时器”双通道自动关周期流程，到期后无需人工即可完成结算并开启下一周期，
+  - 增加自动到期周期结算；原先的请求路径兜底已在 2026-04-29 服务端性能重构中移除，当前由 timer/worker 在请求路径之外执行结算，
   - 在持久化路径新增事务内到期校验命令（`closeCurrentCycleIfDueDirect`），确保自动结算在 `RuntimeState` 锁序下安全执行。
 - 已补齐回归验证：
-  - 新增 API 集成用例，断言到期周期会在请求触发时自动关闭并推进 active cycle，
+  - 更新 API 集成覆盖，确认普通读请求不会自动关周期，同时显式 timer/后台结算仍会推进到期周期，
   - 周期推进完全由系统自动执行，不再依赖管理员手动关周期入口。
 - 已同步读面契约与文档：
   - Web 周期列表/详情对 `OPEN` 周期展示预计关闭时间（`startedAt + cycleDurationHours`），
@@ -483,6 +538,7 @@
 - 移除低价值管理员变更入口（`/v2/admin/cycles/close`、`/v2/admin/disputes/{id}/override`、`/v2/admin/bridge/export` 与 `agentrade admin ...`），并将持久化/压力回归用例迁移为“自动换周期 + 法定票数结案”语义。
 - 在运行规则持久化与 API/CLI 收敛改造后完成端到端复验：
   - `pnpm --filter @agentrade/server test:non-db`；
-  - `DATABASE_URL=... TEST_DATABASE_URL=... ENABLE_PERSISTENCE=true ENABLE_REDIS_RATE_LIMIT=false vitest run --fileParallelism=false test/repository.spec.ts test/persistence-api.spec.ts`；
-  - `DATABASE_URL=... TEST_DATABASE_URL=... ENABLE_PERSISTENCE=true ENABLE_REDIS_RATE_LIMIT=false vitest run --fileParallelism=false test/stress.persistence.spec.ts`；
+  - `DATABASE_URL=... TEST_DATABASE_URL=... ENABLE_PERSISTENCE=true ENABLE_REDIS_RATE_LIMIT=false vitest run --no-file-parallelism --maxWorkers=1 --minWorkers=1 test/repository.spec.ts`；
+  - `DATABASE_URL=... TEST_DATABASE_URL=... ENABLE_PERSISTENCE=true ENABLE_REDIS_RATE_LIMIT=false vitest run --no-file-parallelism --maxWorkers=1 --minWorkers=1 test/persistence-api.spec.ts`；
+  - `DATABASE_URL=... TEST_DATABASE_URL=... ENABLE_PERSISTENCE=true ENABLE_REDIS_RATE_LIMIT=false vitest run --no-file-parallelism --maxWorkers=1 --minWorkers=1 test/stress.persistence.spec.ts`；
   - `pnpm --filter @agentrade/cli test`。

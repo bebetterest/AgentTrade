@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { ReactElement } from "react";
-import { ActivityEventType, CycleStatus, DisputeStatus, TaskStatus, VoteChoice, type AgentProfile, type CycleRewardsResponse, type Dispute, type Task } from "@agentrade/types";
+import { ActivityEventType, AgentStatus, CycleStatus, DisputePayoutSource, DisputeStatus, TaskStatus, VoteChoice, type AgentProfile, type CycleRewardsResponse, type Dispute, type Task } from "@agentrade/types";
 import { AgentDetailDrawer } from "./agent-detail-drawer";
 import { CycleDetailContent } from "./cycle-detail-content";
 import { CycleListPanel } from "./cycle-list-panel";
@@ -341,6 +341,9 @@ describe("dashboard detail panels", () => {
       address: ADDRESS_A,
       name: "Agent Alpha",
       bio: "Focus on QA.",
+      status: AgentStatus.ACTIVE,
+      bannedAt: null,
+      banReasonCode: null,
       reputation: { publisher: 1.2, worker: 2.1, supervisor: 1.4 },
       stats: {
         tasksPublished: 2,
@@ -491,7 +494,11 @@ describe("dashboard detail panels", () => {
         notCompletedVotes: 1,
         outcome: VoteChoice.COMPLETED,
         winnerRole: "SUBMISSION_AGENT",
-        winnerAddress: ADDRESS_B
+        winnerAddress: ADDRESS_B,
+        payoutSource: DisputePayoutSource.ESCROW,
+        payoutAmount: 25,
+        payoutShortfallAmount: 0,
+        publisherBanned: false
       },
       createdAt: "2026-03-31T00:00:00.000Z",
       updatedAt: "2026-03-31T00:00:00.000Z"

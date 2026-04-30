@@ -4478,6 +4478,7 @@
           "generatedAt",
           "startedAt",
           "counters",
+          "gauges",
           "latencies"
         ],
         "properties": {
@@ -4501,7 +4502,16 @@
               "writeTotal",
               "writeErrorTotal",
               "writeConflictTotal",
-              "writeDeadlockTotal"
+              "writeDeadlockTotal",
+              "requestLogDroppedTotal",
+              "requestLogFlushTotal",
+              "requestLogFlushErrorTotal",
+              "workerJobSuccessTotal",
+              "workerJobErrorTotal",
+              "workerJobLockMissTotal",
+              "workerJobSuccessTotalExact",
+              "workerJobErrorTotalExact",
+              "workerJobLockMissTotalExact"
             ],
             "properties": {
               "requestsTotal": {
@@ -4523,6 +4533,54 @@
                 "type": "integer"
               },
               "writeDeadlockTotal": {
+                "type": "integer"
+              },
+              "requestLogDroppedTotal": {
+                "type": "integer"
+              },
+              "requestLogFlushTotal": {
+                "type": "integer"
+              },
+              "requestLogFlushErrorTotal": {
+                "type": "integer"
+              },
+              "workerJobSuccessTotal": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "workerJobErrorTotal": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "workerJobLockMissTotal": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "workerJobSuccessTotalExact": {
+                "type": "string",
+                "pattern": "^\\d+$"
+              },
+              "workerJobErrorTotalExact": {
+                "type": "string",
+                "pattern": "^\\d+$"
+              },
+              "workerJobLockMissTotalExact": {
+                "type": "string",
+                "pattern": "^\\d+$"
+              }
+            }
+          },
+          "gauges": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "requestLogBufferSize"
+            ],
+            "properties": {
+              "requestLogBufferSize": {
                 "type": "integer"
               }
             }

@@ -8,6 +8,11 @@ import {
   computeTaxAmount,
   computeTerminationPenalty
 } from "../src/domain/helpers.js";
+import {
+  buildDashboardDayWindow,
+  dayKeyToUtcStart,
+  toDayKeyInTimeZone
+} from "../src/utils/timezone.js";
 
 describe("domain helpers", () => {
   it("clamps reputation into [0, 100]", () => {
@@ -108,5 +113,28 @@ describe("domain helpers", () => {
         expect(amount).toBeGreaterThanOrEqual(0);
       }
     }
+  });
+
+  it("maps local day keys back to the correct UTC bucket start", () => {
+    expect(dayKeyToUtcStart("2026-01-16", "Asia/Shanghai").toISOString()).toBe(
+      "2026-01-15T16:00:00.000Z"
+    );
+    expect(dayKeyToUtcStart("2026-01-15", "America/Los_Angeles").toISOString()).toBe(
+      "2026-01-15T08:00:00.000Z"
+    );
+  });
+
+  it("builds timezone-aware dashboard windows without losing local-day boundaries", () => {
+    const now = new Date("2026-01-15T16:30:00.000Z");
+    expect(toDayKeyInTimeZone(now, "Asia/Shanghai")).toBe("2026-01-16");
+    const shanghaiWindow = buildDashboardDayWindow("Asia/Shanghai", 3, now);
+    expect(shanghaiWindow.labels).toEqual(["2026-01-14", "2026-01-15", "2026-01-16"]);
+    expect(shanghaiWindow.todayStartUtc.toISOString()).toBe("2026-01-15T16:00:00.000Z");
+    expect(shanghaiWindow.todayEndUtc.toISOString()).toBe("2026-01-16T16:00:00.000Z");
+
+    const losAngelesWindow = buildDashboardDayWindow("America/Los_Angeles", 1, now);
+    expect(losAngelesWindow.labels).toEqual(["2026-01-15"]);
+    expect(losAngelesWindow.todayStartUtc.toISOString()).toBe("2026-01-15T08:00:00.000Z");
+    expect(losAngelesWindow.todayEndUtc.toISOString()).toBe("2026-01-16T08:00:00.000Z");
   });
 });

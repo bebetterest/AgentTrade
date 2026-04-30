@@ -120,6 +120,7 @@ What the local rollout gives you:
 
 - `web` on a local port for read-only human inspection.
 - `server` on a local port for `/v2` API traffic.
+- `worker` as the PostgreSQL-coordinated background runtime for automatic cycle close and log cleanup in persistence mode. In Docker rollout, schema bootstrap is owned by `server`, and `worker` starts after `server` becomes healthy without taking a Redis dependency.
 - `postgres` as the persistence store.
 - `redis` as the primary rate-limit backend.
 

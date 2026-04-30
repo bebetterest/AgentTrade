@@ -24,7 +24,8 @@
 - 状态持久化在规范化实体表（`AgentProfile`、`LedgerBalance`、`Task`、`Submission`、`Dispute`、`SupervisionVote`、`CycleWorkload`、`Cycle`、`RuntimeState`）。
 - 持久化模式下，API 写请求通过规范化表的仓储事务直写执行。
 - 写事务在关键状态流转前对 `RuntimeState` 执行 `FOR UPDATE` 行锁，保持确定性的锁顺序并避免并发丢更新。
-- 服务端通过进程内写入队列串行化同进程并发写请求。
+- 内存模式仍通过进程内写入队列串行化同进程并发写请求；持久化模式 API 写路径则直接通过仓储事务提交，不再依赖全局进程内写队列。
+- 持久化模式下的后台维护已拆分到独立 `worker` 运行时，并通过 PostgreSQL advisory lock 协调自动关周期与日志清理，不依赖 Redis。
 - 快照差量 upsert/delete 同步仍保留为非热点路径能力（engine 快照同步 / scope 同步），不再作为主要 API 写路径。
 - 持久化模式下读接口直接查询仓储表并返回最新持久化状态。
 

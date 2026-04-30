@@ -30,12 +30,17 @@ import {
   type ServerAuditLogRecord,
   type ServerRequestLogRecord,
   type RuntimeSettingsState,
+  type ServiceMetricsResponse,
   type Submission,
   type Task
 } from "@agentrade/types";
 import { AgentradeEngine } from "./domain/engine.js";
 import { DomainError } from "./domain/errors.js";
-import { applyRateLimit } from "./core/rate-limit.js";
+import {
+  applyRateLimit,
+  InMemoryRateLimiter,
+  type RateLimiter
+} from "./core/rate-limit.js";
 import { createRateLimiter } from "./infra/rate-limiter.js";
 import {
   PersistenceConflictError,
@@ -62,7 +67,10 @@ import {
   getRequestPathname,
   resolveVersionlessApiRedirect
 } from "./api/versioning.js";
-import { ServiceMetricsCollector } from "./observability/metrics.js";
+import {
+  ServiceMetricsCollector,
+  type WorkerJobMetricOutcome
+} from "./observability/metrics.js";
 import {
   type AuditLogCreateInput,
   buildFastifyLoggerOptions,
@@ -76,8 +84,17 @@ import {
 import { HttpError } from "./utils/http-error.js";
 import "./types.js";
 
-export const buildApp = async () => {
+interface BuildAppOptions {
+  runtimeRole?: "api" | "worker";
+}
+
+export const buildApp = async (options: BuildAppOptions = {}) => {
   const config = loadConfig();
+  const runtimeRole = options.runtimeRole ?? config.serverRuntimeRole;
+  config.serverRuntimeRole = runtimeRole;
+  if (runtimeRole === "worker" && !config.enablePersistence) {
+    throw new Error("worker runtime requires ENABLE_PERSISTENCE=true; use api runtime for in-memory mode");
+  }
   assertSupportedApiDefaultVersion(config);
   const app = Fastify({
     logger: process.env.VITEST ? false : buildFastifyLoggerOptions(config),
@@ -90,56 +107,81 @@ export const buildApp = async () => {
       : config.corsAllowedOrigins;
 
   const stateRepository = config.enablePersistence
-    ? new PrismaStateRepository(config.databaseUrl, config)
+    ? new PrismaStateRepository(config.databaseUrl, config, {
+        ensurePersistenceGuards: runtimeRole !== "worker"
+      })
     : null;
+  const shouldRunBackgroundJobs = !stateRepository || runtimeRole === "worker";
+  const shouldRecordWorkerMetrics = runtimeRole === "worker";
   const inMemoryServerLogs = new InMemoryServerLogStore();
-  let logQueue: Promise<void> = Promise.resolve();
-  const enqueueLogWrite = async <T>(operation: () => Promise<T>): Promise<T> => {
-    const next = logQueue.then(operation, operation);
-    logQueue = next.then(
-      () => undefined,
-      () => undefined
-    );
-    return next;
+  const metrics = new ServiceMetricsCollector();
+  const logAuditRecord = (record: ServerAuditLogRecord): void => {
+    const payload = {
+      category: record.category,
+      action: record.action,
+      outcome: record.outcome,
+      requestId: record.requestId,
+      clientIp: record.clientIp,
+      actorAddress: record.actorAddress,
+      targetType: record.targetType,
+      targetId: record.targetId,
+      cycleId: record.cycleId,
+      details: record.details
+    };
+    if (record.severity === ServerAuditSeverity.ERROR) {
+      app.log.error(payload, record.message);
+    } else if (record.severity === ServerAuditSeverity.WARN) {
+      app.log.warn(payload, record.message);
+    } else {
+      app.log.info(payload, record.message);
+    }
   };
-  const appendRequestLog = async (
-    input: RequestLogCreateInput
-  ): Promise<ServerRequestLogRecord> =>
-    enqueueLogWrite(async () => {
-      if (stateRepository && config.enableRequestLogPersistence) {
-        return stateRepository.appendRequestLogDirect(input);
-      }
-      return inMemoryServerLogs.appendRequestLog(input);
-    });
+  const requestLogBuffer: RequestLogCreateInput[] = [];
+  let requestLogBufferHead = 0;
+  let requestLogFlushInFlight: Promise<void> | null = null;
+  let requestLogDroppedSinceLastWarn = 0;
+  let requestLogDropWarnedAtMs = 0;
+  const REQUEST_LOG_DROP_WARN_INTERVAL_MS = 60_000;
+  const requestLogBufferSize = (): number => requestLogBuffer.length - requestLogBufferHead;
+  const compactRequestLogBuffer = (): void => {
+    if (requestLogBufferHead === 0) {
+      return;
+    }
+    if (
+      requestLogBufferHead >= requestLogBuffer.length ||
+      requestLogBufferHead >= 1024 ||
+      requestLogBufferHead * 2 >= requestLogBuffer.length
+    ) {
+      requestLogBuffer.splice(0, requestLogBufferHead);
+      requestLogBufferHead = 0;
+    }
+  };
+  const dropOldestRequestLog = (): void => {
+    requestLogBufferHead += 1;
+    compactRequestLogBuffer();
+  };
+  const takeRequestLogBatch = (): RequestLogCreateInput[] => {
+    const size = requestLogBufferSize();
+    if (size <= 0) {
+      return [];
+    }
+    const end = requestLogBufferHead + Math.min(config.requestLogBatchSize, size);
+    const batch = requestLogBuffer.slice(requestLogBufferHead, end);
+    requestLogBufferHead = end;
+    compactRequestLogBuffer();
+    return batch;
+  };
+  metrics.recordRequestLogBufferSize(0);
   const appendAuditLog = async (
     input: AuditLogCreateInput
-  ): Promise<ServerAuditLogRecord> =>
-    enqueueLogWrite(async () => {
-      const record =
-        stateRepository && config.enableAuditLogPersistence
-          ? await stateRepository.appendAuditLogDirect(input)
-          : inMemoryServerLogs.appendAuditLog(input);
-      const payload = {
-        category: record.category,
-        action: record.action,
-        outcome: record.outcome,
-        requestId: record.requestId,
-        clientIp: record.clientIp,
-        actorAddress: record.actorAddress,
-        targetType: record.targetType,
-        targetId: record.targetId,
-        cycleId: record.cycleId,
-        details: record.details
-      };
-      if (record.severity === ServerAuditSeverity.ERROR) {
-        app.log.error(payload, record.message);
-      } else if (record.severity === ServerAuditSeverity.WARN) {
-        app.log.warn(payload, record.message);
-      } else {
-        app.log.info(payload, record.message);
-      }
-      return record;
-    });
+  ): Promise<ServerAuditLogRecord> => {
+    const record =
+      stateRepository && config.enableAuditLogPersistence
+        ? await stateRepository.appendAuditLogDirect(input)
+        : inMemoryServerLogs.appendAuditLog(input);
+    logAuditRecord(record);
+    return record;
+  };
   const recordAudit = async (input: AuditLogCreateInput): Promise<void> => {
     try {
       await appendAuditLog(input);
@@ -147,10 +189,91 @@ export const buildApp = async () => {
       app.log.error({ error }, "audit log append failed");
     }
   };
+  const flushDroppedRequestLogWarning = async (force = false): Promise<void> => {
+    if (requestLogDroppedSinceLastWarn === 0) {
+      return;
+    }
+    const nowMs = Date.now();
+    if (!force && nowMs - requestLogDropWarnedAtMs < REQUEST_LOG_DROP_WARN_INTERVAL_MS) {
+      return;
+    }
+    const droppedCount = requestLogDroppedSinceLastWarn;
+    requestLogDroppedSinceLastWarn = 0;
+    requestLogDropWarnedAtMs = nowMs;
+    await recordAudit({
+      category: ServerAuditCategory.BACKGROUND_JOB,
+      action: "request-logs.drop",
+      severity: ServerAuditSeverity.WARN,
+      outcome: ServerAuditOutcome.FAILURE,
+      cycleId: resolveCurrentCycleId() ?? null,
+      message: "request log buffer dropped records",
+      details: {
+        droppedCount,
+        bufferCapacity: config.requestLogBufferCapacity,
+        runtimeRole
+      }
+    });
+  };
+  const flushRequestLogBuffer = async (): Promise<void> => {
+    if (!stateRepository || !config.enableRequestLogPersistence) {
+      return;
+    }
+    if (requestLogFlushInFlight) {
+      return requestLogFlushInFlight;
+    }
+    requestLogFlushInFlight = (async () => {
+      while (requestLogBufferSize() > 0) {
+        const batch = takeRequestLogBatch();
+        metrics.recordRequestLogBufferSize(requestLogBufferSize());
+        try {
+          await stateRepository.appendRequestLogsDirect(batch);
+          metrics.recordRequestLogFlush("success");
+        } catch (error) {
+          metrics.recordRequestLogFlush("error");
+          metrics.recordRequestLogDropped(batch.length);
+          requestLogDroppedSinceLastWarn += batch.length;
+          app.log.error(
+            {
+              error,
+              batchSize: batch.length
+            },
+            "request log flush failed"
+          );
+          await flushDroppedRequestLogWarning();
+        }
+      }
+    })().finally(() => {
+      requestLogFlushInFlight = null;
+      metrics.recordRequestLogBufferSize(requestLogBufferSize());
+    });
+    return requestLogFlushInFlight;
+  };
+  const appendRequestLog = (input: RequestLogCreateInput): void => {
+    const queuedInput = {
+      ...input,
+      createdAt: input.createdAt ?? new Date()
+    };
+    if (stateRepository && config.enableRequestLogPersistence) {
+      if (requestLogBufferSize() >= config.requestLogBufferCapacity) {
+        dropOldestRequestLog();
+        metrics.recordRequestLogDropped();
+        requestLogDroppedSinceLastWarn += 1;
+        void flushDroppedRequestLogWarning();
+      }
+      requestLogBuffer.push(queuedInput);
+      metrics.recordRequestLogBufferSize(requestLogBufferSize());
+      if (requestLogBufferSize() >= config.requestLogBatchSize) {
+        void flushRequestLogBuffer();
+      }
+      return;
+    }
+    inMemoryServerLogs.appendRequestLog(queuedInput);
+  };
   const listRequestLogs = async (
     input: Parameters<InMemoryServerLogStore["queryRequestLogs"]>[0]
   ): Promise<PaginatedResponse<ServerRequestLogRecord>> => {
     if (stateRepository && config.enableRequestLogPersistence) {
+      await flushRequestLogBuffer();
       return stateRepository.queryRequestLogsDirect(input);
     }
     return inMemoryServerLogs.queryRequestLogs(input);
@@ -163,23 +286,57 @@ export const buildApp = async () => {
     }
     return inMemoryServerLogs.queryAuditLogs(input);
   };
-  const cleanupLogs = async (now = new Date()) =>
-    enqueueLogWrite(async () => {
-      const [persisted, inMemory] = await Promise.all([
-        stateRepository && (config.enableRequestLogPersistence || config.enableAuditLogPersistence)
-          ? stateRepository.cleanupExpiredLogs(now)
-          : Promise.resolve({ deletedRequestLogs: 0, deletedAuditLogs: 0 }),
-        Promise.resolve(inMemoryServerLogs.cleanup(now, config))
-      ]);
-      return {
-        deletedRequestLogs: persisted.deletedRequestLogs + inMemory.deletedRequestLogs,
-        deletedAuditLogs: persisted.deletedAuditLogs + inMemory.deletedAuditLogs
-      };
-    });
+  const cleanupInMemoryLogs = (now = new Date()) => inMemoryServerLogs.cleanup(now, config);
+  const recordWorkerJobMetric = async (outcome: WorkerJobMetricOutcome): Promise<void> => {
+    if (!shouldRecordWorkerMetrics) {
+      return;
+    }
+    metrics.recordWorkerJob(outcome);
+    if (!stateRepository) {
+      return;
+    }
+    try {
+      await stateRepository.incrementWorkerJobMetricDirect(outcome);
+    } catch (error) {
+      app.log.warn(
+        {
+          error,
+          outcome
+        },
+        "worker job metric persist failed"
+      );
+    }
+  };
+  const getMetrics = async (): Promise<ServiceMetricsResponse> => {
+    if (!stateRepository || runtimeRole === "worker") {
+      return metrics.snapshot();
+    }
+    try {
+      const workerCounters = await stateRepository.getWorkerJobMetricCountersDirect();
+      return metrics.snapshot(workerCounters);
+    } catch (error) {
+      app.log.warn({ error }, "worker job metric read failed");
+      return metrics.snapshot();
+    }
+  };
 
   await app.register(helmet);
-  const limiter = await createRateLimiter(config, app.log, appendAuditLog);
-  const metrics = new ServiceMetricsCollector();
+  const limiter: RateLimiter =
+    runtimeRole === "worker"
+      ? new InMemoryRateLimiter(config.rateLimitPerMinute, config.rateLimitBurst)
+      : await createRateLimiter(config, app.log, appendAuditLog);
+  if (runtimeRole === "worker") {
+    app.log.info("redis rate limit skipped for worker runtime without HTTP listener");
+  }
+  const closeStartupResources = async (): Promise<void> => {
+    if (limiter.close) {
+      await limiter.close();
+    }
+    if (stateRepository) {
+      await stateRepository.close();
+    }
+    await app.close();
+  };
   const safeSecretEqual = (expected: string, received: string): boolean => {
     const expectedBuffer = Buffer.from(expected);
     const receivedBuffer = Buffer.from(received);
@@ -226,26 +383,46 @@ export const buildApp = async () => {
   let runtimeRevision: string | null = null;
   let inMemoryEngineDirty = false;
   if (stateRepository) {
-    await stateRepository.ensureInitialized(inMemoryEngine.toSnapshot());
-    const initializedRules = await stateRepository.ensureRuntimeRulesInitialized(runtimeRulesSeed);
-    setRuntimeSettingsState(initializedRules);
-    const snapshot = await stateRepository.load();
-    if (snapshot) {
-      inMemoryEngine = AgentradeEngine.fromSnapshot(config, snapshot);
-      app.log.info("loaded engine state from normalized persistence tables");
-      await recordAudit({
-        category: ServerAuditCategory.RUNTIME,
-        action: "runtime.persistence.load",
-        severity: ServerAuditSeverity.INFO,
-        outcome: ServerAuditOutcome.SUCCESS,
-        cycleId: snapshot.activeCycleId,
-        message: "loaded engine state from normalized persistence tables",
-        details: {
-          activeCycleId: snapshot.activeCycleId
-        }
-      });
+    try {
+      const initializedRules =
+        runtimeRole === "worker"
+          ? await stateRepository.getRuntimeSettingsDirect()
+          : await (async () => {
+              await stateRepository.ensureInitialized(inMemoryEngine.toSnapshot());
+              return stateRepository.ensureRuntimeRulesInitialized(runtimeRulesSeed);
+            })();
+      if (!initializedRules) {
+        throw new Error("worker runtime requires initialized persistence state; start the api runtime first");
+      }
+      setRuntimeSettingsState(initializedRules);
+      const snapshot = await stateRepository.load();
+      if (!snapshot && runtimeRole === "worker") {
+        throw new Error("worker runtime requires initialized persistence state; start the api runtime first");
+      }
+      if (snapshot) {
+        inMemoryEngine = AgentradeEngine.fromSnapshot(config, snapshot);
+        app.log.info("loaded engine state from normalized persistence tables");
+        await recordAudit({
+          category: ServerAuditCategory.RUNTIME,
+          action: "runtime.persistence.load",
+          severity: ServerAuditSeverity.INFO,
+          outcome: ServerAuditOutcome.SUCCESS,
+          cycleId: snapshot.activeCycleId,
+          message: "loaded engine state from normalized persistence tables",
+          details: {
+            activeCycleId: snapshot.activeCycleId
+          }
+        });
+      }
+      runtimeRevision = await stateRepository.getRuntimeRevision();
+    } catch (error) {
+      try {
+        await closeStartupResources();
+      } catch (cleanupError) {
+        app.log.warn({ error: cleanupError }, "startup resource cleanup failed");
+      }
+      throw error;
     }
-    runtimeRevision = await stateRepository.getRuntimeRevision();
   }
 
   const read = async <T>(operation: (engine: AgentradeEngine) => T | Promise<T>): Promise<T> => {
@@ -398,7 +575,7 @@ export const buildApp = async () => {
         return result;
       }
 
-      const result = await enqueueMutation(async () => {
+      const result = await (async () => {
         if (inMemoryEngineDirty) {
           const latestSnapshot = await stateRepository.load();
           if (latestSnapshot) {
@@ -444,7 +621,7 @@ export const buildApp = async () => {
         }
 
         throw new HttpError(409, "persistence conflict: retry limit reached");
-      });
+      })();
 
       await recordWriteOutcome(writeMeta, {
         startedAtNs,
@@ -475,12 +652,13 @@ export const buildApp = async () => {
       throw new HttpError(500, "persistence repository is unavailable");
     }
     try {
-      const result = await enqueueMutation(async () => {
+      const result = await (async () => {
+        await refreshRuntimeSettings();
         const next = await operation();
         inMemoryEngineDirty = true;
         runtimeRevision = null;
         return next;
-      });
+      })();
       await recordWriteOutcome(writeMeta, {
         startedAtNs,
         retryCount: 0,
@@ -500,15 +678,7 @@ export const buildApp = async () => {
     }
   };
 
-  const AUTO_CYCLE_CLOSE_INTERVAL_MS = 30_000;
-  const AUTO_CYCLE_CLOSE_SKIP_PATHS = new Set<string>();
   let autoCycleCloseInFlight: Promise<void> | null = null;
-  const hasPendingRuntimePatch = (): boolean =>
-    Boolean(
-      runtimeSettingsState.pendingNextPatch &&
-        Object.keys(runtimeSettingsState.pendingNextPatch).length > 0
-    );
-
   const isCycleDueForAutoClose = (cycle: Cycle): boolean => {
     if (cycle.status !== "OPEN") {
       return false;
@@ -521,90 +691,112 @@ export const buildApp = async () => {
     return Date.now() >= startedAtMs + cycleDurationMs;
   };
 
-  const closeDueCycleOnce = async (): Promise<CloseCycleResult | null> => {
+  const closeDueCycleOnce = async (): Promise<{
+    acquired: boolean;
+    result: CloseCycleResult | null;
+  }> => {
     if (!stateRepository) {
-      return enqueueMutation(async () => {
-        const activeCycle = inMemoryEngine.getActiveCycle();
-        if (!isCycleDueForAutoClose(activeCycle)) {
-          return null;
-        }
-        const beforeRules = runtimeSettingsState.currentRules;
-        const pendingPatch = runtimeSettingsState.pendingNextPatch;
-        config.mintPerCycle = runtimeSettingsState.nextRules.mintPerCycle;
-        const close = inMemoryEngine.closeCurrentCycle();
-        if (pendingPatch && Object.keys(pendingPatch).length > 0) {
-          const nextCurrentRules = mergeRuntimeEditableRules(beforeRules, pendingPatch);
-          const nextState: RuntimeSettingsState = {
-            currentRules: nextCurrentRules,
-            pendingNextPatch: null,
-            nextRules: nextCurrentRules,
-            updatedAt: new Date().toISOString()
-          };
-          setRuntimeSettingsState(nextState);
-          nonPersistenceRuntimeAuditLog.unshift({
-            id: `runtime-audit-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-            eventType: "AUTO_APPLY_NEXT",
-            applyTo: null,
-            reason: null,
-            actor: "system",
-            cycleId: close.openedCycleId,
-            beforeRules,
-            afterRules: nextCurrentRules,
-            patch: pendingPatch,
-            pendingNextPatch: null,
-            createdAt: nextState.updatedAt
-          });
-        }
-        app.engine = inMemoryEngine;
-        return close;
-      });
+      return {
+        acquired: true,
+        result: await enqueueMutation(async () => {
+          const activeCycle = inMemoryEngine.getActiveCycle();
+          if (!isCycleDueForAutoClose(activeCycle)) {
+            return null;
+          }
+          const beforeRules = runtimeSettingsState.currentRules;
+          const pendingPatch = runtimeSettingsState.pendingNextPatch;
+          config.mintPerCycle = runtimeSettingsState.nextRules.mintPerCycle;
+          const close = inMemoryEngine.closeCurrentCycle();
+          if (pendingPatch && Object.keys(pendingPatch).length > 0) {
+            const nextCurrentRules = mergeRuntimeEditableRules(beforeRules, pendingPatch);
+            const nextState: RuntimeSettingsState = {
+              currentRules: nextCurrentRules,
+              pendingNextPatch: null,
+              nextRules: nextCurrentRules,
+              updatedAt: new Date().toISOString()
+            };
+            setRuntimeSettingsState(nextState);
+            nonPersistenceRuntimeAuditLog.unshift({
+              id: `runtime-audit-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+              eventType: "AUTO_APPLY_NEXT",
+              applyTo: null,
+              reason: null,
+              actor: "system",
+              cycleId: close.openedCycleId,
+              beforeRules,
+              afterRules: nextCurrentRules,
+              patch: pendingPatch,
+              pendingNextPatch: null,
+              createdAt: nextState.updatedAt
+            });
+          }
+          app.engine = inMemoryEngine;
+          return close;
+        })
+      };
     }
 
-    const close = await enqueueMutation(async () => {
-      const shouldApplyNext = hasPendingRuntimePatch();
-      const closeConfig = {
-        ...config,
-        mintPerCycle: runtimeSettingsState.nextRules.mintPerCycle
+    const result = await stateRepository.closeCurrentCycleIfDueDirect();
+    if (!result) {
+      return {
+        acquired: true,
+        result: null
       };
-      const result = await stateRepository.closeCurrentCycleIfDueDirect(closeConfig);
-      if (!result) {
-        return null;
-      }
-      if (shouldApplyNext) {
-        const applied = await stateRepository.applyPendingRuntimeRulesForOpenedCycleDirect({
-          openedCycleId: result.openedCycleId,
-          actor: "system"
-        });
-        setRuntimeSettingsState(applied);
-      }
-      inMemoryEngineDirty = true;
-      runtimeRevision = null;
-      return result;
-    });
-    return close;
+    }
+    const refreshedRules = await stateRepository.getRuntimeSettingsDirect();
+    if (refreshedRules) {
+      setRuntimeSettingsState(refreshedRules);
+    }
+    inMemoryEngineDirty = true;
+    runtimeRevision = null;
+    return {
+      acquired: true,
+      result
+    };
   };
 
-  const settleDueCycles = async (
-    trigger: "startup" | "request" | "timer"
-  ): Promise<void> => {
+  const settleDueCycles = async (trigger: "startup" | "timer"): Promise<void> => {
     if (autoCycleCloseInFlight) {
       return autoCycleCloseInFlight;
     }
 
     autoCycleCloseInFlight = (async () => {
-      let closedCount = 0;
-      let lastClosedCycleId: string | null = null;
-      let lastOpenedCycleId: string | null = null;
-      while (true) {
-        const closed = await closeDueCycleOnce();
-        if (!closed) {
-          break;
+      const closedCycles: CloseCycleResult[] = [];
+      if (stateRepository && runtimeRole === "worker") {
+        const closeAttempt = await stateRepository.closeDueCyclesWithWorkerLock();
+        if (!closeAttempt.acquired) {
+          await recordWorkerJobMetric("lock_miss");
+          return;
         }
-        closedCount += 1;
-        lastClosedCycleId = closed.closedCycleId;
-        lastOpenedCycleId = closed.openedCycleId;
+        closedCycles.push(...(closeAttempt.result ?? []));
+        if (closedCycles.length > 0) {
+          const refreshedRules = await stateRepository.getRuntimeSettingsDirect();
+          if (refreshedRules) {
+            setRuntimeSettingsState(refreshedRules);
+          }
+          inMemoryEngineDirty = true;
+          runtimeRevision = null;
+        }
+      } else {
+        while (true) {
+          const closeAttempt = await closeDueCycleOnce();
+          if (!closeAttempt.acquired) {
+            await recordWorkerJobMetric("lock_miss");
+            return;
+          }
+          const closed = closeAttempt.result;
+          if (!closed) {
+            break;
+          }
+          closedCycles.push(closed);
+        }
       }
+      await recordWorkerJobMetric("success");
+      const closedCount = closedCycles.length;
       if (closedCount > 0) {
+        const lastClosed = closedCycles[closedCycles.length - 1]!;
+        const lastClosedCycleId = lastClosed.closedCycleId;
+        const lastOpenedCycleId = lastClosed.openedCycleId;
         app.log.info(
           {
             trigger,
@@ -631,6 +823,7 @@ export const buildApp = async () => {
       }
     })()
       .catch(async (error) => {
+        await recordWorkerJobMetric("error");
         app.log.warn(
           {
             trigger,
@@ -733,12 +926,20 @@ export const buildApp = async () => {
     return read((engine) => engine.getActiveCycle());
   };
 
+  const refreshRuntimeSettings = async (): Promise<RuntimeSettingsState | null> => {
+    if (!stateRepository) {
+      return runtimeSettingsState;
+    }
+    const next = await stateRepository.getRuntimeSettingsDirect();
+    return next ? setRuntimeSettingsState(next) : null;
+  };
+
   const readRuntimeSettings = async (): Promise<RuntimeSettingsState> => {
     if (!stateRepository) {
       return runtimeSettingsState;
     }
     const next =
-      (await stateRepository.getRuntimeSettingsDirect()) ??
+      (await refreshRuntimeSettings()) ??
       (await stateRepository.ensureRuntimeRulesInitialized(runtimeRulesSeed));
     return setRuntimeSettingsState(next);
   };
@@ -1020,8 +1221,10 @@ export const buildApp = async () => {
     readAgents,
     readActivities,
     readActiveCycle,
+    refreshRuntimeSettings,
     readRuntimeSettings,
     listRuntimeRuleHistory,
+    getMetrics,
     listRequestLogs,
     listAuditLogs,
     recordAudit,
@@ -1030,6 +1233,12 @@ export const buildApp = async () => {
     defaultAgentProfile,
     defaultLedger
   };
+
+  if (process.env.VITEST) {
+    app.decorate("settleDueCyclesForTests", async () => {
+      await settleDueCycles("timer");
+    });
+  }
 
   app.decorate("engine", inMemoryEngine);
   app.decorate("authenticate", async (request) => {
@@ -1153,13 +1362,6 @@ export const buildApp = async () => {
     requestStartTimes.set(request, process.hrtime.bigint());
   });
   app.addHook("onRequest", applyRateLimit(limiter));
-  app.addHook("onRequest", async (request) => {
-    const path = getRequestPathname(request.raw.url ?? request.url);
-    if (AUTO_CYCLE_CLOSE_SKIP_PATHS.has(path)) {
-      return;
-    }
-    await settleDueCycles("request");
-  });
   app.addHook("onSend", async (request, reply, payload) => {
     reply.header("x-request-id", request.id);
     return payload;
@@ -1178,23 +1380,19 @@ export const buildApp = async () => {
       statusCode: reply.statusCode,
       durationMs
     });
-    try {
-      await appendRequestLog({
-        requestId: request.id,
-        method: request.method,
-        path,
-        routeId,
-        statusCode: reply.statusCode,
-        durationMs,
-        clientIp: network.clientIp,
-        forwardedFor: network.forwardedFor,
-        userAgent: network.userAgent,
-        actorAddress,
-        errorCode: request.serverErrorCode ?? null
-      });
-    } catch (error) {
-      app.log.error({ error }, "request log append failed");
-    }
+    appendRequestLog({
+      requestId: request.id,
+      method: request.method,
+      path,
+      routeId,
+      statusCode: reply.statusCode,
+      durationMs,
+      clientIp: network.clientIp,
+      forwardedFor: network.forwardedFor,
+      userAgent: network.userAgent,
+      actorAddress,
+      errorCode: request.serverErrorCode ?? null
+    });
     if (reply.statusCode === 429 && request.serverErrorCode === "RATE_LIMITED") {
       await recordAudit({
         category: ServerAuditCategory.SECURITY,
@@ -1228,7 +1426,9 @@ export const buildApp = async () => {
   });
   await app.register(cors, { origin: corsOrigin });
 
-  await settleDueCycles("startup");
+  if (shouldRunBackgroundJobs) {
+    await settleDueCycles("startup");
+  }
   await recordAudit({
     category: ServerAuditCategory.RUNTIME,
     action: "runtime.startup",
@@ -1237,33 +1437,69 @@ export const buildApp = async () => {
     cycleId: resolveCurrentCycleId() ?? null,
     message: "server runtime initialized",
     details: {
+      runtimeRole,
       enablePersistence: config.enablePersistence,
       enableRequestLogPersistence: config.enableRequestLogPersistence,
       enableAuditLogPersistence: config.enableAuditLogPersistence
     }
   });
-  const autoCycleCloseTimer = setInterval(() => {
-    void settleDueCycles("timer");
-  }, AUTO_CYCLE_CLOSE_INTERVAL_MS);
-  if (typeof autoCycleCloseTimer.unref === "function") {
-    autoCycleCloseTimer.unref();
+  let requestLogFlushTimer: NodeJS.Timeout | null = null;
+  if (runtimeRole === "api" && stateRepository && config.enableRequestLogPersistence) {
+    requestLogFlushTimer = setInterval(() => {
+      void flushRequestLogBuffer();
+    }, config.requestLogFlushIntervalMs);
+    if (typeof requestLogFlushTimer.unref === "function") {
+      requestLogFlushTimer.unref();
+    }
   }
-  const logCleanupIntervalMs = config.logCleanupIntervalMinutes * 60_000;
-  const logCleanupTimer = setInterval(() => {
-    void cleanupLogs()
-      .then((result) =>
-        recordAudit({
+  let autoCycleCloseTimer: NodeJS.Timeout | null = null;
+  let logCleanupTimer: NodeJS.Timeout | null = null;
+  let logCleanupInFlight: Promise<void> | null = null;
+  const shouldRunApiLocalLogCleanup =
+    runtimeRole === "api" &&
+    Boolean(stateRepository) &&
+    (!config.enableRequestLogPersistence || !config.enableAuditLogPersistence);
+  const runLogCleanup = async (now = new Date()): Promise<void> => {
+    if (logCleanupInFlight) {
+      return logCleanupInFlight;
+    }
+    logCleanupInFlight = (async () => {
+      try {
+        const inMemory = cleanupInMemoryLogs(now);
+        let cleanupResult = inMemory;
+        if (
+          runtimeRole === "worker" &&
+          stateRepository &&
+          (config.enableRequestLogPersistence || config.enableAuditLogPersistence)
+        ) {
+          const persisted = await stateRepository.cleanupExpiredLogsWithWorkerLock(now);
+          if (!persisted.acquired) {
+            await recordWorkerJobMetric("lock_miss");
+            return;
+          }
+          cleanupResult = {
+            deletedRequestLogs:
+              (persisted.result?.deletedRequestLogs ?? 0) + inMemory.deletedRequestLogs,
+            deletedAuditLogs:
+              (persisted.result?.deletedAuditLogs ?? 0) + inMemory.deletedAuditLogs
+          };
+        }
+        await recordWorkerJobMetric("success");
+        await recordAudit({
           category: ServerAuditCategory.BACKGROUND_JOB,
           action: "logs.cleanup",
           severity: ServerAuditSeverity.INFO,
           outcome: ServerAuditOutcome.SUCCESS,
           cycleId: resolveCurrentCycleId() ?? null,
           message: "log cleanup completed",
-          details: { ...result }
-        })
-      )
-      .catch((error) =>
-        recordAudit({
+          details: {
+            ...cleanupResult,
+            runtimeRole
+          }
+        });
+      } catch (error) {
+        await recordWorkerJobMetric("error");
+        await recordAudit({
           category: ServerAuditCategory.BACKGROUND_JOB,
           action: "logs.cleanup",
           severity: ServerAuditSeverity.WARN,
@@ -1271,18 +1507,45 @@ export const buildApp = async () => {
           cycleId: resolveCurrentCycleId() ?? null,
           message: "log cleanup failed",
           details: {
+            runtimeRole,
             errorCode: errorCode(error)
           }
-        })
-      );
-  }, logCleanupIntervalMs);
-  if (typeof logCleanupTimer.unref === "function") {
-    logCleanupTimer.unref();
+        });
+      }
+    })().finally(() => {
+      logCleanupInFlight = null;
+    });
+    return logCleanupInFlight;
+  };
+  if (process.env.VITEST) {
+    app.decorate("cleanupLogsForTests", async (now?: Date) => {
+      await runLogCleanup(now);
+    });
+  }
+  if (shouldRunBackgroundJobs) {
+    autoCycleCloseTimer = setInterval(() => {
+      void settleDueCycles("timer");
+    }, config.cycleClosePollIntervalMs);
+  }
+  if (shouldRunBackgroundJobs || shouldRunApiLocalLogCleanup) {
+    const logCleanupIntervalMs = config.logCleanupIntervalMinutes * 60_000;
+    logCleanupTimer = setInterval(() => {
+      void runLogCleanup();
+    }, logCleanupIntervalMs);
   }
 
   app.addHook("onClose", async () => {
-    clearInterval(autoCycleCloseTimer);
-    clearInterval(logCleanupTimer);
+    if (autoCycleCloseTimer) {
+      clearInterval(autoCycleCloseTimer);
+    }
+    if (logCleanupTimer) {
+      clearInterval(logCleanupTimer);
+    }
+    if (requestLogFlushTimer) {
+      clearInterval(requestLogFlushTimer);
+    }
+    await autoCycleCloseInFlight;
+    await logCleanupInFlight;
     await recordAudit({
       category: ServerAuditCategory.RUNTIME,
       action: "runtime.shutdown",
@@ -1291,8 +1554,18 @@ export const buildApp = async () => {
       cycleId: resolveCurrentCycleId() ?? null,
       message: "server runtime shutting down"
     });
-    await cleanupLogs();
-    await logQueue;
+    await flushRequestLogBuffer();
+    await flushDroppedRequestLogWarning(true);
+    if (!stateRepository) {
+      cleanupInMemoryLogs();
+    } else if (
+      runtimeRole === "worker" &&
+      (config.enableRequestLogPersistence || config.enableAuditLogPersistence)
+    ) {
+      await runLogCleanup();
+    } else if (shouldRunApiLocalLogCleanup) {
+      cleanupInMemoryLogs();
+    }
     if (limiter.close) {
       await limiter.close();
     }

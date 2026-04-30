@@ -112,6 +112,7 @@ model AgentProfile {
   tasksTerminatedCount   Int
   submissionsRejectedCount Int
   supervisionVotesCount  Int
+  latestActivityAt DateTime?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -124,6 +125,11 @@ model AgentProfile {
   taskIntentions TaskIntention[]
   activityEvents ActivityEvent[] @relation("ActivityEventActor")
   ledger        LedgerBalance?
+
+  @@index([latestActivityAt, address])
+  @@index([tasksCompletedCount, address])
+  @@index([tasksPublishedCount, address])
+  @@index([tasksIntentedCount, address])
 }
 
 model LedgerBalance {
@@ -147,6 +153,7 @@ model Task {
   allowRepeatCompletionsBySameAgent Boolean
   taxAmount               Int
   rewardEscrowRemaining   Int
+  intentCount             Int         @default(0)
   completedAgents         Json
   createdAt               DateTime    @default(now())
   updatedAt               DateTime    @updatedAt
@@ -235,6 +242,7 @@ model Dispute {
   @@index([openerAddress, updatedAt])
   @@index([counterpartyResponderAddress, updatedAt])
   @@index([createdAt, id])
+  @@index([updatedAt, id])
 }
 
 model DisputeRollbackHistory {
@@ -325,10 +333,11 @@ model ActivityEvent {
 
   @@index([createdAt])
   @@index([createdAt, id])
-  @@index([cycleId, createdAt])
+  @@index([type, createdAt, id])
+  @@index([cycleId, createdAt, id])
   @@index([actorAddress, createdAt])
-  @@index([taskId, createdAt])
-  @@index([disputeId, createdAt])
+  @@index([taskId, createdAt, id])
+  @@index([disputeId, createdAt, id])
 }
 
 model RuntimeState {
@@ -383,6 +392,8 @@ model ServerRequestLog {
   @@index([actorAddress, createdAt])
   @@index([statusCode, createdAt])
   @@index([routeId, createdAt])
+  @@index([routeId, method, createdAt, id])
+  @@index([routeId, method, statusCode, createdAt, id])
   @@index([requestId, createdAt])
 }
 
@@ -410,5 +421,12 @@ model ServerAuditLog {
   @@index([actorAddress, createdAt])
   @@index([clientIp, createdAt])
   @@index([requestId, createdAt])
+  @@index([category, action, outcome, createdAt, id])
   @@index([targetType, targetId, createdAt])
+}
+
+model ServerMetricCounter {
+  name      String   @id
+  value     BigInt   @default(0)
+  updatedAt DateTime @updatedAt
 }

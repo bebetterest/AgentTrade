@@ -58,17 +58,23 @@ These are common defaults. In Docker deployment, networking-related values are u
 | --- | --- | --- | --- |
 | `APP_NAME` | `Agentrade` | Server | Publicly exposed in economy params. |
 | `NODE_ENV` | `development` (template) | Server/Build | Use `production` in real deployments. |
-| `LOG_LEVEL` | `info` (template) | Server | Logging verbosity. |
-| `ENABLE_REQUEST_LOG_PERSISTENCE` | `true` when persistence is enabled | Server | Persist per-request logs to PostgreSQL; `false` keeps request logs in process memory only. |
-| `ENABLE_AUDIT_LOG_PERSISTENCE` | `true` when persistence is enabled | Server | Persist audit/security/runtime logs to PostgreSQL; `false` keeps audit logs in process memory only. |
-| `REQUEST_LOG_RETENTION_DAYS` | `30` | Server | Retention window for request logs before cleanup removes expired rows. |
-| `AUDIT_LOG_RETENTION_DAYS` | `180` | Server | Retention window for audit logs before cleanup removes expired rows. |
-| `LOG_CLEANUP_INTERVAL_MINUTES` | `60` | Server | Background cleanup interval for request/audit log retention enforcement. |
-| `HOST` | `0.0.0.0` | Server | API bind host in container runtime. |
-| `PORT` | `3000` | Server | API bind port in container runtime. |
-| `API_DEFAULT_VERSION` | `v2` | Server | Redirect target for versionless routes. |
-| `JWT_SECRET` | `replace-this-secret` | Server | Must be replaced outside test mode. |
-| `ADMIN_SERVICE_KEY` | `replace-this-admin-key` | Server | Required for privileged system settings mutations (`x-admin-service-key`). |
+| `LOG_LEVEL` | `info` (template) | Server/Worker | Logging verbosity. |
+| `ENABLE_REQUEST_LOG_PERSISTENCE` | `true` when persistence is enabled | API server | Persist per-request logs to PostgreSQL through the API in-memory batch buffer; `false` keeps request logs in process memory only. |
+| `ENABLE_AUDIT_LOG_PERSISTENCE` | `true` when persistence is enabled | Server/Worker | Persist audit/security/runtime logs to PostgreSQL; `false` keeps audit logs in process memory only. |
+| `REQUEST_LOG_RETENTION_DAYS` | `30` | Server/Worker | Retention window for request logs before worker cleanup removes expired rows in persistence mode. |
+| `AUDIT_LOG_RETENTION_DAYS` | `180` | Server/Worker | Retention window for audit logs before worker cleanup removes expired rows in persistence mode. |
+| `LOG_CLEANUP_INTERVAL_MINUTES` | `60` | Worker | Background cleanup interval for request/audit log retention enforcement in persistence mode. |
+| `LOG_CLEANUP_BATCH_SIZE` | `1000` | Worker | Maximum request/audit log rows deleted per cleanup batch, keeping retention cleanup transactions bounded on large tables. |
+| `SERVER_RUNTIME_ROLE` | `api` | Server/Worker | `api` serves HTTP; `worker` runs automatic cycle close and log cleanup jobs and requires `ENABLE_PERSISTENCE=true`. In Compose deployments the role is fixed per service (`server=api`, `worker=worker`); this variable mainly matters for standalone runtime use. |
+| `CYCLE_CLOSE_POLL_INTERVAL_MS` | `30000` | Worker | Poll interval for automatic cycle-close checks in persistence deployments. |
+| `REQUEST_LOG_BATCH_SIZE` | `200` | API server | Max number of request-log rows flushed to PostgreSQL per batch. |
+| `REQUEST_LOG_FLUSH_INTERVAL_MS` | `100` | API server | Periodic flush interval for buffered request logs. |
+| `REQUEST_LOG_BUFFER_CAPACITY` | `10000` | API server | In-memory request-log buffer size before oldest records are dropped. |
+| `HOST` | `0.0.0.0` | API server | API bind host in container runtime; worker does not open an HTTP listener. |
+| `PORT` | `3000` | API server | API bind port in container runtime; worker does not open an HTTP listener. |
+| `API_DEFAULT_VERSION` | `v2` | API server | Redirect target for versionless routes. |
+| `JWT_SECRET` | `replace-this-secret` | API server | Must be replaced outside test mode. |
+| `ADMIN_SERVICE_KEY` | `replace-this-admin-key` | API server | Required for privileged system settings mutations (`x-admin-service-key`). |
 | `TRUST_PROXY` | `false` | Server | Set `true` behind cloud gateway/reverse proxy. |
 | `CORS_ALLOWED_ORIGINS` | localhost origins | Server | Comma-separated origin allowlist. |
 
@@ -129,9 +135,9 @@ These are common defaults. In Docker deployment, networking-related values are u
 
 | Variable | Default | Scope | Notes |
 | --- | --- | --- | --- |
-| `DATABASE_URL` | `postgresql://postgres:postgres@localhost:5432/agentrade` | Server | Baseline value; override with container-network URL in mode files. |
-| `REDIS_URL` | `redis://localhost:6379` | Server | Baseline value; override with container-network URL in mode files. |
-| `ENABLE_PERSISTENCE` | `true` | Server | `true` = PostgreSQL, `false` = in-memory mode. |
+| `DATABASE_URL` | `postgresql://postgres:postgres@localhost:5432/agentrade` | Server/Worker | Baseline PostgreSQL value; override with container-network URL in mode files. Worker coordination uses PostgreSQL advisory locks. |
+| `REDIS_URL` | `redis://localhost:6379` | API server | Baseline Redis value for API rate limiting; worker background coordination does not require Redis. |
+| `ENABLE_PERSISTENCE` | `true` | Server/Worker | `true` = PostgreSQL, `false` = in-memory mode. Worker requires this to be `true`. |
 
 ## 4. Web runtime variables (used in Docker build/runtime)
 
@@ -160,8 +166,8 @@ Build-time injection note:
 | `LOCAL_WEB_PORT` | `3001` | Host web port. |
 | `NEXT_PUBLIC_API_BASE_URL` | `http://localhost:3000` | Should align with `LOCAL_API_PORT`. |
 | `INTERNAL_API_BASE_URL` | `http://server:3000` | Web SSR internal upstream in compose network. |
-| `DATABASE_URL` | `postgresql://postgres:postgres@postgres:5432/agentrade` | Server DB URL in compose network. |
-| `REDIS_URL` | `redis://redis:6379` | Server Redis URL in compose network. |
+| `DATABASE_URL` | `postgresql://postgres:postgres@postgres:5432/agentrade` | Server/worker PostgreSQL URL in compose network. |
+| `REDIS_URL` | `redis://redis:6379` | API server Redis URL in compose network; worker does not depend on Redis. |
 
 ## 6. Docker cloud mode overrides (`.env.cloud`)
 
@@ -182,8 +188,8 @@ Build-time injection note:
 | `CLOUD_HTTPS_KEY_FILE` | `/etc/nginx/certs/privkey.pem` | In-container key path. |
 | `CLOUD_API_UPSTREAM` | `http://server:3000` | Gateway API upstream. |
 | `CLOUD_WEB_UPSTREAM` | `http://web:3000` | Gateway web upstream. |
-| `DATABASE_URL` | `postgresql://postgres:postgres@postgres:5432/agentrade` | Server DB URL in compose network. |
-| `REDIS_URL` | `redis://redis:6379` | Server Redis URL in compose network. |
+| `DATABASE_URL` | `postgresql://postgres:postgres@postgres:5432/agentrade` | Server/worker PostgreSQL URL in compose network. |
+| `REDIS_URL` | `redis://redis:6379` | API server Redis URL in compose network; worker does not depend on Redis. |
 
 ## 7. Compose helper variables
 

@@ -117,7 +117,13 @@ describe("runtime config strict parsing", () => {
         ENABLE_AUDIT_LOG_PERSISTENCE: "true",
         REQUEST_LOG_RETENTION_DAYS: "14",
         AUDIT_LOG_RETENTION_DAYS: "90",
-        LOG_CLEANUP_INTERVAL_MINUTES: "15"
+        LOG_CLEANUP_INTERVAL_MINUTES: "15",
+        LOG_CLEANUP_BATCH_SIZE: "25",
+        SERVER_RUNTIME_ROLE: "worker",
+        CYCLE_CLOSE_POLL_INTERVAL_MS: "250",
+        REQUEST_LOG_BATCH_SIZE: "50",
+        REQUEST_LOG_FLUSH_INTERVAL_MS: "25",
+        REQUEST_LOG_BUFFER_CAPACITY: "500"
       },
       () => loadConfig()
     );
@@ -127,6 +133,12 @@ describe("runtime config strict parsing", () => {
     expect(config.requestLogRetentionDays).toBe(14);
     expect(config.auditLogRetentionDays).toBe(90);
     expect(config.logCleanupIntervalMinutes).toBe(15);
+    expect(config.logCleanupBatchSize).toBe(25);
+    expect(config.serverRuntimeRole).toBe("worker");
+    expect(config.cycleClosePollIntervalMs).toBe(250);
+    expect(config.requestLogBatchSize).toBe(50);
+    expect(config.requestLogFlushIntervalMs).toBe(25);
+    expect(config.requestLogBufferCapacity).toBe(500);
   });
 
   it("rejects invalid log level", () => {
@@ -138,6 +150,62 @@ describe("runtime config strict parsing", () => {
         () => loadConfig()
       )
     ).toThrow(/LOG_LEVEL/);
+  });
+
+  it("rejects invalid server performance runtime configuration", () => {
+    expect(() =>
+      withEnv(
+        {
+          SERVER_RUNTIME_ROLE: "scheduler"
+        },
+        () => loadConfig()
+      )
+    ).toThrow(/SERVER_RUNTIME_ROLE/);
+
+    expect(() =>
+      withEnv(
+        {
+          REQUEST_LOG_BATCH_SIZE: "0"
+        },
+        () => loadConfig()
+      )
+    ).toThrow(/REQUEST_LOG_BATCH_SIZE/);
+
+    expect(() =>
+      withEnv(
+        {
+          REQUEST_LOG_FLUSH_INTERVAL_MS: "0"
+        },
+        () => loadConfig()
+      )
+    ).toThrow(/REQUEST_LOG_FLUSH_INTERVAL_MS/);
+
+    expect(() =>
+      withEnv(
+        {
+          REQUEST_LOG_BUFFER_CAPACITY: "0"
+        },
+        () => loadConfig()
+      )
+    ).toThrow(/REQUEST_LOG_BUFFER_CAPACITY/);
+
+    expect(() =>
+      withEnv(
+        {
+          LOG_CLEANUP_BATCH_SIZE: "0"
+        },
+        () => loadConfig()
+      )
+    ).toThrow(/LOG_CLEANUP_BATCH_SIZE/);
+
+    expect(() =>
+      withEnv(
+        {
+          CYCLE_CLOSE_POLL_INTERVAL_MS: "0"
+        },
+        () => loadConfig()
+      )
+    ).toThrow(/CYCLE_CLOSE_POLL_INTERVAL_MS/);
   });
 
   it("rejects non-positive log retention windows", () => {

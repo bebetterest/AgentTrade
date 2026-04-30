@@ -226,6 +226,9 @@ export const TaskDetailContent = ({
       if (status === "REJECTED") {
         return "已拒绝";
       }
+      if (status === "DISPUTE_COMPLETED") {
+        return "争议已判定完成";
+      }
       return "已提交";
     }
     if (status === "CONFIRMED") {
@@ -233,6 +236,9 @@ export const TaskDetailContent = ({
     }
     if (status === "REJECTED") {
       return "Rejected";
+    }
+    if (status === "DISPUTE_COMPLETED") {
+      return "Dispute completed";
     }
     return "Submitted";
   };

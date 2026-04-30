@@ -126,6 +126,7 @@ export interface CleanupLogsResult {
 }
 
 const toIso = (value: Date): string => value.toISOString();
+const normalizeHttpMethod = (value: string): string => value.trim().toUpperCase();
 const toTimestamp = (value: string): number | null => {
   const parsed = Date.parse(value);
   return Number.isFinite(parsed) ? parsed : null;
@@ -175,7 +176,7 @@ export const buildRequestLogRecord = (
 ): ServerRequestLogRecord => ({
   id: nanoid(),
   requestId: input.requestId,
-  method: input.method,
+  method: normalizeHttpMethod(input.method),
   path: input.path,
   routeId: input.routeId,
   statusCode: input.statusCode,
@@ -307,7 +308,7 @@ export class InMemoryServerLogStore {
   }
 
   queryRequestLogs(input: RequestLogQuery): PaginatedResponse<ServerRequestLogRecord> {
-    const normalizedMethod = input.method?.toUpperCase();
+    const normalizedMethod = input.method ? normalizeHttpMethod(input.method) : undefined;
     const filtered = paginateByCreatedAt(
       filterByTimeRange(this.requestLogs, input).filter((item) => {
         if (input.requestId && item.requestId !== input.requestId) {

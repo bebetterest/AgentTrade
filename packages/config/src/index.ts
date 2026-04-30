@@ -1,5 +1,6 @@
 export interface AppConfig {
   appName: string;
+  serverRuntimeRole: "api" | "worker";
   logLevel: AppLogLevel;
   host: string;
   port: number;
@@ -13,6 +14,11 @@ export interface AppConfig {
   requestLogRetentionDays: number;
   auditLogRetentionDays: number;
   logCleanupIntervalMinutes: number;
+  logCleanupBatchSize: number;
+  cycleClosePollIntervalMs: number;
+  requestLogBatchSize: number;
+  requestLogFlushIntervalMs: number;
+  requestLogBufferCapacity: number;
   trustProxy: boolean;
   corsAllowedOrigins: string[];
   jwtSecret: string;
@@ -458,6 +464,7 @@ const assertRuntimeConfig = (config: AppConfig): void => {
 
 export const defaultConfig: AppConfig = {
   appName: "Agentrade",
+  serverRuntimeRole: "api",
   logLevel: "info",
   host: "0.0.0.0",
   port: 3000,
@@ -471,6 +478,11 @@ export const defaultConfig: AppConfig = {
   requestLogRetentionDays: 30,
   auditLogRetentionDays: 180,
   logCleanupIntervalMinutes: 60,
+  logCleanupBatchSize: 1_000,
+  cycleClosePollIntervalMs: 30_000,
+  requestLogBatchSize: 200,
+  requestLogFlushIntervalMs: 100,
+  requestLogBufferCapacity: 10_000,
   trustProxy: false,
   corsAllowedOrigins: [
     "http://localhost:3000",
@@ -568,6 +580,11 @@ export const loadConfig = (): AppConfig => {
 
   const config: AppConfig = {
     appName: envString("APP_NAME", defaultConfig.appName),
+    serverRuntimeRole: envEnumStrict(
+      "SERVER_RUNTIME_ROLE",
+      defaultConfig.serverRuntimeRole,
+      ["api", "worker"]
+    ),
     logLevel: envEnumStrict("LOG_LEVEL", defaultConfig.logLevel, APP_LOG_LEVEL_VALUES),
     host: envString("HOST", defaultConfig.host),
     port: envNumberStrict("PORT", defaultConfig.port, { integer: true, min: 1, max: 65535 }),
@@ -600,6 +617,31 @@ export const loadConfig = (): AppConfig => {
     logCleanupIntervalMinutes: envNumberStrict(
       "LOG_CLEANUP_INTERVAL_MINUTES",
       defaultConfig.logCleanupIntervalMinutes,
+      { integer: true, min: 1 }
+    ),
+    logCleanupBatchSize: envNumberStrict(
+      "LOG_CLEANUP_BATCH_SIZE",
+      defaultConfig.logCleanupBatchSize,
+      { integer: true, min: 1 }
+    ),
+    cycleClosePollIntervalMs: envNumberStrict(
+      "CYCLE_CLOSE_POLL_INTERVAL_MS",
+      defaultConfig.cycleClosePollIntervalMs,
+      { integer: true, min: 1 }
+    ),
+    requestLogBatchSize: envNumberStrict(
+      "REQUEST_LOG_BATCH_SIZE",
+      defaultConfig.requestLogBatchSize,
+      { integer: true, min: 1 }
+    ),
+    requestLogFlushIntervalMs: envNumberStrict(
+      "REQUEST_LOG_FLUSH_INTERVAL_MS",
+      defaultConfig.requestLogFlushIntervalMs,
+      { integer: true, min: 1 }
+    ),
+    requestLogBufferCapacity: envNumberStrict(
+      "REQUEST_LOG_BUFFER_CAPACITY",
+      defaultConfig.requestLogBufferCapacity,
       { integer: true, min: 1 }
     ),
     trustProxy: envBooleanStrict("TRUST_PROXY", defaultConfig.trustProxy),

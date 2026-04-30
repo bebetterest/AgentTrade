@@ -7,6 +7,10 @@ Supported deployment modes:
 - Local mode: `docker-compose.yml` + `docker-compose.local.yml`
 - Cloud mode: `docker-compose.yml` + `docker-compose.cloud.yml`
 
+Base compose topology is `postgres + redis + server + worker + web`, with `gateway` added in cloud mode.
+In that topology, runtime roles are fixed per service (`server=api`, `worker=worker`), `worker` reuses the same `agentrade-server:latest` image built by the API service, schema bootstrap (`prisma/pre_migrations/*.sql` before and after `prisma db push`) is owned by `server`, and `worker` skips bootstrap and waits for `server` health before starting. Worker startup requires persistence mode, only reads initialized runtime state, and fails fast if the API/bootstrap path has not completed. Worker background coordination uses PostgreSQL advisory locks and does not require Redis.
+The PostgreSQL role used by `DATABASE_URL` must be allowed to install `pg_trgm`; the server bootstrap runs `CREATE EXTENSION IF NOT EXISTS pg_trgm` before creating the GIN/trigram search indexes, and it resolves the installed `gin_trgm_ops` operator class schema dynamically for databases where extensions are not installed in `public`.
+
 This runbook is the canonical end-to-end deployment guide.
 
 ## 1. Source of truth
@@ -80,7 +84,7 @@ Strict requirement:
 - Missing `.env`, `.env.local`, or `.env.cloud` is a hard error.
 - `.env.example*` files are copy templates only.
 
-Runtime env injection for `server` uses compose `env_file` without example fallbacks:
+Runtime env injection for `server` and `worker` uses compose `env_file` without example fallbacks:
 
 1. `.env`
 2. mode file (`.env.local` / `.env.cloud`)
@@ -158,6 +162,7 @@ Logs and status:
 ```bash
 docker compose --env-file .env --env-file .env.local -f docker-compose.yml -f docker-compose.local.yml ps
 docker compose --env-file .env --env-file .env.local -f docker-compose.yml -f docker-compose.local.yml logs -f server
+docker compose --env-file .env --env-file .env.local -f docker-compose.yml -f docker-compose.local.yml logs -f worker
 docker compose --env-file .env --env-file .env.local -f docker-compose.yml -f docker-compose.local.yml logs -f web
 ```
 
@@ -236,6 +241,7 @@ Logs and status:
 docker compose --env-file .env --env-file .env.cloud -f docker-compose.yml -f docker-compose.cloud.yml ps
 docker compose --env-file .env --env-file .env.cloud -f docker-compose.yml -f docker-compose.cloud.yml logs -f gateway
 docker compose --env-file .env --env-file .env.cloud -f docker-compose.yml -f docker-compose.cloud.yml logs -f server
+docker compose --env-file .env --env-file .env.cloud -f docker-compose.yml -f docker-compose.cloud.yml logs -f worker
 docker compose --env-file .env --env-file .env.cloud -f docker-compose.yml -f docker-compose.cloud.yml logs -f web
 ```
 
@@ -297,13 +303,13 @@ pnpm docker:release:local -- --fresh-platform
 Local:
 
 ```bash
-docker compose --env-file .env --env-file .env.local -f docker-compose.yml -f docker-compose.local.yml restart server web
+docker compose --env-file .env --env-file .env.local -f docker-compose.yml -f docker-compose.local.yml restart server worker web
 ```
 
 Cloud:
 
 ```bash
-docker compose --env-file .env --env-file .env.cloud -f docker-compose.yml -f docker-compose.cloud.yml restart gateway server web
+docker compose --env-file .env --env-file .env.cloud -f docker-compose.yml -f docker-compose.cloud.yml restart gateway server worker web
 ```
 
 ### 8.3 Database state and reset
@@ -381,13 +387,13 @@ Fix:
 
 Local release success criteria:
 
-- `postgres`, `redis`, `server`, `web` are healthy/running.
+- `postgres`, `redis`, `server`, `worker`, `web` are healthy/running (`worker` has no HTTP healthcheck, so `running` is sufficient).
 - Local release command exits successfully.
 - Web root and API health endpoints are reachable.
 
 Cloud release success criteria:
 
-- `postgres`, `redis`, `server`, `web`, `gateway` are healthy/running.
+- `postgres`, `redis`, `server`, `worker`, `web`, `gateway` are healthy/running (`worker` has no HTTP healthcheck, so `running` is sufficient).
 - Cloud release command exits successfully.
 - Domain resolves correctly and HTTP/HTTPS behavior matches config.
 - Web and API endpoints are reachable at configured paths.

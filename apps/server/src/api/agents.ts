@@ -40,6 +40,11 @@ const cycleActiveOperation = getApiOperation("cyclesGetActiveV2");
 const cycleGetOperation = getApiOperation("cyclesGetV2");
 const cycleRewardsOperation = getApiOperation("cyclesGetRewardsV2");
 
+const agentReputationSum = (item: AgentDirectoryItem): number =>
+  item.reputation.publisher + item.reputation.worker + item.reputation.supervisor;
+
+const agentReputationAverage = (item: AgentDirectoryItem): number => agentReputationSum(item) / 3;
+
 const sortAgents = (
   items: AgentDirectoryItem[],
   sortKey: "latest" | "score" | "reputation" | "completed" | "published" | "intented",
@@ -50,11 +55,7 @@ const sortAgents = (
     if (sortKey === "score") {
       delta = left.score - right.score;
     } else if (sortKey === "reputation") {
-      const repLeft =
-        (left.reputation.publisher + left.reputation.worker + left.reputation.supervisor) / 3;
-      const repRight =
-        (right.reputation.publisher + right.reputation.worker + right.reputation.supervisor) / 3;
-      delta = repLeft - repRight;
+      delta = agentReputationSum(left) - agentReputationSum(right);
     } else if (sortKey === "completed") {
       delta = left.stats.tasksCompleted - right.stats.tasksCompleted;
     } else if (sortKey === "published") {
@@ -80,7 +81,7 @@ const agentSortPrimary = (
   sortKey === "score"
     ? item.score
     : sortKey === "reputation"
-      ? (item.reputation.publisher + item.reputation.worker + item.reputation.supervisor) / 3
+      ? agentReputationAverage(item)
       : sortKey === "completed"
         ? item.stats.tasksCompleted
         : sortKey === "published"
@@ -88,6 +89,33 @@ const agentSortPrimary = (
           : sortKey === "intented"
             ? item.stats.tasksIntented
             : item.latestActivityAt;
+
+const agentReputationCursorSum = (cursorValues: Record<string, unknown>): number => {
+  const rawSum = cursorValues.reputationSum;
+  if (rawSum !== undefined && rawSum !== null) {
+    const parsedSum =
+      typeof rawSum === "number"
+        ? rawSum
+        : typeof rawSum === "string" && rawSum.trim().length > 0
+          ? Number(rawSum)
+          : Number.NaN;
+    if (!Number.isFinite(parsedSum)) {
+      throw new DomainError("INVALID_CURSOR", "cursor reputationSum must be a finite number", 400);
+    }
+    return parsedSum;
+  }
+  const cursorPrimary = cursorValues.primary;
+  const reputationAverage =
+    typeof cursorPrimary === "number"
+      ? cursorPrimary
+      : typeof cursorPrimary === "string"
+        ? Number(cursorPrimary)
+        : Number.NaN;
+  if (!Number.isFinite(reputationAverage)) {
+    throw new DomainError("INVALID_CURSOR", "cursor primary must be a finite number", 400);
+  }
+  return Number((reputationAverage * 3).toPrecision(15));
+};
 
 const compareAgentAfterCursor = (
   item: AgentDirectoryItem,
@@ -108,6 +136,8 @@ const compareAgentAfterCursor = (
     const left = item.latestActivityAt ?? "";
     const right = typeof cursorPrimary === "string" ? cursorPrimary : "";
     delta = left.localeCompare(right);
+  } else if (sortKey === "reputation") {
+    delta = agentReputationSum(item) - agentReputationCursorSum(cursorValues);
   } else {
     const asNumber =
       typeof cursorPrimary === "number"
@@ -155,19 +185,23 @@ const registerAgentListRoute = (
     const sort = query.sort ?? "latest";
     const order = query.order ?? "desc";
     const limit = query.limit ?? 20;
+    await services.refreshRuntimeSettings();
 
     if (services.stateRepository) {
       return validateOperationResponse(
         operation,
-        await services.stateRepository.queryAgentsDirect({
-          q: query.q,
-          activeOnly: query.activeOnly,
-          sort,
-          order,
-          cursor: query.cursor,
-          limit,
-          paged: true
-        })
+        await services.stateRepository.queryAgentsDirect(
+          {
+            q: query.q,
+            activeOnly: query.activeOnly,
+            sort,
+            order,
+            cursor: query.cursor,
+            limit,
+            paged: true
+          },
+          services.config
+        )
       );
     }
 
@@ -221,6 +255,7 @@ const registerAgentListRoute = (
         order,
         toCursorValues: (item) => ({
           primary: agentSortPrimary(item, sort),
+          ...(sort === "reputation" ? { reputationSum: agentReputationSum(item) } : {}),
           address: item.address
         }),
         compareAfterCursor: (item, cursorValues) =>

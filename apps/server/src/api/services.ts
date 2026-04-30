@@ -15,6 +15,7 @@ import {
   type RuntimeRuleAuditRecord,
   type ServerAuditCategory,
   type ServerAuditLogRecord,
+  type ServiceMetricsResponse,
   type ServerRequestLogRecord,
   type RuntimeSettingsState,
   type Submission,
@@ -42,6 +43,7 @@ import {
   type CursorValues,
   type SortOrder
 } from "../pagination/cursor.js";
+import { toDayKeyInTimeZone } from "../utils/timezone.js";
 
 export interface AuthChallenge {
   address: Address;
@@ -78,11 +80,13 @@ export interface AppServices {
   readAgents(): Promise<AgentProfile[]>;
   readActivities(): Promise<ActivityEvent[]>;
   readActiveCycle(): Promise<Cycle>;
+  refreshRuntimeSettings(): Promise<RuntimeSettingsState | null>;
   readRuntimeSettings(): Promise<RuntimeSettingsState>;
   listRuntimeRuleHistory(input: {
     cursor?: string;
     limit: number;
   }): Promise<PaginatedResponse<RuntimeRuleAuditRecord>>;
+  getMetrics(): Promise<ServiceMetricsResponse>;
   listRequestLogs(input: RequestLogQuery): Promise<PaginatedResponse<ServerRequestLogRecord>>;
   listAuditLogs(input: AuditLogQuery): Promise<PaginatedResponse<ServerAuditLogRecord>>;
   recordAudit(input: AuditLogCreateInput): Promise<void>;
@@ -146,12 +150,7 @@ export const isValidTimezone = (value: string): boolean => {
 };
 
 export const toDayKey = (value: string | Date, timeZone: string): string =>
-  new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit"
-  }).format(typeof value === "string" ? new Date(value) : value);
+  toDayKeyInTimeZone(value, timeZone);
 
 export const countMetrics = (events: ActivityEvent[]): DashboardMetricSnapshot => {
   const metrics: DashboardMetricSnapshot = {

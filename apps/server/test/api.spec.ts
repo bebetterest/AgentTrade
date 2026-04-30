@@ -5,6 +5,11 @@ import { DisputePayoutSource, VoteChoice } from "@agentrade/types";
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "../src/app.js";
 import { parseCursorOffset } from "../src/api/services.js";
+import { dayKeyToUtcStart } from "../src/utils/timezone.js";
+
+type TestFastifyInstance = FastifyInstance & {
+  settleDueCyclesForTests?: () => Promise<void>;
+};
 
 const addr = (seed: string): Address =>
   `0x${Buffer.from(seed).toString("hex").slice(0, 40).padEnd(40, "0")}` as Address;
@@ -105,11 +110,9 @@ describe("API integration", () => {
 
   const forceAutoCloseCurrentCycle = async (): Promise<void> => {
     app!.engine.getActiveCycle().startedAt = new Date(Date.now() - 8 * 24 * 3_600_000).toISOString();
-    const trigger = await app!.inject({
-      method: "GET",
-      url: "/v2/cycles/active"
-    });
-    expect(trigger.statusCode).toBe(200);
+    const settleDueCyclesForTests = (app as TestFastifyInstance).settleDueCyclesForTests;
+    expect(settleDueCyclesForTests).toBeTypeOf("function");
+    await settleDueCyclesForTests!();
   };
 
   it("rejects unauthenticated write requests", async () => {
@@ -2361,7 +2364,7 @@ describe("API integration", () => {
     expect(response.statusCode).toBe(401);
   });
 
-  it("auto-closes due cycles and rolls into the next cycle on request", async () => {
+  it("does not auto-close due cycles on ordinary read requests", async () => {
     const activeCycle = app!.engine.getActiveCycle();
     activeCycle.startedAt = new Date(Date.now() - 8 * 24 * 3_600_000).toISOString();
 
@@ -2370,7 +2373,7 @@ describe("API integration", () => {
       url: "/v2/cycles/active"
     });
     expect(activeAfter.statusCode).toBe(200);
-    expect((activeAfter.json() as { id: string }).id).toBe("cycle-2");
+    expect((activeAfter.json() as { id: string }).id).toBe("cycle-1");
 
     const closedCycle = await app!.inject({
       method: "GET",
@@ -2378,8 +2381,14 @@ describe("API integration", () => {
     });
     expect(closedCycle.statusCode).toBe(200);
     const payload = closedCycle.json() as { status: string; closedAt: string | null };
-    expect(payload.status).toBe("CLOSED");
-    expect(payload.closedAt).not.toBeNull();
+    expect(payload.status).toBe("OPEN");
+    expect(payload.closedAt).toBeNull();
+  });
+
+  it("rejects worker runtime in in-memory mode", async () => {
+    await expect(buildApp({ runtimeRole: "worker" })).rejects.toThrow(
+      /worker runtime requires ENABLE_PERSISTENCE=true/
+    );
   });
 
   it("auto-closes due cycles via timer without request traffic", async () => {
@@ -2612,6 +2621,18 @@ describe("API integration", () => {
     expect(trends.points.length).toBe(7);
     const publishedTotal = trends.points.reduce((acc, item) => acc + item.tasksPublished, 0);
     expect(publishedTotal).toBeGreaterThanOrEqual(2);
+
+    const shanghaiTrendsRes = await app!.inject({
+      method: "GET",
+      url: "/v2/dashboard/trends?tz=Asia/Shanghai&window=7d"
+    });
+    expect(shanghaiTrendsRes.statusCode).toBe(200);
+    const shanghaiTrends = shanghaiTrendsRes.json() as {
+      points: Array<{ bucketStart: string; label: string }>;
+    };
+    for (const point of shanghaiTrends.points) {
+      expect(point.bucketStart).toBe(dayKeyToUtcStart(point.label, "Asia/Shanghai").toISOString());
+    }
   });
 
   it("returns reward pool and distributions in cycle rewards response", async () => {

@@ -58,17 +58,23 @@ Fail-fast 规则：
 | --- | --- | --- | --- |
 | `APP_NAME` | `Agentrade` | Server | 会出现在 economy 公共参数中。 |
 | `NODE_ENV` | `development`（模板值） | Server/构建 | 真实部署建议改为 `production`。 |
-| `LOG_LEVEL` | `info`（模板值） | Server | 日志级别。 |
-| `ENABLE_REQUEST_LOG_PERSISTENCE` | 持久化模式下默认 `true` | Server | 是否将逐请求日志持久化到 PostgreSQL；设为 `false` 时仅保存在进程内内存。 |
-| `ENABLE_AUDIT_LOG_PERSISTENCE` | 持久化模式下默认 `true` | Server | 是否将审计/安全/运行时日志持久化到 PostgreSQL；设为 `false` 时仅保存在进程内内存。 |
-| `REQUEST_LOG_RETENTION_DAYS` | `30` | Server | request log 保留天数；后台清理任务会删除过期行。 |
-| `AUDIT_LOG_RETENTION_DAYS` | `180` | Server | audit log 保留天数；后台清理任务会删除过期行。 |
-| `LOG_CLEANUP_INTERVAL_MINUTES` | `60` | Server | request/audit log 保留策略的后台清理周期。 |
-| `HOST` | `0.0.0.0` | Server | 容器内 API 监听地址。 |
-| `PORT` | `3000` | Server | 容器内 API 监听端口。 |
-| `API_DEFAULT_VERSION` | `v2` | Server | 无版本路由重定向目标版本。 |
-| `JWT_SECRET` | `replace-this-secret` | Server | 非 test 环境必须替换。 |
-| `ADMIN_SERVICE_KEY` | `replace-this-admin-key` | Server | 系统规则修改类接口必填（请求头 `x-admin-service-key`）。 |
+| `LOG_LEVEL` | `info`（模板值） | Server/Worker | 日志级别。 |
+| `ENABLE_REQUEST_LOG_PERSISTENCE` | 持久化模式下默认 `true` | API server | 是否由 API 内存批量缓冲将逐请求日志持久化到 PostgreSQL；设为 `false` 时仅保存在进程内内存。 |
+| `ENABLE_AUDIT_LOG_PERSISTENCE` | 持久化模式下默认 `true` | Server/Worker | 是否将审计/安全/运行时日志持久化到 PostgreSQL；设为 `false` 时仅保存在进程内内存。 |
+| `REQUEST_LOG_RETENTION_DAYS` | `30` | Server/Worker | request log 保留天数；持久化模式下 worker 清理任务会删除过期行。 |
+| `AUDIT_LOG_RETENTION_DAYS` | `180` | Server/Worker | audit log 保留天数；持久化模式下 worker 清理任务会删除过期行。 |
+| `LOG_CLEANUP_INTERVAL_MINUTES` | `60` | Worker | 持久化模式下 request/audit log 保留策略的后台清理周期。 |
+| `LOG_CLEANUP_BATCH_SIZE` | `1000` | Worker | 单轮日志清理最多删除的 request/audit log 行数，使大表保留期清理保持有界事务。 |
+| `SERVER_RUNTIME_ROLE` | `api` | Server/Worker | `api` 负责 HTTP；`worker` 负责自动关周期与日志清理后台任务，并要求 `ENABLE_PERSISTENCE=true`。Compose 部署里角色会固定在各自服务上（`server=api`、`worker=worker`）；该变量主要用于独立运行时。 |
+| `CYCLE_CLOSE_POLL_INTERVAL_MS` | `30000` | Worker | 持久化部署下自动关周期轮询间隔（毫秒）。 |
+| `REQUEST_LOG_BATCH_SIZE` | `200` | API server | 单次批量写入 PostgreSQL 的 request log 条数上限。 |
+| `REQUEST_LOG_FLUSH_INTERVAL_MS` | `100` | API server | request log 缓冲定时刷盘间隔（毫秒）。 |
+| `REQUEST_LOG_BUFFER_CAPACITY` | `10000` | API server | request log 内存缓冲大小；超出后会丢弃最旧记录。 |
+| `HOST` | `0.0.0.0` | API server | 容器内 API 监听地址；worker 不打开 HTTP listener。 |
+| `PORT` | `3000` | API server | 容器内 API 监听端口；worker 不打开 HTTP listener。 |
+| `API_DEFAULT_VERSION` | `v2` | API server | 无版本路由重定向目标版本。 |
+| `JWT_SECRET` | `replace-this-secret` | API server | 非 test 环境必须替换。 |
+| `ADMIN_SERVICE_KEY` | `replace-this-admin-key` | API server | 系统规则修改类接口必填（请求头 `x-admin-service-key`）。 |
 | `TRUST_PROXY` | `false` | Server | 云端网关反代场景应设为 `true`。 |
 | `CORS_ALLOWED_ORIGINS` | localhost origins | Server | 逗号分隔 origin 白名单。 |
 
@@ -129,9 +135,9 @@ Fail-fast 规则：
 
 | 变量 | 默认值 | 作用域 | 说明 |
 | --- | --- | --- | --- |
-| `DATABASE_URL` | `postgresql://postgres:postgres@localhost:5432/agentrade` | Server | 基线值；Docker 部署应在模式文件覆盖为容器内连接串。 |
-| `REDIS_URL` | `redis://localhost:6379` | Server | 基线值；Docker 部署应在模式文件覆盖为容器内连接串。 |
-| `ENABLE_PERSISTENCE` | `true` | Server | `true`=PostgreSQL，`false`=内存模式。 |
+| `DATABASE_URL` | `postgresql://postgres:postgres@localhost:5432/agentrade` | Server/Worker | PostgreSQL 基线值；Docker 部署应在模式文件覆盖为容器内连接串。worker 协调使用 PostgreSQL advisory lock。 |
+| `REDIS_URL` | `redis://localhost:6379` | API server | API 限流使用的 Redis 基线值；worker 后台协调不依赖 Redis。 |
+| `ENABLE_PERSISTENCE` | `true` | Server/Worker | `true`=PostgreSQL，`false`=内存模式。worker 要求该值为 `true`。 |
 
 ## 4. Web 运行时变量（Docker 构建/运行使用）
 
@@ -160,8 +166,8 @@ Fail-fast 规则：
 | `LOCAL_WEB_PORT` | `3001` | 宿主机 Web 端口。 |
 | `NEXT_PUBLIC_API_BASE_URL` | `http://localhost:3000` | 应与 `LOCAL_API_PORT` 对齐。 |
 | `INTERNAL_API_BASE_URL` | `http://server:3000` | Compose 网络内 Web SSR 上游。 |
-| `DATABASE_URL` | `postgresql://postgres:postgres@postgres:5432/agentrade` | Compose 网络内 Server DB 连接串。 |
-| `REDIS_URL` | `redis://redis:6379` | Compose 网络内 Server Redis 连接串。 |
+| `DATABASE_URL` | `postgresql://postgres:postgres@postgres:5432/agentrade` | Compose 网络内 server/worker PostgreSQL 连接串。 |
+| `REDIS_URL` | `redis://redis:6379` | Compose 网络内 API server Redis 连接串；worker 不依赖 Redis。 |
 
 ## 6. Docker 云端模式覆盖（`.env.cloud`）
 
@@ -182,8 +188,8 @@ Fail-fast 规则：
 | `CLOUD_HTTPS_KEY_FILE` | `/etc/nginx/certs/privkey.pem` | 容器内私钥路径。 |
 | `CLOUD_API_UPSTREAM` | `http://server:3000` | 网关 API 上游地址。 |
 | `CLOUD_WEB_UPSTREAM` | `http://web:3000` | 网关 Web 上游地址。 |
-| `DATABASE_URL` | `postgresql://postgres:postgres@postgres:5432/agentrade` | Compose 网络内 Server DB 连接串。 |
-| `REDIS_URL` | `redis://redis:6379` | Compose 网络内 Server Redis 连接串。 |
+| `DATABASE_URL` | `postgresql://postgres:postgres@postgres:5432/agentrade` | Compose 网络内 server/worker PostgreSQL 连接串。 |
+| `REDIS_URL` | `redis://redis:6379` | Compose 网络内 API server Redis 连接串；worker 不依赖 Redis。 |
 
 ## 7. Compose 辅助变量
 

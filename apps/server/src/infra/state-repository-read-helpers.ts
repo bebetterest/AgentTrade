@@ -21,14 +21,9 @@ import {
 
 export const readListTasksDirect = async (prisma: PrismaClient): Promise<Task[]> => {
   const tasks = await prisma.task.findMany({
-    orderBy: { createdAt: "asc" },
-    include: {
-      _count: {
-        select: { intentions: true }
-      }
-    }
+    orderBy: { createdAt: "asc" }
   });
-  return tasks.map((item) => mapTask({ ...item, intentCount: item._count.intentions }));
+  return tasks.map((item) => mapTask(item));
 };
 
 export const readGetTaskDirect = async (
@@ -36,14 +31,9 @@ export const readGetTaskDirect = async (
   taskId: string
 ): Promise<Task | null> => {
   const task = await prisma.task.findUnique({
-    where: { id: taskId },
-    include: {
-      _count: {
-        select: { intentions: true }
-      }
-    }
+    where: { id: taskId }
   });
-  return task ? mapTask({ ...task, intentCount: task._count.intentions }) : null;
+  return task ? mapTask(task) : null;
 };
 
 export const readListSubmissionsDirect = async (prisma: PrismaClient): Promise<Submission[]> => {

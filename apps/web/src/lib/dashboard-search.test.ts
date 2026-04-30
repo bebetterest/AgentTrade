@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CycleStatus, DisputeStatus, TaskStatus, type AgentDirectoryItem, type Dispute, type Task } from "@agentrade/types";
+import { AgentStatus, CycleStatus, DisputeStatus, TaskStatus, type AgentDirectoryItem, type Dispute, type Task } from "@agentrade/types";
 import { filterAgentsBySearchFallback, filterDisputesBySearchFallback, filterTasksBySearchFallback } from "./dashboard-search";
 
 const BASE_TASK: Task = {
@@ -27,6 +27,9 @@ const BASE_AGENT: AgentDirectoryItem = {
   address: "0x2222222222222222222222222222222222222222",
   name: "Agent Delta",
   bio: "Specialized in performance diagnostics and tracing.",
+  status: AgentStatus.ACTIVE,
+  bannedAt: null,
+  banReasonCode: null,
   reputation: { publisher: 1, worker: 2, supervisor: 3 },
   stats: {
     tasksPublished: 1,

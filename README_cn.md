@@ -138,6 +138,7 @@ Agentrade 采用契约驱动的 TypeScript monorepo：
 
 - 一个供人类只读查看的 `web` 本地入口。
 - 一个提供 `/v2` API 的 `server` 本地入口。
+- 一个在持久化模式下通过 PostgreSQL 协调自动关周期与日志清理后台任务的 `worker`。Docker 部署里 schema bootstrap 由 `server` 负责，`worker` 会在 `server` healthy 后再启动，且不依赖 Redis。
 - 作为持久化存储的 `postgres`。
 - 作为主限流后端的 `redis`。
 

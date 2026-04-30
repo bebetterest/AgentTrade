@@ -1,5 +1,60 @@
 # Progress Status
 
+## 2026-04-29
+
+- Tightened persistence-mode runtime coordination after the server performance refactor:
+  - fixed PostgreSQL advisory-lock ownership for worker-only jobs by moving lock acquire/release onto a dedicated single-connection Prisma client, preventing lock leakage across pooled connections,
+  - tightened worker cycle-close coordination so one advisory-lock acquisition now covers the whole due-cycle sweep, preventing multiple workers from interleaving within the same background close job and preserving close audit/metric accounting,
+  - changed latency metric sampling to a fixed-size ring buffer so high request/write throughput does not pay repeated front-splice costs after the sample window fills,
+  - removed a leftover unused todo helper and re-audited shutdown sequencing so `app.close()` now waits for in-flight cycle-close/log-cleanup jobs before disconnecting persistence,
+  - collapsed persistence `todos` reads from per-group queries to three resource-family SQL reads (`submission`, `task`, `dispute`) with grouped totals plus separate keyset page ranking, avoiding per-row window counts while keeping unchanged per-group cursor semantics,
+  - changed the latest-rejected todo branch to use PostgreSQL `DISTINCT ON` for the newest submission per task and added a matching `lower(agentAddress), taskId, createdAt DESC, id DESC` index, preserving "newer submission suppresses old rejection" semantics without a partition-wide row-number sort,
+  - changed the intended-but-never-submitted todo branch to start from actor-filtered `TaskIntention` rows and join back to active tasks, backed by `lower(agentAddress), taskId`, so agent todo reads avoid scanning all active tasks before checking intention membership,
+  - split dispute todo role filters into opener/counterparty branches so response-required groups can use address-specific Task/Submission plus open-Dispute indexes, and waiting-resolution counterparty rows now use persisted `counterpartyResponderAddress` with a matching lower-address keyset index,
+  - reduced cycle-close transaction round trips by batch-loading stale-submission tasks, pre-filtering open disputes by bulk-loaded vote stats, and batch-creating reward recipient accounts before balance increments,
+  - added the lower/partial indexes needed by the new todo family SQL for actor intentions, submitted submissions, and open disputes, btree indexes for Agent directory counter sorts, plus composite expression indexes for mixed-case address filters with keyset ordering on tasks, submissions, disputes, activities, request logs, and audit logs, including the supported task/submission/dispute sort variants behind address-filtered keyset pagination,
+  - extended scoped activity indexes to `cycleId/taskId/disputeId, createdAt, id` so activity drill-downs can satisfy the same deterministic keyset order used by the API without an extra tie-break sort,
+  - normalized persisted request-log HTTP methods to canonical uppercase and added a narrow `routeId, method, statusCode, createdAt, id` index so the common admin log filter can use equality predicates plus keyset order without applying `lower()` to the stored method column,
+  - added bounded request/audit log retention cleanup batches (`LOG_CLEANUP_BATCH_SIZE`) plus a `routeId, method, createdAt, id` request-log index so route/method-only admin queries and large-table cleanup jobs stay on short, deterministic DB work units,
+  - added a `ServerAuditLog(category, action, outcome, createdAt, id)` index and keyset regression so the common admin audit filter matches the persisted SQL order instead of filtering after a broader single-column scan,
+  - added a null-order-matched `AgentProfile(latestActivityAt ASC NULLS FIRST, address ASC)` index so Agent directory `latest` ordering can use the same btree direction for `ASC NULLS FIRST` and reverse-scan `DESC NULLS LAST`,
+  - changed Agent directory `reputation` keyset pagination to use the exact reputation sum as its internal order key, while keeping the average in cursor `primary`, and added a matching `AgentProfile((publisherRep + workerRep + supervisorRep), address)` expression index to avoid fractional-average boundary drift,
+  - switched exact actor/address filters for `tasks`, `submissions`, `disputes`, `activities`, request logs, and audit logs to explicit `lower(column) = lower(input)` SQL so the new function indexes are actually usable,
+  - changed persistence dashboard trend aggregation to precomputed UTC day buckets, removing `timezone(createdAt)` grouping from SQL while preserving UTC, Asia/Shanghai, and America/Los_Angeles bucket semantics,
+  - added mixed-case address regression coverage for optimized list reads and persisted request/audit log actor queries,
+  - removed the remaining request-path cycle-settlement hook, including the non-persistence fallback path; due-cycle settlement now runs through startup/timer/worker paths only, and ordinary read requests are covered by a regression that proves they do not auto-close cycles,
+  - removed the last persistence fallback around `mutationQueue` from due-cycle close, so the process-local queue is strictly limited to in-memory state mutation,
+  - moved worker cycle-close runtime-rule resolution into the locked close transaction, so a worker that started before an API-side `applyTo=next` settings update still uses the fresh database rules for due checks, next-cycle minting, and pending-rule application,
+  - widened Prisma interactive transaction wait/timeout windows for the normalized repository so bursty concurrent writes wait behind the explicit `RuntimeState` lock instead of failing early under host CPU/connection contention,
+  - widened persisted worker job metric counters to `BIGINT`, added exact decimal-string API fields, and saturated legacy numeric fields at the JS safe-integer boundary so long-running deployments do not publish imprecise totals,
+  - removed the unused single-row request-log repository write helper so request-log persistence now exposes only the batch insert path used by the API buffer,
+  - clarified current architecture/docs: the in-process mutation queue now belongs to in-memory mode only, while persistence-mode API writes stay direct-transactional.
+- Hardened Docker deployment topology for the new `server + worker` split:
+  - schema bootstrap (`prisma/pre_migrations/*.sql`, `prisma db push`, then idempotent `prisma/pre_migrations/*.sql` again) is now owned by `server`,
+  - Compose now builds the API image once as `agentrade-server:latest` and runs `worker` from that same image instead of declaring a second worker build,
+  - shared Compose runtime env now passes `CYCLE_DURATION_HOURS` to both `server` and `worker`, keeping cycle-close timing overrides consistent outside env-file based deployments,
+  - `worker` skips bootstrap and waits for `server` health in Compose to avoid fresh-start/upgrade races,
+  - `worker` now disables repository guard DDL and only reads pre-initialized runtime state/rules at startup, failing fast if the API/bootstrap path has not completed,
+  - `worker` startup now also fails fast when `ENABLE_PERSISTENCE=false`, because PostgreSQL is the only supported coordination point for the split runtime topology,
+  - deployment docs now call out that the PostgreSQL role behind `DATABASE_URL` must be allowed to install `pg_trgm`, and the pre-migration now resolves the installed `gin_trgm_ops` operator class schema dynamically before creating GIN/trigram search indexes,
+  - the worker bootstrap regression now also asserts that fail-fast startup does not create runtime state/rules or write startup audit rows,
+  - `worker` no longer initializes Redis-backed rate limiting or waits on Redis health; background coordination remains PostgreSQL-only,
+  - worker job success/error/lock-miss counters are now persisted in PostgreSQL and merged into API `/v2/system/metrics`, so worker maintenance remains observable without exposing an HTTP listener.
+- Aligned local Docker DB preparation with the deployment bootstrap path:
+  - `docker:test:*` scripts now run every SQL file under `prisma/pre_migrations/*.sql` after `prisma db push`, covering the new performance indexes and metric-counter table instead of only the old open-dispute guard.
+  - performance backfills now guard their related-table reads and fully recalibrate persisted aggregate columns, so partially upgraded schemas do not fail before `prisma db push` has created the newer tables and stale counts/timestamps are corrected on rerun.
+- Revalidated the tightened path with focused checks:
+  - `pnpm --filter @agentrade/server lint`
+  - `pnpm --filter @agentrade/server test:non-db`
+  - `pnpm --filter @agentrade/server build`
+  - `pnpm db:test:prepare:pre-migrations:local`
+  - `vitest run --no-file-parallelism --maxWorkers=1 --minWorkers=1 test/repository.spec.ts`
+  - `vitest run --no-file-parallelism --maxWorkers=1 --minWorkers=1 test/persistence-api.spec.ts`
+  - `vitest run --no-file-parallelism --maxWorkers=1 --minWorkers=1 test/stress.persistence.spec.ts`
+  - `docker compose -f docker-compose.yml config`
+  - `sh scripts/compose-stack.sh local config`
+  - `docker build -f apps/server/Dockerfile --target runtime -t agentrade-server:codex-check .`
+
 ## 2026-04-28
 
 - Optimized server-side read paths around auth and account todos:
@@ -23,7 +78,7 @@
 - Added DB-first server request/audit logging across API, CLI, and docs:
   - introduced admin-only `GET /v2/system/logs/requests` and `GET /v2/system/logs/audits`, plus matching CLI commands `agentrade system logs requests` and `agentrade system logs audits`,
   - added structured request log persistence (`requestId`, route, actor, IP, status, duration) and structured audit log persistence for auth rejection, rate limiting, runtime startup/shutdown, background jobs, privileged settings writes, and domain write outcomes,
-  - added config-driven retention/cleanup controls (`LOG_LEVEL`, `ENABLE_*_LOG_PERSISTENCE`, `*_LOG_RETENTION_DAYS`, `LOG_CLEANUP_INTERVAL_MINUTES`) with non-persistence in-memory ring-buffer fallback.
+  - added config-driven retention/cleanup controls (`LOG_LEVEL`, `ENABLE_*_LOG_PERSISTENCE`, `*_LOG_RETENTION_DAYS`, `LOG_CLEANUP_INTERVAL_MINUTES`, `LOG_CLEANUP_BATCH_SIZE`) with non-persistence in-memory ring-buffer fallback.
 - Verified the non-DB logging path with focused regression:
   - `pnpm --filter @agentrade/server test:non-db`.
 
@@ -156,10 +211,10 @@
   - updated SDK/CLI auth header resolution and command/test contracts (`MISSING_ADMIN_KEY` handling included).
 - Implemented default automatic cycle rollover in server runtime:
   - added `CYCLE_DURATION_HOURS` config (default `168`) and exposed it through public economy params,
-  - added request-path + background-timer auto-close flow that settles due cycles and opens the next cycle without operator action,
+  - added automatic due-cycle settlement; the original request-path fallback has since been removed by the 2026-04-29 server performance refactor, leaving timer/worker-driven settlement off the request path,
   - added persistence-path transactional due-check command (`closeCurrentCycleIfDueDirect`) so auto-close executes safely with runtime row-lock sequencing.
 - Expanded regression coverage:
-  - added API integration test proving due cycle auto-closes and active cycle advances on request,
+  - updated API integration coverage so ordinary read requests do not auto-close cycles, while explicit timer/background settlement still advances due cycles,
   - kept cycle rollover fully automatic with no manual admin close dependency.
 - Updated read-surface contract and docs:
   - web cycle list/detail now shows expected close time (`startedAt + cycleDurationHours`) for open cycles,
@@ -491,6 +546,7 @@
 - Removed low-value admin mutation surfaces from public routing and CLI (`/v2/admin/cycles/close`, `/v2/admin/disputes/{id}/override`, `/v2/admin/bridge/export`, `agentrade admin ...`), and migrated persistence/stress regressions to auto-cycle + quorum-vote semantics.
 - Revalidated end-to-end quality gates after runtime-rule persistence and API/CLI convergence:
   - `pnpm --filter @agentrade/server test:non-db`,
-  - `DATABASE_URL=... TEST_DATABASE_URL=... ENABLE_PERSISTENCE=true ENABLE_REDIS_RATE_LIMIT=false vitest run --fileParallelism=false test/repository.spec.ts test/persistence-api.spec.ts`,
-  - `DATABASE_URL=... TEST_DATABASE_URL=... ENABLE_PERSISTENCE=true ENABLE_REDIS_RATE_LIMIT=false vitest run --fileParallelism=false test/stress.persistence.spec.ts`,
+  - `DATABASE_URL=... TEST_DATABASE_URL=... ENABLE_PERSISTENCE=true ENABLE_REDIS_RATE_LIMIT=false vitest run --no-file-parallelism --maxWorkers=1 --minWorkers=1 test/repository.spec.ts`,
+  - `DATABASE_URL=... TEST_DATABASE_URL=... ENABLE_PERSISTENCE=true ENABLE_REDIS_RATE_LIMIT=false vitest run --no-file-parallelism --maxWorkers=1 --minWorkers=1 test/persistence-api.spec.ts`,
+  - `DATABASE_URL=... TEST_DATABASE_URL=... ENABLE_PERSISTENCE=true ENABLE_REDIS_RATE_LIMIT=false vitest run --no-file-parallelism --maxWorkers=1 --minWorkers=1 test/stress.persistence.spec.ts`,
   - `pnpm --filter @agentrade/cli test`.

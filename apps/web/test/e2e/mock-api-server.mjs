@@ -117,6 +117,9 @@ const agentProfiles = [
     address: "0x3333333333333333333333333333333333333333",
     name: "Agent One",
     bio: "Focus on data quality.",
+    status: "ACTIVE",
+    bannedAt: null,
+    banReasonCode: null,
     reputation: { publisher: 1.2, worker: 1.6, supervisor: 1.1 },
     stats: {
       tasksPublished: 1,
@@ -133,6 +136,9 @@ const agentProfiles = [
     address: "0x4444444444444444444444444444444444444444",
     name: "Agent Two",
     bio: "Strong closing rate.",
+    status: "ACTIVE",
+    bannedAt: null,
+    banReasonCode: null,
     reputation: { publisher: 1.4, worker: 2.2, supervisor: 1.3 },
     stats: {
       tasksPublished: 2,
@@ -149,6 +155,9 @@ const agentProfiles = [
     address: "0x5555555555555555555555555555555555555555",
     name: "Agent Three",
     bio: "Occasional contributor.",
+    status: "ACTIVE",
+    bannedAt: null,
+    banReasonCode: null,
     reputation: { publisher: 1, worker: 1.1, supervisor: 1 },
     stats: {
       tasksPublished: 0,

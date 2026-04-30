@@ -1,5 +1,6 @@
 import { Prisma, PrismaClient } from "@prisma/client";
 import {
+  applyRuntimeEditableRules,
   defaultConfig,
   mergeRuntimeEditableRules,
   pickRuntimeEditableRules,
@@ -78,6 +79,10 @@ import {
   touchRuntimeStateWithTx
 } from "./state-repository-tx-helpers.js";
 import {
+  buildDashboardDayWindow,
+  dayKeyToUtcStart
+} from "../utils/timezone.js";
+import {
   readGetActiveCycleDirect,
   readGetAgentDirect,
   readGetCycleDirect,
@@ -118,6 +123,11 @@ import {
   type WriteAuditContext,
   sanitizeAuditDetails
 } from "../observability/server-logs.js";
+import {
+  workerJobMetricCountersFromBigInts,
+  type WorkerJobMetricCounters,
+  type WorkerJobMetricOutcome
+} from "../observability/metrics.js";
 import {
   encodeKeysetCursor,
   clampPageLimit,
@@ -188,12 +198,43 @@ const OPEN_DISPUTE_UNIQUE_INDEX = "uq_dispute_open_submission";
 const MAX_SERIALIZABLE_RETRIES = 20;
 const SERIALIZABLE_RETRY_BACKOFF_MS = 10;
 const MAX_SERIALIZABLE_RETRY_BACKOFF_MS = 200;
+const PRISMA_TRANSACTION_MAX_WAIT_MS = 10_000;
+const PRISMA_TRANSACTION_TIMEOUT_MS = 30_000;
 const RUNTIME_AUDIT_PAGE_LIMIT_MAX = 100;
+const CYCLE_CLOSE_WORKER_LOCK_KEY = 3_101;
+const LOG_CLEANUP_WORKER_LOCK_KEY = 3_102;
 const runtimeRuleDefaults = pickRuntimeEditableRules(defaultConfig);
+const WORKER_JOB_METRIC_COUNTER_NAMES = [
+  "workerJobSuccessTotal",
+  "workerJobErrorTotal",
+  "workerJobLockMissTotal"
+] as const;
+type WorkerJobMetricCounterName = (typeof WORKER_JOB_METRIC_COUNTER_NAMES)[number];
+const WORKER_JOB_METRIC_NAME_BY_OUTCOME = {
+  success: "workerJobSuccessTotal",
+  error: "workerJobErrorTotal",
+  lock_miss: "workerJobLockMissTotal"
+} as const satisfies Record<WorkerJobMetricOutcome, WorkerJobMetricCounterName>;
+const isWorkerJobMetricCounterName = (value: string): value is WorkerJobMetricCounterName =>
+  (WORKER_JOB_METRIC_COUNTER_NAMES as readonly string[]).includes(value);
 
 const toDate = (value: string): Date => new Date(value);
 const toIso = (value: Date): string => value.toISOString();
 const asAddress = (value: string): Address => value as Address;
+const cloneAppConfig = (config: AppConfig): AppConfig => ({
+  ...config,
+  corsAllowedOrigins: [...config.corsAllowedOrigins]
+});
+const buildSingleConnectionDatabaseUrl = (databaseUrl: string): string => {
+  try {
+    const url = new URL(databaseUrl);
+    url.searchParams.set("connection_limit", "1");
+    return url.toString();
+  } catch {
+    const separator = databaseUrl.includes("?") ? "&" : "?";
+    return `${databaseUrl}${separator}connection_limit=1`;
+  }
+};
 const toJsonAddressArray = (value: string[]): Prisma.InputJsonValue =>
   value as unknown as Prisma.InputJsonValue;
 const toJsonSubmissionAttachments = (
@@ -234,10 +275,23 @@ interface DashboardMetricRow {
   disputesOpened: number | bigint | Prisma.Decimal | string | null;
 }
 
-interface DashboardTrendRow extends DashboardMetricRow {
+interface DashboardTrendAggregateRow {
   label: string;
-  bucketStart: string;
+  type: DomainActivityEventType;
+  eventCount: number | bigint | Prisma.Decimal | string | null;
 }
+
+interface WorkerMetricCounterRow {
+  name: string;
+  value: number | bigint | Prisma.Decimal | string | null;
+}
+
+const emptyDashboardMetrics = (): DashboardMetricSnapshot => ({
+  tasksPublished: 0,
+  tasksIntented: 0,
+  tasksCompleted: 0,
+  disputesOpened: 0
+});
 
 interface SnapshotDiff<T> {
   upserts: T[];
@@ -295,6 +349,23 @@ const toNumber = (value: unknown): number => {
     return value.toNumber();
   }
   return Number(value ?? 0);
+};
+
+const toNonNegativeBigInt = (value: unknown): bigint => {
+  if (typeof value === "bigint") {
+    return value >= 0n ? value : 0n;
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value) && value > 0 ? BigInt(Math.floor(value)) : 0n;
+  }
+  if (value instanceof Prisma.Decimal) {
+    const text = value.toString();
+    return /^\d+$/.test(text) ? BigInt(text) : 0n;
+  }
+  if (typeof value === "string" && /^\d+$/.test(value)) {
+    return BigInt(value);
+  }
+  return 0n;
 };
 
 const isObjectRecord = (value: unknown): value is Record<string, unknown> =>
@@ -361,18 +432,37 @@ export class PersistenceConflictError extends Error {
 
 export class PrismaStateRepository {
   private prisma: PrismaClient;
+  private workerLockPrisma: PrismaClient;
   private readonly config: AppConfig;
+  private readonly ensurePersistenceGuardsEnabled: boolean;
+  private readonly inProcessWorkerLocks = new Set<number>();
   private persistenceGuardsPromise: Promise<void> | null = null;
 
-  constructor(databaseUrl: string, config: AppConfig = defaultConfig) {
+  constructor(
+    databaseUrl: string,
+    config: AppConfig = defaultConfig,
+    options: { ensurePersistenceGuards?: boolean } = {}
+  ) {
     this.prisma = new PrismaClient({
       datasources: {
         db: {
           url: databaseUrl
         }
+      },
+      transactionOptions: {
+        maxWait: PRISMA_TRANSACTION_MAX_WAIT_MS,
+        timeout: PRISMA_TRANSACTION_TIMEOUT_MS
       }
     });
-    this.config = config;
+    this.workerLockPrisma = new PrismaClient({
+      datasources: {
+        db: {
+          url: buildSingleConnectionDatabaseUrl(databaseUrl)
+        }
+      }
+    });
+    this.config = cloneAppConfig(config);
+    this.ensurePersistenceGuardsEnabled = options.ensurePersistenceGuards ?? true;
   }
 
   async ensureInitialized(initialSnapshot: EngineStateSnapshot): Promise<void> {
@@ -502,10 +592,13 @@ export class PrismaStateRepository {
     };
   }
 
-  async appendRequestLogDirect(input: RequestLogCreateInput): Promise<ServerRequestLogRecord> {
-    const record = buildRequestLogRecord(input);
-    await this.prisma.serverRequestLog.create({
-      data: {
+  async appendRequestLogsDirect(inputs: RequestLogCreateInput[]): Promise<ServerRequestLogRecord[]> {
+    if (inputs.length === 0) {
+      return [];
+    }
+    const records = inputs.map((input) => buildRequestLogRecord(input));
+    await this.prisma.serverRequestLog.createMany({
+      data: records.map((record) => ({
         id: record.id,
         requestId: record.requestId,
         method: record.method,
@@ -519,9 +612,9 @@ export class PrismaStateRepository {
         actorAddress: record.actorAddress ?? undefined,
         errorCode: record.errorCode ?? undefined,
         createdAt: new Date(record.createdAt)
-      }
+      }))
     });
-    return record;
+    return records;
   }
 
   async appendAuditLogDirect(input: AuditLogCreateInput): Promise<ServerAuditLogRecord> {
@@ -560,84 +653,99 @@ export class PrismaStateRepository {
           order: "desc"
         })
       : null;
-    const keysetWhere =
-      cursor?.mode === "keyset"
-        ? (() => {
-            const cursorId = cursor.values.id;
-            const cursorPrimary = cursor.values.primary;
-            if (typeof cursorId !== "string" || cursorId.length === 0) {
-              throw new DomainError("INVALID_CURSOR", "cursor id must be a non-empty string", 400);
-            }
-            if (typeof cursorPrimary !== "string" || cursorPrimary.length === 0) {
-              throw new DomainError(
-                "INVALID_CURSOR",
-                "cursor primary must be a non-empty ISO datetime string",
-                400
-              );
-            }
-            const createdAt = new Date(cursorPrimary);
-            if (Number.isNaN(createdAt.getTime())) {
-              throw new DomainError("INVALID_CURSOR", "cursor primary must be valid ISO datetime", 400);
-            }
-            return {
-              OR: [
-                { createdAt: { lt: createdAt } },
-                {
-                  AND: [{ createdAt }, { id: { lt: cursorId } }]
-                }
-              ]
-            } satisfies Prisma.ServerRequestLogWhereInput;
-          })()
-        : null;
-
-    const filters: Prisma.ServerRequestLogWhereInput[] = [];
-    if (keysetWhere) {
-      filters.push(keysetWhere);
+    const filters: Prisma.Sql[] = [];
+    const normalizedMethod = query.method?.trim().toUpperCase();
+    if (cursor?.mode === "keyset") {
+      const cursorId = cursor.values.id;
+      const cursorPrimary = cursor.values.primary;
+      if (typeof cursorId !== "string" || cursorId.length === 0) {
+        throw new DomainError("INVALID_CURSOR", "cursor id must be a non-empty string", 400);
+      }
+      if (typeof cursorPrimary !== "string" || cursorPrimary.length === 0) {
+        throw new DomainError(
+          "INVALID_CURSOR",
+          "cursor primary must be a non-empty ISO datetime string",
+          400
+        );
+      }
+      const createdAt = new Date(cursorPrimary);
+      if (Number.isNaN(createdAt.getTime())) {
+        throw new DomainError("INVALID_CURSOR", "cursor primary must be valid ISO datetime", 400);
+      }
+      filters.push(Prisma.sql`(
+        l."createdAt" < ${createdAt}
+        OR (l."createdAt" = ${createdAt} AND l.id < ${cursorId})
+      )`);
     }
     if (query.from || query.to) {
-      filters.push({
-        createdAt: {
-          ...(query.from ? { gte: new Date(query.from) } : {}),
-          ...(query.to ? { lte: new Date(query.to) } : {})
-        }
-      });
+      if (query.from) {
+        filters.push(Prisma.sql`l."createdAt" >= ${new Date(query.from)}`);
+      }
+      if (query.to) {
+        filters.push(Prisma.sql`l."createdAt" <= ${new Date(query.to)}`);
+      }
     }
     if (query.requestId) {
-      filters.push({ requestId: query.requestId });
+      filters.push(Prisma.sql`l."requestId" = ${query.requestId}`);
     }
     if (query.actor) {
-      filters.push({
-        actorAddress: {
-          equals: query.actor,
-          mode: "insensitive"
-        }
-      });
+      filters.push(Prisma.sql`lower(l."actorAddress") = lower(${query.actor})`);
     }
     if (query.ip) {
-      filters.push({ clientIp: query.ip });
+      filters.push(Prisma.sql`l."clientIp" = ${query.ip}`);
     }
-    if (query.method) {
-      filters.push({
-        method: {
-          equals: query.method,
-          mode: "insensitive"
-        }
-      });
+    if (normalizedMethod) {
+      filters.push(Prisma.sql`l.method = ${normalizedMethod}`);
     }
     if (query.routeId) {
-      filters.push({ routeId: query.routeId });
+      filters.push(Prisma.sql`l."routeId" = ${query.routeId}`);
     }
     if (query.status !== undefined) {
-      filters.push({ statusCode: query.status });
+      filters.push(Prisma.sql`l."statusCode" = ${query.status}`);
     }
 
-    const rows = await this.prisma.serverRequestLog.findMany({
-      where: filters.length > 0 ? { AND: filters } : undefined,
-      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-      ...(cursor?.mode === "legacy-offset"
-        ? { skip: cursor.offset, take: boundedLimit + 1 }
-        : { take: boundedLimit + 1 })
-    });
+    const whereSql =
+      filters.length > 0 ? Prisma.sql`WHERE ${Prisma.join(filters, " AND ")}` : Prisma.empty;
+    const paginationSql =
+      cursor?.mode === "legacy-offset"
+        ? Prisma.sql`LIMIT ${boundedLimit + 1} OFFSET ${cursor.offset}`
+        : Prisma.sql`LIMIT ${boundedLimit + 1}`;
+    const rows = await this.prisma.$queryRaw<
+      Array<{
+        id: string;
+        requestId: string;
+        method: string;
+        path: string;
+        routeId: string;
+        statusCode: number;
+        durationMs: number;
+        clientIp: string;
+        forwardedFor: string | null;
+        userAgent: string | null;
+        actorAddress: string | null;
+        errorCode: string | null;
+        createdAt: Date;
+      }>
+    >(Prisma.sql`
+      SELECT
+        l.id,
+        l."requestId",
+        l.method,
+        l.path,
+        l."routeId",
+        l."statusCode",
+        l."durationMs",
+        l."clientIp",
+        l."forwardedFor",
+        l."userAgent",
+        l."actorAddress",
+        l."errorCode",
+        l."createdAt"
+      FROM "ServerRequestLog" l
+      ${whereSql}
+      ORDER BY l."createdAt" DESC, l.id DESC
+      ${paginationSql}
+    `);
     const mapped = rows.map((item) => this.mapServerRequestLog(item));
     const hasMore = mapped.length > boundedLimit;
     const items = hasMore ? mapped.slice(0, boundedLimit) : mapped;
@@ -666,79 +774,104 @@ export class PrismaStateRepository {
           order: "desc"
         })
       : null;
-    const keysetWhere =
-      cursor?.mode === "keyset"
-        ? (() => {
-            const cursorId = cursor.values.id;
-            const cursorPrimary = cursor.values.primary;
-            if (typeof cursorId !== "string" || cursorId.length === 0) {
-              throw new DomainError("INVALID_CURSOR", "cursor id must be a non-empty string", 400);
-            }
-            if (typeof cursorPrimary !== "string" || cursorPrimary.length === 0) {
-              throw new DomainError(
-                "INVALID_CURSOR",
-                "cursor primary must be a non-empty ISO datetime string",
-                400
-              );
-            }
-            const createdAt = new Date(cursorPrimary);
-            if (Number.isNaN(createdAt.getTime())) {
-              throw new DomainError("INVALID_CURSOR", "cursor primary must be valid ISO datetime", 400);
-            }
-            return {
-              OR: [
-                { createdAt: { lt: createdAt } },
-                {
-                  AND: [{ createdAt }, { id: { lt: cursorId } }]
-                }
-              ]
-            } satisfies Prisma.ServerAuditLogWhereInput;
-          })()
-        : null;
-
-    const filters: Prisma.ServerAuditLogWhereInput[] = [];
-    if (keysetWhere) {
-      filters.push(keysetWhere);
+    const filters: Prisma.Sql[] = [];
+    if (cursor?.mode === "keyset") {
+      const cursorId = cursor.values.id;
+      const cursorPrimary = cursor.values.primary;
+      if (typeof cursorId !== "string" || cursorId.length === 0) {
+        throw new DomainError("INVALID_CURSOR", "cursor id must be a non-empty string", 400);
+      }
+      if (typeof cursorPrimary !== "string" || cursorPrimary.length === 0) {
+        throw new DomainError(
+          "INVALID_CURSOR",
+          "cursor primary must be a non-empty ISO datetime string",
+          400
+        );
+      }
+      const createdAt = new Date(cursorPrimary);
+      if (Number.isNaN(createdAt.getTime())) {
+        throw new DomainError("INVALID_CURSOR", "cursor primary must be valid ISO datetime", 400);
+      }
+      filters.push(Prisma.sql`(
+        l."createdAt" < ${createdAt}
+        OR (l."createdAt" = ${createdAt} AND l.id < ${cursorId})
+      )`);
     }
     if (query.from || query.to) {
-      filters.push({
-        createdAt: {
-          ...(query.from ? { gte: new Date(query.from) } : {}),
-          ...(query.to ? { lte: new Date(query.to) } : {})
-        }
-      });
+      if (query.from) {
+        filters.push(Prisma.sql`l."createdAt" >= ${new Date(query.from)}`);
+      }
+      if (query.to) {
+        filters.push(Prisma.sql`l."createdAt" <= ${new Date(query.to)}`);
+      }
     }
     if (query.requestId) {
-      filters.push({ requestId: query.requestId });
+      filters.push(Prisma.sql`l."requestId" = ${query.requestId}`);
     }
     if (query.actor) {
-      filters.push({
-        actorAddress: {
-          equals: query.actor,
-          mode: "insensitive"
-        }
-      });
+      filters.push(Prisma.sql`lower(l."actorAddress") = lower(${query.actor})`);
     }
     if (query.ip) {
-      filters.push({ clientIp: query.ip });
+      filters.push(Prisma.sql`l."clientIp" = ${query.ip}`);
     }
     if (query.category) {
-      filters.push({ category: query.category });
+      filters.push(Prisma.sql`l.category = CAST(${query.category} AS "ServerAuditCategory")`);
     }
     if (query.action) {
-      filters.push({ action: query.action });
+      filters.push(Prisma.sql`l.action = ${query.action}`);
     }
     if (query.outcome) {
-      filters.push({ outcome: query.outcome });
+      filters.push(Prisma.sql`l.outcome = CAST(${query.outcome} AS "ServerAuditOutcome")`);
     }
 
-    const rows = await this.prisma.serverAuditLog.findMany({
-      where: filters.length > 0 ? { AND: filters } : undefined,
-      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-      ...(cursor?.mode === "legacy-offset"
-        ? { skip: cursor.offset, take: boundedLimit + 1 }
-        : { take: boundedLimit + 1 })
-    });
+    const whereSql =
+      filters.length > 0 ? Prisma.sql`WHERE ${Prisma.join(filters, " AND ")}` : Prisma.empty;
+    const paginationSql =
+      cursor?.mode === "legacy-offset"
+        ? Prisma.sql`LIMIT ${boundedLimit + 1} OFFSET ${cursor.offset}`
+        : Prisma.sql`LIMIT ${boundedLimit + 1}`;
+    const rows = await this.prisma.$queryRaw<
+      Array<{
+        id: string;
+        category: string;
+        action: string;
+        severity: string;
+        outcome: string;
+        requestId: string | null;
+        clientIp: string | null;
+        actorAddress: string | null;
+        method: string | null;
+        routeId: string | null;
+        targetType: string | null;
+        targetId: string | null;
+        cycleId: string | null;
+        message: string;
+        details: Prisma.JsonValue | null;
+        createdAt: Date;
+      }>
+    >(Prisma.sql`
+      SELECT
+        l.id,
+        l.category,
+        l.action,
+        l.severity,
+        l.outcome,
+        l."requestId",
+        l."clientIp",
+        l."actorAddress",
+        l.method,
+        l."routeId",
+        l."targetType",
+        l."targetId",
+        l."cycleId",
+        l.message,
+        l.details,
+        l."createdAt"
+      FROM "ServerAuditLog" l
+      ${whereSql}
+      ORDER BY l."createdAt" DESC, l.id DESC
+      ${paginationSql}
+    `);
     const mapped = rows.map((item) => this.mapServerAuditLog(item));
     const hasMore = mapped.length > boundedLimit;
     const items = hasMore ? mapped.slice(0, boundedLimit) : mapped;
@@ -765,18 +898,107 @@ export class PrismaStateRepository {
     const auditCutoff = new Date(
       now.getTime() - this.config.auditLogRetentionDays * 24 * 60 * 60 * 1000
     );
-    const [requestResult, auditResult] = await this.prisma.$transaction([
-      this.prisma.serverRequestLog.deleteMany({
-        where: { createdAt: { lt: requestCutoff } }
-      }),
-      this.prisma.serverAuditLog.deleteMany({
-        where: { createdAt: { lt: auditCutoff } }
-      })
-    ]);
     return {
-      deletedRequestLogs: requestResult.count,
-      deletedAuditLogs: auditResult.count
+      deletedRequestLogs: await this.deleteExpiredRequestLogs(requestCutoff),
+      deletedAuditLogs: await this.deleteExpiredAuditLogs(auditCutoff)
     };
+  }
+
+  private async deleteExpiredRequestLogs(cutoff: Date): Promise<number> {
+    let total = 0;
+    while (true) {
+      const deleted = await this.prisma.$executeRaw(Prisma.sql`
+        WITH expired AS (
+          SELECT id
+          FROM "ServerRequestLog"
+          WHERE "createdAt" < ${cutoff}
+          ORDER BY "createdAt" ASC, id ASC
+          LIMIT ${this.config.logCleanupBatchSize}
+        )
+        DELETE FROM "ServerRequestLog" l
+        USING expired
+        WHERE l.id = expired.id
+      `);
+      total += deleted;
+      if (deleted < this.config.logCleanupBatchSize) {
+        return total;
+      }
+    }
+  }
+
+  private async deleteExpiredAuditLogs(cutoff: Date): Promise<number> {
+    let total = 0;
+    while (true) {
+      const deleted = await this.prisma.$executeRaw(Prisma.sql`
+        WITH expired AS (
+          SELECT id
+          FROM "ServerAuditLog"
+          WHERE "createdAt" < ${cutoff}
+          ORDER BY "createdAt" ASC, id ASC
+          LIMIT ${this.config.logCleanupBatchSize}
+        )
+        DELETE FROM "ServerAuditLog" l
+        USING expired
+        WHERE l.id = expired.id
+      `);
+      total += deleted;
+      if (deleted < this.config.logCleanupBatchSize) {
+        return total;
+      }
+    }
+  }
+
+  async incrementWorkerJobMetricDirect(outcome: WorkerJobMetricOutcome): Promise<void> {
+    const name = WORKER_JOB_METRIC_NAME_BY_OUTCOME[outcome];
+    await this.prisma.$executeRaw(Prisma.sql`
+      INSERT INTO "ServerMetricCounter" (name, value, "updatedAt")
+      VALUES (${name}, 1, NOW())
+      ON CONFLICT (name)
+      DO UPDATE SET
+        value = "ServerMetricCounter".value + 1,
+        "updatedAt" = NOW()
+    `);
+  }
+
+  async getWorkerJobMetricCountersDirect(): Promise<WorkerJobMetricCounters> {
+    const values: Record<WorkerJobMetricCounterName, bigint> = {
+      workerJobSuccessTotal: 0n,
+      workerJobErrorTotal: 0n,
+      workerJobLockMissTotal: 0n
+    };
+    const rows = await this.prisma.$queryRaw<WorkerMetricCounterRow[]>(Prisma.sql`
+      SELECT name, value
+      FROM "ServerMetricCounter"
+      WHERE name IN (${Prisma.join(WORKER_JOB_METRIC_COUNTER_NAMES)})
+    `);
+    for (const row of rows) {
+      if (isWorkerJobMetricCounterName(row.name)) {
+        values[row.name] = toNonNegativeBigInt(row.value);
+      }
+    }
+    return workerJobMetricCountersFromBigInts(values);
+  }
+
+  async closeDueCyclesWithWorkerLock(): Promise<{ acquired: boolean; result: CloseCycleResult[] | null }> {
+    return this.withAdvisoryLock(CYCLE_CLOSE_WORKER_LOCK_KEY, async () => {
+      const results: CloseCycleResult[] = [];
+      while (true) {
+        const result = await this.closeCurrentCycleIfDueDirect();
+        if (!result) {
+          return results;
+        }
+        results.push(result);
+      }
+    });
+  }
+
+  async cleanupExpiredLogsWithWorkerLock(
+    now = new Date()
+  ): Promise<{ acquired: boolean; result: CleanupLogsResult | null }> {
+    return this.withAdvisoryLock(
+      LOG_CLEANUP_WORKER_LOCK_KEY,
+      async () => await this.cleanupExpiredLogs(now)
+    );
   }
 
   async updateRuntimeRulesDirect(input: {
@@ -943,45 +1165,8 @@ export class PrismaStateRepository {
   }): Promise<RuntimeSettingsState> {
     return this.executeWithRetry(async () =>
       this.prisma.$transaction(async (tx) => {
-        const runtime = await this.lockRuntimeWithTx(tx);
-        const { currentRules, pendingNextPatch } = await this.lockRuntimeRuleStateWithTx(tx);
-        if (!pendingNextPatch || Object.keys(pendingNextPatch).length === 0) {
-          const row = await tx.runtimeRuleState.findUniqueOrThrow({
-            where: { id: RUNTIME_RULE_STATE_ID }
-          });
-          return this.toRuntimeSettingsState(row);
-        }
-
-        const nextCurrent = mergeRuntimeEditableRules(currentRules, pendingNextPatch);
-        validateRuntimeEditableRules(nextCurrent);
-        await tx.cycle.updateMany({
-          where: { id: input.openedCycleId, status: DomainCycleStatus.OPEN },
-          data: { mintedAmount: nextCurrent.mintPerCycle }
-        });
-        const updated = await tx.runtimeRuleState.update({
-          where: { id: RUNTIME_RULE_STATE_ID },
-          data: {
-            currentRules: nextCurrent,
-            pendingNextPatch: Prisma.JsonNull
-          }
-        });
-
-        await tx.runtimeRuleAudit.create({
-          data: {
-            id: nanoid(),
-            eventType: "AUTO_APPLY_NEXT",
-            applyTo: null,
-            reason: null,
-            actor: input.actor?.trim().length ? input.actor.trim() : "system",
-            cycleId: runtime.activeCycleId,
-            beforeRules: currentRules,
-            afterRules: nextCurrent,
-            patch: pendingNextPatch as Prisma.InputJsonValue,
-            pendingNextPatch: Prisma.JsonNull
-          }
-        });
-
-        return this.toRuntimeSettingsState(updated);
+        await this.lockRuntimeWithTx(tx);
+        return this.applyPendingRuntimeRulesForOpenedCycleWithTx(tx, input);
       })
     );
   }
@@ -1182,8 +1367,11 @@ export class PrismaStateRepository {
     return readListAgentsDirect(this.prisma);
   }
 
-  async queryAgentsDirect(query: AgentListQuery): Promise<PaginatedResponse<AgentDirectoryItem>> {
-    return queryAgentsDirect(this.prisma, query, this.config);
+  async queryAgentsDirect(
+    query: AgentListQuery,
+    scoreConfig: AppConfig = this.config
+  ): Promise<PaginatedResponse<AgentDirectoryItem>> {
+    return queryAgentsDirect(this.prisma, query, scoreConfig);
   }
 
   async listActivitiesDirect(): Promise<ActivityEvent[]> {
@@ -1321,9 +1509,11 @@ export class PrismaStateRepository {
   }
 
   async getDashboardSummaryDirect(timeZone: string): Promise<DashboardSummaryResponse> {
+    const dayWindow = buildDashboardDayWindow(timeZone, 1);
     const activeCyclePromise = this.getActiveCycleDirect();
-    const todayPromise = this.queryActivityMetrics(
-      Prisma.sql`WHERE timezone(${timeZone}, "createdAt")::date = timezone(${timeZone}, CURRENT_TIMESTAMP)::date`
+    const todayPromise = this.queryActivityMetricsByCreatedAtRange(
+      dayWindow.todayStartUtc,
+      dayWindow.todayEndUtc
     );
     const totalsPromise = Promise.all([
       this.prisma.task.count(),
@@ -1360,46 +1550,67 @@ export class PrismaStateRepository {
     window: "7d" | "30d"
   ): Promise<DashboardTrendsResponse> {
     const windowSize = window === "30d" ? 30 : 7;
-    const rows = await this.prisma.$queryRaw<DashboardTrendRow[]>(Prisma.sql`
-      WITH day_series AS (
-        SELECT generate_series(
-          date_trunc('day', timezone(${timeZone}, CURRENT_TIMESTAMP)) - (${windowSize - 1} * interval '1 day'),
-          date_trunc('day', timezone(${timeZone}, CURRENT_TIMESTAMP)),
-          interval '1 day'
-        ) AS local_day
-      ),
-      activity_counts AS (
-        SELECT
-          date_trunc('day', timezone(${timeZone}, "createdAt")) AS local_day,
-          COUNT(*) FILTER (WHERE type = CAST(${DomainActivityEventType.TASK_PUBLISHED} AS "ActivityEventType")) AS "tasksPublished",
-          COUNT(*) FILTER (WHERE type = CAST(${DomainActivityEventType.TASK_INTENDED} AS "ActivityEventType")) AS "tasksIntented",
-          COUNT(*) FILTER (WHERE type = CAST(${DomainActivityEventType.TASK_COMPLETED} AS "ActivityEventType")) AS "tasksCompleted",
-          COUNT(*) FILTER (WHERE type = CAST(${DomainActivityEventType.DISPUTE_OPENED} AS "ActivityEventType")) AS "disputesOpened"
-        FROM "ActivityEvent"
-        WHERE timezone(${timeZone}, "createdAt") >=
-          date_trunc('day', timezone(${timeZone}, CURRENT_TIMESTAMP)) - (${windowSize - 1} * interval '1 day')
-        GROUP BY 1
+    const dayWindow = buildDashboardDayWindow(timeZone, windowSize);
+    const bucketWindows = dayWindow.labels.map((label, index) => {
+      const nextLabel = dayWindow.labels[index + 1];
+      return {
+        label,
+        startUtc: dayKeyToUtcStart(label, timeZone),
+        endUtc: nextLabel ? dayKeyToUtcStart(nextLabel, timeZone) : dayWindow.endUtc
+      };
+    });
+    const metricTypes = [
+      DomainActivityEventType.TASK_PUBLISHED,
+      DomainActivityEventType.TASK_INTENDED,
+      DomainActivityEventType.TASK_COMPLETED,
+      DomainActivityEventType.DISPUTE_OPENED
+    ];
+    const rows = await this.prisma.$queryRaw<DashboardTrendAggregateRow[]>(Prisma.sql`
+      WITH buckets(label, "startUtc", "endUtc") AS (
+        VALUES ${Prisma.join(
+          bucketWindows.map(
+            (bucket) => Prisma.sql`(${bucket.label}, ${bucket.startUtc}, ${bucket.endUtc})`
+          )
+        )}
       )
       SELECT
-        to_char(ds.local_day, 'YYYY-MM-DD') AS label,
-        to_char(ds.local_day, 'YYYY-MM-DD') || 'T00:00:00.000Z' AS "bucketStart",
-        COALESCE(ac."tasksPublished", 0) AS "tasksPublished",
-        COALESCE(ac."tasksIntented", 0) AS "tasksIntented",
-        COALESCE(ac."tasksCompleted", 0) AS "tasksCompleted",
-        COALESCE(ac."disputesOpened", 0) AS "disputesOpened"
-      FROM day_series ds
-      LEFT JOIN activity_counts ac ON ac.local_day = ds.local_day
-      ORDER BY ds.local_day ASC
+        buckets.label,
+        events.type,
+        COUNT(*)::bigint AS "eventCount"
+      FROM buckets
+      INNER JOIN "ActivityEvent" events
+        ON events."createdAt" >= buckets."startUtc"
+       AND events."createdAt" < buckets."endUtc"
+       AND events.type IN (${Prisma.join(metricTypes.map((type) => Prisma.sql`CAST(${type} AS "ActivityEventType")`))})
+      GROUP BY buckets.label, events.type
     `);
+    const metricsByLabel = new Map<string, DashboardMetricSnapshot>();
+    for (const row of rows) {
+      const metrics = metricsByLabel.get(row.label) ?? emptyDashboardMetrics();
+      const eventCount = toNumber(row.eventCount);
+      if (row.type === DomainActivityEventType.TASK_PUBLISHED) {
+        metrics.tasksPublished += eventCount;
+      } else if (row.type === DomainActivityEventType.TASK_INTENDED) {
+        metrics.tasksIntented += eventCount;
+      } else if (row.type === DomainActivityEventType.TASK_COMPLETED) {
+        metrics.tasksCompleted += eventCount;
+      } else if (row.type === DomainActivityEventType.DISPUTE_OPENED) {
+        metrics.disputesOpened += eventCount;
+      }
+      metricsByLabel.set(row.label, metrics);
+    }
 
-    const points: DashboardTrendPoint[] = rows.map((item) => ({
-      bucketStart: item.bucketStart,
-      label: item.label,
-      tasksPublished: toNumber(item.tasksPublished),
-      tasksIntented: toNumber(item.tasksIntented),
-      tasksCompleted: toNumber(item.tasksCompleted),
-      disputesOpened: toNumber(item.disputesOpened)
-    }));
+    const points: DashboardTrendPoint[] = dayWindow.labels.map((label) => {
+      const metrics = metricsByLabel.get(label) ?? emptyDashboardMetrics();
+      return {
+        bucketStart: dayKeyToUtcStart(label, timeZone).toISOString(),
+        label,
+        tasksPublished: metrics.tasksPublished,
+        tasksIntented: metrics.tasksIntented,
+        tasksCompleted: metrics.tasksCompleted,
+        disputesOpened: metrics.disputesOpened
+      };
+    });
 
     return {
       timezone: timeZone,
@@ -1473,7 +1684,7 @@ export class PrismaStateRepository {
       },
       input
     );
-    return mapTask({ ...task, intentCount: 0 });
+    return mapTask(task);
   }
 
   async rejectSubmissionDirect(input: RejectSubmissionDirectInput): Promise<Submission> {
@@ -1501,7 +1712,6 @@ export class PrismaStateRepository {
   async terminateTaskDirect(
     taskId: string,
     publisher: Address,
-    config: AppConfig,
     auditContext?: WriteAuditContext
   ): Promise<Task> {
     const task = await writeTerminateTaskDirect(
@@ -1521,11 +1731,9 @@ export class PrismaStateRepository {
       },
       taskId,
       publisher,
-      config,
       auditContext
     );
-    const intentCount = await this.prisma.taskIntention.count({ where: { taskId: task.id } });
-    return mapTask({ ...task, intentCount });
+    return mapTask(task);
   }
 
   async openDisputeDirect(input: OpenDisputeDirectInput): Promise<Dispute> {
@@ -1567,7 +1775,7 @@ export class PrismaStateRepository {
     return mapDispute(dispute);
   }
 
-  async closeCurrentCycleDirect(config: AppConfig): Promise<CloseCycleResult> {
+  async closeCurrentCycleDirect(): Promise<CloseCycleResult> {
     return writeCloseCurrentCycleDirect(
       this.prisma,
       {
@@ -1584,6 +1792,10 @@ export class PrismaStateRepository {
         appendAuditLogWithTx: (tx, audit) => this.appendAuditLogWithTx(tx, audit).then(() => undefined),
         confirmSubmissionInternalWithTx: (tx, submission, task, now, cycleId, actor, options) =>
           this.confirmSubmissionInternalWithTx(tx, submission, task, now, cycleId, actor, options),
+        refreshCycleCloseConfigWithTx: (tx, nextConfig) =>
+          this.refreshCycleCloseConfigWithTx(tx, nextConfig),
+        applyPendingRuntimeRulesForOpenedCycleWithTx: (tx, input) =>
+          this.applyPendingRuntimeRulesForOpenedCycleWithTx(tx, input).then(() => undefined),
         evaluateDisputeWithTx: (tx, disputeId, nextConfig, now, cycleId) =>
           this.evaluateDisputeWithTx(tx, disputeId, nextConfig, now, cycleId),
         sweepBannedPublisherCleanTasksWithTx: (tx, now, cycleId) =>
@@ -1591,12 +1803,11 @@ export class PrismaStateRepository {
         autoTerminateExpiredCleanTasksWithTx: (tx, now, cycleId) =>
           this.autoTerminateExpiredCleanTasksWithTx(tx, now, cycleId),
         nextCycleId: (currentCycleId) => this.nextCycleId(currentCycleId)
-      },
-      config
+      }
     );
   }
 
-  async closeCurrentCycleIfDueDirect(config: AppConfig): Promise<CloseCycleResult | null> {
+  async closeCurrentCycleIfDueDirect(): Promise<CloseCycleResult | null> {
     return writeCloseCurrentCycleIfDueDirect(
       this.prisma,
       {
@@ -1613,6 +1824,10 @@ export class PrismaStateRepository {
         appendAuditLogWithTx: (tx, audit) => this.appendAuditLogWithTx(tx, audit).then(() => undefined),
         confirmSubmissionInternalWithTx: (tx, submission, task, now, cycleId, actor, options) =>
           this.confirmSubmissionInternalWithTx(tx, submission, task, now, cycleId, actor, options),
+        refreshCycleCloseConfigWithTx: (tx, nextConfig) =>
+          this.refreshCycleCloseConfigWithTx(tx, nextConfig),
+        applyPendingRuntimeRulesForOpenedCycleWithTx: (tx, input) =>
+          this.applyPendingRuntimeRulesForOpenedCycleWithTx(tx, input).then(() => undefined),
         evaluateDisputeWithTx: (tx, disputeId, nextConfig, now, cycleId) =>
           this.evaluateDisputeWithTx(tx, disputeId, nextConfig, now, cycleId),
         sweepBannedPublisherCleanTasksWithTx: (tx, now, cycleId) =>
@@ -1620,8 +1835,7 @@ export class PrismaStateRepository {
         autoTerminateExpiredCleanTasksWithTx: (tx, now, cycleId) =>
           this.autoTerminateExpiredCleanTasksWithTx(tx, now, cycleId),
         nextCycleId: (currentCycleId) => this.nextCycleId(currentCycleId)
-      },
-      config
+      }
     );
   }
 
@@ -1753,8 +1967,22 @@ export class PrismaStateRepository {
 
   private async lockRuntimeWithTx(
     tx: Prisma.TransactionClient
-  ): Promise<{ id: string; activeCycleId: string; updatedAt: Date }> {
-    return lockRuntimeWithTx(tx, RUNTIME_ID);
+  ): Promise<{ id: string; activeCycleId: string; updatedAt: Date; config: AppConfig }> {
+    const runtime = await lockRuntimeWithTx(tx, RUNTIME_ID);
+    const config = await this.refreshCurrentRuntimeConfigWithTx(tx);
+    return {
+      ...runtime,
+      config
+    };
+  }
+
+  private async refreshCurrentRuntimeConfigWithTx(
+    tx: Prisma.TransactionClient
+  ): Promise<AppConfig> {
+    const { currentRules } = await this.lockRuntimeRuleStateWithTx(tx);
+    const currentConfig = applyRuntimeEditableRules(this.config, currentRules);
+    Object.assign(this.config, currentConfig);
+    return currentConfig;
   }
 
   private async confirmSubmissionInternalWithTx(
@@ -2772,11 +3000,9 @@ export class PrismaStateRepository {
         taskId: task.id
       }
     });
-    await tx.activityEvent.deleteMany({
-      where: {
-        type: DomainActivityEventType.TASK_COMPLETED,
-        disputeId: dispute.id
-      }
+    await this.deleteActivityEventsAndRefreshLatestWithTx(tx, {
+      type: DomainActivityEventType.TASK_COMPLETED,
+      disputeId: dispute.id
     });
     for (const termination of rollback?.forcedTerminations ?? []) {
       await this.rollbackForcedTerminationWithTx(tx, dispute.id, termination, now);
@@ -2833,12 +3059,10 @@ export class PrismaStateRepository {
       publisherReputationDelta: 1,
       tasksTerminated: -1
     });
-    await tx.activityEvent.deleteMany({
-      where: {
-        type: DomainActivityEventType.TASK_TERMINATED,
-        disputeId,
-        taskId: rollback.taskId
-      }
+    await this.deleteActivityEventsAndRefreshLatestWithTx(tx, {
+      type: DomainActivityEventType.TASK_TERMINATED,
+      disputeId,
+      taskId: rollback.taskId
     });
   }
 
@@ -3280,6 +3504,69 @@ export class PrismaStateRepository {
     return this.mapServerAuditLog(row);
   }
 
+  private async refreshCycleCloseConfigWithTx(
+    tx: Prisma.TransactionClient,
+    baseConfig: AppConfig
+  ): Promise<AppConfig> {
+    const { currentRules, pendingNextPatch } = await this.lockRuntimeRuleStateWithTx(tx);
+    const currentConfig = applyRuntimeEditableRules(baseConfig, currentRules);
+    const nextRules =
+      Object.keys(pendingNextPatch).length > 0
+        ? mergeRuntimeEditableRules(currentRules, pendingNextPatch)
+        : currentRules;
+    validateRuntimeEditableRules(nextRules);
+    Object.assign(this.config, currentConfig);
+    return {
+      ...currentConfig,
+      mintPerCycle: nextRules.mintPerCycle
+    };
+  }
+
+  private async applyPendingRuntimeRulesForOpenedCycleWithTx(
+    tx: Prisma.TransactionClient,
+    input: {
+      openedCycleId: string;
+      actor?: string;
+    }
+  ): Promise<RuntimeSettingsState> {
+    const { row, currentRules, pendingNextPatch } = await this.lockRuntimeRuleStateWithTx(tx);
+    if (Object.keys(pendingNextPatch).length === 0) {
+      return this.toRuntimeSettingsState(row);
+    }
+
+    const nextCurrent = mergeRuntimeEditableRules(currentRules, pendingNextPatch);
+    validateRuntimeEditableRules(nextCurrent);
+    await tx.cycle.updateMany({
+      where: { id: input.openedCycleId, status: DomainCycleStatus.OPEN },
+      data: { mintedAmount: nextCurrent.mintPerCycle }
+    });
+    const updated = await tx.runtimeRuleState.update({
+      where: { id: RUNTIME_RULE_STATE_ID },
+      data: {
+        currentRules: nextCurrent,
+        pendingNextPatch: Prisma.JsonNull
+      }
+    });
+
+    await tx.runtimeRuleAudit.create({
+      data: {
+        id: nanoid(),
+        eventType: "AUTO_APPLY_NEXT",
+        applyTo: null,
+        reason: null,
+        actor: input.actor?.trim().length ? input.actor.trim() : "system",
+        cycleId: input.openedCycleId,
+        beforeRules: currentRules,
+        afterRules: nextCurrent,
+        patch: pendingNextPatch as Prisma.InputJsonValue,
+        pendingNextPatch: Prisma.JsonNull
+      }
+    });
+
+    Object.assign(this.config, applyRuntimeEditableRules(this.config, nextCurrent));
+    return this.toRuntimeSettingsState(updated);
+  }
+
   private async lockRuntimeRuleStateWithTx(tx: Prisma.TransactionClient): Promise<{
     row: {
       id: string;
@@ -3405,6 +3692,13 @@ export class PrismaStateRepository {
       (nextSnapshot.disputeRollbackHistory ?? []).map((item) => [item.id, item])
     );
     const nextBanSourceByPublisher = new Map(nextSnapshot.banSourceDisputeByPublisher ?? []);
+    const nextLatestActivityAtByAddress = new Map<string, string>();
+    for (const activity of nextSnapshot.activities) {
+      const previous = nextLatestActivityAtByAddress.get(activity.actor);
+      if (!previous || previous < activity.createdAt) {
+        nextLatestActivityAtByAddress.set(activity.actor, activity.createdAt);
+      }
+    }
 
     for (const item of cycleDiff.upserts) {
       await tx.cycle.upsert({
@@ -3449,6 +3743,9 @@ export class PrismaStateRepository {
           tasksTerminatedCount: item.stats.tasksTerminated,
           submissionsRejectedCount: item.stats.submissionsRejected,
           supervisionVotesCount: item.stats.supervisionVotes,
+          latestActivityAt: nextLatestActivityAtByAddress.get(item.address)
+            ? toDate(nextLatestActivityAtByAddress.get(item.address)!)
+            : null,
           createdAt: toDate(item.createdAt),
           updatedAt: toDate(item.updatedAt)
         },
@@ -3468,6 +3765,9 @@ export class PrismaStateRepository {
           tasksTerminatedCount: item.stats.tasksTerminated,
           submissionsRejectedCount: item.stats.submissionsRejected,
           supervisionVotesCount: item.stats.supervisionVotes,
+          latestActivityAt: nextLatestActivityAtByAddress.get(item.address)
+            ? toDate(nextLatestActivityAtByAddress.get(item.address)!)
+            : null,
           createdAt: toDate(item.createdAt),
           updatedAt: toDate(item.updatedAt)
         }
@@ -3506,6 +3806,7 @@ export class PrismaStateRepository {
           allowRepeatCompletionsBySameAgent: item.allowRepeatCompletionsBySameAgent,
           taxAmount: item.taxAmount,
           rewardEscrowRemaining: item.rewardEscrowRemaining,
+          intentCount: item.intentCount,
           completedAgents: toJsonAddressArray(item.completedAgents),
           createdAt: toDate(item.createdAt),
           updatedAt: toDate(item.updatedAt)
@@ -3523,6 +3824,7 @@ export class PrismaStateRepository {
           allowRepeatCompletionsBySameAgent: item.allowRepeatCompletionsBySameAgent,
           taxAmount: item.taxAmount,
           rewardEscrowRemaining: item.rewardEscrowRemaining,
+          intentCount: item.intentCount,
           completedAgents: toJsonAddressArray(item.completedAgents),
           createdAt: toDate(item.createdAt),
           updatedAt: toDate(item.updatedAt)
@@ -3772,6 +4074,28 @@ export class PrismaStateRepository {
       });
     }
 
+    if (includeProfiles || includeActivities) {
+      const activityTouchedProfiles = new Set<Address>([
+        ...activityDiff.upserts.map((item) => item.actor),
+        ...activityDiff.deletes
+          .map((id) => currentSnapshot?.activities.find((item) => item.id === id)?.actor ?? null)
+          .filter((item): item is Address => item !== null)
+      ]);
+      for (const address of activityTouchedProfiles) {
+        if (profileDiff.deletes.includes(address)) {
+          continue;
+        }
+        await tx.agentProfile.update({
+          where: { address },
+          data: {
+            latestActivityAt: nextLatestActivityAtByAddress.get(address)
+              ? toDate(nextLatestActivityAtByAddress.get(address)!)
+              : null
+          }
+        });
+      }
+    }
+
     if (workloadDiff.deletes.length > 0) {
       await tx.cycleWorkload.deleteMany({ where: { id: { in: workloadDiff.deletes } } });
     }
@@ -3832,6 +4156,59 @@ export class PrismaStateRepository {
     await appendActivityEventWithTx(tx, input);
   }
 
+  private async deleteActivityEventsAndRefreshLatestWithTx(
+    tx: Prisma.TransactionClient,
+    where: Prisma.ActivityEventWhereInput
+  ): Promise<void> {
+    const affectedActors = await tx.activityEvent.findMany({
+      where,
+      select: { actorAddress: true }
+    });
+    if (affectedActors.length === 0) {
+      return;
+    }
+
+    await tx.activityEvent.deleteMany({ where });
+    await this.refreshLatestActivityForAgentsWithTx(
+      tx,
+      affectedActors.map((item) => asAddress(item.actorAddress))
+    );
+  }
+
+  private async refreshLatestActivityForAgentsWithTx(
+    tx: Prisma.TransactionClient,
+    addresses: Address[]
+  ): Promise<void> {
+    const uniqueAddresses = [...new Set(addresses)];
+    if (uniqueAddresses.length === 0) {
+      return;
+    }
+
+    const latestRows = await tx.activityEvent.groupBy({
+      by: ["actorAddress"],
+      where: {
+        actorAddress: {
+          in: uniqueAddresses
+        }
+      },
+      _max: {
+        createdAt: true
+      }
+    });
+    const latestByAddress = new Map(
+      latestRows.map((item) => [item.actorAddress, item._max.createdAt ?? null])
+    );
+
+    for (const address of uniqueAddresses) {
+      await tx.agentProfile.updateMany({
+        where: { address },
+        data: {
+          latestActivityAt: latestByAddress.get(address) ?? null
+        }
+      });
+    }
+  }
+
   private async applyProfileDeltaWithTx(
     tx: Prisma.TransactionClient,
     address: Address,
@@ -3886,8 +4263,17 @@ export class PrismaStateRepository {
     };
   }
 
+  private async queryActivityMetricsByCreatedAtRange(
+    from: Date,
+    to: Date
+  ): Promise<DashboardMetricSnapshot> {
+    return this.queryActivityMetrics(
+      Prisma.sql`WHERE "createdAt" >= ${from} AND "createdAt" < ${to}`
+    );
+  }
+
   async close(): Promise<void> {
-    await this.prisma.$disconnect();
+    await Promise.all([this.prisma.$disconnect(), this.workerLockPrisma.$disconnect()]);
   }
 
   private async executeWithRetry<T>(operation: () => Promise<T>): Promise<T> {
@@ -3945,6 +4331,9 @@ export class PrismaStateRepository {
   }
 
   private async ensurePersistenceGuards(): Promise<void> {
+    if (!this.ensurePersistenceGuardsEnabled) {
+      return;
+    }
     if (!this.persistenceGuardsPromise) {
       this.persistenceGuardsPromise = this.prisma
         .$executeRawUnsafe(
@@ -3955,6 +4344,49 @@ export class PrismaStateRepository {
         .then(() => undefined);
     }
     await this.persistenceGuardsPromise;
+  }
+
+  private async withAdvisoryLock<T>(
+    lockKey: number,
+    operation: () => Promise<T>
+  ): Promise<{ acquired: boolean; result: T | null }> {
+    if (this.inProcessWorkerLocks.has(lockKey)) {
+      return {
+        acquired: false,
+        result: null
+      };
+    }
+
+    this.inProcessWorkerLocks.add(lockKey);
+    // Session-scoped advisory locks must be acquired and released on the same connection.
+    // PostgreSQL treats a repeated lock on the same session as reentrant, so
+    // guard the process before touching the single worker-lock connection.
+    let acquired = false;
+    try {
+      const rows = await this.workerLockPrisma.$queryRaw<Array<{ locked: boolean }>>(
+        Prisma.sql`SELECT pg_try_advisory_lock(${lockKey}) AS locked`
+      );
+      acquired = rows[0]?.locked === true;
+      if (!acquired) {
+        return {
+          acquired: false,
+          result: null
+        };
+      }
+
+      return {
+        acquired: true,
+        result: await operation()
+      };
+    } finally {
+      try {
+        if (acquired) {
+          await this.workerLockPrisma.$queryRaw(Prisma.sql`SELECT pg_advisory_unlock(${lockKey})`);
+        }
+      } finally {
+        this.inProcessWorkerLocks.delete(lockKey);
+      }
+    }
   }
 
   private cloneSnapshot(snapshot: EngineStateSnapshot): EngineStateSnapshot {
@@ -4029,11 +4461,6 @@ export class PrismaStateRepository {
       updatedAt: toIso(item.updatedAt)
     })) satisfies EngineStateSnapshot["balances"];
 
-    const intentionCountByTaskId = new Map<string, number>();
-    for (const item of taskIntentions) {
-      intentionCountByTaskId.set(item.taskId, (intentionCountByTaskId.get(item.taskId) ?? 0) + 1);
-    }
-
     const mappedTasks = tasks.map((item) => ({
       id: item.id,
       publisher: asAddress(item.publisherAddress),
@@ -4048,12 +4475,12 @@ export class PrismaStateRepository {
       allowRepeatCompletionsBySameAgent: item.allowRepeatCompletionsBySameAgent,
       taxAmount: item.taxAmount,
       rewardEscrowRemaining: item.rewardEscrowRemaining,
-      intentCount: intentionCountByTaskId.get(item.id) ?? 0,
+      intentCount: item.intentCount,
       competitionRatio: computeTaskCompetitionRatio({
         slotsTotal: item.slotsTotal,
         rewardPerSlot: item.rewardPerSlot,
         rewardEscrowRemaining: item.rewardEscrowRemaining,
-        intentCount: intentionCountByTaskId.get(item.id) ?? 0
+        intentCount: item.intentCount
       }),
       completedAgents: asAddressArray(item.completedAgents),
       createdAt: toIso(item.createdAt),

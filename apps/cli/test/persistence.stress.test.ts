@@ -37,6 +37,12 @@ interface CliRunResult {
   stderr: string;
 }
 
+const workerByApiApp = new WeakMap<FastifyInstance, FastifyInstance>();
+
+const sleep = async (ms: number): Promise<void> => {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+};
+
 interface CliErrorPayload {
   type: string;
   message: string;
@@ -141,17 +147,35 @@ const ensureServerRuntimeSecretsForCliTests = (): void => {
 
 const startApp = async (): Promise<{ app: FastifyInstance; baseUrl: string }> => {
   ensureServerRuntimeSecretsForCliTests();
-  const app = await buildApp();
-  await app.listen({ host: "127.0.0.1", port: 0 });
-  const serverAddress = app.server.address() as AddressInfo;
-  return {
-    app,
-    baseUrl: `http://127.0.0.1:${serverAddress.port}`
-  };
+  const app = await buildApp({ runtimeRole: "api" });
+  try {
+    await app.listen({ host: "127.0.0.1", port: 0 });
+    const workerApp = await buildApp({ runtimeRole: "worker" });
+    try {
+      await workerApp.ready();
+      workerByApiApp.set(app, workerApp);
+      const serverAddress = app.server.address() as AddressInfo;
+      return {
+        app,
+        baseUrl: `http://127.0.0.1:${serverAddress.port}`
+      };
+    } catch (error) {
+      await closeApp(workerApp);
+      throw error;
+    }
+  } catch (error) {
+    await closeApp(app);
+    throw error;
+  }
 };
 
 const closeApp = async (app: FastifyInstance | null): Promise<void> => {
   if (app) {
+    const workerApp = workerByApiApp.get(app) ?? null;
+    workerByApiApp.delete(app);
+    if (workerApp) {
+      await workerApp.close();
+    }
     await app.close();
   }
 };
@@ -173,7 +197,14 @@ const forceAutoCloseCurrentCycle = async (
   });
   await prisma.$disconnect();
 
-  const activeAfter = (await runCliJson(baseUrl, ["cycles", "active"])) as { id: string };
+  let activeAfter = activeBefore;
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    await sleep(25);
+    activeAfter = (await runCliJson(baseUrl, ["cycles", "active"])) as { id: string };
+    if (activeAfter.id !== activeBefore.id) {
+      break;
+    }
+  }
   assert.notEqual(activeAfter.id, activeBefore.id);
   return { closedCycleId: activeBefore.id, openedCycleId: activeAfter.id };
 };
@@ -192,6 +223,7 @@ const withPersistenceEnvironment = async (
     process.env.ENABLE_REDIS_RATE_LIMIT = "false";
     process.env.RATE_LIMIT_PER_MINUTE = "100000";
     process.env.RATE_LIMIT_BURST = "100000";
+    process.env.CYCLE_CLOSE_POLL_INTERVAL_MS = "20";
     process.env.DATABASE_URL = TEST_DB_URL;
     process.env.TEST_DATABASE_URL = TEST_DB_URL;
     process.env.VITEST = "true";

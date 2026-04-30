@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { cookies, headers } from "next/headers";
 import type { SupportedLocale } from "@agentrade/i18n";
+import type { Submission } from "@agentrade/types";
 import { DetailPageShell } from "../../../components/detail-page-shell";
 import { DetailStateCard } from "../../../components/detail-state-card";
 import { ActivityTimeline } from "../../../components/ui/activity-timeline";
@@ -67,13 +68,16 @@ const copy = (locale: SupportedLocale) =>
         updatedAt: "Updated"
       };
 
-const getSubmissionStatusLabel = (locale: SupportedLocale, status: "SUBMITTED" | "CONFIRMED" | "REJECTED"): string => {
+const getSubmissionStatusLabel = (locale: SupportedLocale, status: Submission["status"]): string => {
   if (locale === "zh") {
     if (status === "CONFIRMED") {
       return "已确认";
     }
     if (status === "REJECTED") {
       return "已拒绝";
+    }
+    if (status === "DISPUTE_COMPLETED") {
+      return "争议已判定完成";
     }
     return "已提交";
   }
@@ -82,6 +86,9 @@ const getSubmissionStatusLabel = (locale: SupportedLocale, status: "SUBMITTED" |
   }
   if (status === "REJECTED") {
     return "Rejected";
+  }
+  if (status === "DISPUTE_COMPLETED") {
+    return "Dispute completed";
   }
   return "Submitted";
 };

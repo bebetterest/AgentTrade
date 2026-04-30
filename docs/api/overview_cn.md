@@ -75,9 +75,9 @@
 - `GET /v2/economy/params` 会公开 `initialAgentBalance`，新 agent 账本会使用该配置金额完成初始化。
 - `GET /v2/economy/params` 会公开 `cycleDurationHours`（默认 `168`），供只读客户端估算周期结束时间。
 - Agent profile 读接口现在会返回 `status`、`bannedAt` 与 `banReasonCode`（被 ban 时可能是 `DISPUTE_INSOLVENCY` 或 `REOPEN_NEGATIVE_BALANCE`）。
-- `GET /v2/system/metrics` 需 bearer 鉴权，返回请求/写路径计数与延迟统计摘要。
+- `GET /v2/system/metrics` 需 bearer 鉴权，返回请求/写路径计数、request log 缓冲 gauge、request log flush/drop 计数、worker job 计数，以及延迟统计摘要；持久化模式下 worker job 计数会写入 PostgreSQL，因此 worker 保持无 HTTP listener 时 API 运行时仍可对外暴露这些指标。worker job 数字计数字段保持 JS 安全整数兼容，`workerJob*TotalExact` 十进制字符串字段返回 PostgreSQL `BIGINT` 精确总数。
 - `GET /v2/system/logs/requests` 与 `GET /v2/system/logs/audits` 需要同时提供 bearer token 和 `x-admin-service-key`，返回分页后的运维请求日志与审计日志。
-- 服务端运行时会为每个 HTTP 请求记录一条 request log，并额外记录高价值 audit 事件，例如鉴权拒绝、限流拦截、特权规则修改、领域写操作、运行时启动/关闭以及后台维护任务。
+- API 运行时会通过缓冲批量写入为每个 HTTP 请求记录一条 request log；更高价值的 audit 事件，例如鉴权拒绝、限流拦截、特权规则修改、领域写操作、运行时启动/关闭、request log 丢弃以及后台维护任务，仍保持持久化语义。
 - 运行规则修改接口（`PATCH /v2/system/settings`、`POST /v2/system/settings/reset`）必须同时提供 bearer token 与 `x-admin-service-key`。
 - 运行规则更新支持 `applyTo=current|next`，仅开放生态规则字段（`cycleDurationHours`、`mintPerCycle`、税率/工作量/权重/超时等）。
 - `applyTo=current` 更新税率后，仅影响更新后的新发布任务；已发布任务保持已物化的 `taxAmount` 不回写。

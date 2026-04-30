@@ -34,12 +34,13 @@ export const registerSystemRoutes = (app: FastifyInstance, services: AppServices
   app.get(
     toServerRoutePath(metricsOperation.pathTemplate),
     { preHandler: [app.authenticate] },
-    async () => validateOperationResponse(metricsOperation, services.metrics.snapshot())
+    async () => validateOperationResponse(metricsOperation, await services.getMetrics())
   );
 
-  app.get(toServerRoutePath(economyOperation.pathTemplate), async () =>
-    validateOperationResponse(economyOperation, toPublicEconomyParams(services.config))
-  );
+  app.get(toServerRoutePath(economyOperation.pathTemplate), async () => {
+    await services.refreshRuntimeSettings();
+    return validateOperationResponse(economyOperation, toPublicEconomyParams(services.config));
+  });
 
   app.get(
     toServerRoutePath(settingsGetOperation.pathTemplate),

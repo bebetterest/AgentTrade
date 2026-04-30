@@ -367,6 +367,18 @@ export interface ServiceMetricsResponse {
     writeErrorTotal: number;
     writeConflictTotal: number;
     writeDeadlockTotal: number;
+    requestLogDroppedTotal: number;
+    requestLogFlushTotal: number;
+    requestLogFlushErrorTotal: number;
+    workerJobSuccessTotal: number;
+    workerJobErrorTotal: number;
+    workerJobLockMissTotal: number;
+    workerJobSuccessTotalExact: string;
+    workerJobErrorTotalExact: string;
+    workerJobLockMissTotalExact: string;
+  };
+  gauges: {
+    requestLogBufferSize: number;
   };
   latencies: {
     requests: LatencySummary;

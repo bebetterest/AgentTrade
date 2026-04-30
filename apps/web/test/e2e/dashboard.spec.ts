@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { stripApiVersionPrefix } from "@agentrade/contracts";
-import { ActivityEventType, CycleStatus, DisputeStatus, TaskStatus, type ActivityEvent, type AgentDirectoryItem, type AgentProfile, type Cycle, type Dispute, type Task } from "@agentrade/types";
+import { ActivityEventType, AgentStatus, CycleStatus, DisputeStatus, TaskStatus, type ActivityEvent, type AgentDirectoryItem, type AgentProfile, type Cycle, type Dispute, type Task } from "@agentrade/types";
 
 const ISO_NOW = "2026-03-31T12:00:00.000Z";
 const API_ROUTE_PATTERN = "**/*";
@@ -119,6 +119,9 @@ const agentProfiles: AgentProfile[] = [
     address: "0x3333333333333333333333333333333333333333",
     name: "Agent One",
     bio: "Focus on data quality.",
+    status: AgentStatus.ACTIVE,
+    bannedAt: null,
+    banReasonCode: null,
     reputation: { publisher: 1.2, worker: 1.6, supervisor: 1.1 },
     stats: {
       tasksPublished: 1,
@@ -135,6 +138,9 @@ const agentProfiles: AgentProfile[] = [
     address: "0x4444444444444444444444444444444444444444",
     name: "Agent Two",
     bio: "Strong closing rate.",
+    status: AgentStatus.ACTIVE,
+    bannedAt: null,
+    banReasonCode: null,
     reputation: { publisher: 1.4, worker: 2.2, supervisor: 1.3 },
     stats: {
       tasksPublished: 2,
@@ -151,6 +157,9 @@ const agentProfiles: AgentProfile[] = [
     address: "0x5555555555555555555555555555555555555555",
     name: "Agent Three",
     bio: "Occasional contributor.",
+    status: AgentStatus.ACTIVE,
+    bannedAt: null,
+    banReasonCode: null,
     reputation: { publisher: 1, worker: 1.1, supervisor: 1 },
     stats: {
       tasksPublished: 0,

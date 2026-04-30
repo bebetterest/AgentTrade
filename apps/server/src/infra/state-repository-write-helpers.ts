@@ -35,11 +35,16 @@ import {
   computeTerminationPenalty
 } from "../domain/helpers.js";
 
+interface RuntimeLockResult {
+  id: string;
+  activeCycleId: string;
+  updatedAt: Date;
+  config: AppConfig;
+}
+
 interface UpdateAgentProfileWriteDeps {
   executeWithRetry<T>(operation: () => Promise<T>): Promise<T>;
-  lockRuntimeWithTx(
-    tx: Prisma.TransactionClient
-  ): Promise<{ id: string; activeCycleId: string; updatedAt: Date }>;
+  lockRuntimeWithTx(tx: Prisma.TransactionClient): Promise<RuntimeLockResult>;
   assertAgentActiveForWriteWithTx(
     tx: Prisma.TransactionClient,
     address: Address,
@@ -59,9 +64,7 @@ interface UpdateAgentProfileWriteDeps {
 
 interface CommonWriteDeps {
   executeWithRetry<T>(operation: () => Promise<T>): Promise<T>;
-  lockRuntimeWithTx(
-    tx: Prisma.TransactionClient
-  ): Promise<{ id: string; activeCycleId: string; updatedAt: Date }>;
+  lockRuntimeWithTx(tx: Prisma.TransactionClient): Promise<RuntimeLockResult>;
   assertAgentActiveForWriteWithTx(
     tx: Prisma.TransactionClient,
     address: Address,
@@ -174,6 +177,17 @@ interface ConfirmSubmissionWriteDeps extends CommonWriteDeps {
 interface VoteDisputeWriteDeps extends RejectSubmissionWriteDeps {}
 
 interface CloseCycleWriteDeps extends ConfirmSubmissionWriteDeps {
+  refreshCycleCloseConfigWithTx(
+    tx: Prisma.TransactionClient,
+    config: AppConfig
+  ): Promise<AppConfig>;
+  applyPendingRuntimeRulesForOpenedCycleWithTx(
+    tx: Prisma.TransactionClient,
+    input: {
+      openedCycleId: string;
+      actor?: string;
+    }
+  ): Promise<void>;
   evaluateDisputeWithTx(
     tx: Prisma.TransactionClient,
     disputeId: string,
@@ -196,9 +210,7 @@ interface CloseCycleWriteDeps extends ConfirmSubmissionWriteDeps {
 
 interface OverrideDisputeWriteDeps {
   executeWithRetry<T>(operation: () => Promise<T>): Promise<T>;
-  lockRuntimeWithTx(
-    tx: Prisma.TransactionClient
-  ): Promise<{ id: string; activeCycleId: string; updatedAt: Date }>;
+  lockRuntimeWithTx(tx: Prisma.TransactionClient): Promise<RuntimeLockResult>;
   touchRuntimeStateWithTx(tx: Prisma.TransactionClient, activeCycleId?: string): Promise<void>;
   finalizeDisputeWithOutcomeWithTx(
     tx: Prisma.TransactionClient,
@@ -225,7 +237,6 @@ export interface PublishTaskDirectInput {
   slotsTotal: number;
   rewardPerSlot: number;
   allowRepeatCompletionsBySameAgent: boolean;
-  config: AppConfig;
   auditContext?: WriteAuditContext;
 }
 
@@ -234,7 +245,6 @@ export interface OpenDisputeDirectInput {
   submissionId: string;
   opener: Address;
   reasonMd: string;
-  disputeReasonMaxLength: number;
   auditContext?: WriteAuditContext;
 }
 
@@ -243,12 +253,6 @@ export interface SubmitTaskDirectInput {
   agent: Address;
   payloadMd: string;
   attachments?: SubmissionAttachment[];
-  taskSubmissionPayloadMaxLength: number;
-  taskSubmissionAttachmentMaxCount: number;
-  taskSubmissionAttachmentNameMaxLength: number;
-  taskSubmissionAttachmentUrlMaxLength: number;
-  taskSubmissionAttachmentMaxSizeBytes: number;
-  resubmitCooldownMinutes: number;
   auditContext?: WriteAuditContext;
 }
 
@@ -256,7 +260,6 @@ export interface RejectSubmissionDirectInput {
   submissionId: string;
   publisher: Address;
   reasonMd: string;
-  rejectReasonMaxLength: number;
   auditContext?: WriteAuditContext;
 }
 
@@ -270,7 +273,6 @@ export interface VoteDisputeDirectInput {
   disputeId: string;
   agent: Address;
   vote: DomainVoteChoice;
-  config: AppConfig;
   auditContext?: WriteAuditContext;
 }
 
@@ -278,7 +280,6 @@ export interface RespondDisputeDirectInput {
   disputeId: string;
   responder: Address;
   reasonMd: string;
-  disputeReasonMaxLength: number;
   auditContext?: WriteAuditContext;
 }
 
@@ -463,10 +464,10 @@ export const writeRejectSubmissionDirect = async (
       if (task.publisherAddress !== input.publisher) {
         throw new DomainError("FORBIDDEN", "only the publisher can reject submission", 403);
       }
-      if (input.reasonMd.trim().length === 0 || input.reasonMd.length > input.rejectReasonMaxLength) {
+      if (input.reasonMd.trim().length === 0 || input.reasonMd.length > runtime.config.disputeReasonMaxLength) {
         throw new DomainError(
           "INVALID_REJECT_REASON",
-          `reasonMd must be non-empty and <= ${input.rejectReasonMaxLength} chars`,
+          `reasonMd must be non-empty and <= ${runtime.config.disputeReasonMaxLength} chars`,
           400
         );
       }
@@ -572,6 +573,15 @@ export const writeAddTaskIntentionDirect = async (
           createdAt: now
         }
       });
+      await tx.task.update({
+        where: { id: taskRow.id },
+        data: {
+          intentCount: {
+            increment: 1
+          },
+          updatedAt: now
+        }
+      });
       await deps.applyProfileDeltaWithTx(tx, agent, now, {
         tasksIntented: 1
       });
@@ -607,6 +617,7 @@ export const writeSubmitTaskDirect = async (
     prisma.$transaction(async (tx) => {
       const now = new Date();
       const runtime = await deps.lockRuntimeWithTx(tx);
+      const config = runtime.config;
       await deps.assertAgentActiveForWriteWithTx(tx, input.agent, now);
 
       await tx.$queryRaw`SELECT id FROM "Task" WHERE id = ${input.taskId} FOR UPDATE`;
@@ -623,16 +634,16 @@ export const writeSubmitTaskDirect = async (
       }
       if (
         input.payloadMd.trim().length === 0 ||
-        input.payloadMd.length > input.taskSubmissionPayloadMaxLength
+        input.payloadMd.length > config.taskSubmissionPayloadMaxLength
       ) {
         throw new DomainError(
           "INVALID_SUBMISSION_PAYLOAD",
-          `payloadMd must be non-empty and <= ${input.taskSubmissionPayloadMaxLength} chars`,
+          `payloadMd must be non-empty and <= ${config.taskSubmissionPayloadMaxLength} chars`,
           400
         );
       }
       const attachments = input.attachments ?? [];
-      validateSubmissionAttachments(attachments, input);
+      validateSubmissionAttachments(attachments, config);
       if (taskRow.status === DomainTaskStatus.TERMINATED || taskRow.status === DomainTaskStatus.CLOSED) {
         throw new DomainError("TASK_NOT_SUBMITTABLE", "task is not open for submissions", 409);
       }
@@ -676,11 +687,11 @@ export const writeSubmitTaskDirect = async (
       });
       if (lastSubmission) {
         const elapsedMs = now.getTime() - lastSubmission.createdAt.getTime();
-        const cooldownMs = input.resubmitCooldownMinutes * 60_000;
+        const cooldownMs = config.resubmitCooldownMinutes * 60_000;
         if (elapsedMs < cooldownMs) {
           throw new DomainError(
             "RESUBMIT_COOLDOWN",
-            `resubmission cooldown not reached (${input.resubmitCooldownMinutes} minutes)`,
+            `resubmission cooldown not reached (${config.resubmitCooldownMinutes} minutes)`,
             429
           );
         }
@@ -746,33 +757,34 @@ export const writePublishTaskDirect = async (
     prisma.$transaction(async (tx) => {
       const now = new Date();
       const runtime = await deps.lockRuntimeWithTx(tx);
+      const config = runtime.config;
       await deps.assertAgentActiveForWriteWithTx(tx, input.publisher, now);
 
       const normalizedTitle = input.title.trim();
-      if (normalizedTitle.length === 0 || input.title.length > input.config.taskTitleMaxLength) {
+      if (normalizedTitle.length === 0 || input.title.length > config.taskTitleMaxLength) {
         throw new DomainError(
           "INVALID_TASK_TITLE",
-          `title must be non-empty and <= ${input.config.taskTitleMaxLength} chars`,
+          `title must be non-empty and <= ${config.taskTitleMaxLength} chars`,
           400
         );
       }
       if (
         input.descriptionMd.trim().length === 0 ||
-        input.descriptionMd.length > input.config.taskDescriptionMaxLength
+        input.descriptionMd.length > config.taskDescriptionMaxLength
       ) {
         throw new DomainError(
           "INVALID_TASK_DESCRIPTION",
-          `description must be non-empty and <= ${input.config.taskDescriptionMaxLength} chars`,
+          `description must be non-empty and <= ${config.taskDescriptionMaxLength} chars`,
           400
         );
       }
       if (
         input.acceptanceCriteria.trim().length === 0 ||
-        input.acceptanceCriteria.length > input.config.taskAcceptanceCriteriaMaxLength
+        input.acceptanceCriteria.length > config.taskAcceptanceCriteriaMaxLength
       ) {
         throw new DomainError(
           "INVALID_ACCEPTANCE_CRITERIA",
-          `acceptanceCriteria must be non-empty and <= ${input.config.taskAcceptanceCriteriaMaxLength} chars`,
+          `acceptanceCriteria must be non-empty and <= ${config.taskAcceptanceCriteriaMaxLength} chars`,
           400
         );
       }
@@ -784,11 +796,11 @@ export const writePublishTaskDirect = async (
       if (deadlineMs <= now.getTime()) {
         throw new DomainError("INVALID_DEADLINE", "deadlineUtc must be in the future", 400);
       }
-      const maxDeadlineMs = now.getTime() + input.config.taskDeadlineMaxHours * 3_600_000;
+      const maxDeadlineMs = now.getTime() + config.taskDeadlineMaxHours * 3_600_000;
       if (deadlineMs > maxDeadlineMs) {
         throw new DomainError(
           "INVALID_DEADLINE",
-          `deadlineUtc must be within ${input.config.taskDeadlineMaxHours} hours`,
+          `deadlineUtc must be within ${config.taskDeadlineMaxHours} hours`,
           400
         );
       }
@@ -796,22 +808,22 @@ export const writePublishTaskDirect = async (
       if (
         !Number.isSafeInteger(input.slotsTotal) ||
         input.slotsTotal <= 0 ||
-        input.slotsTotal > input.config.taskSlotsMax
+        input.slotsTotal > config.taskSlotsMax
       ) {
         throw new DomainError(
           "INVALID_SLOTS",
-          `slotsTotal must be a safe integer in [1, ${input.config.taskSlotsMax}]`,
+          `slotsTotal must be a safe integer in [1, ${config.taskSlotsMax}]`,
           400
         );
       }
       if (
         !Number.isSafeInteger(input.rewardPerSlot) ||
-        input.rewardPerSlot < input.config.rewardMin ||
-        input.rewardPerSlot > input.config.taskRewardPerSlotMax
+        input.rewardPerSlot < config.rewardMin ||
+        input.rewardPerSlot > config.taskRewardPerSlotMax
       ) {
         throw new DomainError(
           "INVALID_REWARD",
-          `rewardPerSlot must be a safe integer in [${input.config.rewardMin}, ${input.config.taskRewardPerSlotMax}]`,
+          `rewardPerSlot must be a safe integer in [${config.rewardMin}, ${config.taskRewardPerSlotMax}]`,
           400
         );
       }
@@ -825,7 +837,7 @@ export const writePublishTaskDirect = async (
         );
       }
 
-      const taxAmount = computeTaxAmount(totalReward, input.config);
+      const taxAmount = computeTaxAmount(totalReward, config);
       if (!Number.isSafeInteger(taxAmount) || taxAmount < 0) {
         throw new DomainError("INVALID_TASK_BUDGET", "task tax amount is invalid", 400);
       }
@@ -877,6 +889,7 @@ export const writePublishTaskDirect = async (
           allowRepeatCompletionsBySameAgent: input.allowRepeatCompletionsBySameAgent,
           taxAmount,
           rewardEscrowRemaining: totalReward,
+          intentCount: 0,
           completedAgents: toJsonAddressArray([]),
           createdAt: now,
           updatedAt: now
@@ -916,7 +929,6 @@ export const writeTerminateTaskDirect = async (
   deps: ActivityWriteDeps,
   taskId: string,
   publisher: Address,
-  config: AppConfig,
   auditContext?: WriteAuditContext
 ): Promise<PrismaTask> => {
   return deps.executeWithRetry(async () =>
@@ -950,7 +962,7 @@ export const writeTerminateTaskDirect = async (
         );
       }
 
-      const penalty = computeTerminationPenalty(taskRow.rewardEscrowRemaining, config);
+      const penalty = computeTerminationPenalty(taskRow.rewardEscrowRemaining, runtime.config);
       const refund = Math.max(0, taskRow.rewardEscrowRemaining - penalty);
       await deps.ensureAgentAndLedgerWithTx(tx, asAddress(taskRow.publisherAddress), now);
       await tx.ledgerBalance.update({
@@ -1037,10 +1049,10 @@ export const writeOpenDisputeDirect = async (
             409
           );
         }
-        if (input.reasonMd.trim().length === 0 || input.reasonMd.length > input.disputeReasonMaxLength) {
+        if (input.reasonMd.trim().length === 0 || input.reasonMd.length > runtime.config.disputeReasonMaxLength) {
           throw new DomainError(
             "INVALID_DISPUTE_REASON",
-            `reasonMd must be non-empty and <= ${input.disputeReasonMaxLength} chars`,
+            `reasonMd must be non-empty and <= ${runtime.config.disputeReasonMaxLength} chars`,
             400
           );
         }
@@ -1142,10 +1154,10 @@ export const writeRespondDisputeDirect = async (
       if (dispute.status !== DomainDisputeStatus.OPEN) {
         throw new DomainError("DISPUTE_CLOSED", "dispute is already resolved", 409);
       }
-      if (input.reasonMd.trim().length === 0 || input.reasonMd.length > input.disputeReasonMaxLength) {
+      if (input.reasonMd.trim().length === 0 || input.reasonMd.length > runtime.config.disputeReasonMaxLength) {
         throw new DomainError(
           "INVALID_DISPUTE_REASON",
-          `reasonMd must be non-empty and <= ${input.disputeReasonMaxLength} chars`,
+          `reasonMd must be non-empty and <= ${runtime.config.disputeReasonMaxLength} chars`,
           400
         );
       }
@@ -1416,7 +1428,7 @@ export const writeVoteDisputeDirect = async (
             worker: profile.workerRep,
             supervisor: profile.supervisorRep
           },
-          input.config
+          runtime.config
         );
 
         const vote = await tx.supervisionVote.create({
@@ -1478,25 +1490,25 @@ export const writeVoteDisputeDirect = async (
 const writeCloseCurrentCycleInternal = async (
   prisma: PrismaClient,
   deps: CloseCycleWriteDeps,
-  config: AppConfig,
   options: { closeOnlyWhenDue: boolean }
 ): Promise<CloseCycleResult | null> => {
   return deps.executeWithRetry(async () =>
     prisma.$transaction(async (tx) => {
       const runtime = await deps.lockRuntimeWithTx(tx);
+      const cycleConfig = await deps.refreshCycleCloseConfigWithTx(tx, runtime.config);
       const now = new Date();
       const cycle = await tx.cycle.findUnique({ where: { id: runtime.activeCycleId } });
       if (!cycle) {
         throw new DomainError("CYCLE_NOT_FOUND", `Cycle ${runtime.activeCycleId} not found`, 404);
       }
       if (options.closeOnlyWhenDue) {
-        const closeDueAtMs = cycle.startedAt.getTime() + config.cycleDurationHours * 3_600_000;
+        const closeDueAtMs = cycle.startedAt.getTime() + cycleConfig.cycleDurationHours * 3_600_000;
         if (!Number.isFinite(closeDueAtMs) || now.getTime() < closeDueAtMs) {
           return null;
         }
       }
 
-      const staleThreshold = new Date(now.getTime() - config.submissionTimeoutHours * 3_600_000);
+      const staleThreshold = new Date(now.getTime() - cycleConfig.submissionTimeoutHours * 3_600_000);
       const staleSubmissions = await tx.submission.findMany({
         where: {
           status: DomainSubmissionStatus.SUBMITTED,
@@ -1504,15 +1516,23 @@ const writeCloseCurrentCycleInternal = async (
         },
         orderBy: { createdAt: "asc" }
       });
+      const staleTaskIds = [...new Set(staleSubmissions.map((item) => item.taskId))];
+      const staleTasks =
+        staleTaskIds.length > 0
+          ? await tx.task.findMany({
+              where: {
+                id: {
+                  in: staleTaskIds
+                }
+              }
+            })
+          : [];
+      const staleTaskById = new Map(staleTasks.map((item) => [item.id, item]));
 
       for (const stale of staleSubmissions) {
-        const submission = await tx.submission.findUnique({ where: { id: stale.id } });
-        if (!submission || submission.status !== DomainSubmissionStatus.SUBMITTED) {
-          continue;
-        }
-        const task = await tx.task.findUnique({ where: { id: submission.taskId } });
+        const task = staleTaskById.get(stale.taskId);
         if (!task) {
-          throw new DomainError("TASK_NOT_FOUND", `Task ${submission.taskId} does not exist`, 404);
+          throw new DomainError("TASK_NOT_FOUND", `Task ${stale.taskId} does not exist`, 404);
         }
         if (task.status === DomainTaskStatus.TERMINATED || task.status === DomainTaskStatus.CLOSED) {
           continue;
@@ -1531,12 +1551,32 @@ const writeCloseCurrentCycleInternal = async (
 
         await deps.confirmSubmissionInternalWithTx(
           tx,
-          submission,
+          stale,
           task,
           now,
           runtime.activeCycleId,
           asAddress(task.publisherAddress)
         );
+        const completedAgents = asAddressArray(task.completedAgents);
+        if (!completedAgents.includes(asAddress(stale.agentAddress))) {
+          completedAgents.push(asAddress(stale.agentAddress));
+        }
+        const nextRewardEscrowRemaining = task.rewardEscrowRemaining - task.rewardPerSlot;
+        const nextConfirmedSlots = deps.getConfirmedSlots(
+          task.slotsTotal,
+          task.rewardPerSlot,
+          nextRewardEscrowRemaining
+        );
+        staleTaskById.set(task.id, {
+          ...task,
+          rewardEscrowRemaining: nextRewardEscrowRemaining,
+          completedAgents: completedAgents as unknown as Prisma.JsonValue,
+          status:
+            nextConfirmedSlots >= task.slotsTotal
+              ? DomainTaskStatus.CLOSED
+              : (task.status as DomainTaskStatus),
+          updatedAt: now
+        });
       }
 
       await deps.sweepBannedPublisherCleanTasksWithTx(tx, now, runtime.activeCycleId);
@@ -1546,11 +1586,52 @@ const writeCloseCurrentCycleInternal = async (
         where: { status: DomainDisputeStatus.OPEN },
         orderBy: { createdAt: "asc" }
       });
+      const openDisputeIds = openDisputes.map((item) => item.id);
+      const openDisputeVotes =
+        openDisputeIds.length > 0
+          ? await tx.supervisionVote.findMany({
+              where: {
+                disputeId: {
+                  in: openDisputeIds
+                }
+              },
+              select: {
+                disputeId: true,
+                vote: true,
+                weightSnapshot: true
+              }
+            })
+          : [];
+      const openDisputeVoteStats = new Map<
+        string,
+        { voteCount: number; totalWeight: number; completedWeight: number }
+      >();
+      for (const vote of openDisputeVotes) {
+        const stats = openDisputeVoteStats.get(vote.disputeId) ?? {
+          voteCount: 0,
+          totalWeight: 0,
+          completedWeight: 0
+        };
+        stats.voteCount += 1;
+        stats.totalWeight += vote.weightSnapshot;
+        if (vote.vote === DomainVoteChoice.COMPLETED) {
+          stats.completedWeight += vote.weightSnapshot;
+        }
+        openDisputeVoteStats.set(vote.disputeId, stats);
+      }
       for (const dispute of openDisputes) {
+        const stats = openDisputeVoteStats.get(dispute.id);
+        if (!stats || stats.voteCount < cycleConfig.disputeQuorum || stats.totalWeight <= 0) {
+          continue;
+        }
+        const completedBps = Math.floor((stats.completedWeight * 10_000) / stats.totalWeight);
+        if (completedBps < cycleConfig.disputeApprovalBps) {
+          continue;
+        }
         const changed = await deps.evaluateDisputeWithTx(
           tx,
           dispute.id,
-          config,
+          cycleConfig,
           now,
           runtime.activeCycleId
         );
@@ -1576,9 +1657,43 @@ const writeCloseCurrentCycleInternal = async (
         grouped.set(workload.agentAddress, (grouped.get(workload.agentAddress) ?? 0) + workload.workload);
       }
       const distributionsMap = allocateIntegerPool(rewardPool, grouped);
+      const distributionEntries = [...distributionsMap.entries()];
 
-      for (const [agent, amount] of distributionsMap.entries()) {
-        await deps.ensureAgentAndLedgerWithTx(tx, asAddress(agent), now);
+      if (distributionEntries.length > 0) {
+        await tx.agentProfile.createMany({
+          data: distributionEntries.map(([agent]) => ({
+            address: agent,
+            name: "",
+            bio: "",
+            status: "ACTIVE",
+            bannedAt: null,
+            banReasonCode: null,
+            latestActivityAt: null,
+            publisherRep: 50,
+            workerRep: 50,
+            supervisorRep: 50,
+            tasksPublishedCount: 0,
+            tasksIntentedCount: 0,
+            tasksCompletedCount: 0,
+            tasksTerminatedCount: 0,
+            submissionsRejectedCount: 0,
+            supervisionVotesCount: 0,
+            createdAt: now,
+            updatedAt: now
+          })),
+          skipDuplicates: true
+        });
+        await tx.ledgerBalance.createMany({
+          data: distributionEntries.map(([agent]) => ({
+            address: agent,
+            available: cycleConfig.initialAgentBalance,
+            updatedAt: now
+          })),
+          skipDuplicates: true
+        });
+      }
+
+      for (const [agent, amount] of distributionEntries) {
         await tx.ledgerBalance.update({
           where: { address: agent },
           data: {
@@ -1614,12 +1729,16 @@ const writeCloseCurrentCycleInternal = async (
         data: {
           id: nextCycleId,
           status: DomainCycleStatus.OPEN,
-          mintedAmount: config.mintPerCycle,
+          mintedAmount: cycleConfig.mintPerCycle,
           taxPool: 0,
           penaltyPool: 0,
           startedAt: now,
           closedAt: null
         }
+      });
+      await deps.applyPendingRuntimeRulesForOpenedCycleWithTx(tx, {
+        openedCycleId: nextCycleId,
+        actor: "system"
       });
       await deps.touchRuntimeStateWithTx(tx, nextCycleId);
 
@@ -1627,7 +1746,7 @@ const writeCloseCurrentCycleInternal = async (
         closedCycleId: cycle.id,
         openedCycleId: nextCycleId,
         rewardPool,
-        distributions: [...distributionsMap.entries()].map(([agent, amount]) => ({
+        distributions: distributionEntries.map(([agent, amount]) => ({
           agent: asAddress(agent),
           amount
         })),
@@ -1639,10 +1758,9 @@ const writeCloseCurrentCycleInternal = async (
 
 export const writeCloseCurrentCycleDirect = async (
   prisma: PrismaClient,
-  deps: CloseCycleWriteDeps,
-  config: AppConfig
+  deps: CloseCycleWriteDeps
 ): Promise<CloseCycleResult> => {
-  const result = await writeCloseCurrentCycleInternal(prisma, deps, config, {
+  const result = await writeCloseCurrentCycleInternal(prisma, deps, {
     closeOnlyWhenDue: false
   });
   if (!result) {
@@ -1653,10 +1771,9 @@ export const writeCloseCurrentCycleDirect = async (
 
 export const writeCloseCurrentCycleIfDueDirect = async (
   prisma: PrismaClient,
-  deps: CloseCycleWriteDeps,
-  config: AppConfig
+  deps: CloseCycleWriteDeps
 ): Promise<CloseCycleResult | null> =>
-  writeCloseCurrentCycleInternal(prisma, deps, config, {
+  writeCloseCurrentCycleInternal(prisma, deps, {
     closeOnlyWhenDue: true
   });
 

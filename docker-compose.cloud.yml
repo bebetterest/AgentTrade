@@ -7,6 +7,14 @@ services:
       - path: ./.env.cloud
         required: true
 
+  worker:
+    # Inject only real env files; templates are for manual copying, not runtime fallback.
+    env_file:
+      - path: ./.env
+        required: true
+      - path: ./.env.cloud
+        required: true
+
   web:
     environment:
       NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-/api}

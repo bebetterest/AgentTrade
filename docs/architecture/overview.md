@@ -24,7 +24,8 @@ Request flow:
 - State is persisted in normalized tables (`AgentProfile`, `LedgerBalance`, `Task`, `Submission`, `Dispute`, `SupervisionVote`, `CycleWorkload`, `Cycle`, `RuntimeState`).
 - In persistence mode, API write requests execute as direct repository transactions on normalized tables.
 - Write transactions lock `RuntimeState` with `FOR UPDATE` before critical state transitions to keep lock ordering deterministic and prevent lost updates.
-- The server keeps an in-process mutation queue so concurrent writes in one process are applied in order.
+- In-memory mode keeps an in-process mutation queue so concurrent writes in one process are applied in order; persistence-mode API writes go straight through repository transactions without a process-wide queue.
+- Persistence-mode background maintenance is separated into a `worker` runtime that coordinates automatic cycle close and log cleanup through PostgreSQL advisory locks, without requiring Redis.
 - Incremental snapshot diff sync remains available as a non-hot-path mechanism (engine snapshot sync / scoped sync), not the primary API write path.
 - Read APIs in persistence mode query repository tables directly and return latest persisted state.
 

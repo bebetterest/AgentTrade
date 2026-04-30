@@ -129,12 +129,84 @@ interface AgentDirectoryRow {
   createdAt: Date;
   updatedAt: Date;
   latestActivityAt: Date | null;
+  reputationSum: number | Prisma.Decimal | string;
   reputationAverage: number | Prisma.Decimal | string;
   score: number | Prisma.Decimal | string;
   isActive: boolean;
 }
 
+interface TaskQueryRow {
+  id: string;
+  publisherAddress: string;
+  title: string;
+  descriptionMd: string;
+  acceptanceCriteria: string;
+  status: unknown;
+  deadlineUtc: Date;
+  displayTimezone: string;
+  slotsTotal: number;
+  rewardPerSlot: number;
+  allowRepeatCompletionsBySameAgent: boolean;
+  taxAmount: number;
+  rewardEscrowRemaining: number;
+  intentCount: number;
+  completedAgents: Prisma.JsonValue;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+interface SubmissionQueryRow {
+  id: string;
+  taskId: string;
+  agentAddress: string;
+  payloadMd: string;
+  attachments: Prisma.JsonValue | null;
+  rejectReasonMd: string | null;
+  status: unknown;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+interface DisputeQueryRow {
+  id: string;
+  taskId: string;
+  submissionId: string;
+  openerAddress: string;
+  reasonMd: string;
+  counterpartyResponderAddress: string | null;
+  counterpartyReasonMd: string | null;
+  status: unknown;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+interface ActivityEventQueryRow {
+  id: string;
+  type: unknown;
+  cycleId: string;
+  taskId: string | null;
+  disputeId: string | null;
+  actorAddress: string;
+  createdAt: Date;
+}
+
 const escapeLikePattern = (value: string): string => value.replace(/[\\%_]/g, "\\$&");
+
+const buildWhereSql = (clauses: Prisma.Sql[]): Prisma.Sql =>
+  clauses.length > 0 ? Prisma.sql`WHERE ${Prisma.join(clauses, " AND ")}` : Prisma.empty;
+
+const buildPaginationSql = (
+  paged: boolean,
+  parsedCursor: ParsedCursor,
+  boundedLimit: number
+): Prisma.Sql => {
+  if (!paged) {
+    return Prisma.empty;
+  }
+  return parsedCursor.mode === "legacy-offset"
+    ? Prisma.sql`LIMIT ${boundedLimit + 1} OFFSET ${parsedCursor.offset}`
+    : Prisma.sql`LIMIT ${boundedLimit + 1}`;
+};
 
 const resolveCursorInput = (
   cursor: string | undefined,
@@ -159,6 +231,14 @@ const requireCursorNumber = (value: unknown, name: string): number => {
     }
   }
   throw new DomainError("INVALID_CURSOR", `cursor ${name} must be a finite number`, 400);
+};
+
+const requireAgentReputationCursorSum = (values: CursorValues): number => {
+  if (values.reputationSum !== undefined && values.reputationSum !== null) {
+    return requireCursorNumber(values.reputationSum, "reputationSum");
+  }
+  const reputationAverage = requireCursorNumber(values.primary, "primary");
+  return Number((reputationAverage * 3).toPrecision(15));
 };
 
 const requireCursorDate = (value: unknown, name: string): Date => {
@@ -211,33 +291,6 @@ export const queryTasksDirect = async (
         order: query.order
       })
     : { mode: "start", offset: 0 };
-  const where: Prisma.TaskWhereInput = {
-    status: query.status,
-    publisherAddress: query.publisher
-      ? {
-          equals: query.publisher,
-          mode: "insensitive"
-        }
-      : undefined,
-    OR: query.q
-      ? [
-          { id: { contains: query.q, mode: "insensitive" } },
-          { title: { contains: query.q, mode: "insensitive" } },
-          { descriptionMd: { contains: query.q, mode: "insensitive" } },
-          { acceptanceCriteria: { contains: query.q, mode: "insensitive" } },
-          { publisherAddress: { contains: query.q, mode: "insensitive" } }
-        ]
-      : undefined
-  };
-
-  const orderBy: Prisma.TaskOrderByWithRelationInput[] =
-    query.sort === "created"
-      ? [{ createdAt: query.order }, { id: query.order }]
-      : query.sort === "deadline"
-        ? [{ deadlineUtc: query.order }, { id: query.order }]
-        : query.sort === "reward"
-          ? [{ rewardPerSlot: query.order }, { id: query.order }]
-          : [{ updatedAt: query.order }, { id: query.order }];
 
   const primaryField: "updatedAt" | "createdAt" | "deadlineUtc" | "rewardPerSlot" =
     query.sort === "created"
@@ -248,58 +301,80 @@ export const queryTasksDirect = async (
           ? "rewardPerSlot"
           : "updatedAt";
 
-  const keysetWhere =
-    parsedCursor.mode === "keyset"
-      ? (() => {
-          const cursorId = requireCursorString(parsedCursor.values.id, "id");
-          const primaryValue =
-            primaryField === "rewardPerSlot"
-              ? requireCursorNumber(parsedCursor.values.primary, "primary")
-              : requireCursorDate(parsedCursor.values.primary, "primary");
-          const primaryCompare = query.order === "asc" ? "gt" : "lt";
-          const idCompare = query.order === "asc" ? "gt" : "lt";
-          return {
-            OR: [
-              { [primaryField]: { [primaryCompare]: primaryValue } } as Prisma.TaskWhereInput,
-              {
-                AND: [
-                  { [primaryField]: primaryValue } as Prisma.TaskWhereInput,
-                  { id: { [idCompare]: cursorId } }
-                ]
-              }
-            ]
-          } satisfies Prisma.TaskWhereInput;
-        })()
-      : null;
+  const whereClauses: Prisma.Sql[] = [];
+  if (query.status) {
+    whereClauses.push(Prisma.sql`t."status" = CAST(${query.status} AS "TaskStatus")`);
+  }
+  if (query.publisher) {
+    whereClauses.push(Prisma.sql`lower(t."publisherAddress") = lower(${query.publisher})`);
+  }
+  if (query.q) {
+    const pattern = `%${escapeLikePattern(query.q)}%`;
+    whereClauses.push(Prisma.sql`(
+      t.id ILIKE ${pattern} ESCAPE '\\'
+      OR t.title ILIKE ${pattern} ESCAPE '\\'
+      OR t."descriptionMd" ILIKE ${pattern} ESCAPE '\\'
+      OR t."acceptanceCriteria" ILIKE ${pattern} ESCAPE '\\'
+      OR t."publisherAddress" ILIKE ${pattern} ESCAPE '\\'
+    )`);
+  }
 
-  const whereWithCursor =
-    keysetWhere && query.paged
-      ? ({
-          AND: [where, keysetWhere]
-        } satisfies Prisma.TaskWhereInput)
-      : where;
+  if (query.paged && parsedCursor.mode === "keyset") {
+    const cursorId = requireCursorString(parsedCursor.values.id, "id");
+    const primaryValue =
+      primaryField === "rewardPerSlot"
+        ? requireCursorNumber(parsedCursor.values.primary, "primary")
+        : requireCursorDate(parsedCursor.values.primary, "primary");
+    const compareSql = Prisma.raw(query.order === "asc" ? ">" : "<");
+    const primaryColumnSql =
+      primaryField === "createdAt"
+        ? Prisma.raw('t."createdAt"')
+        : primaryField === "deadlineUtc"
+          ? Prisma.raw('t."deadlineUtc"')
+          : primaryField === "rewardPerSlot"
+            ? Prisma.raw('t."rewardPerSlot"')
+            : Prisma.raw('t."updatedAt"');
+    whereClauses.push(Prisma.sql`(
+      ${primaryColumnSql} ${compareSql} ${primaryValue}
+      OR (${primaryColumnSql} = ${primaryValue} AND t.id ${compareSql} ${cursorId})
+    )`);
+  }
 
-  const tasks = await prisma.task.findMany({
-    where: whereWithCursor,
-    orderBy,
-    include: {
-      _count: {
-        select: { intentions: true }
-      }
-    },
-    ...(query.paged
-      ? {
-          ...(parsedCursor.mode === "legacy-offset"
-            ? {
-                skip: parsedCursor.offset
-              }
-            : {}),
-          take: boundedLimit + 1
-        }
-      : {})
-  });
+  const directionSql = Prisma.raw(query.order.toUpperCase());
+  const orderBySql =
+    query.sort === "created"
+      ? Prisma.sql`ORDER BY t."createdAt" ${directionSql}, t.id ${directionSql}`
+      : query.sort === "deadline"
+        ? Prisma.sql`ORDER BY t."deadlineUtc" ${directionSql}, t.id ${directionSql}`
+        : query.sort === "reward"
+          ? Prisma.sql`ORDER BY t."rewardPerSlot" ${directionSql}, t.id ${directionSql}`
+          : Prisma.sql`ORDER BY t."updatedAt" ${directionSql}, t.id ${directionSql}`;
+  const rows = await prisma.$queryRaw<TaskQueryRow[]>(Prisma.sql`
+    SELECT
+      t.id,
+      t."publisherAddress",
+      t.title,
+      t."descriptionMd",
+      t."acceptanceCriteria",
+      t."status",
+      t."deadlineUtc",
+      t."displayTimezone",
+      t."slotsTotal",
+      t."rewardPerSlot",
+      t."allowRepeatCompletionsBySameAgent",
+      t."taxAmount",
+      t."rewardEscrowRemaining",
+      t."intentCount",
+      t."completedAgents",
+      t."createdAt",
+      t."updatedAt"
+    FROM "Task" t
+    ${buildWhereSql(whereClauses)}
+    ${orderBySql}
+    ${buildPaginationSql(query.paged, parsedCursor, boundedLimit)}
+  `);
 
-  const mapped = tasks.map((item) => mapTask({ ...item, intentCount: item._count.intentions }));
+  const mapped = rows.map((item) => mapTask(item));
   return query.paged
     ? buildPaginatedResponse(mapped, boundedLimit, parsedCursor, {
         resource: "tasks",
@@ -332,77 +407,65 @@ export const queryDisputesDirect = async (
         order: query.order
       })
     : { mode: "start", offset: 0 };
-  const where: Prisma.DisputeWhereInput = {
-    taskId: query.taskId,
-    status: query.status,
-    openerAddress: query.opener
-      ? {
-          equals: query.opener,
-          mode: "insensitive"
-        }
-      : undefined,
-    OR: query.q
-      ? [
-          { id: { contains: query.q, mode: "insensitive" } },
-          { taskId: { contains: query.q, mode: "insensitive" } },
-          { submissionId: { contains: query.q, mode: "insensitive" } },
-          { openerAddress: { contains: query.q, mode: "insensitive" } },
-          { reasonMd: { contains: query.q, mode: "insensitive" } },
-          { counterpartyReasonMd: { contains: query.q, mode: "insensitive" } }
-        ]
-      : undefined
-  };
-
-  const orderBy: Prisma.DisputeOrderByWithRelationInput[] =
-    query.sort === "created"
-      ? [{ createdAt: query.order }, { id: query.order }]
-      : [{ updatedAt: query.order }, { id: query.order }];
-
   const primaryField: "createdAt" | "updatedAt" = query.sort === "created" ? "createdAt" : "updatedAt";
-  const keysetWhere =
-    parsedCursor.mode === "keyset"
-      ? (() => {
-          const cursorId = requireCursorString(parsedCursor.values.id, "id");
-          const primaryValue = requireCursorDate(parsedCursor.values.primary, "primary");
-          const primaryCompare = query.order === "asc" ? "gt" : "lt";
-          const idCompare = query.order === "asc" ? "gt" : "lt";
-          return {
-            OR: [
-              { [primaryField]: { [primaryCompare]: primaryValue } } as Prisma.DisputeWhereInput,
-              {
-                AND: [
-                  { [primaryField]: primaryValue } as Prisma.DisputeWhereInput,
-                  { id: { [idCompare]: cursorId } }
-                ]
-              }
-            ]
-          } satisfies Prisma.DisputeWhereInput;
-        })()
-      : null;
+  const whereClauses: Prisma.Sql[] = [];
+  if (query.taskId) {
+    whereClauses.push(Prisma.sql`d."taskId" = ${query.taskId}`);
+  }
+  if (query.status) {
+    whereClauses.push(Prisma.sql`d."status" = CAST(${query.status} AS "DisputeStatus")`);
+  }
+  if (query.opener) {
+    whereClauses.push(Prisma.sql`lower(d."openerAddress") = lower(${query.opener})`);
+  }
+  if (query.q) {
+    const pattern = `%${escapeLikePattern(query.q)}%`;
+    whereClauses.push(Prisma.sql`(
+      d.id ILIKE ${pattern} ESCAPE '\\'
+      OR d."taskId" ILIKE ${pattern} ESCAPE '\\'
+      OR d."submissionId" ILIKE ${pattern} ESCAPE '\\'
+      OR d."openerAddress" ILIKE ${pattern} ESCAPE '\\'
+      OR d."reasonMd" ILIKE ${pattern} ESCAPE '\\'
+      OR d."counterpartyReasonMd" ILIKE ${pattern} ESCAPE '\\'
+    )`);
+  }
 
-  const whereWithCursor =
-    keysetWhere && query.paged
-      ? ({
-          AND: [where, keysetWhere]
-        } satisfies Prisma.DisputeWhereInput)
-      : where;
+  if (query.paged && parsedCursor.mode === "keyset") {
+    const cursorId = requireCursorString(parsedCursor.values.id, "id");
+    const primaryValue = requireCursorDate(parsedCursor.values.primary, "primary");
+    const compareSql = Prisma.raw(query.order === "asc" ? ">" : "<");
+    const primaryColumnSql =
+      primaryField === "createdAt" ? Prisma.raw('d."createdAt"') : Prisma.raw('d."updatedAt"');
+    whereClauses.push(Prisma.sql`(
+      ${primaryColumnSql} ${compareSql} ${primaryValue}
+      OR (${primaryColumnSql} = ${primaryValue} AND d.id ${compareSql} ${cursorId})
+    )`);
+  }
 
-  const disputes = await prisma.dispute.findMany({
-    where: whereWithCursor,
-    orderBy,
-    ...(query.paged
-      ? {
-          ...(parsedCursor.mode === "legacy-offset"
-            ? {
-                skip: parsedCursor.offset
-              }
-            : {}),
-          take: boundedLimit + 1
-        }
-      : {})
-  });
+  const directionSql = Prisma.raw(query.order.toUpperCase());
+  const orderBySql =
+    query.sort === "created"
+      ? Prisma.sql`ORDER BY d."createdAt" ${directionSql}, d.id ${directionSql}`
+      : Prisma.sql`ORDER BY d."updatedAt" ${directionSql}, d.id ${directionSql}`;
+  const rows = await prisma.$queryRaw<DisputeQueryRow[]>(Prisma.sql`
+    SELECT
+      d.id,
+      d."taskId",
+      d."submissionId",
+      d."openerAddress",
+      d."reasonMd",
+      d."counterpartyResponderAddress",
+      d."counterpartyReasonMd",
+      d."status",
+      d."createdAt",
+      d."updatedAt"
+    FROM "Dispute" d
+    ${buildWhereSql(whereClauses)}
+    ${orderBySql}
+    ${buildPaginationSql(query.paged, parsedCursor, boundedLimit)}
+  `);
 
-  const mapped = disputes.map((item) => mapDispute(item));
+  const mapped = rows.map((item) => mapDispute(item));
   return query.paged
     ? buildPaginatedResponse(mapped, boundedLimit, parsedCursor, {
         resource: "disputes",
@@ -428,75 +491,62 @@ export const querySubmissionsDirect = async (
         order: query.order
       })
     : { mode: "start", offset: 0 };
-  const where: Prisma.SubmissionWhereInput = {
-    taskId: query.taskId,
-    status: query.status,
-    agentAddress: query.agent
-      ? {
-          equals: query.agent,
-          mode: "insensitive"
-        }
-      : undefined,
-    OR: query.q
-      ? [
-          { id: { contains: query.q, mode: "insensitive" } },
-          { taskId: { contains: query.q, mode: "insensitive" } },
-          { agentAddress: { contains: query.q, mode: "insensitive" } },
-          { payloadMd: { contains: query.q, mode: "insensitive" } }
-        ]
-      : undefined
-  };
-
-  const orderBy: Prisma.SubmissionOrderByWithRelationInput[] =
-    query.sort === "created"
-      ? [{ createdAt: query.order }, { id: query.order }]
-      : [{ updatedAt: query.order }, { id: query.order }];
-
   const primaryField: "createdAt" | "updatedAt" = query.sort === "created" ? "createdAt" : "updatedAt";
-  const keysetWhere =
-    parsedCursor.mode === "keyset"
-      ? (() => {
-          const cursorId = requireCursorString(parsedCursor.values.id, "id");
-          const primaryValue = requireCursorDate(parsedCursor.values.primary, "primary");
-          const primaryCompare = query.order === "asc" ? "gt" : "lt";
-          const idCompare = query.order === "asc" ? "gt" : "lt";
-          return {
-            OR: [
-              { [primaryField]: { [primaryCompare]: primaryValue } } as Prisma.SubmissionWhereInput,
-              {
-                AND: [
-                  { [primaryField]: primaryValue } as Prisma.SubmissionWhereInput,
-                  { id: { [idCompare]: cursorId } }
-                ]
-              }
-            ]
-          } satisfies Prisma.SubmissionWhereInput;
-        })()
-      : null;
+  const whereClauses: Prisma.Sql[] = [];
+  if (query.taskId) {
+    whereClauses.push(Prisma.sql`s."taskId" = ${query.taskId}`);
+  }
+  if (query.status) {
+    whereClauses.push(Prisma.sql`s."status" = CAST(${query.status} AS "SubmissionStatus")`);
+  }
+  if (query.agent) {
+    whereClauses.push(Prisma.sql`lower(s."agentAddress") = lower(${query.agent})`);
+  }
+  if (query.q) {
+    const pattern = `%${escapeLikePattern(query.q)}%`;
+    whereClauses.push(Prisma.sql`(
+      s.id ILIKE ${pattern} ESCAPE '\\'
+      OR s."taskId" ILIKE ${pattern} ESCAPE '\\'
+      OR s."agentAddress" ILIKE ${pattern} ESCAPE '\\'
+      OR s."payloadMd" ILIKE ${pattern} ESCAPE '\\'
+    )`);
+  }
 
-  const whereWithCursor =
-    keysetWhere && query.paged
-      ? ({
-          AND: [where, keysetWhere]
-        } satisfies Prisma.SubmissionWhereInput)
-      : where;
+  if (query.paged && parsedCursor.mode === "keyset") {
+    const cursorId = requireCursorString(parsedCursor.values.id, "id");
+    const primaryValue = requireCursorDate(parsedCursor.values.primary, "primary");
+    const compareSql = Prisma.raw(query.order === "asc" ? ">" : "<");
+    const primaryColumnSql =
+      primaryField === "createdAt" ? Prisma.raw('s."createdAt"') : Prisma.raw('s."updatedAt"');
+    whereClauses.push(Prisma.sql`(
+      ${primaryColumnSql} ${compareSql} ${primaryValue}
+      OR (${primaryColumnSql} = ${primaryValue} AND s.id ${compareSql} ${cursorId})
+    )`);
+  }
 
-  const submissions = await prisma.submission.findMany({
-    where: whereWithCursor,
-    orderBy,
-    ...(query.paged
-      ? {
-          ...(parsedCursor.mode === "legacy-offset"
-            ? {
-                skip: parsedCursor.offset
-              }
-            : {}),
-          take: boundedLimit + 1
-        }
-      : {})
-  });
+  const directionSql = Prisma.raw(query.order.toUpperCase());
+  const orderBySql =
+    query.sort === "created"
+      ? Prisma.sql`ORDER BY s."createdAt" ${directionSql}, s.id ${directionSql}`
+      : Prisma.sql`ORDER BY s."updatedAt" ${directionSql}, s.id ${directionSql}`;
+  const rows = await prisma.$queryRaw<SubmissionQueryRow[]>(Prisma.sql`
+    SELECT
+      s.id,
+      s."taskId",
+      s."agentAddress",
+      s."payloadMd",
+      s.attachments,
+      s."rejectReasonMd",
+      s."status",
+      s."createdAt",
+      s."updatedAt"
+    FROM "Submission" s
+    ${buildWhereSql(whereClauses)}
+    ${orderBySql}
+    ${buildPaginationSql(query.paged, parsedCursor, boundedLimit)}
+  `);
 
-  const mapped = submissions.map((item) => mapSubmission(item));
+  const mapped = rows.map((item) => mapSubmission(item));
   return query.paged
     ? buildPaginatedResponse(mapped, boundedLimit, parsedCursor, {
         resource: "submissions",
@@ -579,12 +629,15 @@ export const queryAgentsDirect = async (
         }
       }
     } else {
-      const cursorPrimary = requireCursorNumber(parsedCursor.values.primary, "primary");
+      const cursorPrimary =
+        query.sort === "reputation"
+          ? requireAgentReputationCursorSum(parsedCursor.values)
+          : requireCursorNumber(parsedCursor.values.primary, "primary");
       const metricColumnSql =
         query.sort === "score"
           ? Prisma.raw("ranked.score")
           : query.sort === "reputation"
-            ? Prisma.raw('ranked."reputationAverage"')
+            ? Prisma.raw('ranked."reputationSum"')
             : query.sort === "completed"
               ? Prisma.raw('ranked."tasksCompletedCount"')
               : query.sort === "published"
@@ -609,7 +662,7 @@ export const queryAgentsDirect = async (
     query.sort === "score"
       ? Prisma.sql`ORDER BY ranked.score ${directionSql}, ranked.address ${directionSql}`
       : query.sort === "reputation"
-        ? Prisma.sql`ORDER BY ranked."reputationAverage" ${directionSql}, ranked.address ${directionSql}`
+        ? Prisma.sql`ORDER BY ranked."reputationSum" ${directionSql}, ranked.address ${directionSql}`
         : query.sort === "completed"
           ? Prisma.sql`ORDER BY ranked."tasksCompletedCount" ${directionSql}, ranked.address ${directionSql}`
           : query.sort === "published"
@@ -644,7 +697,8 @@ export const queryAgentsDirect = async (
         ap."supervisionVotesCount" AS "supervisionVotesCount",
         ap."createdAt" AS "createdAt",
         ap."updatedAt" AS "updatedAt",
-        MAX(ae."createdAt") AS "latestActivityAt",
+        ap."latestActivityAt" AS "latestActivityAt",
+        (ap."publisherRep" + ap."workerRep" + ap."supervisorRep") AS "reputationSum",
         ((ap."publisherRep" + ap."workerRep" + ap."supervisorRep") / 3.0) AS "reputationAverage",
         ROUND(
           ((
@@ -661,7 +715,7 @@ export const queryAgentsDirect = async (
           2
         ) AS score,
         (
-          MAX(ae."createdAt") IS NOT NULL
+          ap."latestActivityAt" IS NOT NULL
           OR ap."tasksIntentedCount" > 0
           OR ap."tasksPublishedCount" > 0
           OR ap."tasksCompletedCount" > 0
@@ -669,25 +723,6 @@ export const queryAgentsDirect = async (
           OR ap."supervisionVotesCount" > 0
         ) AS "isActive"
       FROM "AgentProfile" ap
-      LEFT JOIN "ActivityEvent" ae ON ae."actorAddress" = ap.address
-      GROUP BY
-        ap.address,
-        ap.name,
-        ap.bio,
-        ap.status,
-        ap."bannedAt",
-        ap."banReasonCode",
-        ap."publisherRep",
-        ap."workerRep",
-        ap."supervisorRep",
-        ap."tasksPublishedCount",
-        ap."tasksIntentedCount",
-        ap."tasksCompletedCount",
-        ap."tasksTerminatedCount",
-        ap."submissionsRejectedCount",
-        ap."supervisionVotesCount",
-        ap."createdAt",
-        ap."updatedAt"
     ) ranked
     ${whereSql}
     ${orderBySql}
@@ -713,6 +748,12 @@ export const queryAgentsDirect = async (
                     : query.sort === "intented"
                       ? item.stats.tasksIntented
                       : item.latestActivityAt,
+          ...(query.sort === "reputation"
+            ? {
+                reputationSum:
+                  item.reputation.publisher + item.reputation.worker + item.reputation.supervisor
+              }
+            : {}),
           address: item.address
         })
       })
@@ -732,59 +773,47 @@ export const queryActivitiesDirect = async (
         order: query.order
       })
     : { mode: "start", offset: 0 };
-  const where: Prisma.ActivityEventWhereInput = {
-    taskId: query.taskId,
-    disputeId: query.disputeId,
-    type: query.type,
-    actorAddress: query.address
-      ? {
-          equals: query.address,
-          mode: "insensitive"
-        }
-      : undefined
-  };
+  const whereClauses: Prisma.Sql[] = [];
+  if (query.taskId) {
+    whereClauses.push(Prisma.sql`a."taskId" = ${query.taskId}`);
+  }
+  if (query.disputeId) {
+    whereClauses.push(Prisma.sql`a."disputeId" = ${query.disputeId}`);
+  }
+  if (query.type) {
+    whereClauses.push(Prisma.sql`a."type" = CAST(${query.type} AS "ActivityEventType")`);
+  }
+  if (query.address) {
+    whereClauses.push(Prisma.sql`lower(a."actorAddress") = lower(${query.address})`);
+  }
 
-  const keysetWhere =
-    parsedCursor.mode === "keyset"
-      ? (() => {
-          const cursorId = requireCursorString(parsedCursor.values.id, "id");
-          const cursorCreatedAt = requireCursorDate(parsedCursor.values.primary, "primary");
-          const createdAtCompare = query.order === "asc" ? "gt" : "lt";
-          const idCompare = query.order === "asc" ? "gt" : "lt";
-          return {
-            OR: [
-              { createdAt: { [createdAtCompare]: cursorCreatedAt } },
-              {
-                AND: [{ createdAt: cursorCreatedAt }, { id: { [idCompare]: cursorId } }]
-              }
-            ]
-          } satisfies Prisma.ActivityEventWhereInput;
-        })()
-      : null;
+  if (query.paged && parsedCursor.mode === "keyset") {
+    const cursorId = requireCursorString(parsedCursor.values.id, "id");
+    const cursorCreatedAt = requireCursorDate(parsedCursor.values.primary, "primary");
+    const compareSql = Prisma.raw(query.order === "asc" ? ">" : "<");
+    whereClauses.push(Prisma.sql`(
+      a."createdAt" ${compareSql} ${cursorCreatedAt}
+      OR (a."createdAt" = ${cursorCreatedAt} AND a.id ${compareSql} ${cursorId})
+    )`);
+  }
 
-  const whereWithCursor =
-    keysetWhere && query.paged
-      ? ({
-          AND: [where, keysetWhere]
-        } satisfies Prisma.ActivityEventWhereInput)
-      : where;
+  const directionSql = Prisma.raw(query.order.toUpperCase());
+  const rows = await prisma.$queryRaw<ActivityEventQueryRow[]>(Prisma.sql`
+    SELECT
+      a.id,
+      a."type",
+      a."cycleId",
+      a."taskId",
+      a."disputeId",
+      a."actorAddress",
+      a."createdAt"
+    FROM "ActivityEvent" a
+    ${buildWhereSql(whereClauses)}
+    ORDER BY a."createdAt" ${directionSql}, a.id ${directionSql}
+    ${buildPaginationSql(query.paged, parsedCursor, boundedLimit)}
+  `);
 
-  const events = await prisma.activityEvent.findMany({
-    where: whereWithCursor,
-    orderBy: [{ createdAt: query.order }, { id: query.order }],
-    ...(query.paged
-      ? {
-          ...(parsedCursor.mode === "legacy-offset"
-            ? {
-                skip: parsedCursor.offset
-              }
-            : {}),
-          take: boundedLimit + 1
-        }
-      : {})
-  });
-
-  const mapped = events.map((item) => mapActivityEvent(item));
+  const mapped = rows.map((item) => mapActivityEvent(item));
   return query.paged
     ? buildPaginatedResponse(mapped, boundedLimit, parsedCursor, {
         resource: "activities",

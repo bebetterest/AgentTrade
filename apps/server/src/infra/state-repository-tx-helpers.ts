@@ -2,7 +2,6 @@ import { Prisma } from "@prisma/client";
 import { nanoid } from "nanoid";
 import type { Address, ActivityEventType as DomainActivityEventType } from "@agentrade/types";
 import { DomainError } from "../domain/errors.js";
-import { clampReputation } from "../domain/helpers.js";
 
 export const lockRuntimeWithTx = async (
   tx: Prisma.TransactionClient,
@@ -22,41 +21,40 @@ export const ensureAgentAndLedgerWithTx = async (
   now: Date,
   initialAgentBalance: number
 ): Promise<void> => {
-  const existingProfile = await tx.agentProfile.findUnique({ where: { address } });
-  if (!existingProfile) {
-    await tx.agentProfile.create({
-      data: {
-        address,
-        name: "",
-        bio: "",
-        status: "ACTIVE",
-        bannedAt: null,
-        banReasonCode: null,
-        publisherRep: 50,
-        workerRep: 50,
-        supervisorRep: 50,
-        tasksPublishedCount: 0,
-        tasksIntentedCount: 0,
-        tasksCompletedCount: 0,
-        tasksTerminatedCount: 0,
-        submissionsRejectedCount: 0,
-        supervisionVotesCount: 0,
-        createdAt: now,
-        updatedAt: now
-      }
-    });
-  }
+  await tx.agentProfile.upsert({
+    where: { address },
+    create: {
+      address,
+      name: "",
+      bio: "",
+      status: "ACTIVE",
+      bannedAt: null,
+      banReasonCode: null,
+      latestActivityAt: null,
+      publisherRep: 50,
+      workerRep: 50,
+      supervisorRep: 50,
+      tasksPublishedCount: 0,
+      tasksIntentedCount: 0,
+      tasksCompletedCount: 0,
+      tasksTerminatedCount: 0,
+      submissionsRejectedCount: 0,
+      supervisionVotesCount: 0,
+      createdAt: now,
+      updatedAt: now
+    },
+    update: {}
+  });
 
-  const existingLedger = await tx.ledgerBalance.findUnique({ where: { address } });
-  if (!existingLedger) {
-    await tx.ledgerBalance.create({
-      data: {
-        address,
-        available: initialAgentBalance,
-        updatedAt: now
-      }
-    });
-  }
+  await tx.ledgerBalance.upsert({
+    where: { address },
+    create: {
+      address,
+      available: initialAgentBalance,
+      updatedAt: now
+    },
+    update: {}
+  });
 };
 
 export const appendActivityEventWithTx = async (
@@ -81,6 +79,15 @@ export const appendActivityEventWithTx = async (
       createdAt: input.createdAt
     }
   });
+  await tx.agentProfile.updateMany({
+    where: {
+      address: input.actor,
+      OR: [{ latestActivityAt: null }, { latestActivityAt: { lt: input.createdAt } }]
+    },
+    data: {
+      latestActivityAt: input.createdAt
+    }
+  });
 };
 
 export const applyProfileDeltaWithTx = async (
@@ -99,45 +106,24 @@ export const applyProfileDeltaWithTx = async (
     supervisionVotes?: number;
   }
 ): Promise<void> => {
-  const profile = await tx.agentProfile.findUnique({ where: { address } });
-  if (!profile) {
+  const updated = await tx.$executeRaw`
+    UPDATE "AgentProfile"
+    SET
+      "publisherRep" = LEAST(100, GREATEST(0, "publisherRep" + ${input.publisherReputationDelta ?? 0})),
+      "workerRep" = LEAST(100, GREATEST(0, "workerRep" + ${input.workerReputationDelta ?? 0})),
+      "supervisorRep" = LEAST(100, GREATEST(0, "supervisorRep" + ${input.supervisorReputationDelta ?? 0})),
+      "tasksPublishedCount" = "tasksPublishedCount" + ${input.tasksPublished ?? 0},
+      "tasksIntentedCount" = "tasksIntentedCount" + ${input.tasksIntented ?? 0},
+      "tasksCompletedCount" = "tasksCompletedCount" + ${input.tasksCompleted ?? 0},
+      "tasksTerminatedCount" = "tasksTerminatedCount" + ${input.tasksTerminated ?? 0},
+      "submissionsRejectedCount" = "submissionsRejectedCount" + ${input.submissionsRejected ?? 0},
+      "supervisionVotesCount" = "supervisionVotesCount" + ${input.supervisionVotes ?? 0},
+      "updatedAt" = ${now}
+    WHERE address = ${address}
+  `;
+  if (updated === 0) {
     throw new DomainError("AGENT_NOT_FOUND", `Agent ${address} not found`, 404);
   }
-  const nextPublisherRep = clampReputation(
-    profile.publisherRep + (input.publisherReputationDelta ?? 0)
-  );
-  const nextWorkerRep = clampReputation(profile.workerRep + (input.workerReputationDelta ?? 0));
-  const nextSupervisorRep = clampReputation(
-    profile.supervisorRep + (input.supervisorReputationDelta ?? 0)
-  );
-
-  await tx.agentProfile.update({
-    where: { address },
-    data: {
-      publisherRep: nextPublisherRep,
-      workerRep: nextWorkerRep,
-      supervisorRep: nextSupervisorRep,
-      tasksPublishedCount: {
-        increment: input.tasksPublished ?? 0
-      },
-      tasksIntentedCount: {
-        increment: input.tasksIntented ?? 0
-      },
-      tasksCompletedCount: {
-        increment: input.tasksCompleted ?? 0
-      },
-      tasksTerminatedCount: {
-        increment: input.tasksTerminated ?? 0
-      },
-      submissionsRejectedCount: {
-        increment: input.submissionsRejected ?? 0
-      },
-      supervisionVotesCount: {
-        increment: input.supervisionVotes ?? 0
-      },
-      updatedAt: now
-    }
-  });
 };
 
 export const getConfirmedSlots = (

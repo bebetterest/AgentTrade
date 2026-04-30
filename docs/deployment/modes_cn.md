@@ -7,6 +7,10 @@ Agentrade 的部署路径仅维护 Docker。
 - 本地模式：`docker-compose.yml` + `docker-compose.local.yml`
 - 云端模式：`docker-compose.yml` + `docker-compose.cloud.yml`
 
+基础 compose 拓扑为 `postgres + redis + server + worker + web`，云端模式会额外增加 `gateway`。
+在这套拓扑里，运行角色固定为各自服务所有（`server=api`、`worker=worker`）；`worker` 复用 API 服务构建出的同一个 `agentrade-server:latest` 镜像；schema bootstrap（在 `prisma db push` 前后各执行一次 `prisma/pre_migrations/*.sql`）由 `server` 负责，`worker` 不再执行 bootstrap，并会在 `server` healthy 后再启动。worker 启动要求持久化模式，只读取已初始化的运行态；如果 API/bootstrap 尚未完成会立即失败。worker 后台协调使用 PostgreSQL advisory lock，不需要 Redis。
+`DATABASE_URL` 使用的 PostgreSQL 角色必须允许安装 `pg_trgm`；server bootstrap 会先执行 `CREATE EXTENSION IF NOT EXISTS pg_trgm`，再创建 GIN/trigram 搜索索引，并会动态解析已安装的 `gin_trgm_ops` operator class 所在 schema，以兼容扩展未安装在 `public` 的数据库。
+
 本文档是权威的端到端部署手册。
 
 ## 1. 事实来源
@@ -80,7 +84,7 @@ cp .env.example.cloud .env.cloud
 - 缺少 `.env`、`.env.local` 或 `.env.cloud` 都会直接报错。
 - `.env.example*` 只用于手工复制生成真实配置。
 
-`server` 运行时通过 compose `env_file` 注入完整 env，不再读取示例文件兜底：
+`server` 与 `worker` 运行时通过 compose `env_file` 注入完整 env，不再读取示例文件兜底：
 
 1. `.env`
 2. 模式文件（`.env.local` / `.env.cloud`）
@@ -158,6 +162,7 @@ curl --noproxy '*' -f "http://127.0.0.1:${LOCAL_WEB_PORT:-3001}/"
 ```bash
 docker compose --env-file .env --env-file .env.local -f docker-compose.yml -f docker-compose.local.yml ps
 docker compose --env-file .env --env-file .env.local -f docker-compose.yml -f docker-compose.local.yml logs -f server
+docker compose --env-file .env --env-file .env.local -f docker-compose.yml -f docker-compose.local.yml logs -f worker
 docker compose --env-file .env --env-file .env.local -f docker-compose.yml -f docker-compose.local.yml logs -f web
 ```
 
@@ -236,6 +241,7 @@ curl --noproxy '*' -f "https://<domain-or-ip>${CLOUD_API_PATH_PREFIX:-/api}/v2/s
 docker compose --env-file .env --env-file .env.cloud -f docker-compose.yml -f docker-compose.cloud.yml ps
 docker compose --env-file .env --env-file .env.cloud -f docker-compose.yml -f docker-compose.cloud.yml logs -f gateway
 docker compose --env-file .env --env-file .env.cloud -f docker-compose.yml -f docker-compose.cloud.yml logs -f server
+docker compose --env-file .env --env-file .env.cloud -f docker-compose.yml -f docker-compose.cloud.yml logs -f worker
 docker compose --env-file .env --env-file .env.cloud -f docker-compose.yml -f docker-compose.cloud.yml logs -f web
 ```
 
@@ -297,13 +303,13 @@ pnpm docker:release:local -- --fresh-platform
 本地：
 
 ```bash
-docker compose --env-file .env --env-file .env.local -f docker-compose.yml -f docker-compose.local.yml restart server web
+docker compose --env-file .env --env-file .env.local -f docker-compose.yml -f docker-compose.local.yml restart server worker web
 ```
 
 云端：
 
 ```bash
-docker compose --env-file .env --env-file .env.cloud -f docker-compose.yml -f docker-compose.cloud.yml restart gateway server web
+docker compose --env-file .env --env-file .env.cloud -f docker-compose.yml -f docker-compose.cloud.yml restart gateway server worker web
 ```
 
 ### 8.3 数据状态与重置
@@ -381,13 +387,13 @@ export NO_PROXY=localhost,127.0.0.1,.local
 
 本地发布成功标准：
 
-- `postgres`、`redis`、`server`、`web` 为 healthy/running。
+- `postgres`、`redis`、`server`、`worker`、`web` 为 healthy/running（`worker` 没有 HTTP healthcheck，处于 `running` 即可）。
 - 本地 release 命令成功退出。
 - Web 根路径和 API health 可访问。
 
 云端发布成功标准：
 
-- `postgres`、`redis`、`server`、`web`、`gateway` 为 healthy/running。
+- `postgres`、`redis`、`server`、`worker`、`web`、`gateway` 为 healthy/running（`worker` 没有 HTTP healthcheck，处于 `running` 即可）。
 - 云端 release 命令成功退出。
 - 域名解析正确，HTTP/HTTPS 行为符合配置。
 - Web 与 API 按配置路径可访问。

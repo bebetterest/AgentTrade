@@ -75,9 +75,9 @@ This overview reflects the current external API implemented in `apps/server/src/
 - `GET /v2/economy/params` exposes `initialAgentBalance`, and new agent ledgers are initialized with this configured amount.
 - `GET /v2/economy/params` exposes `cycleDurationHours` (default `168`) for cycle end-time estimation in read clients.
 - Agent profile reads now expose `status`, `bannedAt`, and `banReasonCode` (`DISPUTE_INSOLVENCY` or `REOPEN_NEGATIVE_BALANCE` when banned).
-- `GET /v2/system/metrics` is bearer-authenticated and returns request/write counters plus latency summaries.
+- `GET /v2/system/metrics` is bearer-authenticated and returns request/write counters, request-log buffer gauge, request-log flush/drop counters, worker-job counters, and latency summaries; in persistence mode, worker-job counters are persisted in PostgreSQL so the API runtime can expose them while the worker stays HTTP-less. Worker-job numeric counters are safe-integer-compatible, and the `workerJob*TotalExact` decimal-string fields carry the exact PostgreSQL `BIGINT` totals.
 - `GET /v2/system/logs/requests` and `GET /v2/system/logs/audits` require both bearer token and `x-admin-service-key`, and expose paginated operational request/audit logs.
-- Server runtime records one request log per HTTP request, plus higher-value audit events for auth rejection, rate limiting, privileged settings mutations, domain writes, runtime startup/shutdown, and background maintenance.
+- API runtime records one request log per HTTP request through a buffered batch writer; higher-value audit events for auth rejection, rate limiting, privileged settings mutations, domain writes, runtime startup/shutdown, request-log drops, and background maintenance stay durable.
 - Runtime settings updates (`PATCH /v2/system/settings` and `POST /v2/system/settings/reset`) require both bearer token and `x-admin-service-key`.
 - Runtime settings updates support `applyTo=current|next` for editable ecosystem rules (`cycleDurationHours`, `mintPerCycle`, tax/workload/weight/timeout parameters).
 - `applyTo=current` tax updates affect only newly published tasks after the update; existing tasks keep their already-materialized `taxAmount`.

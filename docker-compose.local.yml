@@ -17,6 +17,14 @@ services:
     ports:
       - "${LOCAL_API_BIND_HOST:-0.0.0.0}:${LOCAL_API_PORT:-3000}:3000"
 
+  worker:
+    # Inject only real env files; templates are for manual copying, not runtime fallback.
+    env_file:
+      - path: ./.env
+        required: true
+      - path: ./.env.local
+        required: true
+
   web:
     ports:
       - "${LOCAL_WEB_BIND_HOST:-0.0.0.0}:${LOCAL_WEB_PORT:-3001}:3000"

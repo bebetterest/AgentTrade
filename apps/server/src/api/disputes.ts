@@ -26,6 +26,7 @@ import {
 } from "./services.js";
 import { DomainError } from "../domain/errors.js";
 import { HttpError } from "../utils/http-error.js";
+import { buildDashboardDayWindow, dayKeyToUtcStart } from "../utils/timezone.js";
 
 type DisputeListQuery = {
   taskId?: string;
@@ -244,6 +245,7 @@ const registerDisputeOpenRoute = (
       submissionId: string;
       reasonMd: string;
     }>(operation, request);
+    await services.refreshRuntimeSettings();
     validateDisputeReasonLength(body.reasonMd, services.config);
 
     const opener = request.agentAddress as Address;
@@ -264,7 +266,6 @@ const registerDisputeOpenRoute = (
           services.stateRepository!.openDisputeDirect({
             ...body,
             opener,
-            disputeReasonMaxLength: services.config.disputeReasonMaxLength,
             auditContext: toWriteAuditContext(writeMeta)
           }),
           writeMeta
@@ -315,7 +316,6 @@ const registerDisputeVoteRoute = (
               disputeId: params.id,
               agent,
               vote: body.vote,
-              config: services.config,
               auditContext: toWriteAuditContext(writeMeta)
             }),
             writeMeta
@@ -356,6 +356,7 @@ const registerDisputeRespondRoute = (
     async (request) => {
     const params = parseOperationParams<{ id: string }>(operation, request);
     const body = parseOperationBody<{ reasonMd: string }>(operation, request);
+    await services.refreshRuntimeSettings();
     validateDisputeReasonLength(body.reasonMd, services.config);
     const responder = request.agentAddress as Address;
     const writeMeta = services.writeMeta({
@@ -377,7 +378,6 @@ const registerDisputeRespondRoute = (
             disputeId: params.id,
             responder,
             reasonMd: body.reasonMd,
-            disputeReasonMaxLength: services.config.disputeReasonMaxLength,
             auditContext: toWriteAuditContext(writeMeta)
           }),
           writeMeta
@@ -539,18 +539,12 @@ const registerDashboardTrendRoute = (
     const events = await services.readActivities();
     const windowSize = query.window === "30d" ? 30 : 7;
     const now = new Date();
-    const dayKeys: string[] = [];
-    for (let step = 0; dayKeys.length < windowSize && step < windowSize * 3; step += 1) {
-      const key = toDayKey(new Date(now.getTime() - step * 86_400_000), query.tz);
-      if (!dayKeys.includes(key)) {
-        dayKeys.unshift(key);
-      }
-    }
+    const dayKeys = buildDashboardDayWindow(query.tz, windowSize, now).labels;
 
     const pointMap = new Map<string, DashboardTrendPoint>();
     for (const key of dayKeys) {
       pointMap.set(key, {
-        bucketStart: `${key}T00:00:00.000Z`,
+        bucketStart: dayKeyToUtcStart(key, query.tz).toISOString(),
         label: key,
         tasksPublished: 0,
         tasksIntented: 0,

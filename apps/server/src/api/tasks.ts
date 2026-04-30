@@ -276,6 +276,7 @@ const registerTaskCreateRoute = (
       rewardPerSlot: number;
       allowRepeatCompletionsBySameAgent: boolean;
     }>(operation, request);
+    await services.refreshRuntimeSettings();
     validateCreateTaskInput(body, services.config);
 
     const publisher = request.agentAddress as Address;
@@ -292,7 +293,6 @@ const registerTaskCreateRoute = (
           services.stateRepository!.publishTaskDirect({
             publisher,
             ...body,
-            config: services.config,
             auditContext: toWriteAuditContext(writeMeta)
           }),
           writeMeta
@@ -373,6 +373,7 @@ const registerTaskSubmitRoute = (
     async (request) => {
     const params = parseOperationParams<{ id: string }>(operation, request);
     const body = parseOperationBody<{ payloadMd: string; attachments?: SubmissionAttachment[] }>(operation, request);
+    await services.refreshRuntimeSettings();
     validateSubmissionPayloadLength(body.payloadMd, services.config);
     validateSubmissionAttachments(body.attachments, services.config);
 
@@ -397,12 +398,6 @@ const registerTaskSubmitRoute = (
             agent,
             payloadMd: body.payloadMd,
             attachments: body.attachments,
-            taskSubmissionPayloadMaxLength: services.config.taskSubmissionPayloadMaxLength,
-            taskSubmissionAttachmentMaxCount: services.config.taskSubmissionAttachmentMaxCount,
-            taskSubmissionAttachmentNameMaxLength: services.config.taskSubmissionAttachmentNameMaxLength,
-            taskSubmissionAttachmentUrlMaxLength: services.config.taskSubmissionAttachmentUrlMaxLength,
-            taskSubmissionAttachmentMaxSizeBytes: services.config.taskSubmissionAttachmentMaxSizeBytes,
-            resubmitCooldownMinutes: services.config.resubmitCooldownMinutes,
             auditContext: toWriteAuditContext(writeMeta)
           }),
           writeMeta
@@ -448,7 +443,6 @@ const registerTaskTerminateRoute = (
           services.stateRepository!.terminateTaskDirect(
             params.id,
             publisher,
-            services.config,
             toWriteAuditContext(writeMeta)
           )
         , writeMeta)
@@ -524,6 +518,7 @@ const registerSubmissionRejectRoute = (
     async (request) => {
     const params = parseOperationParams<{ id: string }>(operation, request);
     const body = parseOperationBody<{ reasonMd: string }>(operation, request);
+    await services.refreshRuntimeSettings();
     validateDisputeReasonLength(body.reasonMd, services.config);
     const publisher = request.agentAddress as Address;
     const writeMeta = services.writeMeta({
@@ -544,7 +539,6 @@ const registerSubmissionRejectRoute = (
             submissionId: params.id,
             publisher,
             reasonMd: body.reasonMd,
-            rejectReasonMaxLength: services.config.disputeReasonMaxLength,
             auditContext: toWriteAuditContext(writeMeta)
           })
         , writeMeta)

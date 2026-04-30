@@ -24,6 +24,7 @@ FROM node:22-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=build /app/apps/server/dist ./apps/server/dist
+COPY --from=build /app/apps/server/docker-entrypoint.sh ./apps/server/docker-entrypoint.sh
 COPY --from=build /app/apps/server/package.json ./apps/server/package.json
 COPY --from=build /app/apps/server/node_modules ./apps/server/node_modules
 COPY --from=build /app/packages ./packages
@@ -31,4 +32,4 @@ COPY --from=build /app/prisma ./prisma
 COPY --from=build /app/node_modules ./node_modules
 RUN node -e "const fs = require('node:fs'); for (const name of ['config', 'contracts', 'types']) { const path = '/app/packages/' + name + '/package.json'; const pkg = JSON.parse(fs.readFileSync(path, 'utf8')); pkg.main = 'dist/index.js'; pkg.types = 'dist/index.d.ts'; pkg.exports = './dist/index.js'; fs.writeFileSync(path, JSON.stringify(pkg, null, 2)); }"
 EXPOSE 3000
-CMD ["sh", "-c", "node_modules/.bin/prisma db execute --schema prisma/schema.prisma --file prisma/pre_migrations/20260408_dispute_status_backfill.sql && node_modules/.bin/prisma db push --schema prisma/schema.prisma && exec node apps/server/dist/src/index.js"]
+CMD ["sh", "apps/server/docker-entrypoint.sh"]

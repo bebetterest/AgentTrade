@@ -192,6 +192,7 @@ type CliSpecEntityKind =
   | "dashboard"
   | "dispute"
   | "economy"
+  | "feedbackReport"
   | "ledgerAccount"
   | "runtimeSettings"
   | "serverAuditLog"
@@ -1396,6 +1397,12 @@ const API_AUTOMATION_HINTS: Partial<Record<keyof typeof cliOperationBindings, Cl
     retryMode: "retryableAfterVerification",
     preflightCommands: ["disputes get"],
     verificationCommands: ["disputes get", "tasks get", "submissions get", "cycles active", "ledger get"]
+  },
+  "feedback submit": {
+    effect: "remoteWrite",
+    retryMode: "retryableAfterVerification",
+    preflightCommands: [],
+    verificationCommands: ["feedback get", "feedback list"]
   },
   "submissions confirm": {
     effect: "remoteWrite",
@@ -2965,6 +2972,56 @@ const getEntityHints = (
           }
         ]
       };
+    case "feedback get":
+      return {
+        primaryEntity: "feedbackReport",
+        bindings: [
+          {
+            entity: "feedbackReport",
+            relation: "target",
+            inputSources: ["--id"],
+            outputPaths: ["data.id"]
+          },
+          {
+            entity: "agent",
+            relation: "related",
+            outputPaths: ["data.reporterAddress"]
+          }
+        ]
+      };
+    case "feedback list":
+      return {
+        primaryEntity: "feedbackReport",
+        bindings: [
+          {
+            entity: "feedbackReport",
+            relation: "listed",
+            outputPaths: ["data.items[].id"]
+          },
+          {
+            entity: "agent",
+            relation: "related",
+            inputSources: ["--reporter"],
+            outputPaths: ["data.items[].reporterAddress"]
+          }
+        ]
+      };
+    case "feedback submit":
+      return {
+        primaryEntity: "feedbackReport",
+        bindings: [
+          {
+            entity: "feedbackReport",
+            relation: "created",
+            outputPaths: ["data.id"]
+          },
+          {
+            entity: "agent",
+            relation: "related",
+            outputPaths: ["data.reporterAddress"]
+          }
+        ]
+      };
     case "ledger get":
       return {
         primaryEntity: "ledgerAccount",
@@ -4096,6 +4153,62 @@ const getHandoffHints = (
       ]);
     case "economy params":
       return [];
+    case "feedback get":
+      return cloneHandoffHints([
+        {
+          targetCommand: "feedback list",
+          bindings: [
+            handoffFromPath("data.type", ["--type"]),
+            handoffFromPath("data.reporterAddress", ["--reporter"])
+          ],
+          note: "rerun the feedback queue scoped to the same type and reporter"
+        },
+        {
+          targetCommand: "agents profile get",
+          bindings: [handoffFromPath("data.reporterAddress", ["--address"])]
+        }
+      ]);
+    case "feedback list":
+      return cloneHandoffHints([
+        {
+          targetCommand: "feedback get",
+          bindings: [handoffFromPath("data.items[].id", ["--id"])],
+          ...currentPageSelection()
+        },
+        {
+          targetCommand: "feedback list",
+          bindings: [
+            handoffFromPath("data.items[].type", ["--type"]),
+            handoffFromPath("data.items[].reporterAddress", ["--reporter"])
+          ],
+          ...currentPageSelection(),
+          note: "rerun the feedback queue scoped to the selected type and reporter"
+        },
+        {
+          targetCommand: "agents profile get",
+          bindings: [handoffFromPath("data.items[].reporterAddress", ["--address"])],
+          ...currentPageSelection()
+        }
+      ]);
+    case "feedback submit":
+      return cloneHandoffHints([
+        {
+          targetCommand: "feedback get",
+          bindings: [handoffFromPath("data.id", ["--id"])]
+        },
+        {
+          targetCommand: "feedback list",
+          bindings: [
+            handoffFromPath("data.type", ["--type"]),
+            handoffFromPath("data.reporterAddress", ["--reporter"])
+          ],
+          note: "verify that the submitted report appears in the feedback queue"
+        },
+        {
+          targetCommand: "agents profile get",
+          bindings: [handoffFromPath("data.reporterAddress", ["--address"])]
+        }
+      ]);
     case "ledger get":
       return cloneHandoffHints([
         {
@@ -5053,6 +5166,27 @@ const getWorkflowHints = (
         prerequisiteCommands: [],
         nextCommands: ["tasks create", "cycles active"]
       };
+    case "feedback get":
+      return {
+        phase: "system",
+        actorRoles: ["operator"],
+        prerequisiteCommands: ["feedback list"],
+        nextCommands: ["feedback list", "agents profile get"]
+      };
+    case "feedback list":
+      return {
+        phase: "system",
+        actorRoles: ["operator"],
+        prerequisiteCommands: ["auth login"],
+        nextCommands: ["feedback get", "agents profile get"]
+      };
+    case "feedback submit":
+      return {
+        phase: "system",
+        actorRoles: ["any"],
+        prerequisiteCommands: ["auth login"],
+        nextCommands: ["feedback get", "feedback list"]
+      };
     case "ledger get":
       return {
         phase: "settlement",
@@ -5494,6 +5628,13 @@ const toDiscoverySpec = async (command: Command, commandQuery?: string): Promise
       {
         inline: "--title",
         file: "--title-file",
+        stdinAlias: STDIN_FILE_ALIAS,
+        valueKind: "text",
+        preferredInput: "file"
+      },
+      {
+        inline: "--body",
+        file: "--body-file",
         stdinAlias: STDIN_FILE_ALIAS,
         valueKind: "text",
         preferredInput: "file"

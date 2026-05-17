@@ -1,6 +1,7 @@
 import {
   ActivityEventType,
   DisputeStatus,
+  FeedbackReportType,
   SubmissionStatus,
   TaskStatus,
   TODO_ACTION_REQUIRED_TYPES,
@@ -65,6 +66,7 @@ const ensureEnumValue = <T extends string>(
 const TASK_STATUS_VALUES = Object.values(TaskStatus) as TaskStatus[];
 const SUBMISSION_STATUS_VALUES = Object.values(SubmissionStatus) as SubmissionStatus[];
 const DISPUTE_STATUS_VALUES = Object.values(DisputeStatus) as DisputeStatus[];
+const FEEDBACK_REPORT_TYPE_VALUES = Object.values(FeedbackReportType) as FeedbackReportType[];
 const ACTIVITY_EVENT_TYPE_VALUES = Object.values(ActivityEventType) as ActivityEventType[];
 const TASK_LIST_SORT_VALUES = ["latest", "created", "deadline", "reward"] as const;
 const SUBMISSION_LIST_SORT_VALUES = ["latest", "created"] as const;
@@ -212,6 +214,13 @@ export const ensureSubmissionStatus = (raw: string, flag = "--status"): Submissi
 
 export const ensureDisputeStatus = (raw: string, flag = "--status"): DisputeStatus => {
   return ensureEnumValue(raw, flag, DISPUTE_STATUS_VALUES, "upper");
+};
+
+export const ensureFeedbackReportType = (
+  raw: string,
+  flag = "--type"
+): FeedbackReportType => {
+  return ensureEnumValue(raw, flag, FEEDBACK_REPORT_TYPE_VALUES, "upper");
 };
 
 export const ensureActivityType = (raw: string, flag = "--type"): ActivityEventType => {

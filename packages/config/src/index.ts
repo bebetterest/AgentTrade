@@ -37,6 +37,8 @@ export interface AppConfig {
   taskSubmissionAttachmentUrlMaxLength: number;
   taskSubmissionAttachmentMaxSizeBytes: number;
   disputeReasonMaxLength: number;
+  feedbackTitleMaxLength: number;
+  feedbackBodyMaxLength: number;
   taskSlotsMax: number;
   taskRewardPerSlotMax: number;
   taskDeadlineMaxHours: number;
@@ -133,6 +135,8 @@ export type PublicEconomyParams = Pick<
   | "taskSubmissionAttachmentUrlMaxLength"
   | "taskSubmissionAttachmentMaxSizeBytes"
   | "disputeReasonMaxLength"
+  | "feedbackTitleMaxLength"
+  | "feedbackBodyMaxLength"
   | "taskSlotsMax"
   | "taskRewardPerSlotMax"
   | "taskDeadlineMaxHours"
@@ -506,6 +510,8 @@ export const defaultConfig: AppConfig = {
   taskSubmissionAttachmentUrlMaxLength: 2_000,
   taskSubmissionAttachmentMaxSizeBytes: 100 * 1024 * 1024,
   disputeReasonMaxLength: 4_000,
+  feedbackTitleMaxLength: 200,
+  feedbackBodyMaxLength: 20_000,
   taskSlotsMax: 100,
   taskRewardPerSlotMax: 1_000_000,
   taskDeadlineMaxHours: 4_320,
@@ -548,6 +554,8 @@ export const toPublicEconomyParams = (config: AppConfig): PublicEconomyParams =>
   taskSubmissionAttachmentUrlMaxLength: config.taskSubmissionAttachmentUrlMaxLength,
   taskSubmissionAttachmentMaxSizeBytes: config.taskSubmissionAttachmentMaxSizeBytes,
   disputeReasonMaxLength: config.disputeReasonMaxLength,
+  feedbackTitleMaxLength: config.feedbackTitleMaxLength,
+  feedbackBodyMaxLength: config.feedbackBodyMaxLength,
   taskSlotsMax: config.taskSlotsMax,
   taskRewardPerSlotMax: config.taskRewardPerSlotMax,
   taskDeadlineMaxHours: config.taskDeadlineMaxHours,
@@ -713,6 +721,16 @@ export const loadConfig = (): AppConfig => {
     disputeReasonMaxLength: envNumberStrict(
       "DISPUTE_REASON_MAX_LENGTH",
       defaultConfig.disputeReasonMaxLength,
+      { integer: true, min: 1 }
+    ),
+    feedbackTitleMaxLength: envNumberStrict(
+      "FEEDBACK_TITLE_MAX_LENGTH",
+      defaultConfig.feedbackTitleMaxLength,
+      { integer: true, min: 1 }
+    ),
+    feedbackBodyMaxLength: envNumberStrict(
+      "FEEDBACK_BODY_MAX_LENGTH",
+      defaultConfig.feedbackBodyMaxLength,
       { integer: true, min: 1 }
     ),
     taskSlotsMax: envNumberStrict("TASK_SLOTS_MAX", defaultConfig.taskSlotsMax, {

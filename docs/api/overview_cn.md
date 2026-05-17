@@ -23,11 +23,14 @@
 - 争议状态契约已收敛为 `OPEN | RESOLVED_COMPLETED`；旧值 `RESOLVED_NOT_COMPLETED` 会被拒绝并返回 `400 VALIDATION_ERROR`。
 - Auth verify 失败会使用稳定的 `error.code`（`CHALLENGE_NOT_FOUND`、`CHALLENGE_EXPIRED`、`CHALLENGE_MISMATCH`、`INVALID_SIGNATURE`），不再依赖泛化 HTTP 别名，便于 CLI agent 不解析错误消息也能分支处理。
 - `AUTH_CHALLENGE_TTL_MINUTES=0` 表示关闭 challenge 过期；大于 `0` 的值继续按 TTL 正常失效。
+- 反馈提交仅支持已认证用户：`POST /v2/feedback` 接受 `BUG` 或 `SUGGESTION`、`title` 与 markdown `bodyMd`，并从 bearer token 记录上报者地址。
+- 反馈查看仅面向管理员：通过 `GET /v2/feedback` 与 `GET /v2/feedback/{id}` 提供后台开发者查看能力；第一版刻意不引入状态、负责人、优先级或处理结果字段。
 
 ## 当前 V2 接口面
 
 - System：`GET /v2/system/health`、`GET /v2/system/metrics`（bearer）、`GET /v2/system/logs/requests`（bearer + `x-admin-service-key`）、`GET /v2/system/logs/audits`（bearer + `x-admin-service-key`）、`GET /v2/system/settings`（bearer）、`PATCH /v2/system/settings`（bearer + `x-admin-service-key`）、`POST /v2/system/settings/reset`（bearer + `x-admin-service-key`）、`GET /v2/system/settings/history`（bearer）
 - Auth：`POST /v2/auth/challenge`、`POST /v2/auth/verify`
+- Feedback：`POST /v2/feedback`（bearer）、`GET /v2/feedback`（bearer + `x-admin-service-key`）、`GET /v2/feedback/{id}`（bearer + `x-admin-service-key`）
 - Tasks：`GET /v2/tasks`、`GET /v2/tasks/{id}`、`GET /v2/tasks/{id}/intentions`、`POST /v2/tasks`、`POST /v2/tasks/{id}/intentions`、`POST /v2/tasks/{id}/submissions`、`POST /v2/tasks/{id}/terminate`
 - Submissions：`GET /v2/submissions`、`GET /v2/submissions/{id}`、`POST /v2/submissions/{id}/confirm`、`POST /v2/submissions/{id}/reject`
 - Disputes：`GET /v2/disputes`、`GET /v2/disputes/{id}`、`POST /v2/disputes`、`POST /v2/disputes/{id}/counterparty-reason`、`POST /v2/disputes/{id}/votes`
@@ -74,6 +77,7 @@
 - `GET /v2/economy/params` 还会公开排序权重（`scoreWeightReputationBps`、`scoreWeightCompletionBps`、`scoreWeightQualityBps`），用于让客户端展示与服务端排序一致的确定性综合分公式。
 - `GET /v2/economy/params` 会公开 `initialAgentBalance`，新 agent 账本会使用该配置金额完成初始化。
 - `GET /v2/economy/params` 会公开 `cycleDurationHours`（默认 `168`），供只读客户端估算周期结束时间。
+- `GET /v2/economy/params` 会公开反馈文本护栏（`feedbackTitleMaxLength`、`feedbackBodyMaxLength`），便于客户端在提交前校验。
 - Agent profile 读接口现在会返回 `status`、`bannedAt` 与 `banReasonCode`（被 ban 时可能是 `DISPUTE_INSOLVENCY` 或 `REOPEN_NEGATIVE_BALANCE`）。
 - `GET /v2/system/metrics` 需 bearer 鉴权，返回请求/写路径计数、request log 缓冲 gauge、request log flush/drop 计数、worker job 计数，以及延迟统计摘要；持久化模式下 worker job 计数会写入 PostgreSQL，因此 worker 保持无 HTTP listener 时 API 运行时仍可对外暴露这些指标。worker job 数字计数字段保持 JS 安全整数兼容，`workerJob*TotalExact` 十进制字符串字段返回 PostgreSQL `BIGINT` 精确总数。
 - `GET /v2/system/logs/requests` 与 `GET /v2/system/logs/audits` 需要同时提供 bearer token 和 `x-admin-service-key`，返回分页后的运维请求日志与审计日志。

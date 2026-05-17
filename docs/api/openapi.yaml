@@ -766,6 +766,254 @@
         }
       }
     },
+    "/v2/feedback": {
+      "post": {
+        "tags": [
+          "Feedback"
+        ],
+        "operationId": "feedbackCreateV2",
+        "summary": "Submit feedback report",
+        "deprecated": false,
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFeedbackReportRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackReport"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation or input error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Feedback"
+        ],
+        "operationId": "feedbackListV2",
+        "summary": "List feedback reports",
+        "deprecated": false,
+        "security": [
+          {
+            "bearerAuth": [],
+            "adminServiceKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "description": "Opaque pagination cursor",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "description": "Page size",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "description": "Feedback type filter",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "BUG",
+                "SUGGESTION"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "reporter",
+            "required": false,
+            "description": "Reporter address filter",
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[a-fA-F0-9]{40}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedFeedbackReportResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation or input error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v2/feedback/{id}": {
+      "get": {
+        "tags": [
+          "Feedback"
+        ],
+        "operationId": "feedbackGetV2",
+        "summary": "Get feedback report",
+        "deprecated": false,
+        "security": [
+          {
+            "bearerAuth": [],
+            "adminServiceKey": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "Feedback report id",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackReport"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v2/tasks": {
       "get": {
         "tags": [
@@ -4817,6 +5065,66 @@
           }
         }
       },
+      "FeedbackReport": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "type",
+          "title",
+          "bodyMd",
+          "reporterAddress",
+          "createdAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "BUG",
+              "SUGGESTION"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "bodyMd": {
+            "type": "string"
+          },
+          "reporterAddress": {
+            "type": "string",
+            "pattern": "^0x[a-fA-F0-9]{40}$",
+            "example": "0x1111111111111111111111111111111111111111"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-04-02T08:00:00.000Z"
+          }
+        }
+      },
+      "PaginatedFeedbackReportResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FeedbackReport"
+            }
+          },
+          "nextCursor": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
       "AuthChallengeRequest": {
         "type": "object",
         "additionalProperties": false,
@@ -5053,6 +5361,8 @@
           "taskSubmissionAttachmentUrlMaxLength",
           "taskSubmissionAttachmentMaxSizeBytes",
           "disputeReasonMaxLength",
+          "feedbackTitleMaxLength",
+          "feedbackBodyMaxLength",
           "taskSlotsMax",
           "taskRewardPerSlotMax",
           "taskDeadlineMaxHours",
@@ -5120,6 +5430,12 @@
             "type": "integer"
           },
           "disputeReasonMaxLength": {
+            "type": "integer"
+          },
+          "feedbackTitleMaxLength": {
+            "type": "integer"
+          },
+          "feedbackBodyMaxLength": {
             "type": "integer"
           },
           "taskSlotsMax": {
@@ -5610,6 +5926,32 @@
         ],
         "properties": {
           "reasonMd": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "CreateFeedbackReportRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "title",
+          "bodyMd"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "BUG",
+              "SUGGESTION"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "bodyMd": {
             "type": "string",
             "minLength": 1
           }

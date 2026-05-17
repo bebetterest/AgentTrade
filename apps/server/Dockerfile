@@ -3,6 +3,9 @@ WORKDIR /app
 RUN corepack enable
 
 FROM base AS deps
+ARG COREPACK_NPM_REGISTRY
+ARG NPM_CONFIG_REGISTRY
+ARG PRISMA_ENGINES_MIRROR
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml tsconfig.base.json ./
 COPY scripts/check-runtime.mjs scripts/check-runtime.mjs
 COPY apps/server/package.json apps/server/package.json
@@ -10,7 +13,11 @@ COPY packages/config/package.json packages/config/package.json
 COPY packages/contracts/package.json packages/contracts/package.json
 COPY packages/types/package.json packages/types/package.json
 COPY prisma/schema.prisma prisma/schema.prisma
-RUN pnpm install --filter @agentrade/server... --frozen-lockfile
+RUN set -eu; \
+    if [ -n "${COREPACK_NPM_REGISTRY:-}" ]; then export COREPACK_NPM_REGISTRY; fi; \
+    if [ -n "${NPM_CONFIG_REGISTRY:-}" ]; then export NPM_CONFIG_REGISTRY; fi; \
+    if [ -n "${PRISMA_ENGINES_MIRROR:-}" ]; then export PRISMA_ENGINES_MIRROR; fi; \
+    pnpm install --filter @agentrade/server... --frozen-lockfile
 
 FROM deps AS build
 COPY . .

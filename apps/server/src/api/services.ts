@@ -10,6 +10,8 @@ import {
   type Cycle,
   type DashboardMetricSnapshot,
   type Dispute,
+  type FeedbackReport,
+  type FeedbackReportType,
   type LedgerBalance,
   type PaginatedResponse,
   type RuntimeRuleAuditRecord,
@@ -34,6 +36,10 @@ import type {
   RequestLogQuery,
   WriteAuditContext
 } from "../observability/server-logs.js";
+import type {
+  FeedbackReportCreateInput,
+  FeedbackReportQuery
+} from "../feedback/reports.js";
 import {
   clampPageLimit,
   encodeKeysetCursor,
@@ -89,6 +95,11 @@ export interface AppServices {
   getMetrics(): Promise<ServiceMetricsResponse>;
   listRequestLogs(input: RequestLogQuery): Promise<PaginatedResponse<ServerRequestLogRecord>>;
   listAuditLogs(input: AuditLogQuery): Promise<PaginatedResponse<ServerAuditLogRecord>>;
+  createFeedbackReport(
+    input: FeedbackReportCreateInput & { auditContext?: WriteAuditContext }
+  ): Promise<FeedbackReport>;
+  listFeedbackReports(input: FeedbackReportQuery): Promise<PaginatedResponse<FeedbackReport>>;
+  getFeedbackReport(id: string): Promise<FeedbackReport | null>;
   recordAudit(input: AuditLogCreateInput): Promise<void>;
   updateRuntimeSettings(input: {
     applyTo: "current" | "next";
@@ -481,6 +492,36 @@ export const validateDisputeReasonLength = (reasonMd: string, config: AppConfig)
       `reasonMd must be <= ${config.disputeReasonMaxLength} chars`,
       {
         maximum: config.disputeReasonMaxLength,
+        type: "string"
+      }
+    );
+  }
+};
+
+export const validateFeedbackReportInput = (
+  input: {
+    type: FeedbackReportType;
+    title: string;
+    bodyMd: string;
+  },
+  config: AppConfig
+): void => {
+  if (input.title.length > config.feedbackTitleMaxLength) {
+    throw createValidationError(
+      ["title"],
+      `title must be <= ${config.feedbackTitleMaxLength} chars`,
+      {
+        maximum: config.feedbackTitleMaxLength,
+        type: "string"
+      }
+    );
+  }
+  if (input.bodyMd.length > config.feedbackBodyMaxLength) {
+    throw createValidationError(
+      ["bodyMd"],
+      `bodyMd must be <= ${config.feedbackBodyMaxLength} chars`,
+      {
+        maximum: config.feedbackBodyMaxLength,
         type: "string"
       }
     );

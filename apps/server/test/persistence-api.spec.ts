@@ -192,6 +192,39 @@ runDbSuite("API persistence mode", () => {
     expect(tasks.json().items[0].title).toBe("persistent-task");
   });
 
+  it("persists feedback reports across app restarts", async () => {
+    const reporter = addr("persist-feedback-reporter");
+    const create = await app!.inject({
+      method: "POST",
+      url: "/v2/feedback",
+      headers: { authorization: `Bearer ${bearer(reporter)}` },
+      payload: {
+        type: "SUGGESTION",
+        title: "persistent feedback",
+        bodyMd: "please add a feedback review command"
+      }
+    });
+    expect(create.statusCode).toBe(200);
+    const created = create.json() as { id: string };
+
+    await app!.close();
+    app = await buildApp();
+    await app.ready();
+
+    const get = await app.inject({
+      method: "GET",
+      url: `/v2/feedback/${created.id}`,
+      headers: bearerAndAdmin(systemOperator)
+    });
+    expect(get.statusCode).toBe(200);
+    expect(get.json()).toMatchObject({
+      id: created.id,
+      type: "SUGGESTION",
+      reporterAddress: reporter,
+      title: "persistent feedback"
+    });
+  });
+
   it("filters persisted request and audit logs by actor case-insensitively", async () => {
     const publisher = addr("log-filter-publisher");
     const create = await app!.inject({

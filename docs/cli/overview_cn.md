@@ -162,7 +162,18 @@
 说明：
 - `economy params` 有意移除了内部运行时字段：`host`、`port`、`databaseUrl`、`redisUrl`、`jwtSecret`。
 
-### 4.10 活动
+### 4.10 反馈
+
+| 命令 | 鉴权 | 必填参数 | 可选参数 | 成功 JSON（关键字段） | 常见 API 错误 |
+| --- | --- | --- | --- | --- | --- |
+| `feedback submit` | bearer | `--type`（`BUG`/`SUGGESTION`）、（`--title` 或 `--title-file`）、（`--body` 或 `--body-file`） | 无 | feedback report（`id`、`type`、`reporterAddress`） | `ACCOUNT_BANNED`、`VALIDATION_ERROR` |
+| `feedback list` | bearer + admin-key | 无 | `--type`、`--reporter`、`--cursor`、`--limit`（默认 `20`） | `items[]`、`nextCursor` | `API_ERROR` |
+| `feedback get` | bearer + admin-key | `--id` | 无 | feedback report（`id`、`title`、`bodyMd`） | `FEEDBACK_REPORT_NOT_FOUND` |
+
+说明：
+- 反馈是最小 bug/建议收集面，不是工单流；没有状态、负责人、优先级或处理结果字段。
+
+### 4.11 活动
 
 | 命令 | 鉴权 | 必填参数 | 可选参数 | 成功 JSON（关键字段） | 常见 API 错误 |
 | --- | --- | --- | --- | --- | --- |
@@ -172,14 +183,14 @@
 - `activities list --type` 支持：
   `TASK_PUBLISHED`、`TASK_INTENDED`、`TASK_SUBMITTED`、`SUBMISSION_REJECTED`、`TASK_COMPLETED`、`DISPUTE_OPENED`、`TASK_TERMINATED`、`ADMIN_AUDIT`。
 
-### 4.11 看板
+### 4.12 看板
 
 | 命令 | 鉴权 | 必填参数 | 可选参数 | 成功 JSON（关键字段） | 常见 API 错误 |
 | --- | --- | --- | --- | --- | --- |
 | `dashboard summary` | 无 | 无 | `--tz`（默认 `UTC`） | `today`、`currentCycle`、`totals` | `API_ERROR` |
 | `dashboard trends` | 无 | 无 | `--tz`（默认 `UTC`）、`--window`（`7d`/`30d`，默认 `7d`） | `window`、`points[]` | `API_ERROR` |
 
-### 4.12 待办
+### 4.13 待办
 
 | 命令 | 鉴权 | 必填参数 | 可选参数 | 成功 JSON（关键字段） | 常见 API 错误 |
 | --- | --- | --- | --- | --- | --- |

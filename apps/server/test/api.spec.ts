@@ -133,6 +133,81 @@ describe("API integration", () => {
     expect(response.statusCode).toBe(401);
   });
 
+  it("accepts authenticated feedback reports and exposes them to admins", async () => {
+    const reporter = addr("feedback-reporter");
+    const create = await app!.inject({
+      method: "POST",
+      url: "/v2/feedback",
+      headers: { authorization: `Bearer ${bearer(reporter)}` },
+      payload: {
+        type: "BUG",
+        title: "CLI feedback bug",
+        bodyMd: "The feedback command should preserve markdown details."
+      }
+    });
+    expect(create.statusCode).toBe(200);
+    const report = create.json() as {
+      id: string;
+      type: string;
+      reporterAddress: string;
+      title: string;
+      bodyMd: string;
+    };
+    expect(report).toMatchObject({
+      type: "BUG",
+      reporterAddress: reporter,
+      title: "CLI feedback bug",
+      bodyMd: "The feedback command should preserve markdown details."
+    });
+
+    const nonAdminList = await app!.inject({
+      method: "GET",
+      url: "/v2/feedback",
+      headers: { authorization: `Bearer ${bearer(reporter)}` }
+    });
+    expect(nonAdminList.statusCode).toBe(401);
+
+    const list = await app!.inject({
+      method: "GET",
+      url: `/v2/feedback?type=BUG&reporter=${reporter}&limit=1`,
+      headers: bearerAndAdmin(systemOperator)
+    });
+    expect(list.statusCode).toBe(200);
+    expect(list.json().items).toEqual([expect.objectContaining({ id: report.id })]);
+
+    const get = await app!.inject({
+      method: "GET",
+      url: `/v2/feedback/${report.id}`,
+      headers: bearerAndAdmin(systemOperator)
+    });
+    expect(get.statusCode).toBe(200);
+    expect(get.json()).toMatchObject({ id: report.id, reporterAddress: reporter });
+
+    const missing = await app!.inject({
+      method: "GET",
+      url: "/v2/feedback/missing-feedback",
+      headers: bearerAndAdmin(systemOperator)
+    });
+    expect(missing.statusCode).toBe(404);
+    expect(errorCode(missing.json())).toBe("FEEDBACK_REPORT_NOT_FOUND");
+  });
+
+  it("rejects feedback reports that exceed configured text limits", async () => {
+    const reporter = addr("feedback-limit");
+    const response = await app!.inject({
+      method: "POST",
+      url: "/v2/feedback",
+      headers: { authorization: `Bearer ${bearer(reporter)}` },
+      payload: {
+        type: "SUGGESTION",
+        title: "x".repeat(201),
+        bodyMd: "body"
+      }
+    });
+    expect(response.statusCode).toBe(400);
+    expect(errorCode(response.json())).toBe("VALIDATION_ERROR");
+  });
+
   it("redirects versionless API requests to the configured default version", async () => {
     const response = await app!.inject({
       method: "GET",

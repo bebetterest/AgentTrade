@@ -6,6 +6,7 @@ import {
   CycleStatus,
   DisputePayoutSource,
   DisputeStatus,
+  FeedbackReportType,
   ServerAuditCategory,
   ServerAuditOutcome,
   ServerAuditSeverity,
@@ -1191,6 +1192,48 @@ export const paginatedServerAuditLogResponseSchema = defineSchema(
   }
 );
 
+export const feedbackReportSchema = defineSchema(
+  "FeedbackReport",
+  z.object({
+    id: z.string(),
+    type: z.nativeEnum(FeedbackReportType),
+    title: z.string(),
+    bodyMd: z.string(),
+    reporterAddress: addressSchema,
+    createdAt: isoDateSchema
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: ["id", "type", "title", "bodyMd", "reporterAddress", "createdAt"],
+    properties: {
+      id: { ...stringField },
+      type: { type: "string", enum: Object.values(FeedbackReportType) },
+      title: { ...stringField },
+      bodyMd: { ...stringField },
+      reporterAddress: { ...addressField },
+      createdAt: { ...isoDateField }
+    }
+  }
+);
+
+export const paginatedFeedbackReportResponseSchema = defineSchema(
+  "PaginatedFeedbackReportResponse",
+  z.object({
+    items: z.array(feedbackReportSchema.schema),
+    nextCursor: z.string().nullable()
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: ["items", "nextCursor"],
+    properties: {
+      items: { type: "array", items: schemaRef(feedbackReportSchema) },
+      nextCursor: { type: "string", nullable: true }
+    }
+  }
+);
+
 export const authChallengeRequestSchema = defineSchema(
   "AuthChallengeRequest",
   z.object({
@@ -1411,6 +1454,8 @@ export const publicEconomyParamsSchema = defineSchema(
     taskSubmissionAttachmentUrlMaxLength: z.number().int(),
     taskSubmissionAttachmentMaxSizeBytes: z.number().int(),
     disputeReasonMaxLength: z.number().int(),
+    feedbackTitleMaxLength: z.number().int(),
+    feedbackBodyMaxLength: z.number().int(),
     taskSlotsMax: z.number().int(),
     taskRewardPerSlotMax: z.number().int(),
     taskDeadlineMaxHours: z.number().int(),
@@ -1453,6 +1498,8 @@ export const publicEconomyParamsSchema = defineSchema(
       "taskSubmissionAttachmentUrlMaxLength",
       "taskSubmissionAttachmentMaxSizeBytes",
       "disputeReasonMaxLength",
+      "feedbackTitleMaxLength",
+      "feedbackBodyMaxLength",
       "taskSlotsMax",
       "taskRewardPerSlotMax",
       "taskDeadlineMaxHours",
@@ -1492,6 +1539,8 @@ export const publicEconomyParamsSchema = defineSchema(
       taskSubmissionAttachmentUrlMaxLength: { ...integerField },
       taskSubmissionAttachmentMaxSizeBytes: { ...integerField },
       disputeReasonMaxLength: { ...integerField },
+      feedbackTitleMaxLength: { ...integerField },
+      feedbackBodyMaxLength: { ...integerField },
       taskSlotsMax: { ...integerField },
       taskRewardPerSlotMax: { ...integerField },
       taskDeadlineMaxHours: { ...integerField },
@@ -1859,6 +1908,25 @@ export const respondDisputeRequestSchema = defineSchema(
   }
 );
 
+export const createFeedbackReportRequestSchema = defineSchema(
+  "CreateFeedbackReportRequest",
+  z.object({
+    type: z.nativeEnum(FeedbackReportType),
+    title: nonEmptyStringSchema,
+    bodyMd: nonEmptyStringSchema
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: ["type", "title", "bodyMd"],
+    properties: {
+      type: { type: "string", enum: Object.values(FeedbackReportType) },
+      title: { ...nonEmptyStringField },
+      bodyMd: { ...nonEmptyStringField }
+    }
+  }
+);
+
 export const updateAgentProfileRequestSchema = defineSchema(
   "UpdateAgentProfileRequest",
   z.object({
@@ -2028,6 +2096,13 @@ export const systemAuditLogsQuerySchemaV2 = z.object({
   outcome: z.nativeEnum(ServerAuditOutcome).optional()
 });
 
+export const feedbackReportListQuerySchemaV2 = z.object({
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  type: z.nativeEnum(FeedbackReportType).optional(),
+  reporter: addressSchema.optional()
+});
+
 export const todosQuerySchemaV2 = z
   .object({
     scope: z.enum(TODO_SCOPE_VALUES).default("all"),
@@ -2104,6 +2179,8 @@ export const namedSchemas = [
   serverAuditLogRecordSchema,
   paginatedServerRequestLogResponseSchema,
   paginatedServerAuditLogResponseSchema,
+  feedbackReportSchema,
+  paginatedFeedbackReportResponseSchema,
   authChallengeRequestSchema,
   authChallengeResponseSchema,
   authVerifyRequestSchema,
@@ -2128,6 +2205,7 @@ export const namedSchemas = [
   openDisputeRequestSchema,
   voteDisputeRequestSchema,
   respondDisputeRequestSchema,
+  createFeedbackReportRequestSchema,
   updateAgentProfileRequestSchema,
   bridgeExportRequestSchema,
   v2ApiErrorEnvelopeSchema

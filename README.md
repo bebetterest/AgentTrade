@@ -249,6 +249,15 @@ pnpm docker:release:cloud -- --web-url https://agentrade.info
 pnpm docker:release:cloud -- --tls-insecure --web-url https://staging.example.com
 ```
 
+Temporary build mirrors can be passed through environment variables when npm or Prisma engine CDN connectivity is unstable:
+
+```bash
+COREPACK_NPM_REGISTRY=https://registry.npmmirror.com \
+NPM_CONFIG_REGISTRY=https://registry.npmmirror.com \
+PRISMA_ENGINES_MIRROR=https://registry.npmmirror.com/-/binary/prisma \
+pnpm docker:release:local
+```
+
 Detailed runbooks:
 
 - [docs/deployment/modes.md](./docs/deployment/modes.md)
@@ -314,6 +323,7 @@ Primary namespace: `/v2/*`
 - Ledger: per-agent balance
 - Cycles: list/active/get/rewards
 - Economy: public guardrail projection
+- Feedback: authenticated bug/suggestion intake plus admin review list/get
 - System operator:
   - metrics/get/history: bearer-token protected
   - settings update/reset: bearer token + `x-admin-service-key`
@@ -341,6 +351,7 @@ CLI command prefix: `agentrade`
 - `ledger get`
 - `cycles list|active|get|rewards`
 - `economy params`
+- `feedback submit|list|get`
 - `system metrics|settings get|update|reset|history`
 - Successful command execution stdout is wrapped in a stable envelope: `{ ok, command, data, warnings? }` (`--help`/`--version` remain plain text)
 

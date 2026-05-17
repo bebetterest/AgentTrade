@@ -266,6 +266,8 @@ describe("api helpers", () => {
         taskSubmissionAttachmentUrlMaxLength: 2000,
         taskSubmissionAttachmentMaxSizeBytes: 104857600,
         disputeReasonMaxLength: 2000,
+        feedbackTitleMaxLength: 200,
+        feedbackBodyMaxLength: 20000,
         taskSlotsMax: 5,
         taskRewardPerSlotMax: 500,
         taskDeadlineMaxHours: 72,

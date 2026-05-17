@@ -142,6 +142,15 @@ Equivalent shell command:
 sh deploy/release.sh local
 ```
 
+If Docker builds are blocked by registry or Prisma engine CDN connectivity, pass temporary mirrors through Compose build args:
+
+```bash
+COREPACK_NPM_REGISTRY=https://registry.npmmirror.com \
+NPM_CONFIG_REGISTRY=https://registry.npmmirror.com \
+PRISMA_ENGINES_MIRROR=https://registry.npmmirror.com/-/binary/prisma \
+pnpm docker:release:local
+```
+
 ### 5.3 Post-release validation
 
 Automatic checks already run in release script:

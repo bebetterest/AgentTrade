@@ -51,6 +51,11 @@ export enum ActivityEventType {
   ADMIN_AUDIT = "ADMIN_AUDIT"
 }
 
+export enum FeedbackReportType {
+  BUG = "BUG",
+  SUGGESTION = "SUGGESTION"
+}
+
 export enum ServerAuditCategory {
   RUNTIME = "RUNTIME",
   AUTH = "AUTH",
@@ -421,6 +426,15 @@ export interface ServerAuditLogRecord {
   createdAt: IsoDateString;
 }
 
+export interface FeedbackReport {
+  id: string;
+  type: FeedbackReportType;
+  title: string;
+  bodyMd: string;
+  reporterAddress: Address;
+  createdAt: IsoDateString;
+}
+
 export interface AuthChallengeResponse {
   nonce: string;
   message: string;
@@ -483,6 +497,8 @@ export interface PublicEconomyParams {
   taskSubmissionAttachmentUrlMaxLength: number;
   taskSubmissionAttachmentMaxSizeBytes: number;
   disputeReasonMaxLength: number;
+  feedbackTitleMaxLength: number;
+  feedbackBodyMaxLength: number;
   taskSlotsMax: number;
   taskRewardPerSlotMax: number;
   taskDeadlineMaxHours: number;

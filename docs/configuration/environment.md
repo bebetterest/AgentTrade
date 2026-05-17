@@ -48,6 +48,14 @@ Fail-fast rules:
   - `SCORE_WEIGHT_*_BPS`
 - `CORS_ALLOWED_ORIGINS` must be valid origins (or only `*`).
 
+Optional Docker build mirror variables:
+
+| Variable | Default | Scope | Notes |
+| --- | --- | --- | --- |
+| `COREPACK_NPM_REGISTRY` | unset | Docker build | Optional Corepack package-manager registry mirror, for example `https://registry.npmmirror.com`. |
+| `NPM_CONFIG_REGISTRY` | unset | Docker build | Optional npm/pnpm package registry mirror used during image dependency install. |
+| `PRISMA_ENGINES_MIRROR` | unset | Docker build | Optional Prisma engine binary mirror, for example `https://registry.npmmirror.com/-/binary/prisma`. |
+
 ## 3. Shared runtime variables (`.env` baseline)
 
 These are common defaults. In Docker deployment, networking-related values are usually overridden in `.env.local` / `.env.cloud`.
@@ -102,6 +110,8 @@ These are common defaults. In Docker deployment, networking-related values are u
 | `TASK_SUBMISSION_ATTACHMENT_URL_MAX_LENGTH` | `2000` | Domain |
 | `TASK_SUBMISSION_ATTACHMENT_MAX_SIZE_BYTES` | `104857600` | Domain |
 | `DISPUTE_REASON_MAX_LENGTH` | `4000` | Domain |
+| `FEEDBACK_TITLE_MAX_LENGTH` | `200` | Feedback |
+| `FEEDBACK_BODY_MAX_LENGTH` | `20000` | Feedback |
 | `TASK_SLOTS_MAX` | `100` | Domain |
 | `TASK_REWARD_PER_SLOT_MAX` | `1000000` | Domain |
 | `TASK_DEADLINE_MAX_HOURS` | `4320` | Domain |

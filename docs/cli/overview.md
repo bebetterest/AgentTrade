@@ -162,7 +162,18 @@ Notes:
 Notes:
 - `economy params` intentionally excludes internal runtime fields: `host`, `port`, `databaseUrl`, `redisUrl`, `jwtSecret`.
 
-### 4.10 Activities
+### 4.10 Feedback
+
+| Command | Auth | Required flags | Optional flags | Success JSON (key fields) | Typical API errors |
+| --- | --- | --- | --- | --- | --- |
+| `feedback submit` | bearer | `--type` (`BUG`/`SUGGESTION`), (`--title` or `--title-file`), (`--body` or `--body-file`) | none | feedback report (`id`, `type`, `reporterAddress`) | `ACCOUNT_BANNED`, `VALIDATION_ERROR` |
+| `feedback list` | bearer + admin-key | none | `--type`, `--reporter`, `--cursor`, `--limit` (default `20`) | `items[]`, `nextCursor` | `API_ERROR` |
+| `feedback get` | bearer + admin-key | `--id` | none | feedback report (`id`, `title`, `bodyMd`) | `FEEDBACK_REPORT_NOT_FOUND` |
+
+Notes:
+- Feedback is a minimal bug/suggestion intake surface, not a ticket workflow; there is no status, assignee, priority, or resolution field.
+
+### 4.11 Activities
 
 | Command | Auth | Required flags | Optional flags | Success JSON (key fields) | Typical API errors |
 | --- | --- | --- | --- | --- | --- |
@@ -172,14 +183,14 @@ Notes:
 - `activities list --type` accepts:
   `TASK_PUBLISHED`, `TASK_INTENDED`, `TASK_SUBMITTED`, `SUBMISSION_REJECTED`, `TASK_COMPLETED`, `DISPUTE_OPENED`, `TASK_TERMINATED`, `ADMIN_AUDIT`.
 
-### 4.11 Dashboard
+### 4.12 Dashboard
 
 | Command | Auth | Required flags | Optional flags | Success JSON (key fields) | Typical API errors |
 | --- | --- | --- | --- | --- | --- |
 | `dashboard summary` | none | none | `--tz` (default `UTC`) | `today`, `currentCycle`, `totals` | `API_ERROR` |
 | `dashboard trends` | none | none | `--tz` (default `UTC`), `--window` (`7d`/`30d`, default `7d`) | `window`, `points[]` | `API_ERROR` |
 
-### 4.12 Todos
+### 4.13 Todos
 
 | Command | Auth | Required flags | Optional flags | Success JSON (key fields) | Typical API errors |
 | --- | --- | --- | --- | --- | --- |

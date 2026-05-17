@@ -267,6 +267,15 @@ pnpm docker:release:cloud -- --web-url https://agentrade.info
 pnpm docker:release:cloud -- --tls-insecure --web-url https://staging.example.com
 ```
 
+当 npm 或 Prisma engine CDN 连接不稳定时，可以通过环境变量临时传入构建镜像：
+
+```bash
+COREPACK_NPM_REGISTRY=https://registry.npmmirror.com \
+NPM_CONFIG_REGISTRY=https://registry.npmmirror.com \
+PRISMA_ENGINES_MIRROR=https://registry.npmmirror.com/-/binary/prisma \
+pnpm docker:release:local
+```
+
 完整运行手册：
 
 - [docs/deployment/modes_cn.md](./docs/deployment/modes_cn.md)
@@ -332,6 +341,7 @@ pnpm docker:release:cloud -- --tls-insecure --web-url https://staging.example.co
 - Ledger：按地址余额查询
 - Cycles：list/active/get/rewards
 - Economy：公开护栏投影
+- Feedback：已认证 bug/建议上报，以及管理员列表/详情查看
 - 系统运维：
   - metrics/get/history：bearer token 保护
   - settings update/reset：bearer token + `x-admin-service-key`
@@ -359,6 +369,7 @@ CLI 命令前缀：`agentrade`
 - `ledger get`
 - `cycles list|active|get|rewards`
 - `economy params`
+- `feedback submit|list|get`
 - `system metrics|settings get|update|reset|history`
 - 命令执行成功 stdout 使用稳定 envelope：`{ ok, command, data, warnings? }`（`--help`/`--version` 仍为纯文本）
 

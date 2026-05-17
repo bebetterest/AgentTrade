@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import { ActivityEventType } from "@agentrade/types";
+import { ActivityEventType, FeedbackReportType } from "@agentrade/types";
 import {
   activityListQuerySchemaV2,
   addressPathSchema,
@@ -20,6 +20,9 @@ import {
   dashboardTrendsResponseSchema,
   disputeListQuerySchemaV2,
   disputeSchema,
+  createFeedbackReportRequestSchema,
+  feedbackReportListQuerySchemaV2,
+  feedbackReportSchema,
   healthStatusSchema,
   idPathSchema,
   ledgerBalanceSchema,
@@ -31,6 +34,7 @@ import {
   paginatedServerRequestLogResponseSchema,
   paginatedCycleResponseSchema,
   paginatedDisputeResponseSchema,
+  paginatedFeedbackReportResponseSchema,
   paginatedRuntimeRuleAuditResponseSchema,
   paginatedSubmissionResponseSchema,
   paginatedTaskIntentionResponseSchema,
@@ -371,6 +375,20 @@ const systemAuditLogParametersV2 = [
     { en: "Audit outcome filter", zh: "审计结果筛选" }
   )
 ] as const;
+const feedbackReportListParametersV2 = [
+  queryCursorParam,
+  queryLimitParam,
+  queryStringParam(
+    "type",
+    { type: "string", enum: Object.values(FeedbackReportType) },
+    { en: "Feedback type filter", zh: "反馈类型筛选" }
+  ),
+  queryStringParam(
+    "reporter",
+    { type: "string", pattern: "^0x[a-fA-F0-9]{40}$" },
+    { en: "Reporter address filter", zh: "上报者地址筛选" }
+  )
+] as const;
 
 export const apiOperations = [
   defineOperationSpec({
@@ -496,6 +514,45 @@ export const apiOperations = [
     responseSchema: authVerifyResponseSchema.schema,
     responseComponent: authVerifyResponseSchema,
     errorStatuses: [400, 401, 500]
+  }),
+  defineOperationSpec({
+    baseOperationId: "feedbackCreate",
+    method: "POST",
+    tag: "Feedback",
+    auth: "bearer",
+    summary: { en: "Submit feedback report", zh: "提交反馈上报" },
+    pathTemplate: "/v2/feedback",
+    bodySchema: createFeedbackReportRequestSchema.schema,
+    requestBodyComponent: createFeedbackReportRequestSchema,
+    responseSchema: feedbackReportSchema.schema,
+    responseComponent: feedbackReportSchema,
+    errorStatuses: [400, 401, 403, 500]
+  }),
+  defineOperationSpec({
+    baseOperationId: "feedbackList",
+    method: "GET",
+    tag: "Feedback",
+    auth: "bearer_admin",
+    summary: { en: "List feedback reports", zh: "查询反馈上报列表" },
+    pathTemplate: "/v2/feedback",
+    querySchema: feedbackReportListQuerySchemaV2,
+    responseSchema: paginatedFeedbackReportResponseSchema.schema,
+    responseComponent: paginatedFeedbackReportResponseSchema,
+    parameters: [...feedbackReportListParametersV2],
+    errorStatuses: [400, 401, 500]
+  }),
+  defineOperationSpec({
+    baseOperationId: "feedbackGet",
+    method: "GET",
+    tag: "Feedback",
+    auth: "bearer_admin",
+    summary: { en: "Get feedback report", zh: "读取反馈上报详情" },
+    pathTemplate: "/v2/feedback/{id}",
+    pathParamsSchema: idPathSchema,
+    responseSchema: feedbackReportSchema.schema,
+    responseComponent: feedbackReportSchema,
+    parameters: [pathStringParam("id", { en: "Feedback report id", zh: "反馈上报 id" })],
+    errorStatuses: [401, 404, 500]
   }),
   defineOperationSpec({
     baseOperationId: "tasksList",

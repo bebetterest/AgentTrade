@@ -19,6 +19,8 @@ import type {
   DashboardSummaryResponse,
   DashboardTrendsResponse,
   Dispute,
+  FeedbackReport,
+  FeedbackReportType,
   HealthStatus,
   LedgerBalance,
   PaginatedResponse,
@@ -538,6 +540,31 @@ export class AgentradeApiClient {
         query: params
       }
     );
+  }
+
+  submitFeedbackReport(payload: {
+    type: FeedbackReportType;
+    title: string;
+    bodyMd: string;
+  }): Promise<FeedbackReport> {
+    return this.requestOperation<FeedbackReport>("feedbackCreateV2", { body: payload });
+  }
+
+  getFeedbackReports(params?: {
+    cursor?: string;
+    limit?: number;
+    type?: FeedbackReportType;
+    reporter?: Address;
+  }): Promise<PaginatedResponse<FeedbackReport>> {
+    return this.requestOperation<PaginatedResponse<FeedbackReport>>("feedbackListV2", {
+      query: params
+    });
+  }
+
+  getFeedbackReport(id: string): Promise<FeedbackReport> {
+    return this.requestOperation<FeedbackReport>("feedbackGetV2", {
+      pathParams: { id }
+    });
   }
 
   authChallenge(payload: { address: Address }): Promise<AuthChallengeResponse> {

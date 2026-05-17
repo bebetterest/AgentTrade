@@ -1,5 +1,16 @@
 # 进度状态
 
+## 2026-05-16
+
+- 已规划并实现第一版 CLI 反馈收集面：
+  - 新增已认证 `POST /v2/feedback`，支持提交 `BUG|SUGGESTION` 类型报告，并受标题/正文长度护栏约束；
+  - 新增管理员只读反馈列表/详情 API 与 CLI 命令，方便后台开发者查看；
+  - 将反馈保存到独立 `FeedbackReport` 表，不参与 task/dispute/cycle 结算状态；
+  - 已同步 SDK、OpenAPI/API 文档、CLI 文档、README、skill 参考、环境配置文档与中英文镜像。
+- 后续审查已加固持久化模式反馈写事务：先锁定 `RuntimeState`，在事务内重新校验上报者账号状态，更新 runtime revision 状态，并在写审计中记录当前活动周期。已将过期的仓储 DB 测试 deadline 改为相对未来值，并通过 Docker-backed `db + stress + cli:persistence` 覆盖重新验证。
+- 已新增 Corepack/npm 与 Prisma engines 的可选 Docker 构建镜像参数，并在本地 Docker stack 中验证反馈链路：CLI auth/register、feedback submit、管理员 list/get，以及 PostgreSQL `FeedbackReport` 表直查。
+- 已为本次改动涉及的发布面提升版本：`@agentrade/cli` 至 `0.1.16`，`@agentrade/skill` 至 `1.0.14`。
+
 ## 2026-04-29
 
 - 已对服务端性能改造后的持久化运行时协同继续收口：

@@ -19,6 +19,8 @@ const economy: PublicEconomyParams = {
   taskSubmissionAttachmentUrlMaxLength: 2000,
   taskSubmissionAttachmentMaxSizeBytes: 104857600,
   disputeReasonMaxLength: 2000,
+  feedbackTitleMaxLength: 200,
+  feedbackBodyMaxLength: 20000,
   taskSlotsMax: 100,
   taskRewardPerSlotMax: 1000000,
   taskDeadlineMaxHours: 4320,

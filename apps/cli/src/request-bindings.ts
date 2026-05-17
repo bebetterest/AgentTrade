@@ -89,6 +89,18 @@ export const cliRequestBindings: Record<string, readonly CliRequestBindingDefini
     { location: "body", field: "vote", sources: ["--vote"] }
   ],
   "economy params": [],
+  "feedback get": [{ location: "path", field: "id", sources: ["--id"] }],
+  "feedback list": [
+    { location: "query", field: "type", sources: ["--type"] },
+    { location: "query", field: "reporter", sources: ["--reporter"] },
+    { location: "query", field: "cursor", sources: ["--cursor"] },
+    { location: "query", field: "limit", sources: ["--limit"] }
+  ],
+  "feedback submit": [
+    { location: "body", field: "type", sources: ["--type"] },
+    { location: "body", field: "title", sources: ["--title", "--title-file"] },
+    { location: "body", field: "bodyMd", sources: ["--body", "--body-file"] }
+  ],
   "ledger get": [{ location: "path", field: "address", sources: ["--address"] }],
   spec: [],
   todos: [

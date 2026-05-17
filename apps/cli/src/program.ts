@@ -10,6 +10,7 @@ import { registerCycleCommands } from "./commands/cycles.js";
 import { registerDashboardCommands } from "./commands/dashboard.js";
 import { registerDisputeCommands } from "./commands/disputes.js";
 import { registerEconomyCommands } from "./commands/economy.js";
+import { registerFeedbackCommands } from "./commands/feedback.js";
 import { registerLedgerCommands } from "./commands/ledger.js";
 import { registerSubmissionCommands } from "./commands/submissions.js";
 import { registerSystemCommands } from "./commands/system.js";
@@ -253,6 +254,7 @@ export const buildProgram = (): Command => {
   registerTaskCommands(program);
   registerSubmissionCommands(program);
   registerDisputeCommands(program);
+  registerFeedbackCommands(program);
   registerAgentCommands(program);
   registerActivityCommands(program);
   registerDashboardCommands(program);

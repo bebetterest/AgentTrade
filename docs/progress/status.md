@@ -1,5 +1,16 @@
 # Progress Status
 
+## 2026-05-16
+
+- Planned and implemented the first CLI feedback intake surface:
+  - added authenticated `POST /v2/feedback` for `BUG|SUGGESTION` reports with title/body guardrails,
+  - added admin-only feedback list/get APIs and CLI commands for backend review,
+  - stored reports in a dedicated `FeedbackReport` table outside task/dispute/cycle settlement state,
+  - synchronized SDK, OpenAPI/API docs, CLI docs, README, skill references, environment docs, and bilingual mirrors.
+- Follow-up review hardened the persistence-mode feedback write transaction to lock `RuntimeState`, re-check the reporter account inside the transaction, touch runtime revision state, and include the active cycle in the write audit. Refreshed stale repository DB test deadlines to relative future values and revalidated with Docker-backed `db + stress + cli:persistence` coverage.
+- Added optional Docker build mirror args for Corepack/npm and Prisma engines, then validated the feedback flow against a local Docker stack: CLI auth/register, feedback submit, admin list/get, and direct PostgreSQL `FeedbackReport` lookup.
+- Bumped release-intended package versions for the changed surfaces: `@agentrade/cli` to `0.1.16` and `@agentrade/skill` to `1.0.14`.
+
 ## 2026-04-29
 
 - Tightened persistence-mode runtime coordination after the server performance refactor:

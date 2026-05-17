@@ -21,6 +21,7 @@ import {
   type CloseCycleResult,
   type Cycle,
   type Dispute,
+  type FeedbackReport,
   type LedgerBalance,
   type PaginatedResponse,
   type RuntimeRuleAuditRecord,
@@ -50,6 +51,7 @@ import {
 import { registerAgentRoutes } from "./api/agents.js";
 import { registerAuthRoutes } from "./api/auth.js";
 import { registerDisputeRoutes } from "./api/disputes.js";
+import { registerFeedbackRoutes } from "./api/feedback.js";
 import { registerSubmissionRoutes } from "./api/submissions.js";
 import { registerTodoRoutes } from "./api/todos.js";
 import {
@@ -81,6 +83,11 @@ import {
   type RequestLogCreateInput,
   type WriteAuditContext
 } from "./observability/server-logs.js";
+import {
+  InMemoryFeedbackReportStore,
+  type FeedbackReportCreateInput,
+  type FeedbackReportQuery
+} from "./feedback/reports.js";
 import { HttpError } from "./utils/http-error.js";
 import "./types.js";
 
@@ -114,6 +121,7 @@ export const buildApp = async (options: BuildAppOptions = {}) => {
   const shouldRunBackgroundJobs = !stateRepository || runtimeRole === "worker";
   const shouldRecordWorkerMetrics = runtimeRole === "worker";
   const inMemoryServerLogs = new InMemoryServerLogStore();
+  const inMemoryFeedbackReports = new InMemoryFeedbackReportStore();
   const metrics = new ServiceMetricsCollector();
   const logAuditRecord = (record: ServerAuditLogRecord): void => {
     const payload = {
@@ -285,6 +293,43 @@ export const buildApp = async (options: BuildAppOptions = {}) => {
       return stateRepository.queryAuditLogsDirect(input);
     }
     return inMemoryServerLogs.queryAuditLogs(input);
+  };
+  const createFeedbackReport = async (
+    input: FeedbackReportCreateInput & { auditContext?: WriteAuditContext }
+  ): Promise<FeedbackReport> => {
+    if (stateRepository) {
+      return stateRepository.createFeedbackReportDirect(input);
+    }
+    const record = inMemoryFeedbackReports.create(input);
+    if (input.auditContext) {
+      await recordAudit(
+        buildWriteSuccessAuditLog(input.auditContext, {
+          targetId: record.id,
+          cycleId: resolveCurrentCycleId() ?? null,
+          message: "feedback.submit succeeded",
+          details: {
+            type: record.type,
+            titleLength: record.title.length,
+            bodyLength: record.bodyMd.length
+          }
+        })
+      );
+    }
+    return record;
+  };
+  const listFeedbackReports = async (
+    input: FeedbackReportQuery
+  ): Promise<PaginatedResponse<FeedbackReport>> => {
+    if (stateRepository) {
+      return stateRepository.queryFeedbackReportsDirect(input);
+    }
+    return inMemoryFeedbackReports.query(input);
+  };
+  const getFeedbackReport = async (id: string): Promise<FeedbackReport | null> => {
+    if (stateRepository) {
+      return stateRepository.getFeedbackReportDirect(id);
+    }
+    return inMemoryFeedbackReports.get(id);
   };
   const cleanupInMemoryLogs = (now = new Date()) => inMemoryServerLogs.cleanup(now, config);
   const recordWorkerJobMetric = async (outcome: WorkerJobMetricOutcome): Promise<void> => {
@@ -1227,6 +1272,9 @@ export const buildApp = async (options: BuildAppOptions = {}) => {
     getMetrics,
     listRequestLogs,
     listAuditLogs,
+    createFeedbackReport,
+    listFeedbackReports,
+    getFeedbackReport,
     recordAudit,
     updateRuntimeSettings,
     resetRuntimeSettings,
@@ -1666,6 +1714,7 @@ export const buildApp = async (options: BuildAppOptions = {}) => {
   registerTaskRoutes(app, services);
   registerSubmissionRoutes(app, services);
   registerDisputeRoutes(app, services);
+  registerFeedbackRoutes(app, services);
   registerTodoRoutes(app, services);
   registerAgentRoutes(app, services);
 

@@ -96,6 +96,7 @@
 | 核心 | `cycles get` | 无 | `GET /v2/cycles/{id}` | `--cycle` | 无 | cycle id 非空 | cycle `id`、`status` |
 | 核心 | `cycles rewards` | 无 | `GET /v2/cycles/{id}/rewards` | `--cycle` | 无 | cycle id 非空 | `cycle`、`rewardPool`、`distributions[]`、`workloads[]` |
 | 核心 | `economy params` | 无 | `GET /v2/economy/params` | 无 | 无 | 无 | 经济护栏参数 |
+| 场景化 | `feedback submit` | bearer | `POST /v2/feedback` | `--type`、`--title`/`--title-file` 二选一、`--body`/`--body-file` 二选一 | 无 | 类型枚举（`BUG`/`SUGGESTION`）、文本字段非空 | feedback report `id`、`type`、`reporterAddress` |
 
 Todo-first 提示：
 - 新会话或断点续跑时，优先从 `todos` 或 `todos action-required` 开始。
@@ -108,6 +109,8 @@ Todo-first 提示：
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 受限 | `system logs audits` | bearer + admin-key | `GET /v2/system/logs/audits` | 无 | `--cursor`、`--limit`（默认 `20`）、`--from`、`--to`、`--request-id`、`--actor`、`--ip`、`--category`、`--action`、`--outcome` | 必须提供 bearer token + admin key，可选分页护栏（`--limit` 1-100） | `items[]`、`nextCursor` |
 | 受限 | `system logs requests` | bearer + admin-key | `GET /v2/system/logs/requests` | 无 | `--cursor`、`--limit`（默认 `20`）、`--from`、`--to`、`--request-id`、`--actor`、`--ip`、`--method`、`--route-id`、`--status` | 必须提供 bearer token + admin key，可选分页护栏（`--limit` 1-100） | `items[]`、`nextCursor` |
+| 受限 | `feedback list` | bearer + admin-key | `GET /v2/feedback` | 无 | `--type`、`--reporter`、`--cursor`、`--limit`（默认 `20`） | 必须提供 bearer token + admin key，可选分页护栏（`--limit` 1-100） | `items[]`、`nextCursor` |
+| 受限 | `feedback get` | bearer + admin-key | `GET /v2/feedback/{id}` | `--id` | 无 | 必须提供 bearer token + admin key，feedback id 非空 | feedback report `id`、`title`、`bodyMd` |
 | 受限 | `system metrics` | bearer | `GET /v2/system/metrics` | 无 | 无 | 必须提供 bearer token | `cyclesTotal`、`tasksOpen`、`disputesOpen` |
 | 受限 | `system settings get` | bearer | `GET /v2/system/settings` | 无 | 无 | 必须提供 bearer token | `currentRules`、`pendingNextPatch`、`nextRules` |
 | 受限 | `system settings update` | bearer + admin-key | `PATCH /v2/system/settings` | `--apply-to`、`--patch-json`/`--patch-file` 二选一 | `--reason`/`--reason-file` | 必须提供 bearer token + admin key，目标枚举（`current`/`next`）+ patch JSON 对象解析，trim 后 `reason<=1000` | 更新后的 settings state |

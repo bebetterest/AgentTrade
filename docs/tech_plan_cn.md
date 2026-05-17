@@ -15,6 +15,7 @@
 - 关键布尔/数值运行时配置已改为非法值启动即失败，不再静默回退默认值。
 - System 接口面新增 bearer 鉴权的指标端点（`GET /v2/system/metrics`），用于输出运维计数与延迟摘要。
 - 服务端运行时现已补齐 DB 优先的日志子系统：每个 HTTP 请求都会进入结构化 request log，高价值安全/管理/领域/运行时事件会进入 audit log，并通过管理员只读查询接口暴露，同时由配置驱动保留期清理。
+- 反馈收集是最小化的已认证 bug/建议入口：agent 通过 `POST /v2/feedback` 提交 `BUG|SUGGESTION`，记录独立于领域结算状态保存，后台开发者通过管理员只读列表/详情接口和 CLI 命令查看。
 
 ### 1.2 持久化与并发一致性
 
@@ -30,6 +31,7 @@
 - 可重试持久化失败现已覆盖 deadlock 类事务错误，同时保持 `RuntimeState` 优先加锁与同事务内 revision 时间戳更新路径的一致顺序。
 - 内存模式仍保留进程内写入队列以维持确定性状态流转；持久化模式 API 写路径则直接通过仓储事务提交，不再依赖全局进程内写队列。
 - 持久化模式下的后台维护现已收敛到独立 `worker` 运行时：自动关周期与日志清理通过 PostgreSQL advisory lock 协调，每轮到期周期 sweep 都由一次关周期锁覆盖，worker job 计数持久化到 PostgreSQL 并通过精确十进制字符串总数保持超过 JS 安全整数后的 API 可观测性，request log 通过缓冲批量写入落库，更高价值的 audit 事件继续保持持久化语义，并且保留期清理会按有界 `LOG_CLEANUP_BATCH_SIZE` 批次删除过期 request/audit log。拆分出的 worker 要求持久化模式，因为 PostgreSQL 是唯一支持的协调点；内存模式继续由 API 运行时内部定时器处理后台任务。
+- 反馈上报使用独立规范化 `FeedbackReport` 表，管理员查询按创建时间、类型和上报者地址走 keyset 读取；该表刻意不参与 task/dispute/cycle 结算不变量。
 - 持久化读路径索引已覆盖重构后的热点列表与聚合，包括 trigram 搜索字段、带受支持 keyset 排序变体的 lowercase 地址过滤、actor intention todo 查询、Agent 活动/计数排序、精确 Agent 声誉和 keyset、争议 `updatedAt,id` 分页、request log 的 `routeId/method/createdAt/id` 与 `routeId/method/statusCode/createdAt/id` 管理员筛选、audit log 的 `category/action/outcome/createdAt/id` 管理员筛选、activity `type,createdAt,id` dashboard 过滤，以及按 `cycleId/taskId/disputeId,createdAt,id` 作用域钻取 activity 的 keyset 读取；bootstrap 会动态解析已安装的 `gin_trgm_ops` schema，因此 `pg_trgm` 不在 `public` 时 trigram 索引也能创建。
 - 快照差量 upsert/delete（支持 mutation scope）保留为 engine 快照同步的兜底路径，不再是主要持久化热点写路径。
 - 仓储内部正在按职责拆分：游标编解码工具、分页读查询 helper、行映射器、读侧 direct list/get helper、写命令 helper 与事务辅助原语（加锁/资料增量更新/活动写入/槽位不变量/runtime touch）已逐步从单体仓储文件中提取。

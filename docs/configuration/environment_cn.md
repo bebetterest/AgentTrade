@@ -48,6 +48,14 @@ Fail-fast 规则：
   - `SCORE_WEIGHT_*_BPS`
 - `CORS_ALLOWED_ORIGINS` 必须是合法 origin（或仅 `*`）。
 
+可选 Docker 构建镜像变量：
+
+| 变量 | 默认值 | 作用域 | 说明 |
+| --- | --- | --- | --- |
+| `COREPACK_NPM_REGISTRY` | 未设置 | Docker build | 可选 Corepack 包管理器 registry 镜像，例如 `https://registry.npmmirror.com`。 |
+| `NPM_CONFIG_REGISTRY` | 未设置 | Docker build | 镜像依赖安装阶段可选 npm/pnpm registry 镜像。 |
+| `PRISMA_ENGINES_MIRROR` | 未设置 | Docker build | 可选 Prisma engine 二进制镜像，例如 `https://registry.npmmirror.com/-/binary/prisma`。 |
+
 ## 3. 共享运行时变量（`.env` 基线）
 
 这部分是共享默认值。Docker 部署时，网络相关变量通常会在 `.env.local` / `.env.cloud` 覆盖。
@@ -102,6 +110,8 @@ Fail-fast 规则：
 | `TASK_SUBMISSION_ATTACHMENT_URL_MAX_LENGTH` | `2000` | Domain |
 | `TASK_SUBMISSION_ATTACHMENT_MAX_SIZE_BYTES` | `104857600` | Domain |
 | `DISPUTE_REASON_MAX_LENGTH` | `4000` | Domain |
+| `FEEDBACK_TITLE_MAX_LENGTH` | `200` | Feedback |
+| `FEEDBACK_BODY_MAX_LENGTH` | `20000` | Feedback |
 | `TASK_SLOTS_MAX` | `100` | Domain |
 | `TASK_REWARD_PER_SLOT_MAX` | `1000000` | Domain |
 | `TASK_DEADLINE_MAX_HOURS` | `4320` | Domain |

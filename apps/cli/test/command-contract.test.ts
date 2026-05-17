@@ -203,6 +203,14 @@ test("cli command contract: method/path/auth/body coverage for all command group
     score: 75,
     isActive: true
   };
+  const feedbackPayload = {
+    id: "feedback-1",
+    type: "BUG",
+    title: "feedback-title-from-file",
+    bodyMd: "feedback-body-from-file",
+    reporterAddress: addressA,
+    createdAt: now
+  };
   const dashboardSummaryPayload = {
     timezone: "Asia/Shanghai",
     generatedAt: now,
@@ -309,6 +317,8 @@ test("cli command contract: method/path/auth/body coverage for all command group
     taskSubmissionAttachmentUrlMaxLength: 2000,
     taskSubmissionAttachmentMaxSizeBytes: 104857600,
     disputeReasonMaxLength: 4000,
+    feedbackTitleMaxLength: 200,
+    feedbackBodyMaxLength: 20000,
     taskSlotsMax: 100,
     taskRewardPerSlotMax: 1000000,
     taskDeadlineMaxHours: 4320,
@@ -343,6 +353,8 @@ test("cli command contract: method/path/auth/body coverage for all command group
   const reasonFile = join(tmpDir, "reason.md");
   const reasonFileCounterparty = join(tmpDir, "reason-counterparty.md");
   const nameFile = join(tmpDir, "name.txt");
+  const feedbackTitleFile = join(tmpDir, "feedback-title.txt");
+  const feedbackBodyFile = join(tmpDir, "feedback-body.md");
   const tokenFile = join(tmpDir, "token.txt");
   const adminKeyFile = join(tmpDir, "admin-key.txt");
   const patchFile = join(tmpDir, "patch.json");
@@ -356,6 +368,8 @@ test("cli command contract: method/path/auth/body coverage for all command group
   writeFileSync(reasonFile, "\uFEFFreason-from-file", "utf8");
   writeFileSync(reasonFileCounterparty, "\uFEFFcounterparty-reason-from-file", "utf8");
   writeFileSync(nameFile, "\uFEFFname-from-file", "utf8");
+  writeFileSync(feedbackTitleFile, "\uFEFFfeedback-title-from-file", "utf8");
+  writeFileSync(feedbackBodyFile, "\uFEFFfeedback-body-from-file", "utf8");
   writeFileSync(tokenFile, `\uFEFF${token}\n`, "utf8");
   writeFileSync(adminKeyFile, `\uFEFF${adminKey}\n`, "utf8");
   writeFileSync(patchFile, '\uFEFF{"taxRateBps":600,"mintPerCycle":1200}', "utf8");
@@ -556,6 +570,16 @@ test("cli command contract: method/path/auth/body coverage for all command group
         return;
       case "GET /v2/economy/params":
         response.end(JSON.stringify(publicEconomyPayload));
+        return;
+      case "POST /v2/feedback":
+        response.end(JSON.stringify({ ...feedbackPayload, id: "feedback-created" }));
+        return;
+      case "GET /v2/feedback":
+      case `GET /v2/feedback?type=BUG&reporter=${addressA}&cursor=5&limit=7`:
+        response.end(JSON.stringify({ items: [feedbackPayload], nextCursor: null }));
+        return;
+      case "GET /v2/feedback/feedback-1":
+        response.end(JSON.stringify(feedbackPayload));
         return;
       default:
         response.statusCode = 404;
@@ -1151,6 +1175,57 @@ test("cli command contract: method/path/auth/body coverage for all command group
     });
 
     await runAndAssert(["economy", "params"], { method: "GET", url: "/v2/economy/params", auth: "none" });
+    await runAndAssert(
+      [
+        "feedback",
+        "submit",
+        "--type",
+        "bug",
+        "--title-file",
+        feedbackTitleFile,
+        "--body-file",
+        feedbackBodyFile
+      ],
+      {
+        method: "POST",
+        url: "/v2/feedback",
+        auth: "bearer",
+        body: {
+          type: "BUG",
+          title: "feedback-title-from-file",
+          bodyMd: "feedback-body-from-file"
+        }
+      }
+    );
+    await runAndAssert(["feedback", "list"], {
+      method: "GET",
+      url: "/v2/feedback",
+      auth: "bearer_admin"
+    });
+    await runAndAssert(
+      [
+        "feedback",
+        "list",
+        "--type",
+        "bug",
+        "--reporter",
+        addressA,
+        "--cursor",
+        "5",
+        "--limit",
+        "7"
+      ],
+      {
+        method: "GET",
+        url: `/v2/feedback?type=BUG&reporter=${addressA}&cursor=5&limit=7`,
+        auth: "bearer_admin"
+      }
+    );
+    await runAndAssert(["feedback", "get", "--id", "feedback-1"], {
+      method: "GET",
+      url: "/v2/feedback/feedback-1",
+      auth: "bearer_admin"
+    });
     await runAndAssert(
       [
         "activities",

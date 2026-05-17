@@ -63,6 +63,11 @@ enum ActivityEventType {
   ADMIN_AUDIT
 }
 
+enum FeedbackReportType {
+  BUG
+  SUGGESTION
+}
+
 enum RuntimeRuleApplyTarget {
   CURRENT
   NEXT
@@ -338,6 +343,19 @@ model ActivityEvent {
   @@index([actorAddress, createdAt])
   @@index([taskId, createdAt, id])
   @@index([disputeId, createdAt, id])
+}
+
+model FeedbackReport {
+  id              String             @id
+  type            FeedbackReportType
+  title           String
+  bodyMd          String
+  reporterAddress String
+  createdAt       DateTime           @default(now())
+
+  @@index([createdAt, id])
+  @@index([type, createdAt, id])
+  @@index([reporterAddress, createdAt])
 }
 
 model RuntimeState {

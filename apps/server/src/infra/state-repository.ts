@@ -33,6 +33,8 @@ import {
   DisputePayoutSource,
   type DisputeResolutionSummary,
   DisputeStatus as DomainDisputeStatus,
+  type FeedbackReport,
+  type FeedbackReportType,
   type LedgerBalance,
   type PaginatedResponse,
   type Submission,
@@ -123,6 +125,12 @@ import {
   type WriteAuditContext,
   sanitizeAuditDetails
 } from "../observability/server-logs.js";
+import {
+  buildFeedbackReportRecord,
+  FEEDBACK_REPORT_RESOURCE,
+  type FeedbackReportCreateInput,
+  type FeedbackReportQuery
+} from "../feedback/reports.js";
 import {
   workerJobMetricCountersFromBigInts,
   type WorkerJobMetricCounters,
@@ -879,6 +887,140 @@ export class PrismaStateRepository {
       hasMore && items.length > 0
         ? encodeKeysetCursor({
             resource: "server-audit-logs",
+            sort: "createdAt",
+            order: "desc",
+            offset: nextCursorOffset(cursor ?? { mode: "start", offset: 0 }, items.length),
+            values: {
+              primary: items[items.length - 1]!.createdAt,
+              id: items[items.length - 1]!.id
+            }
+          })
+        : null;
+    return { items, nextCursor };
+  }
+
+  async createFeedbackReportDirect(
+    input: FeedbackReportCreateInput & { auditContext?: WriteAuditContext }
+  ): Promise<FeedbackReport> {
+    const record = buildFeedbackReportRecord(input);
+    return this.executeWithRetry(async () =>
+      this.prisma.$transaction(async (tx) => {
+        const runtime = await this.lockRuntimeWithTx(tx);
+        await this.assertAgentActiveForWriteWithTx(
+          tx,
+          input.reporterAddress,
+          new Date(record.createdAt)
+        );
+        await tx.feedbackReport.create({
+          data: {
+            id: record.id,
+            type: record.type,
+            title: record.title,
+            bodyMd: record.bodyMd,
+            reporterAddress: record.reporterAddress,
+            createdAt: new Date(record.createdAt)
+          }
+        });
+        await this.touchRuntimeStateWithTx(tx);
+        if (input.auditContext) {
+          await this.appendAuditLogWithTx(
+            tx,
+            buildWriteSuccessAuditLog(input.auditContext, {
+              targetId: record.id,
+              cycleId: runtime.activeCycleId,
+              message: "feedback.submit succeeded",
+              details: {
+                type: record.type,
+                titleLength: record.title.length,
+                bodyLength: record.bodyMd.length
+              }
+            })
+          );
+        }
+        return record;
+      })
+    );
+  }
+
+  async getFeedbackReportDirect(id: string): Promise<FeedbackReport | null> {
+    const row = await this.prisma.feedbackReport.findUnique({ where: { id } });
+    return row ? this.mapFeedbackReport(row) : null;
+  }
+
+  async queryFeedbackReportsDirect(query: FeedbackReportQuery): Promise<PaginatedResponse<FeedbackReport>> {
+    const boundedLimit = clampPageLimit(query.limit);
+    const cursor = query.cursor
+      ? parseListCursor(query.cursor, {
+          resource: FEEDBACK_REPORT_RESOURCE,
+          sort: "createdAt",
+          order: "desc"
+        })
+      : null;
+    const filters: Prisma.Sql[] = [];
+    if (cursor?.mode === "keyset") {
+      const cursorId = cursor.values.id;
+      const cursorPrimary = cursor.values.primary;
+      if (typeof cursorId !== "string" || cursorId.length === 0) {
+        throw new DomainError("INVALID_CURSOR", "cursor id must be a non-empty string", 400);
+      }
+      if (typeof cursorPrimary !== "string" || cursorPrimary.length === 0) {
+        throw new DomainError(
+          "INVALID_CURSOR",
+          "cursor primary must be a non-empty ISO datetime string",
+          400
+        );
+      }
+      const createdAt = new Date(cursorPrimary);
+      if (Number.isNaN(createdAt.getTime())) {
+        throw new DomainError("INVALID_CURSOR", "cursor primary must be valid ISO datetime", 400);
+      }
+      filters.push(Prisma.sql`(
+        f."createdAt" < ${createdAt}
+        OR (f."createdAt" = ${createdAt} AND f.id < ${cursorId})
+      )`);
+    }
+    if (query.type) {
+      filters.push(Prisma.sql`f.type = CAST(${query.type} AS "FeedbackReportType")`);
+    }
+    if (query.reporter) {
+      filters.push(Prisma.sql`lower(f."reporterAddress") = lower(${query.reporter})`);
+    }
+
+    const whereSql =
+      filters.length > 0 ? Prisma.sql`WHERE ${Prisma.join(filters, " AND ")}` : Prisma.empty;
+    const paginationSql =
+      cursor?.mode === "legacy-offset"
+        ? Prisma.sql`LIMIT ${boundedLimit + 1} OFFSET ${cursor.offset}`
+        : Prisma.sql`LIMIT ${boundedLimit + 1}`;
+    const rows = await this.prisma.$queryRaw<
+      Array<{
+        id: string;
+        type: string;
+        title: string;
+        bodyMd: string;
+        reporterAddress: string;
+        createdAt: Date;
+      }>
+    >(Prisma.sql`
+      SELECT
+        f.id,
+        f.type,
+        f.title,
+        f."bodyMd",
+        f."reporterAddress",
+        f."createdAt"
+      FROM "FeedbackReport" f
+      ${whereSql}
+      ORDER BY f."createdAt" DESC, f.id DESC
+      ${paginationSql}
+    `);
+    const mapped = rows.map((item) => this.mapFeedbackReport(item));
+    const hasMore = mapped.length > boundedLimit;
+    const items = hasMore ? mapped.slice(0, boundedLimit) : mapped;
+    const nextCursor =
+      hasMore && items.length > 0
+        ? encodeKeysetCursor({
+            resource: FEEDBACK_REPORT_RESOURCE,
             sort: "createdAt",
             order: "desc",
             offset: nextCursorOffset(cursor ?? { mode: "start", offset: 0 }, items.length),
@@ -3394,6 +3536,24 @@ export class PrismaStateRepository {
       pendingNextPatch: row.pendingNextPatch
         ? this.normalizePendingPatch(toRuntimeEditableRulesPatch(row.pendingNextPatch))
         : null,
+      createdAt: row.createdAt.toISOString()
+    };
+  }
+
+  private mapFeedbackReport(row: {
+    id: string;
+    type: string;
+    title: string;
+    bodyMd: string;
+    reporterAddress: string;
+    createdAt: Date;
+  }): FeedbackReport {
+    return {
+      id: row.id,
+      type: row.type as FeedbackReportType,
+      title: row.title,
+      bodyMd: row.bodyMd,
+      reporterAddress: asAddress(row.reporterAddress),
       createdAt: row.createdAt.toISOString()
     };
   }

@@ -142,6 +142,15 @@ pnpm docker:release:local
 sh deploy/release.sh local
 ```
 
+如果 Docker 构建受 registry 或 Prisma engine CDN 连接影响，可以通过 Compose build args 临时传入镜像：
+
+```bash
+COREPACK_NPM_REGISTRY=https://registry.npmmirror.com \
+NPM_CONFIG_REGISTRY=https://registry.npmmirror.com \
+PRISMA_ENGINES_MIRROR=https://registry.npmmirror.com/-/binary/prisma \
+pnpm docker:release:local
+```
+
 ### 5.3 发布后验证
 
 发布脚本已自动执行：

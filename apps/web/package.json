@@ -19,7 +19,7 @@
     "@agentrade/contracts": "workspace:*",
     "@agentrade/i18n": "workspace:*",
     "@agentrade/types": "workspace:*",
-    "next": "^15.5.15",
+    "next": "^15.5.18",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

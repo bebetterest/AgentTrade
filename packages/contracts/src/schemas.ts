@@ -11,6 +11,7 @@ import {
   ServerAuditOutcome,
   ServerAuditSeverity,
   SubmissionStatus,
+  TaskTargetMentionStatus,
   TaskStatus,
   TODO_ACTION_REQUIRED_TYPES,
   TODO_GROUP_TYPE_VALUES,
@@ -202,6 +203,47 @@ export const agentProfileSchema = defineSchema(
   }
 );
 
+export const taskTargetMentionSchema = defineSchema(
+  "TaskTargetMention",
+  z.object({
+    id: z.string(),
+    taskId: z.string(),
+    publisher: addressSchema,
+    targetAgent: addressSchema,
+    status: z.nativeEnum(TaskTargetMentionStatus),
+    createdAt: isoDateSchema,
+    updatedAt: isoDateSchema,
+    dismissedAt: isoDateSchema.nullable()
+  }),
+  {
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "id",
+      "taskId",
+      "publisher",
+      "targetAgent",
+      "status",
+      "createdAt",
+      "updatedAt",
+      "dismissedAt"
+    ],
+    properties: {
+      id: { ...stringField },
+      taskId: { ...stringField },
+      publisher: { ...addressField },
+      targetAgent: { ...addressField },
+      status: {
+        type: "string",
+        enum: Object.values(TaskTargetMentionStatus)
+      },
+      createdAt: { ...isoDateField },
+      updatedAt: { ...isoDateField },
+      dismissedAt: { ...nullableIsoDateOpenApi }
+    }
+  }
+);
+
 export const taskSchema = defineSchema(
   "Task",
   z.object({
@@ -221,6 +263,7 @@ export const taskSchema = defineSchema(
     intentCount: z.number().int(),
     competitionRatio: z.number(),
     completedAgents: z.array(addressSchema),
+    targetMentions: z.array(taskTargetMentionSchema.schema),
     createdAt: isoDateSchema,
     updatedAt: isoDateSchema
   }),
@@ -244,6 +287,7 @@ export const taskSchema = defineSchema(
       "intentCount",
       "competitionRatio",
       "completedAgents",
+      "targetMentions",
       "createdAt",
       "updatedAt"
     ],
@@ -267,6 +311,10 @@ export const taskSchema = defineSchema(
       intentCount: { ...integerField },
       competitionRatio: { ...numberField },
       completedAgents: { ...addressArrayOpenApi },
+      targetMentions: {
+        type: "array",
+        items: schemaRef(taskTargetMentionSchema)
+      },
       createdAt: { ...isoDateField },
       updatedAt: { ...isoDateField }
     }
@@ -1453,6 +1501,7 @@ export const publicEconomyParamsSchema = defineSchema(
     taskSubmissionAttachmentNameMaxLength: z.number().int(),
     taskSubmissionAttachmentUrlMaxLength: z.number().int(),
     taskSubmissionAttachmentMaxSizeBytes: z.number().int(),
+    taskTargetMentionMaxCount: z.number().int(),
     disputeReasonMaxLength: z.number().int(),
     feedbackTitleMaxLength: z.number().int(),
     feedbackBodyMaxLength: z.number().int(),
@@ -1497,6 +1546,7 @@ export const publicEconomyParamsSchema = defineSchema(
       "taskSubmissionAttachmentNameMaxLength",
       "taskSubmissionAttachmentUrlMaxLength",
       "taskSubmissionAttachmentMaxSizeBytes",
+      "taskTargetMentionMaxCount",
       "disputeReasonMaxLength",
       "feedbackTitleMaxLength",
       "feedbackBodyMaxLength",
@@ -1538,6 +1588,7 @@ export const publicEconomyParamsSchema = defineSchema(
       taskSubmissionAttachmentNameMaxLength: { ...integerField },
       taskSubmissionAttachmentUrlMaxLength: { ...integerField },
       taskSubmissionAttachmentMaxSizeBytes: { ...integerField },
+      taskTargetMentionMaxCount: { ...integerField },
       disputeReasonMaxLength: { ...integerField },
       feedbackTitleMaxLength: { ...integerField },
       feedbackBodyMaxLength: { ...integerField },
@@ -1793,7 +1844,8 @@ export const createTaskRequestSchema = defineSchema(
     displayTimezone: nonEmptyStringSchema,
     slotsTotal: z.number().int().positive(),
     rewardPerSlot: z.number().int().positive(),
-    allowRepeatCompletionsBySameAgent: z.boolean()
+    allowRepeatCompletionsBySameAgent: z.boolean(),
+    targetAgentAddresses: z.array(addressSchema).optional()
   }),
   {
     type: "object",
@@ -1816,7 +1868,11 @@ export const createTaskRequestSchema = defineSchema(
       displayTimezone: { ...nonEmptyStringField },
       slotsTotal: { ...integerField, minimum: 1 },
       rewardPerSlot: { ...integerField, minimum: 1 },
-      allowRepeatCompletionsBySameAgent: { ...boolField }
+      allowRepeatCompletionsBySameAgent: { ...boolField },
+      targetAgentAddresses: {
+        type: "array",
+        items: { ...addressField }
+      }
     }
   }
 );
@@ -2147,6 +2203,7 @@ export const namedSchemas = [
   reputationTripleSchema,
   agentStatsSchema,
   agentProfileSchema,
+  taskTargetMentionSchema,
   taskSchema,
   taskIntentionSchema,
   submissionAttachmentSchema,

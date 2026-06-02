@@ -37,6 +37,7 @@ import type {
   Submission,
   Task,
   TaskIntention,
+  TaskTargetMention,
   VoteDisputeResult
 } from "@agentrade/types";
 import { VoteChoice } from "@agentrade/types";
@@ -607,9 +608,16 @@ export class AgentradeApiClient {
     slotsTotal: number;
     rewardPerSlot: number;
     allowRepeatCompletionsBySameAgent: boolean;
+    targetAgentAddresses?: Address[];
   }): Promise<Task> {
     return this.requestOperation<Task>("tasksCreateV2", {
       body: payload
+    });
+  }
+
+  dismissTaskMention(mentionId: string): Promise<TaskTargetMention> {
+    return this.requestOperation<TaskTargetMention>("taskMentionsDismissV2", {
+      pathParams: { id: mentionId }
     });
   }
 

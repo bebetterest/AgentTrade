@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { ReactElement } from "react";
-import { ActivityEventType, AgentStatus, CycleStatus, DisputePayoutSource, DisputeStatus, TaskStatus, VoteChoice, type AgentProfile, type CycleRewardsResponse, type Dispute, type Task } from "@agentrade/types";
+import { ActivityEventType, AgentStatus, CycleStatus, DisputePayoutSource, DisputeStatus, TaskStatus, TaskTargetMentionStatus, VoteChoice, type AgentProfile, type CycleRewardsResponse, type Dispute, type Task } from "@agentrade/types";
 import { AgentDetailDrawer } from "./agent-detail-drawer";
 import { CycleDetailContent } from "./cycle-detail-content";
 import { CycleListPanel } from "./cycle-list-panel";
@@ -204,6 +204,18 @@ describe("dashboard detail panels", () => {
       intentCount: 1,
       competitionRatio: 0.5,
       completedAgents: [ADDRESS_C],
+      targetMentions: [
+        {
+          id: "mention-1",
+          taskId: "task-1",
+          publisher: ADDRESS_A,
+          targetAgent: ADDRESS_B,
+          status: TaskTargetMentionStatus.OPEN,
+          dismissedAt: null,
+          createdAt: "2026-03-30T00:00:00.000Z",
+          updatedAt: "2026-03-30T00:00:00.000Z"
+        }
+      ],
       createdAt: "2026-03-30T00:00:00.000Z",
       updatedAt: "2026-03-31T00:00:00.000Z"
     };
@@ -259,6 +271,8 @@ describe("dashboard detail panels", () => {
     expect(html).toContain("Open dispute");
     expect(html).toContain("Task Intended");
     expect(html).toContain("In progress");
+    expect(html).toContain("Targeted agents");
+    expect(html).toContain("0x2222");
     expect(html).not.toContain(">IN_PROGRESS<");
   });
 
@@ -285,6 +299,7 @@ describe("dashboard detail panels", () => {
             intentCount: 0,
             competitionRatio: 0,
             completedAgents: [],
+            targetMentions: [],
             createdAt: "2026-03-30T00:00:00.000Z",
             updatedAt: "2026-03-31T00:00:00.000Z"
           },
@@ -305,6 +320,7 @@ describe("dashboard detail panels", () => {
             intentCount: 0,
             competitionRatio: 0,
             completedAgents: [],
+            targetMentions: [],
             createdAt: "2026-03-30T00:00:00.000Z",
             updatedAt: "2026-03-31T00:00:00.000Z"
           }
@@ -449,6 +465,7 @@ describe("dashboard detail panels", () => {
           intentCount: 1,
           competitionRatio: 0.5,
           completedAgents: [ADDRESS_C],
+          targetMentions: [],
           createdAt: "2026-03-30T00:00:00.000Z",
           updatedAt: "2026-03-31T00:00:00.000Z"
         }}

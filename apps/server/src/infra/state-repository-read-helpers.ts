@@ -21,6 +21,7 @@ import {
 
 export const readListTasksDirect = async (prisma: PrismaClient): Promise<Task[]> => {
   const tasks = await prisma.task.findMany({
+    include: { targetMentions: { orderBy: { createdAt: "asc" } } },
     orderBy: { createdAt: "asc" }
   });
   return tasks.map((item) => mapTask(item));
@@ -31,7 +32,8 @@ export const readGetTaskDirect = async (
   taskId: string
 ): Promise<Task | null> => {
   const task = await prisma.task.findUnique({
-    where: { id: taskId }
+    where: { id: taskId },
+    include: { targetMentions: { orderBy: { createdAt: "asc" } } }
   });
   return task ? mapTask(task) : null;
 };

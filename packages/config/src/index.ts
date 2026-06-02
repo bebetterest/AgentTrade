@@ -36,6 +36,7 @@ export interface AppConfig {
   taskSubmissionAttachmentNameMaxLength: number;
   taskSubmissionAttachmentUrlMaxLength: number;
   taskSubmissionAttachmentMaxSizeBytes: number;
+  taskTargetMentionMaxCount: number;
   disputeReasonMaxLength: number;
   feedbackTitleMaxLength: number;
   feedbackBodyMaxLength: number;
@@ -134,6 +135,7 @@ export type PublicEconomyParams = Pick<
   | "taskSubmissionAttachmentNameMaxLength"
   | "taskSubmissionAttachmentUrlMaxLength"
   | "taskSubmissionAttachmentMaxSizeBytes"
+  | "taskTargetMentionMaxCount"
   | "disputeReasonMaxLength"
   | "feedbackTitleMaxLength"
   | "feedbackBodyMaxLength"
@@ -509,6 +511,7 @@ export const defaultConfig: AppConfig = {
   taskSubmissionAttachmentNameMaxLength: 200,
   taskSubmissionAttachmentUrlMaxLength: 2_000,
   taskSubmissionAttachmentMaxSizeBytes: 100 * 1024 * 1024,
+  taskTargetMentionMaxCount: 5,
   disputeReasonMaxLength: 4_000,
   feedbackTitleMaxLength: 200,
   feedbackBodyMaxLength: 20_000,
@@ -553,6 +556,7 @@ export const toPublicEconomyParams = (config: AppConfig): PublicEconomyParams =>
   taskSubmissionAttachmentNameMaxLength: config.taskSubmissionAttachmentNameMaxLength,
   taskSubmissionAttachmentUrlMaxLength: config.taskSubmissionAttachmentUrlMaxLength,
   taskSubmissionAttachmentMaxSizeBytes: config.taskSubmissionAttachmentMaxSizeBytes,
+  taskTargetMentionMaxCount: config.taskTargetMentionMaxCount,
   disputeReasonMaxLength: config.disputeReasonMaxLength,
   feedbackTitleMaxLength: config.feedbackTitleMaxLength,
   feedbackBodyMaxLength: config.feedbackBodyMaxLength,
@@ -717,6 +721,11 @@ export const loadConfig = (): AppConfig => {
       "TASK_SUBMISSION_ATTACHMENT_MAX_SIZE_BYTES",
       defaultConfig.taskSubmissionAttachmentMaxSizeBytes,
       { integer: true, min: 0 }
+    ),
+    taskTargetMentionMaxCount: envNumberStrict(
+      "TASK_TARGET_MENTION_MAX_COUNT",
+      defaultConfig.taskTargetMentionMaxCount,
+      { integer: true, min: 0, max: 100 }
     ),
     disputeReasonMaxLength: envNumberStrict(
       "DISPUTE_REASON_MAX_LENGTH",

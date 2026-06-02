@@ -13,6 +13,7 @@ import {
   type TodoDisputeRecord,
   type TodoIntentionRecord,
   type TodoSubmissionRecord,
+  type TodoTargetMentionRecord,
   type TodoTaskRecord
 } from "../todos/read-model.js";
 
@@ -79,64 +80,85 @@ const registerTodosGetRoute = (
           createdAt: item.createdAt
         }));
 
-      const submissions = snapshot.submissions.reduce<TodoSubmissionRecord[]>((acc, submission) => {
-          const task = taskMap.get(submission.taskId);
-          if (!task) {
-            return acc;
-          }
-          if (
-            submission.agent.toLowerCase() !== addressLower &&
-            task.publisher.toLowerCase() !== addressLower
-          ) {
+      const targetMentions: TodoTargetMentionRecord[] = (snapshot.targetMentions ?? [])
+        .reduce<TodoTargetMentionRecord[]>((acc, mention) => {
+          const task = taskMap.get(mention.taskId);
+          if (!task || mention.targetAgent.toLowerCase() !== addressLower) {
             return acc;
           }
           acc.push({
-            id: submission.id,
-            taskId: submission.taskId,
-            agent: submission.agent,
-            taskPublisher: task.publisher,
+            id: mention.id,
+            taskId: mention.taskId,
+            publisher: mention.publisher,
+            targetAgent: mention.targetAgent,
             taskTitle: task.title,
             taskStatus: task.status,
             taskDeadlineUtc: task.deadlineUtc ?? null,
-            status: submission.status,
-            createdAt: submission.createdAt,
-            updatedAt: submission.updatedAt
+            status: mention.status,
+            createdAt: mention.createdAt,
+            updatedAt: mention.updatedAt
           });
           return acc;
         }, []);
 
-      const disputes = snapshot.disputes.reduce<TodoDisputeRecord[]>((acc, dispute) => {
-          if (dispute.status !== "OPEN") {
-            return acc;
-          }
-          const task = taskMap.get(dispute.taskId);
-          const submission = submissionMap.get(dispute.submissionId);
-          if (!task || !submission) {
-            return acc;
-          }
-          if (
-            dispute.opener.toLowerCase() !== addressLower &&
-            task.publisher.toLowerCase() !== addressLower &&
-            submission.agent.toLowerCase() !== addressLower
-          ) {
-            return acc;
-          }
-          acc.push({
-            id: dispute.id,
-            taskId: dispute.taskId,
-            submissionId: dispute.submissionId,
-            opener: dispute.opener,
-            taskPublisher: task.publisher,
-            submissionAgent: submission.agent,
-            taskTitle: task.title,
-            taskDeadlineUtc: task.deadlineUtc ?? null,
-            counterpartyReasonMd: dispute.counterpartyReasonMd ?? null,
-            status: dispute.status,
-            createdAt: dispute.createdAt,
-            updatedAt: dispute.updatedAt
-          });
+      const submissions = snapshot.submissions.reduce<TodoSubmissionRecord[]>((acc, submission) => {
+        const task = taskMap.get(submission.taskId);
+        if (!task) {
           return acc;
-        }, []);
+        }
+        if (
+          submission.agent.toLowerCase() !== addressLower &&
+          task.publisher.toLowerCase() !== addressLower
+        ) {
+          return acc;
+        }
+        acc.push({
+          id: submission.id,
+          taskId: submission.taskId,
+          agent: submission.agent,
+          taskPublisher: task.publisher,
+          taskTitle: task.title,
+          taskStatus: task.status,
+          taskDeadlineUtc: task.deadlineUtc ?? null,
+          status: submission.status,
+          createdAt: submission.createdAt,
+          updatedAt: submission.updatedAt
+        });
+        return acc;
+      }, []);
+
+      const disputes = snapshot.disputes.reduce<TodoDisputeRecord[]>((acc, dispute) => {
+        if (dispute.status !== "OPEN") {
+          return acc;
+        }
+        const task = taskMap.get(dispute.taskId);
+        const submission = submissionMap.get(dispute.submissionId);
+        if (!task || !submission) {
+          return acc;
+        }
+        if (
+          dispute.opener.toLowerCase() !== addressLower &&
+          task.publisher.toLowerCase() !== addressLower &&
+          submission.agent.toLowerCase() !== addressLower
+        ) {
+          return acc;
+        }
+        acc.push({
+          id: dispute.id,
+          taskId: dispute.taskId,
+          submissionId: dispute.submissionId,
+          opener: dispute.opener,
+          taskPublisher: task.publisher,
+          submissionAgent: submission.agent,
+          taskTitle: task.title,
+          taskDeadlineUtc: task.deadlineUtc ?? null,
+          counterpartyReasonMd: dispute.counterpartyReasonMd ?? null,
+          status: dispute.status,
+          createdAt: dispute.createdAt,
+          updatedAt: dispute.updatedAt
+        });
+        return acc;
+      }, []);
 
       return buildTodosResponse({
         ...input,
@@ -144,7 +166,8 @@ const registerTodosGetRoute = (
         tasks,
         submissions,
         disputes,
-        intentions
+        intentions,
+        targetMentions
       });
     });
 

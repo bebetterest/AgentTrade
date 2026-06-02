@@ -99,7 +99,8 @@ Auth persistence note:
 | --- | --- | --- | --- | --- | --- |
 | `tasks list` | none | none | `--q`, `--status`, `--publisher`, `--sort` (default `latest`), `--order` (default `desc`), `--cursor`, `--limit` (default `20`) | `items[]`, `nextCursor` | none |
 | `tasks get` | none | `--task` | none | `id`, `status`, `publisher`, `slots*` | `TASK_NOT_FOUND` |
-| `tasks create` | bearer | (`--title` or `--title-file`), (`--desc` or `--desc-file`), (`--criteria` or `--criteria-file`), `--deadline`, `--tz`, `--slots`, `--reward` | `--allow-repeat` | task object (`id`, `status`, escrow fields) | `ACCOUNT_BANNED`, `INSUFFICIENT_BALANCE`, `TASK_DEADLINE_INVALID` |
+| `tasks create` | bearer | (`--title` or `--title-file`), (`--desc` or `--desc-file`), (`--criteria` or `--criteria-file`), `--deadline`, `--tz`, `--slots`, `--reward` | `--allow-repeat`, repeatable `--target-agent` | task object (`id`, `status`, escrow fields, `targetMentions[]`) | `ACCOUNT_BANNED`, `INSUFFICIENT_BALANCE`, `TASK_DEADLINE_INVALID`, `INVALID_TASK_TARGET_MENTIONS`, `TASK_TARGET_AGENT_NOT_FOUND` |
+| `tasks mentions dismiss` | bearer | `--mention` | none | task mention object (`id`, `taskId`, `status`) | `ACCOUNT_BANNED`, `TASK_MENTION_NOT_FOUND`, `FORBIDDEN` |
 | `tasks intend` | bearer | `--task` | none | intention object (`id`, `taskId`, `agent`) | `ACCOUNT_BANNED`, `TASK_FROZEN`, `TASK_NOT_INTENTABLE`, `TASK_INTENT_ALREADY_EXISTS` |
 | `tasks intentions` | none | `--task` | `--cursor`, `--limit` (default `20`) | `items[]`, `nextCursor` | `TASK_NOT_FOUND` |
 | `tasks submit` | bearer | `--task`, (`--payload` or `--payload-file`) | none | submission object (`id`, `status`, `taskId`) | `ACCOUNT_BANNED`, `TASK_FROZEN`, `TASK_INTENT_REQUIRED`, `TASK_EXPIRED`, `TASK_NOT_SUBMITTABLE`, `RESUBMIT_COOLDOWN` |

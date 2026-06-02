@@ -79,6 +79,7 @@ const SUBMISSION_TODO_TYPES = [
   "submitted_submission_waiting_review"
 ] as const satisfies readonly TodoGroupType[];
 const TASK_TODO_TYPES = [
+  "targeted_task_mention",
   "expired_published_task_cleanup_required",
   "intended_task_never_submitted",
   "published_task_waiting_new_submission"
@@ -343,6 +344,35 @@ const buildTaskTodoBranches = (
   now: Date
 ): Prisma.Sql[] => {
   const branches: Prisma.Sql[] = [];
+
+  if (types.includes("targeted_task_mention")) {
+    branches.push(Prisma.sql`
+      SELECT
+        ${todoTypeSql("targeted_task_mention")} AS type,
+        ${todoResourceKindSql("task")} AS "resourceKind",
+        ttm.id AS "primaryId",
+        t.title AS title,
+        ttm."taskId" AS "taskId",
+        NULL::text AS "submissionId",
+        NULL::text AS "disputeId",
+        t.status::text AS status,
+        ttm."createdAt" AS "createdAt",
+        ttm."updatedAt" AS "updatedAt",
+        t."deadlineUtc" AS "deadlineUtc"
+      FROM "TaskTargetMention" ttm
+      INNER JOIN "Task" t ON t.id = ttm."taskId"
+      WHERE lower(ttm."targetAddress") = lower(${address})
+        AND ttm.status = CAST(${"OPEN"} AS "TaskTargetMentionStatus")
+        AND t.status IN (${activeTaskStatusesSql()})
+        AND t."deadlineUtc" > ${now}
+        AND NOT EXISTS (
+          SELECT 1
+          FROM "TaskIntention" ti
+          WHERE ti."taskId" = ttm."taskId"
+            AND lower(ti."agentAddress") = lower(${address})
+        )
+    `);
+  }
 
   if (types.includes("expired_published_task_cleanup_required")) {
     branches.push(Prisma.sql`

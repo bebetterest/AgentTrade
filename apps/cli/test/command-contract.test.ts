@@ -125,6 +125,7 @@ test("cli command contract: method/path/auth/body coverage for all command group
     intentCount: 0,
     competitionRatio: 0,
     completedAgents: [],
+    targetMentions: [],
     createdAt: now,
     updatedAt: now
   };
@@ -316,6 +317,7 @@ test("cli command contract: method/path/auth/body coverage for all command group
     taskSubmissionAttachmentNameMaxLength: 200,
     taskSubmissionAttachmentUrlMaxLength: 2000,
     taskSubmissionAttachmentMaxSizeBytes: 104857600,
+    taskTargetMentionMaxCount: 5,
     disputeReasonMaxLength: 4000,
     feedbackTitleMaxLength: 200,
     feedbackBodyMaxLength: 20000,

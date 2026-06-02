@@ -3482,6 +3482,107 @@ runDbSuite("API persistence mode", () => {
     expect(shanghaiTrends.points.reduce((sum, item) => sum + item.disputesOpened, 0)).toBe(1);
   });
 
+  it("shows targeted task mentions in todos and lets targets dismiss them in persistence mode", async () => {
+    const publisher = addr("targeted-persist-publisher");
+    const target = addr("targeted-persist-agent");
+    const other = addr("targeted-persist-other");
+    const missingTarget = addr("targeted-persist-missing");
+    const basePayload = {
+      title: "targeted persistence task",
+      descriptionMd: "desc",
+      acceptanceCriteria: "criteria",
+      deadlineUtc: futureDeadline(),
+      displayTimezone: "UTC",
+      slotsTotal: 1,
+      rewardPerSlot: 10,
+      allowRepeatCompletionsBySameAgent: false
+    };
+
+    const invalidTargetRes = await app!.inject({
+      method: "POST",
+      url: "/v2/tasks",
+      headers: { authorization: `Bearer ${bearer(publisher)}` },
+      payload: { ...basePayload, targetAgentAddresses: [missingTarget] }
+    });
+    expect(invalidTargetRes.statusCode).toBe(400);
+    expect(errorCode(invalidTargetRes.json())).toBe("TASK_TARGET_AGENT_NOT_FOUND");
+
+    const profileRes = await app!.inject({
+      method: "PATCH",
+      url: `/v2/agents/${target}/profile`,
+      headers: { authorization: `Bearer ${bearer(target)}` },
+      payload: { name: "Targeted Agent", bio: "Interested in targeted task mentions." }
+    });
+    expect(profileRes.statusCode).toBe(200);
+
+    const taskRes = await app!.inject({
+      method: "POST",
+      url: "/v2/tasks",
+      headers: { authorization: `Bearer ${bearer(publisher)}` },
+      payload: {
+        ...basePayload,
+        title: "targeted persistence task valid",
+        targetAgentAddresses: [target]
+      }
+    });
+    expect(taskRes.statusCode).toBe(200);
+    const task = taskRes.json() as {
+      id: string;
+      targetMentions: Array<{ id: string; targetAgent: string; status: string }>;
+    };
+    expect(task.targetMentions).toHaveLength(1);
+    expect(task.targetMentions[0]).toMatchObject({ targetAgent: target, status: "OPEN" });
+
+    const otherDismissRes = await app!.inject({
+      method: "POST",
+      url: `/v2/task-mentions/${task.targetMentions[0]!.id}/dismiss`,
+      headers: { authorization: `Bearer ${bearer(other)}` }
+    });
+    expect(otherDismissRes.statusCode).toBe(403);
+
+    const todosRes = await app!.inject({
+      method: "GET",
+      url: `/v2/todos/${target}?scope=action_required&type=targeted_task_mention`
+    });
+    expect(todosRes.statusCode).toBe(200);
+    const todos = todosRes.json() as {
+      groups: Array<{
+        type: string;
+        totalCount: number;
+        items: Array<{ primaryId: string; taskId: string }>;
+      }>;
+    };
+    expect(todos.groups).toHaveLength(1);
+    expect(todos.groups[0]).toMatchObject({
+      type: "targeted_task_mention",
+      totalCount: 1
+    });
+    expect(todos.groups[0]?.items[0]).toMatchObject({
+      primaryId: task.targetMentions[0]!.id,
+      taskId: task.id
+    });
+
+    const dismissRes = await app!.inject({
+      method: "POST",
+      url: `/v2/task-mentions/${task.targetMentions[0]!.id}/dismiss`,
+      headers: { authorization: `Bearer ${bearer(target)}` }
+    });
+    expect(dismissRes.statusCode).toBe(200);
+    expect(dismissRes.json()).toMatchObject({ id: task.targetMentions[0]!.id, status: "DISMISSED" });
+
+    const todosAfterDismissRes = await app!.inject({
+      method: "GET",
+      url: `/v2/todos/${target}?scope=action_required&type=targeted_task_mention`
+    });
+    expect(todosAfterDismissRes.statusCode).toBe(200);
+    const todosAfterDismiss = todosAfterDismissRes.json() as {
+      groups: Array<{ totalCount: number; items: unknown[] }>;
+    };
+    expect(todosAfterDismiss.groups).toHaveLength(1);
+    expect(todosAfterDismiss.groups[0]?.totalCount).toBe(0);
+    expect(todosAfterDismiss.groups[0]?.items).toHaveLength(0);
+  });
+
   it("groups account todos across action-required and waiting scopes in persistence mode", async () => {
     const target = addr("persist-todo-target");
     const otherPublisher = addr("persist-todo-other-publisher");
@@ -3614,9 +3715,10 @@ runDbSuite("API persistence mode", () => {
       }>;
     };
     expect(payload.address).toBe(target);
-    expect(payload.groups).toHaveLength(8);
+    expect(payload.groups).toHaveLength(9);
 
     const groups = new Map(payload.groups.map((group) => [group.type, group]));
+    expect(groups.get("targeted_task_mention")?.totalCount).toBe(0);
     expect(groups.get("latest_rejected_submission_no_followup")?.items[0]?.submissionId).toBe(rejectedSubmission.id);
     expect(groups.get("open_dispute_counterparty_response_required")?.totalCount).toBe(1);
     expect(groups.get("published_task_submission_pending_review")?.totalCount).toBe(2);

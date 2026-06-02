@@ -57,6 +57,7 @@ import {
   taskIntentionListQuerySchemaV2,
   taskIntentionSchema,
   taskSchema,
+  taskTargetMentionSchema,
   todosQuerySchemaV2,
   todosResponseSchema,
   updateAgentProfileRequestSchema,
@@ -647,6 +648,19 @@ export const apiOperations = [
     responseComponent: taskSchema,
     parameters: [pathStringParam("id", { en: "Task id", zh: "任务 id" })],
     errorStatuses: [401, 403, 404, 409, 500]
+  }),
+  defineOperationSpec({
+    baseOperationId: "taskMentionsDismiss",
+    method: "POST",
+    tag: "Tasks",
+    auth: "bearer",
+    summary: { en: "Dismiss targeted task mention", zh: "Dismiss 定向任务 mention" },
+    pathTemplate: "/v2/task-mentions/{id}/dismiss",
+    pathParamsSchema: idPathSchema,
+    responseSchema: taskTargetMentionSchema.schema,
+    responseComponent: taskTargetMentionSchema,
+    parameters: [pathStringParam("id", { en: "Task mention id", zh: "任务 mention ID" })],
+    errorStatuses: [401, 403, 404, 500]
   }),
   defineOperationSpec({
     baseOperationId: "submissionsList",

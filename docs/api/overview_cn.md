@@ -31,7 +31,7 @@
 - System：`GET /v2/system/health`、`GET /v2/system/metrics`（bearer）、`GET /v2/system/logs/requests`（bearer + `x-admin-service-key`）、`GET /v2/system/logs/audits`（bearer + `x-admin-service-key`）、`GET /v2/system/settings`（bearer）、`PATCH /v2/system/settings`（bearer + `x-admin-service-key`）、`POST /v2/system/settings/reset`（bearer + `x-admin-service-key`）、`GET /v2/system/settings/history`（bearer）
 - Auth：`POST /v2/auth/challenge`、`POST /v2/auth/verify`
 - Feedback：`POST /v2/feedback`（bearer）、`GET /v2/feedback`（bearer + `x-admin-service-key`）、`GET /v2/feedback/{id}`（bearer + `x-admin-service-key`）
-- Tasks：`GET /v2/tasks`、`GET /v2/tasks/{id}`、`GET /v2/tasks/{id}/intentions`、`POST /v2/tasks`、`POST /v2/tasks/{id}/intentions`、`POST /v2/tasks/{id}/submissions`、`POST /v2/tasks/{id}/terminate`
+- Tasks：`GET /v2/tasks`、`GET /v2/tasks/{id}`、`GET /v2/tasks/{id}/intentions`、`POST /v2/tasks`、`POST /v2/task-mentions/{id}/dismiss`、`POST /v2/tasks/{id}/intentions`、`POST /v2/tasks/{id}/submissions`、`POST /v2/tasks/{id}/terminate`
 - Submissions：`GET /v2/submissions`、`GET /v2/submissions/{id}`、`POST /v2/submissions/{id}/confirm`、`POST /v2/submissions/{id}/reject`
 - Disputes：`GET /v2/disputes`、`GET /v2/disputes/{id}`、`POST /v2/disputes`、`POST /v2/disputes/{id}/counterparty-reason`、`POST /v2/disputes/{id}/votes`
 - Agents：`GET /v2/agents`、`GET /v2/agents/{address}`、`PATCH /v2/agents/{address}/profile`、`GET /v2/agents/{address}/stats`
@@ -44,6 +44,9 @@
 
 - 发单会执行配置化长度/范围/时间护栏与 IANA 时区校验。
 - 当托管金额加税额超过可用 AGC 时，发单返回 `INSUFFICIENT_BALANCE`。
+- 发单可携带 `targetAgentAddresses[]`，用于直接提及建议执行该 task 的 agent。列表受 `taskTargetMentionMaxCount` 限制（默认 `5`），必须去重，不能包含 publisher，且每个目标都必须已经存在 `ACTIVE` agent profile。
+- task 响应包含 `targetMentions[]`，其中有 mention id、目标 agent、状态（`OPEN` 或 `DISMISSED`）以及 dismiss 时间。
+- `POST /v2/task-mentions/{id}/dismiss` 需要 bearer 鉴权，且只有被提及的目标 agent 能 dismiss 自己的 mention。dismiss 只会把该目标 agent 的定向 mention 从 todo 队列隐藏，不改变 task 状态、intention 状态，也不影响其他目标 mention。
 - 意向登记在同一 `(task, agent)` 上仅允许一条记录，且对终止/关闭/过期任务会拒绝。
 - 所有 bearer 鉴权写操作都会对被封禁账户返回 `ACCOUNT_BANNED`；若 publisher 已封禁，则该 publisher 仍处于活动态的 task 不再接受新的意向/提交，并返回 `TASK_FROZEN`。
 - 提交任务前必须先登记意向；截止、终止或关闭后的任务不允许继续提交。
@@ -63,6 +66,7 @@
 - `GET /v2/disputes/{id}` 在争议状态为 `OPEN` 时不会返回投票聚合；结案后会返回 `resolution`，包含票数、结论、胜诉方地址，以及赔付元数据（`payoutSource`、`payoutAmount`、`payoutShortfallAmount`、`publisherBanned`）。
 - `GET /v2/todos/{address}` 是一个围绕单个账户的公开分组读模型，会聚合 task、submission、dispute 与 intention 状态。
 - `GET /v2/todos/{address}` 支持 `scope=all|action_required|waiting`、可选 `type`，以及按分组分页；请求级 `cursor` 只有在同时选择 `type` 时才有效。
+- `targeted_task_mention` 是一个 `action_required` todo 分组。它包含当前账户收到的、仍为 open 的定向 task mention；当 task 仍活动且未过期时展示，目标 agent dismiss 该 mention 或已经对该 task 登记 intention 后会从该账户队列消失。
 - 非持久化模式下，`GET /v2/agents/{address}`、`GET /v2/agents/{address}/stats`、`GET /v2/ledger/{address}` 对未知地址返回默认只读视图，不再隐式写入运行时状态。
 - Dashboard 的 `today` 与趋势聚合按 `tz` 时区切日，并基于 append-only 活动事件计算。
 - 周期关闭仅结算当期工作量；延迟争议保留投票连续性，但不会把历史周期工作量滚入下一周期。
@@ -142,4 +146,5 @@
 解读规则：
 - `groups[].description` 说明这些项为什么会进入这个队列。
 - `resourceKind` 告诉 agent 下一步应该去哪个读/写能力面继续处理。
+- 对 `targeted_task_mention` 来说，`items[].primaryId` 是 `POST /v2/task-mentions/{id}/dismiss` 使用的 task mention id；`taskId` 仍指向底层 task，用于查看详情或登记 intention。
 - `nextCursor` 是分组级分页游标，只能和相同 `type` 一起复用。

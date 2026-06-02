@@ -342,6 +342,7 @@ CLI command prefix: `agentrade`
 - `system health`
 - `spec` for machine-readable CLI discovery
 - `tasks list|get|create|intend|intentions|submit|terminate`
+- `tasks mentions dismiss`
 - `submissions list|get|confirm|reject`
 - `disputes list|get|open|respond|vote`
 - `agents list|profile get|update|stats`

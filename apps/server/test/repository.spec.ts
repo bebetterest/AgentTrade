@@ -1876,9 +1876,10 @@ runDbSuite("PrismaStateRepository", () => {
       generatedAt: clock.now().toISOString()
     });
     expect(allGroups.address).toBe(target);
-    expect(allGroups.groups).toHaveLength(8);
+    expect(allGroups.groups).toHaveLength(9);
 
     const groups = new Map(allGroups.groups.map((group) => [group.type, group]));
+    expect(groups.get("targeted_task_mention")?.totalCount).toBe(0);
     expect(groups.get("latest_rejected_submission_no_followup")?.items[0]?.submissionId).toBe(rejectedSubmission.id);
     expect(groups.get("open_dispute_counterparty_response_required")?.totalCount).toBe(1);
     expect(groups.get("published_task_submission_pending_review")?.totalCount).toBe(2);
@@ -1947,6 +1948,58 @@ runDbSuite("PrismaStateRepository", () => {
     expect(exhaustedPage.groups[0]?.items).toHaveLength(0);
     expect(exhaustedPage.groups[0]?.totalCount).toBe(2);
     expect(exhaustedPage.groups[0]?.nextCursor).toBeNull();
+  });
+
+  it("syncs targeted task mentions into direct todos and hides them after dismiss", async () => {
+    const clock = new MutableClock(new Date("2026-04-01T00:00:00.000Z"));
+    const engine = new AgentradeEngine(defaultConfig, clock);
+    const publisher = addr("repo-targeted-publisher");
+    const target = addr("repo-targeted-agent");
+    engine.updateAgentProfile(target, { name: "Repo Target", bio: "Accepts targeted tasks." });
+    const task = engine.publishTask({
+      publisher,
+      title: "repo-targeted-task",
+      descriptionMd: "desc",
+      acceptanceCriteria: "ok",
+      deadlineUtc: futureDeadline(3, clock.now()),
+      displayTimezone: "UTC",
+      slotsTotal: 1,
+      rewardPerSlot: 10,
+      allowRepeatCompletionsBySameAgent: false,
+      targetAgentAddresses: [target]
+    });
+
+    await repo.sync(engine.toSnapshot());
+
+    const todos = await repo.getTodosDirect({
+      address: target,
+      scope: "action_required",
+      type: "targeted_task_mention",
+      limit: 10,
+      generatedAt: clock.now().toISOString()
+    });
+    expect(todos.groups).toHaveLength(1);
+    expect(todos.groups[0]?.totalCount).toBe(1);
+    expect(todos.groups[0]?.items[0]).toMatchObject({
+      primaryId: task.targetMentions[0]!.id,
+      taskId: task.id
+    });
+
+    await repo.dismissTaskTargetMentionDirect({
+      mentionId: task.targetMentions[0]!.id,
+      targetAgent: target
+    });
+
+    const todosAfterDismiss = await repo.getTodosDirect({
+      address: target,
+      scope: "action_required",
+      type: "targeted_task_mention",
+      limit: 10,
+      generatedAt: clock.now().toISOString()
+    });
+    expect(todosAfterDismiss.groups).toHaveLength(1);
+    expect(todosAfterDismiss.groups[0]?.totalCount).toBe(0);
+    expect(todosAfterDismiss.groups[0]?.items).toHaveLength(0);
   });
 
   it("keeps latest rejected todo items aligned with per-task latest submission semantics", async () => {

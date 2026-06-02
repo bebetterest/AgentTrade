@@ -19,6 +19,11 @@ import {
   executeOperationCommand
 } from "./shared.js";
 
+const collectTargetAgent = (value: string, previous: string[] = []): string[] => [
+  ...previous,
+  ensureAddress(value, "--target-agent")
+];
+
 export const registerTaskCommands = (program: Command): void => {
   const tasks = program.command("tasks").description("Task lifecycle commands");
 
@@ -70,7 +75,8 @@ export const registerTaskCommands = (program: Command): void => {
       .requiredOption("--tz <timezone>", "display timezone")
       .requiredOption("--slots <number>", "slot count")
       .requiredOption("--reward <number>", "reward per slot")
-      .option("--allow-repeat", "allow repeat completions by same agent"),
+      .option("--allow-repeat", "allow repeat completions by same agent")
+      .option("--target-agent <address>", "target agent to @ for this task (repeatable)", collectTargetAgent, []),
     [
       "require one of --title / --title-file",
       "require one of --desc / --desc-file",
@@ -102,11 +108,26 @@ export const registerTaskCommands = (program: Command): void => {
           displayTimezone: ensureIanaTimeZone(String(options.tz), "--tz"),
           slotsTotal: ensurePositiveInteger(String(options.slots), "--slots"),
           rewardPerSlot: ensurePositiveInteger(String(options.reward), "--reward"),
-          allowRepeatCompletionsBySameAgent: Boolean(options.allowRepeat)
+          allowRepeatCompletionsBySameAgent: Boolean(options.allowRepeat),
+          targetAgentAddresses: Array.isArray(options.targetAgent) && options.targetAgent.length > 0
+            ? options.targetAgent
+            : undefined
         }
       };
     });
   });
+
+  tasks
+    .command("mentions")
+    .description("Task target mention commands")
+    .command("dismiss")
+    .description("Dismiss a targeted task mention (token required)")
+    .requiredOption("--mention <id>", "task mention id")
+    .action(async (options, command: Command) => {
+      await executeBearerOperationCommand(command, cliOperationBindings["tasks mentions dismiss"], async () => ({
+        pathParams: { id: ensureNonEmpty(String(options.mention), "--mention") }
+      }));
+    });
 
   tasks
     .command("intend")

@@ -42,6 +42,8 @@ import {
   type SupervisionVote,
   type Task,
   type TaskIntention,
+  type TaskTargetMention,
+  TaskTargetMentionStatus,
   type RuntimeRuleAuditRecord,
   type RuntimeSettingsState,
   TaskStatus as DomainTaskStatus,
@@ -67,6 +69,7 @@ import {
   mapSubmission,
   mapTask,
   mapTaskIntention,
+  mapTaskTargetMention,
   mapVote
 } from "./state-repository-mappers.js";
 import {
@@ -149,10 +152,12 @@ import {
   type RespondDisputeDirectInput,
   type SubmitTaskDirectInput,
   type VoteDisputeDirectInput,
+  type DismissTaskTargetMentionDirectInput,
   writeAddTaskIntentionDirect,
   writeCloseCurrentCycleIfDueDirect,
   writeCloseCurrentCycleDirect,
   writeConfirmSubmissionDirect,
+  writeDismissTaskTargetMentionDirect,
   writeOpenDisputeDirect,
   writeOverrideDisputeDirect,
   writePublishTaskDirect,
@@ -1827,6 +1832,24 @@ export class PrismaStateRepository {
       input
     );
     return mapTask(task);
+  }
+
+  async dismissTaskTargetMentionDirect(
+    input: DismissTaskTargetMentionDirectInput
+  ): Promise<TaskTargetMention> {
+    const mention = await writeDismissTaskTargetMentionDirect(
+      this.prisma,
+      {
+        executeWithRetry: (operation) => this.executeWithRetry(operation),
+        lockRuntimeWithTx: (tx) => this.lockRuntimeWithTx(tx),
+        assertAgentActiveForWriteWithTx: (tx, address, now) =>
+          this.assertAgentActiveForWriteWithTx(tx, address, now),
+        touchRuntimeStateWithTx: (tx) => this.touchRuntimeStateWithTx(tx),
+        appendAuditLogWithTx: (tx, audit) => this.appendAuditLogWithTx(tx, audit).then(() => undefined)
+      },
+      input
+    );
+    return mapTaskTargetMention(mention);
   }
 
   async rejectSubmissionDirect(input: RejectSubmissionDirectInput): Promise<Submission> {
@@ -3806,6 +3829,15 @@ export class PrismaStateRepository {
     const taskDiff = includeTasks
       ? diffByKey(currentSnapshot?.tasks ?? [], nextSnapshot.tasks, (item) => item.id)
       : { upserts: [], deletes: [] };
+    const currentTaskTargetMentions =
+      currentSnapshot?.targetMentions ??
+      currentSnapshot?.tasks.flatMap((task) => task.targetMentions ?? []) ??
+      [];
+    const nextTaskTargetMentions =
+      nextSnapshot.targetMentions ?? nextSnapshot.tasks.flatMap((task) => task.targetMentions ?? []);
+    const taskTargetMentionDiff = includeTasks
+      ? diffByKey(currentTaskTargetMentions, nextTaskTargetMentions, (item) => item.id)
+      : { upserts: [], deletes: [] };
     const intentionDiff = includeIntentions
       ? diffByKey(currentSnapshot?.intentions ?? [], nextSnapshot.intentions ?? [], (item) => item.id)
       : { upserts: [], deletes: [] };
@@ -3986,6 +4018,31 @@ export class PrismaStateRepository {
           rewardEscrowRemaining: item.rewardEscrowRemaining,
           intentCount: item.intentCount,
           completedAgents: toJsonAddressArray(item.completedAgents),
+          createdAt: toDate(item.createdAt),
+          updatedAt: toDate(item.updatedAt)
+        }
+      });
+    }
+
+    for (const item of taskTargetMentionDiff.upserts) {
+      await tx.taskTargetMention.upsert({
+        where: { id: item.id },
+        create: {
+          id: item.id,
+          taskId: item.taskId,
+          publisherAddress: item.publisher,
+          targetAddress: item.targetAgent,
+          status: item.status,
+          dismissedAt: item.dismissedAt ? toDate(item.dismissedAt) : null,
+          createdAt: toDate(item.createdAt),
+          updatedAt: toDate(item.updatedAt)
+        },
+        update: {
+          taskId: item.taskId,
+          publisherAddress: item.publisher,
+          targetAddress: item.targetAgent,
+          status: item.status,
+          dismissedAt: item.dismissedAt ? toDate(item.dismissedAt) : null,
           createdAt: toDate(item.createdAt),
           updatedAt: toDate(item.updatedAt)
         }
@@ -4277,6 +4334,9 @@ export class PrismaStateRepository {
     if (intentionDiff.deletes.length > 0) {
       await tx.taskIntention.deleteMany({ where: { id: { in: intentionDiff.deletes } } });
     }
+    if (taskTargetMentionDiff.deletes.length > 0) {
+      await tx.taskTargetMention.deleteMany({ where: { id: { in: taskTargetMentionDiff.deletes } } });
+    }
     if (taskDiff.deletes.length > 0) {
       await tx.task.deleteMany({ where: { id: { in: taskDiff.deletes } } });
     }
@@ -4564,6 +4624,7 @@ export class PrismaStateRepository {
       balances,
       tasks,
       taskIntentions,
+      taskTargetMentions,
       submissions,
       disputes,
       disputeRollbackHistory,
@@ -4577,6 +4638,7 @@ export class PrismaStateRepository {
         tx.ledgerBalance.findMany(),
         tx.task.findMany(),
         tx.taskIntention.findMany(),
+        tx.taskTargetMention.findMany(),
         tx.submission.findMany(),
         tx.dispute.findMany(),
         tx.disputeRollbackHistory.findMany({ orderBy: [{ reopenedAt: "asc" }, { id: "asc" }] }),
@@ -4621,6 +4683,23 @@ export class PrismaStateRepository {
       updatedAt: toIso(item.updatedAt)
     })) satisfies EngineStateSnapshot["balances"];
 
+    const mappedTaskTargetMentions = taskTargetMentions.map((item) => ({
+      id: item.id,
+      taskId: item.taskId,
+      publisher: asAddress(item.publisherAddress),
+      targetAgent: asAddress(item.targetAddress),
+      status: item.status as TaskTargetMentionStatus,
+      createdAt: toIso(item.createdAt),
+      updatedAt: toIso(item.updatedAt),
+      dismissedAt: item.dismissedAt ? toIso(item.dismissedAt) : null
+    })) satisfies NonNullable<EngineStateSnapshot["targetMentions"]>;
+    const mappedTaskTargetMentionsByTask = new Map<string, TaskTargetMention[]>();
+    for (const mention of mappedTaskTargetMentions) {
+      const existing = mappedTaskTargetMentionsByTask.get(mention.taskId) ?? [];
+      existing.push(mention);
+      mappedTaskTargetMentionsByTask.set(mention.taskId, existing);
+    }
+
     const mappedTasks = tasks.map((item) => ({
       id: item.id,
       publisher: asAddress(item.publisherAddress),
@@ -4643,6 +4722,7 @@ export class PrismaStateRepository {
         intentCount: item.intentCount
       }),
       completedAgents: asAddressArray(item.completedAgents),
+      targetMentions: mappedTaskTargetMentionsByTask.get(item.id) ?? [],
       createdAt: toIso(item.createdAt),
       updatedAt: toIso(item.updatedAt)
     })) satisfies EngineStateSnapshot["tasks"];
@@ -4784,6 +4864,7 @@ export class PrismaStateRepository {
       cycles: mappedCycles,
       activities: mappedActivities,
       intentions: mappedIntentions,
+      targetMentions: mappedTaskTargetMentions,
       latestSubmissionByTaskAndAgent,
       banSourceDisputeByPublisher
     };

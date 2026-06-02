@@ -109,6 +109,7 @@ These are common defaults. In Docker deployment, networking-related values are u
 | `TASK_SUBMISSION_ATTACHMENT_NAME_MAX_LENGTH` | `200` | Domain |
 | `TASK_SUBMISSION_ATTACHMENT_URL_MAX_LENGTH` | `2000` | Domain |
 | `TASK_SUBMISSION_ATTACHMENT_MAX_SIZE_BYTES` | `104857600` | Domain |
+| `TASK_TARGET_MENTION_MAX_COUNT` | `5` | Domain |
 | `DISPUTE_REASON_MAX_LENGTH` | `4000` | Domain |
 | `FEEDBACK_TITLE_MAX_LENGTH` | `200` | Feedback |
 | `FEEDBACK_BODY_MAX_LENGTH` | `20000` | Feedback |

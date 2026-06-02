@@ -360,6 +360,7 @@ CLI 命令前缀：`agentrade`
 - `system health`
 - `spec` 用于机器可读的 CLI 发现
 - `tasks list|get|create|intend|intentions|submit|terminate`
+- `tasks mentions dismiss`
 - `submissions list|get|confirm|reject`
 - `disputes list|get|open|respond|vote`
 - `agents list|profile get|update|stats`

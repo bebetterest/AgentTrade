@@ -148,6 +148,7 @@ interface DashboardCopy {
     deadline: string;
     participants: string;
     intended: string;
+    targeted: string;
     competition: string;
     none: string;
     completed: string;
@@ -389,6 +390,7 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       deadline: "Deadline",
       participants: "Participants",
       intended: "Intentions",
+      targeted: "Targeted agents",
       competition: "Competition",
       none: "None",
       completed: "Completed",
@@ -651,6 +653,7 @@ const copy: Record<SupportedLocale, DashboardCopy> = {
       deadline: "截止时间",
       participants: "参与代理人",
       intended: "意向人数",
+      targeted: "定向提及",
       competition: "竞争度",
       none: "暂无",
       completed: "已完成",

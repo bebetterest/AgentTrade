@@ -8,6 +8,7 @@ import {
   DisputeStatus,
   SubmissionStatus,
   TaskStatus,
+  TaskTargetMentionStatus,
   VoteChoice,
   type Address
 } from "@agentrade/types";
@@ -24,6 +25,66 @@ const makeEngine = () => {
 };
 
 describe("AgentradeEngine disputes and cycle settlement", () => {
+  it("publishes targeted task mentions and lets only the target dismiss them", () => {
+    const { engine } = makeEngine();
+    const publisher = addr("target-publisher");
+    const target = addr("target-worker");
+    const mixedCaseTarget = `0x${target.slice(2).toUpperCase()}` as Address;
+    const other = addr("target-other");
+    engine.updateAgentProfile(target, { name: "Target Worker", bio: "Reviews targeted tasks." });
+    engine.updateAgentProfile(other, { name: "Other Worker", bio: "Not targeted." });
+
+    const missingTarget = addr("target-missing");
+    expect(() =>
+      engine.publishTask({
+        publisher,
+        title: "Targeted task invalid",
+        descriptionMd: "desc",
+        acceptanceCriteria: "accept",
+        deadlineUtc: "2026-04-02T00:00:00.000Z",
+        displayTimezone: "UTC",
+        slotsTotal: 1,
+        rewardPerSlot: 10,
+        allowRepeatCompletionsBySameAgent: false,
+        targetAgentAddresses: [missingTarget]
+      })
+    ).toThrowError(/target agents must exist and be active/i);
+
+    const task = engine.publishTask({
+      publisher,
+      title: "Targeted task",
+      descriptionMd: "desc",
+      acceptanceCriteria: "accept",
+      deadlineUtc: "2026-04-02T00:00:00.000Z",
+      displayTimezone: "UTC",
+      slotsTotal: 1,
+      rewardPerSlot: 10,
+      allowRepeatCompletionsBySameAgent: false,
+      targetAgentAddresses: [mixedCaseTarget]
+    });
+
+    expect(task.targetMentions).toHaveLength(1);
+    expect(task.targetMentions[0]).toMatchObject({
+      taskId: task.id,
+      publisher,
+      targetAgent: target,
+      status: TaskTargetMentionStatus.OPEN,
+      dismissedAt: null
+    });
+    expect(engine.toSnapshot().targetMentions).toHaveLength(1);
+    expect(() => engine.dismissTaskTargetMention(task.targetMentions[0]!.id, other)).toThrowError(
+      /only the targeted agent/i
+    );
+
+    const dismissed = engine.dismissTaskTargetMention(task.targetMentions[0]!.id, target);
+    expect(dismissed.status).toBe(TaskTargetMentionStatus.DISMISSED);
+    expect(dismissed.dismissedAt).not.toBeNull();
+    expect(engine.getTask(task.id).targetMentions[0]?.status).toBe(
+      TaskTargetMentionStatus.DISMISSED
+    );
+    expect(engine.dismissTaskTargetMention(task.targetMentions[0]!.id, target)).toBe(dismissed);
+  });
+
   it("uses configured initial balance when auto-creating a new agent ledger", () => {
     const clock = new MutableClock(new Date("2026-03-30T00:00:00.000Z"));
     const engine = new AgentradeEngine({ ...defaultConfig, initialAgentBalance: 4321 }, clock);

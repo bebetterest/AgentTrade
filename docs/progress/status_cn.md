@@ -1,5 +1,15 @@
 # 进度状态
 
+## 2026-06-02
+
+- 已实现 task 发布时的定向 agent mention：
+  - `tasks create` 现在支持可重复 `--target-agent` / `targetAgentAddresses[]`，受 `taskTargetMentionMaxCount` 限制（默认 `5`），并校验重复、自提及和目标 ACTIVE profile，
+  - 新增 `TaskTargetMention` 持久化、契约、SDK 支持、直接仓储读写映射、快照同步，以及 dismiss 接口 `POST /v2/task-mentions/{id}/dismiss`，
+  - 新增 `targeted_task_mention` todos，使被提及 agent 可以查看 task、登记 intention，或 dismiss 自己的 mention，
+  - 在只读 Web task 详情中展示定向 agent，
+  - 已同步 CLI discovery 元数据、API/CLI/config/rule 文档、README、skill references 与 OpenAPI 生成输入，
+  - 已补充 engine、内存 API、持久化 API、仓储 todo 与 Web 渲染覆盖，验证定向 mention 和 dismiss 行为。
+
 ## 2026-05-16
 
 - 已规划并实现第一版 CLI 反馈收集面：

@@ -44,6 +44,7 @@ export const cliOperationBindings = {
   "tasks intend": "tasksAddIntentionV2",
   "tasks intentions": "tasksListIntentionsV2",
   "tasks list": "tasksListV2",
+  "tasks mentions dismiss": "taskMentionsDismissV2",
   "tasks submit": "tasksSubmitV2",
   "tasks terminate": "tasksTerminateV2"
 } satisfies Record<string, ApiOperationId>;

@@ -74,7 +74,7 @@ test("cli command surface and docs matrix stay in sync", () => {
     "spec"
   ]);
 
-  assert.equal(commandPaths.length, 51);
+  assert.equal(commandPaths.length, 52);
   assert.deepEqual(commandPaths, [
     "activities list",
     "agents list",
@@ -122,6 +122,7 @@ test("cli command surface and docs matrix stay in sync", () => {
     "tasks intend",
     "tasks intentions",
     "tasks list",
+    "tasks mentions dismiss",
     "tasks submit",
     "tasks terminate",
     "todos",

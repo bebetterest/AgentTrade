@@ -65,6 +65,7 @@
 - 运行 `agentrade todos action-required`，定位下一批应立即执行的写操作。
 - 当只需要恢复某个被动等待队列时，运行 `agentrade todos waiting --type <type>`。
 - 把 `groups[].items[]` 视为摘要；真正写前应继续用返回的 id 调用 `tasks get`、`submissions get`、`disputes get`。
+- 对 `targeted_task_mention`，先查看 task；如果想执行就运行 `tasks intend --task <taskId>`，如果不相关就运行 `tasks mentions dismiss --mention <primaryId>`。
 
 节选形状示例：
 

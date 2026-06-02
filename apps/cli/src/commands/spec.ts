@@ -203,7 +203,8 @@ type CliSpecEntityKind =
   | "supervisionVote"
   | "todoGroup"
   | "task"
-  | "taskIntention";
+  | "taskIntention"
+  | "taskMention";
 
 type CliSpecEntityRelation = "target" | "created" | "listed" | "returned" | "resolved" | "related";
 
@@ -1434,6 +1435,12 @@ const API_AUTOMATION_HINTS: Partial<Record<keyof typeof cliOperationBindings, Cl
     preflightCommands: ["ledger get"],
     verificationCommands: ["tasks list", "ledger get"]
   },
+  "tasks mentions dismiss": {
+    effect: "remoteWrite",
+    retryMode: "retryableAfterVerification",
+    preflightCommands: ["todos action-required", "tasks get"],
+    verificationCommands: ["todos action-required", "tasks get"]
+  },
   "tasks intend": {
     effect: "remoteWrite",
     retryMode: "retryableAfterVerification",
@@ -1771,6 +1778,20 @@ const API_FAILURE_HINTS: Partial<Record<keyof typeof cliOperationBindings, reado
       retryGate: "afterStateVerification",
       summary: "reduce reward or slots, or top up AGC balance before retrying task creation",
       suggestedCommands: ["ledger get"]
+    },
+    {
+      match: { type: "API_ERROR", apiError: "TASK_TARGET_AGENT_NOT_FOUND" },
+      strategy: "fixInputs",
+      retryGate: "afterInputRepair",
+      summary: "remove the target mention or create/activate the target agent profile before retrying task creation",
+      suggestedCommands: ["agents profile get", "agents profile update"]
+    },
+    {
+      match: { type: "API_ERROR", apiError: "INVALID_TASK_TARGET_MENTIONS" },
+      strategy: "fixInputs",
+      retryGate: "afterInputRepair",
+      summary: "repair --target-agent values before retrying; targets must be unique, active agents, and cannot be the publisher",
+      suggestedCommands: ["agents profile get", "tasks create"]
     }
   ],
   "tasks get": [
@@ -1780,6 +1801,22 @@ const API_FAILURE_HINTS: Partial<Record<keyof typeof cliOperationBindings, reado
       retryGate: "afterStateVerification",
       summary: "refresh the source-of-truth task id before retrying the task read",
       suggestedCommands: ["tasks list"]
+    }
+  ],
+  "tasks mentions dismiss": [
+    {
+      match: { type: "API_ERROR", apiError: "TASK_MENTION_NOT_FOUND" },
+      strategy: "reReadState",
+      retryGate: "never",
+      summary: "refresh targeted mention todos before retrying because the mention id is no longer current",
+      suggestedCommands: ["todos action-required"]
+    },
+    {
+      match: { type: "API_ERROR", apiError: "FORBIDDEN" },
+      strategy: "switchCredential",
+      retryGate: "afterInputRepair",
+      summary: "switch to the agent identity that was targeted by the task mention before dismissing it",
+      suggestedCommands: ["auth login", "todos action-required", "tasks get"]
     }
   ],
   "tasks intend": [
@@ -3274,6 +3311,18 @@ const getEntityHints = (
             entity: "agent",
             relation: "related",
             outputPaths: ["data.publisher"]
+          },
+          {
+            entity: "taskMention",
+            relation: "created",
+            inputSources: ["--target-agent"],
+            outputPaths: ["data.targetMentions[].id"]
+          },
+          {
+            entity: "agent",
+            relation: "related",
+            inputSources: ["--target-agent"],
+            outputPaths: ["data.targetMentions[].targetAgent"]
           }
         ]
       };
@@ -3291,6 +3340,38 @@ const getEntityHints = (
             entity: "agent",
             relation: "related",
             outputPaths: ["data.publisher"]
+          },
+          {
+            entity: "taskMention",
+            relation: "related",
+            outputPaths: ["data.targetMentions[].id"]
+          },
+          {
+            entity: "agent",
+            relation: "related",
+            outputPaths: ["data.targetMentions[].targetAgent"]
+          }
+        ]
+      };
+    case "tasks mentions dismiss":
+      return {
+        primaryEntity: "taskMention",
+        bindings: [
+          {
+            entity: "taskMention",
+            relation: "target",
+            inputSources: ["--mention"],
+            outputPaths: ["data.id"]
+          },
+          {
+            entity: "task",
+            relation: "related",
+            outputPaths: ["data.taskId"]
+          },
+          {
+            entity: "agent",
+            relation: "related",
+            outputPaths: ["data.publisher", "data.targetAgent"]
           }
         ]
       };
@@ -4275,6 +4356,12 @@ const getHandoffHints = (
           note: "drill into the selected todo summary's task"
         },
         {
+          targetCommand: "tasks mentions dismiss",
+          bindings: [handoffFromPath("data.groups[].items[].primaryId", ["--mention"])],
+          ...currentPageSelection(equalsSelectionCondition("data.groups[].type", "targeted_task_mention")),
+          note: "dismiss the selected targeted-task mention for the current agent"
+        },
+        {
           targetCommand: "submissions get",
           bindings: [handoffFromPath("data.groups[].items[].submissionId", ["--submission"])],
           ...currentPageSelection(nonNullSelectionCondition("data.groups[].items[].submissionId")),
@@ -4306,6 +4393,12 @@ const getHandoffHints = (
           bindings: [handoffFromPath("data.groups[].items[].taskId", ["--task"])],
           ...currentPageSelection(nonNullSelectionCondition("data.groups[].items[].taskId")),
           note: "drill into the selected todo summary's task"
+        },
+        {
+          targetCommand: "tasks mentions dismiss",
+          bindings: [handoffFromPath("data.groups[].items[].primaryId", ["--mention"])],
+          ...currentPageSelection(equalsSelectionCondition("data.groups[].type", "targeted_task_mention")),
+          note: "dismiss the selected targeted-task mention for the current agent"
         },
         {
           targetCommand: "submissions get",
@@ -4646,6 +4739,12 @@ const getHandoffHints = (
         {
           targetCommand: "ledger get",
           bindings: [handoffFromPath("data.publisher", ["--address"])]
+        },
+        {
+          targetCommand: "agents profile get",
+          bindings: [handoffFromPath("data.targetMentions[].targetAgent", ["--address"])],
+          ...currentPageSelection(),
+          note: "inspect one targeted agent profile from the created task"
         }
       ]);
     case "tasks get":
@@ -4691,6 +4790,12 @@ const getHandoffHints = (
           ...currentResultSelection(inSelectionCondition("data.status", ["OPEN", "IN_PROGRESS"]))
         },
         {
+          targetCommand: "tasks mentions dismiss",
+          bindings: [handoffFromPath("data.targetMentions[].id", ["--mention"])],
+          ...currentResultSelection(nonNullSelectionCondition("data.targetMentions[].id")),
+          note: "dismiss a targeted mention when the authenticated agent is the mention target"
+        },
+        {
           targetCommand: "submissions list",
           bindings: [
             {
@@ -4729,6 +4834,22 @@ const getHandoffHints = (
         {
           targetCommand: "ledger get",
           bindings: [handoffFromPath("data.publisher", ["--address"])]
+        }
+      ]);
+    case "tasks mentions dismiss":
+      return cloneHandoffHints([
+        {
+          targetCommand: "tasks get",
+          bindings: [handoffFromPath("data.taskId", ["--task"])]
+        },
+        {
+          targetCommand: "todos action-required",
+          bindings: [handoffFromPath("data.targetAgent", ["--address"])],
+          note: "refresh action-required todos for the targeted agent after dismissing the mention"
+        },
+        {
+          targetCommand: "agents profile get",
+          bindings: [handoffFromPath("data.targetAgent", ["--address"])]
         }
       ]);
     case "tasks intend":
@@ -5199,14 +5320,14 @@ const getWorkflowHints = (
         phase: "discover",
         actorRoles: ["any"],
         prerequisiteCommands: [],
-        nextCommands: ["todos action-required", "todos waiting", "tasks get", "submissions get", "disputes get"]
+        nextCommands: ["todos action-required", "todos waiting", "tasks get", "tasks mentions dismiss", "submissions get", "disputes get"]
       };
     case "todos action-required":
       return {
         phase: "review",
         actorRoles: ["any"],
         prerequisiteCommands: ["todos"],
-        nextCommands: ["todos waiting", "tasks get", "submissions get", "disputes get"]
+        nextCommands: ["todos waiting", "tasks get", "tasks mentions dismiss", "submissions get", "disputes get"]
       };
     case "todos waiting":
       return {
@@ -5304,14 +5425,21 @@ const getWorkflowHints = (
         phase: "publish",
         actorRoles: ["publisher"],
         prerequisiteCommands: ["system health", "ledger get"],
-        nextCommands: ["tasks get", "tasks intentions"]
+        nextCommands: ["tasks get", "tasks intentions", "todos action-required"]
       };
     case "tasks get":
       return {
         phase: "discover",
         actorRoles: ["any"],
         prerequisiteCommands: ["tasks list"],
-        nextCommands: ["tasks intend", "tasks submit", "tasks terminate", "submissions list"]
+        nextCommands: ["tasks intend", "tasks submit", "tasks mentions dismiss", "tasks terminate", "submissions list"]
+      };
+    case "tasks mentions dismiss":
+      return {
+        phase: "review",
+        actorRoles: ["owner"],
+        prerequisiteCommands: ["todos action-required", "tasks get"],
+        nextCommands: ["todos action-required", "tasks get"]
       };
     case "tasks intend":
       return {

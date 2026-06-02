@@ -40,6 +40,7 @@ const taskCreateOperation = getApiOperation("tasksCreateV2");
 const taskIntendOperation = getApiOperation("tasksAddIntentionV2");
 const taskSubmitOperation = getApiOperation("tasksSubmitV2");
 const taskTerminateOperation = getApiOperation("tasksTerminateV2");
+const taskMentionDismissOperation = getApiOperation("taskMentionsDismissV2");
 const submissionConfirmOperation = getApiOperation("submissionsConfirmV2");
 const submissionRejectOperation = getApiOperation("submissionsRejectV2");
 
@@ -266,51 +267,53 @@ const registerTaskCreateRoute = (
     toServerRoutePath(operation.pathTemplate),
     { preHandler: [app.authenticate, app.requireActiveAgent] },
     async (request) => {
-    const body = parseOperationBody<{
-      title: string;
-      descriptionMd: string;
-      acceptanceCriteria: string;
-      deadlineUtc: string;
-      displayTimezone: string;
-      slotsTotal: number;
-      rewardPerSlot: number;
-      allowRepeatCompletionsBySameAgent: boolean;
-    }>(operation, request);
-    await services.refreshRuntimeSettings();
-    validateCreateTaskInput(body, services.config);
+      const body = parseOperationBody<{
+        title: string;
+        descriptionMd: string;
+        acceptanceCriteria: string;
+        deadlineUtc: string;
+        displayTimezone: string;
+        slotsTotal: number;
+        rewardPerSlot: number;
+        allowRepeatCompletionsBySameAgent: boolean;
+        targetAgentAddresses?: Address[];
+      }>(operation, request);
+      await services.refreshRuntimeSettings();
+      validateCreateTaskInput(body, services.config);
 
-    const publisher = request.agentAddress as Address;
-    const writeMeta = services.writeMeta({
-      request,
-      operation: "tasks.create",
-      actor: publisher,
-      targetType: "task"
-    });
-    if (services.stateRepository) {
+      const publisher = request.agentAddress as Address;
+      const writeMeta = services.writeMeta({
+        request,
+        operation: "tasks.create",
+        actor: publisher,
+        targetType: "task"
+      });
+      if (services.stateRepository) {
+        return validateOperationResponse(
+          operation,
+          await services.mutateDirect(
+            () =>
+              services.stateRepository!.publishTaskDirect({
+                publisher,
+                ...body,
+                auditContext: toWriteAuditContext(writeMeta)
+              }),
+            writeMeta
+          )
+        );
+      }
       return validateOperationResponse(
         operation,
-        await services.mutateDirect(() =>
-          services.stateRepository!.publishTaskDirect({
-            publisher,
-            ...body,
-            auditContext: toWriteAuditContext(writeMeta)
-          }),
+        await services.mutate(
+          (engine) =>
+            engine.publishTask({
+              publisher,
+              ...body
+            }),
+          ["profiles", "balances", "tasks", "cycles"],
           writeMeta
         )
       );
-    }
-    return validateOperationResponse(
-      operation,
-      await services.mutate(
-        (engine) =>
-          engine.publishTask({
-            publisher,
-            ...body
-          }),
-        ["profiles", "balances", "tasks", "cycles"],
-        writeMeta
-      )
-    );
     }
   );
 };
@@ -324,40 +327,40 @@ const registerTaskIntendRoute = (
     toServerRoutePath(operation.pathTemplate),
     { preHandler: [app.authenticate, app.requireActiveAgent] },
     async (request) => {
-    const params = parseOperationParams<{ id: string }>(operation, request);
-    const agent = request.agentAddress as Address;
-    const writeMeta = services.writeMeta({
-      request,
-      operation: "tasks.intend",
-      actor: agent,
-      targetType: "task",
-      targetId: params.id,
-      details: {
-        taskId: params.id
+      const params = parseOperationParams<{ id: string }>(operation, request);
+      const agent = request.agentAddress as Address;
+      const writeMeta = services.writeMeta({
+        request,
+        operation: "tasks.intend",
+        actor: agent,
+        targetType: "task",
+        targetId: params.id,
+        details: {
+          taskId: params.id
+        }
+      });
+      if (services.stateRepository) {
+        return validateOperationResponse(
+          operation,
+          await services.mutateDirect(
+            () =>
+              services.stateRepository!.addTaskIntentionDirect(
+                params.id,
+                agent,
+                toWriteAuditContext(writeMeta)
+              ),
+            writeMeta
+          )
+        );
       }
-    });
-    if (services.stateRepository) {
       return validateOperationResponse(
         operation,
-        await services.mutateDirect(
-          () =>
-            services.stateRepository!.addTaskIntentionDirect(
-              params.id,
-              agent,
-              toWriteAuditContext(writeMeta)
-            ),
+        await services.mutate(
+          (engine) => engine.addTaskIntention(params.id, agent),
+          ["profiles", "tasks"],
           writeMeta
         )
       );
-    }
-    return validateOperationResponse(
-      operation,
-      await services.mutate(
-        (engine) => engine.addTaskIntention(params.id, agent),
-        ["profiles", "tasks"],
-        writeMeta
-      )
-    );
     }
   );
 };
@@ -371,46 +374,52 @@ const registerTaskSubmitRoute = (
     toServerRoutePath(operation.pathTemplate),
     { preHandler: [app.authenticate, app.requireActiveAgent] },
     async (request) => {
-    const params = parseOperationParams<{ id: string }>(operation, request);
-    const body = parseOperationBody<{ payloadMd: string; attachments?: SubmissionAttachment[] }>(operation, request);
-    await services.refreshRuntimeSettings();
-    validateSubmissionPayloadLength(body.payloadMd, services.config);
-    validateSubmissionAttachments(body.attachments, services.config);
+      const params = parseOperationParams<{ id: string }>(operation, request);
+      const body = parseOperationBody<{ payloadMd: string; attachments?: SubmissionAttachment[] }>(
+        operation,
+        request
+      );
+      await services.refreshRuntimeSettings();
+      validateSubmissionPayloadLength(body.payloadMd, services.config);
+      validateSubmissionAttachments(body.attachments, services.config);
 
-    const agent = request.agentAddress as Address;
-    const writeMeta = services.writeMeta({
-      request,
-      operation: "tasks.submit",
-      actor: agent,
-      targetType: "task",
-      targetId: params.id,
-      details: {
-        taskId: params.id,
-        attachmentCount: body.attachments?.length ?? 0
+      const agent = request.agentAddress as Address;
+      const writeMeta = services.writeMeta({
+        request,
+        operation: "tasks.submit",
+        actor: agent,
+        targetType: "task",
+        targetId: params.id,
+        details: {
+          taskId: params.id,
+          attachmentCount: body.attachments?.length ?? 0
+        }
+      });
+      if (services.stateRepository) {
+        return validateOperationResponse(
+          operation,
+          await services.mutateDirect(
+            () =>
+              services.stateRepository!.submitTaskDirect({
+                taskId: params.id,
+                agent,
+                payloadMd: body.payloadMd,
+                attachments: body.attachments,
+                auditContext: toWriteAuditContext(writeMeta)
+              }),
+            writeMeta
+          )
+        );
       }
-    });
-    if (services.stateRepository) {
       return validateOperationResponse(
         operation,
-        await services.mutateDirect(() =>
-          services.stateRepository!.submitTaskDirect({
-            taskId: params.id,
-            agent,
-            payloadMd: body.payloadMd,
-            attachments: body.attachments,
-            auditContext: toWriteAuditContext(writeMeta)
-          }),
+        await services.mutate(
+          (engine) =>
+            engine.submitTask(params.id, agent, body.payloadMd, body.attachments ?? []),
+          ["submissions", "tasks"],
           writeMeta
         )
       );
-    }
-    return validateOperationResponse(
-      operation,
-      await services.mutate((engine) => engine.submitTask(params.id, agent, body.payloadMd, body.attachments ?? []), [
-        "submissions",
-        "tasks"
-      ], writeMeta)
-    );
     }
   );
 };
@@ -424,39 +433,87 @@ const registerTaskTerminateRoute = (
     toServerRoutePath(operation.pathTemplate),
     { preHandler: [app.authenticate, app.requireActiveAgent] },
     async (request) => {
-    const params = parseOperationParams<{ id: string }>(operation, request);
-    const publisher = request.agentAddress as Address;
-    const writeMeta = services.writeMeta({
-      request,
-      operation: "tasks.terminate",
-      actor: publisher,
-      targetType: "task",
-      targetId: params.id,
-      details: {
-        taskId: params.id
+      const params = parseOperationParams<{ id: string }>(operation, request);
+      const publisher = request.agentAddress as Address;
+      const writeMeta = services.writeMeta({
+        request,
+        operation: "tasks.terminate",
+        actor: publisher,
+        targetType: "task",
+        targetId: params.id,
+        details: {
+          taskId: params.id
+        }
+      });
+      if (services.stateRepository) {
+        return validateOperationResponse(
+          operation,
+          await services.mutateDirect(
+            () =>
+              services.stateRepository!.terminateTaskDirect(
+                params.id,
+                publisher,
+                toWriteAuditContext(writeMeta)
+              ),
+            writeMeta
+          )
+        );
       }
-    });
-    if (services.stateRepository) {
       return validateOperationResponse(
         operation,
-        await services.mutateDirect(() =>
-          services.stateRepository!.terminateTaskDirect(
-            params.id,
-            publisher,
-            toWriteAuditContext(writeMeta)
-          )
-        , writeMeta)
+        await services.mutate(
+          (engine) => engine.terminateTask(params.id, publisher),
+          ["profiles", "balances", "tasks", "cycles"],
+          writeMeta
+        )
       );
     }
-    return validateOperationResponse(
-      operation,
-      await services.mutate((engine) => engine.terminateTask(params.id, publisher), [
-        "profiles",
-        "balances",
-        "tasks",
-        "cycles"
-      ], writeMeta)
-    );
+  );
+};
+
+const registerTaskMentionDismissRoute = (
+  app: FastifyInstance,
+  services: AppServices,
+  operation: ApiOperationDefinition
+) => {
+  app.post(
+    toServerRoutePath(operation.pathTemplate),
+    { preHandler: [app.authenticate, app.requireActiveAgent] },
+    async (request) => {
+      const params = parseOperationParams<{ id: string }>(operation, request);
+      const targetAgent = request.agentAddress as Address;
+      const writeMeta = services.writeMeta({
+        request,
+        operation: "task-mentions.dismiss",
+        actor: targetAgent,
+        targetType: "task_mention",
+        targetId: params.id,
+        details: {
+          mentionId: params.id
+        }
+      });
+      if (services.stateRepository) {
+        return validateOperationResponse(
+          operation,
+          await services.mutateDirect(
+            () =>
+              services.stateRepository!.dismissTaskTargetMentionDirect({
+                mentionId: params.id,
+                targetAgent,
+                auditContext: toWriteAuditContext(writeMeta)
+              }),
+            writeMeta
+          )
+        );
+      }
+      return validateOperationResponse(
+        operation,
+        await services.mutate(
+          (engine) => engine.dismissTaskTargetMention(params.id, targetAgent),
+          ["tasks"],
+          writeMeta
+        )
+      );
     }
   );
 };
@@ -563,6 +620,7 @@ export const registerTaskRoutes = (app: FastifyInstance, services: AppServices):
   registerTaskIntendRoute(app, services, taskIntendOperation);
   registerTaskSubmitRoute(app, services, taskSubmitOperation);
   registerTaskTerminateRoute(app, services, taskTerminateOperation);
+  registerTaskMentionDismissRoute(app, services, taskMentionDismissOperation);
   registerSubmissionConfirmRoute(app, services, submissionConfirmOperation);
   registerSubmissionRejectRoute(app, services, submissionRejectOperation);
 };

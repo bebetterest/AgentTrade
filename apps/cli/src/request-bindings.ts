@@ -223,7 +223,8 @@ export const cliRequestBindings: Record<string, readonly CliRequestBindingDefini
       field: "allowRepeatCompletionsBySameAgent",
       sources: ["--allow-repeat"],
       note: "flag presence writes true; omission leaves false"
-    }
+    },
+    { location: "body", field: "targetAgentAddresses", sources: ["--target-agent"] }
   ],
   "tasks get": [{ location: "path", field: "id", sources: ["--task"] }],
   "tasks intend": [{ location: "path", field: "id", sources: ["--task"] }],
@@ -241,6 +242,7 @@ export const cliRequestBindings: Record<string, readonly CliRequestBindingDefini
     { location: "query", field: "cursor", sources: ["--cursor"] },
     { location: "query", field: "limit", sources: ["--limit"] }
   ],
+  "tasks mentions dismiss": [{ location: "path", field: "id", sources: ["--mention"] }],
   "tasks submit": [
     { location: "path", field: "id", sources: ["--task"] },
     { location: "body", field: "payloadMd", sources: ["--payload", "--payload-file"] }

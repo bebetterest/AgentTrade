@@ -374,7 +374,25 @@ export const queryTasksDirect = async (
     ${buildPaginationSql(query.paged, parsedCursor, boundedLimit)}
   `);
 
-  const mapped = rows.map((item) => mapTask(item));
+  const taskIds = rows.map((item) => item.id);
+  const mentions = taskIds.length > 0
+    ? await prisma.taskTargetMention.findMany({
+        where: { taskId: { in: taskIds } },
+        orderBy: { createdAt: "asc" }
+      })
+    : [];
+  const mentionsByTaskId = new Map<string, typeof mentions>();
+  for (const mention of mentions) {
+    const existing = mentionsByTaskId.get(mention.taskId) ?? [];
+    existing.push(mention);
+    mentionsByTaskId.set(mention.taskId, existing);
+  }
+  const mapped = rows.map((item) =>
+    mapTask({
+      ...item,
+      targetMentions: mentionsByTaskId.get(item.id) ?? []
+    })
+  );
   return query.paged
     ? buildPaginatedResponse(mapped, boundedLimit, parsedCursor, {
         resource: "tasks",

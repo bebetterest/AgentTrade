@@ -19,6 +19,7 @@ const BASE_TASK: Task = {
   intentCount: 0,
   competitionRatio: 0,
   completedAgents: [],
+  targetMentions: [],
   createdAt: "2026-04-01T00:00:00.000Z",
   updatedAt: "2026-04-01T00:00:00.000Z"
 };

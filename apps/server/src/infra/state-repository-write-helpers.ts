@@ -6,6 +6,7 @@ import type {
   SupervisionVote as PrismaSupervisionVote,
   Task as PrismaTask,
   TaskIntention as PrismaTaskIntention,
+  TaskTargetMention as PrismaTaskTargetMention,
   Prisma,
   PrismaClient
 } from "@prisma/client";
@@ -15,6 +16,7 @@ import {
   CycleStatus as DomainCycleStatus,
   DisputeStatus as DomainDisputeStatus,
   SubmissionStatus as DomainSubmissionStatus,
+  TaskTargetMentionStatus as DomainTaskTargetMentionStatus,
   TaskStatus as DomainTaskStatus,
   VoteChoice as DomainVoteChoice,
   type CloseCycleResult,
@@ -34,6 +36,8 @@ import {
   computeTaxAmount,
   computeTerminationPenalty
 } from "../domain/helpers.js";
+
+type PrismaTaskWithMentions = PrismaTask & { targetMentions?: PrismaTaskTargetMention[] };
 
 interface RuntimeLockResult {
   id: string;
@@ -237,6 +241,13 @@ export interface PublishTaskDirectInput {
   slotsTotal: number;
   rewardPerSlot: number;
   allowRepeatCompletionsBySameAgent: boolean;
+  targetAgentAddresses?: Address[];
+  auditContext?: WriteAuditContext;
+}
+
+export interface DismissTaskTargetMentionDirectInput {
+  mentionId: string;
+  targetAgent: Address;
   auditContext?: WriteAuditContext;
 }
 
@@ -752,7 +763,7 @@ export const writePublishTaskDirect = async (
   prisma: PrismaClient,
   deps: ActivityWriteDeps,
   input: PublishTaskDirectInput
-): Promise<PrismaTask> => {
+): Promise<PrismaTaskWithMentions> => {
   return deps.executeWithRetry(async () =>
     prisma.$transaction(async (tx) => {
       const now = new Date();
@@ -828,6 +839,61 @@ export const writePublishTaskDirect = async (
         );
       }
 
+      const targetAgentAddresses = input.targetAgentAddresses ?? [];
+      if (targetAgentAddresses.length > config.taskTargetMentionMaxCount) {
+        throw new DomainError(
+          "INVALID_TASK_TARGET_MENTIONS",
+          `targetAgentAddresses must contain <= ${config.taskTargetMentionMaxCount} items`,
+          400
+        );
+      }
+      const seenTargetAddresses = new Set<string>();
+      for (const targetAddress of targetAgentAddresses) {
+        const normalizedTarget = targetAddress.toLowerCase();
+        if (seenTargetAddresses.has(normalizedTarget)) {
+          throw new DomainError(
+            "INVALID_TASK_TARGET_MENTIONS",
+            "targetAgentAddresses must not contain duplicates",
+            400
+          );
+        }
+        seenTargetAddresses.add(normalizedTarget);
+        if (normalizedTarget === input.publisher.toLowerCase()) {
+          throw new DomainError(
+            "INVALID_TASK_TARGET_MENTIONS",
+            "publisher cannot target itself",
+            400
+          );
+        }
+      }
+      const resolvedTargetAgentAddresses: Address[] = [];
+      if (targetAgentAddresses.length > 0) {
+        const targetProfiles = await tx.agentProfile.findMany({
+          where: {
+            OR: targetAgentAddresses.map((address) => ({
+              address: { equals: address, mode: "insensitive" }
+            }))
+          },
+          select: { address: true, status: true }
+        });
+        const activeTargets = new Map(
+          targetProfiles
+            .filter((profile) => profile.status === "ACTIVE")
+            .map((profile) => [profile.address.toLowerCase(), profile.address as Address])
+        );
+        for (const targetAddress of targetAgentAddresses) {
+          const activeTarget = activeTargets.get(targetAddress.toLowerCase());
+          if (!activeTarget) {
+            throw new DomainError(
+              "TASK_TARGET_AGENT_NOT_FOUND",
+              "target agents must exist and be active",
+              400
+            );
+          }
+          resolvedTargetAgentAddresses.push(activeTarget);
+        }
+      }
+
       const totalReward = input.slotsTotal * input.rewardPerSlot;
       if (!Number.isSafeInteger(totalReward) || totalReward <= 0) {
         throw new DomainError(
@@ -896,6 +962,20 @@ export const writePublishTaskDirect = async (
         }
       });
 
+      const targetMentions: PrismaTaskTargetMention[] = resolvedTargetAgentAddresses.map((targetAddress) => ({
+        id: nanoid(),
+        taskId: created.id,
+        publisherAddress: input.publisher,
+        targetAddress,
+        status: DomainTaskTargetMentionStatus.OPEN,
+        dismissedAt: null,
+        createdAt: now,
+        updatedAt: now
+      }));
+      if (targetMentions.length > 0) {
+        await tx.taskTargetMention.createMany({ data: targetMentions });
+      }
+
       await deps.applyProfileDeltaWithTx(tx, input.publisher, now, {
         publisherReputationDelta: 1,
         tasksPublished: 1
@@ -916,10 +996,64 @@ export const writePublishTaskDirect = async (
         details: {
           taskId: created.id,
           slotsTotal: input.slotsTotal,
-          rewardPerSlot: input.rewardPerSlot
+          rewardPerSlot: input.rewardPerSlot,
+          targetMentionCount: targetMentions.length
         }
       });
-      return created;
+      return { ...created, targetMentions };
+    })
+  );
+};
+
+export const writeDismissTaskTargetMentionDirect = async (
+  prisma: PrismaClient,
+  deps: Pick<
+    ActivityWriteDeps,
+    | "executeWithRetry"
+    | "lockRuntimeWithTx"
+    | "assertAgentActiveForWriteWithTx"
+    | "touchRuntimeStateWithTx"
+    | "appendAuditLogWithTx"
+  >,
+  input: DismissTaskTargetMentionDirectInput
+): Promise<PrismaTaskTargetMention> => {
+  return deps.executeWithRetry(async () =>
+    prisma.$transaction(async (tx) => {
+      const now = new Date();
+      const runtime = await deps.lockRuntimeWithTx(tx);
+      await deps.assertAgentActiveForWriteWithTx(tx, input.targetAgent, now);
+      await tx.$queryRaw`SELECT id FROM "TaskTargetMention" WHERE id = ${input.mentionId} FOR UPDATE`;
+      const mention = await tx.taskTargetMention.findUnique({ where: { id: input.mentionId } });
+      if (!mention) {
+        throw new DomainError("TASK_MENTION_NOT_FOUND", `Task mention ${input.mentionId} not found`, 404);
+      }
+      if (mention.targetAddress.toLowerCase() !== input.targetAgent.toLowerCase()) {
+        throw new DomainError("FORBIDDEN", "only the targeted agent can dismiss this task mention", 403);
+      }
+
+      const updated =
+        mention.status === DomainTaskTargetMentionStatus.DISMISSED
+          ? mention
+          : await tx.taskTargetMention.update({
+              where: { id: input.mentionId },
+              data: {
+                status: DomainTaskTargetMentionStatus.DISMISSED,
+                dismissedAt: now,
+                updatedAt: now
+              }
+            });
+      await deps.touchRuntimeStateWithTx(tx);
+      await appendSuccessAuditIfPresent(tx, deps, input.auditContext, {
+        targetId: updated.id,
+        cycleId: runtime.activeCycleId,
+        message: "task-mentions.dismiss succeeded",
+        details: {
+          taskId: updated.taskId,
+          mentionId: updated.id,
+          alreadyDismissed: mention.status === DomainTaskTargetMentionStatus.DISMISSED
+        }
+      });
+      return updated;
     })
   );
 };

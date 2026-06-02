@@ -78,6 +78,19 @@ export interface TodoIntentionRecord {
   createdAt: IsoDateString;
 }
 
+export interface TodoTargetMentionRecord {
+  id: string;
+  taskId: string;
+  publisher: Address;
+  targetAgent: Address;
+  taskTitle: string;
+  taskStatus: TaskStatusType;
+  taskDeadlineUtc: IsoDateString | null;
+  status: "OPEN" | "DISMISSED";
+  createdAt: IsoDateString;
+  updatedAt: IsoDateString;
+}
+
 export interface BuildTodosResponseInput {
   address: Address;
   scope: TodoScope;
@@ -89,6 +102,7 @@ export interface BuildTodosResponseInput {
   submissions: TodoSubmissionRecord[];
   disputes: TodoDisputeRecord[];
   intentions: TodoIntentionRecord[];
+  targetMentions: TodoTargetMentionRecord[];
 }
 
 interface TodoGroupMetadata {
@@ -104,6 +118,12 @@ const TODO_GROUPS_BY_SCOPE: Record<TodoGroupScope, readonly TodoGroupType[]> = {
 };
 
 export const TODO_GROUP_METADATA: Record<TodoGroupType, TodoGroupMetadata> = {
+  targeted_task_mention: {
+    scope: "action_required",
+    resourceKind: "task",
+    title: "Targeted Task Mention",
+    description: "This account was directly mentioned by the publisher as a suggested agent for this task."
+  },
   latest_rejected_submission_no_followup: {
     scope: "action_required",
     resourceKind: "submission",
@@ -181,6 +201,7 @@ const dedupeTasksById = (items: readonly TodoTaskRecord[]): TodoTaskRecord[] => 
 const dedupeSubmissionsById = (items: readonly TodoSubmissionRecord[]): TodoSubmissionRecord[] => dedupeById(items);
 const dedupeDisputesById = (items: readonly TodoDisputeRecord[]): TodoDisputeRecord[] => dedupeById(items);
 const dedupeIntentionsById = (items: readonly TodoIntentionRecord[]): TodoIntentionRecord[] => dedupeById(items);
+const dedupeTargetMentionsById = (items: readonly TodoTargetMentionRecord[]): TodoTargetMentionRecord[] => dedupeById(items);
 
 const todoCursorResource = (type: TodoGroupType): string => `todos:${type}`;
 
@@ -271,6 +292,19 @@ const toTaskItem = (task: TodoTaskRecord): TodoItemSummary => ({
   createdAt: task.createdAt,
   updatedAt: task.updatedAt,
   deadlineUtc: task.deadlineUtc
+});
+
+const toTargetMentionItem = (mention: TodoTargetMentionRecord): TodoItemSummary => ({
+  resourceKind: "task",
+  primaryId: mention.id,
+  title: mention.taskTitle,
+  taskId: mention.taskId,
+  submissionId: null,
+  disputeId: null,
+  status: mention.taskStatus,
+  createdAt: mention.createdAt,
+  updatedAt: mention.updatedAt,
+  deadlineUtc: mention.taskDeadlineUtc
 });
 
 const toSubmissionItem = (submission: TodoSubmissionRecord): TodoItemSummary => ({
@@ -379,6 +413,7 @@ export const buildTodosResponse = (input: BuildTodosResponseInput): TodosRespons
   const submissions = dedupeSubmissionsById(input.submissions);
   const disputes = dedupeDisputesById(input.disputes);
   const intentions = dedupeIntentionsById(input.intentions);
+  const targetMentions = dedupeTargetMentionsById(input.targetMentions);
 
   const tasksById = new Map(tasks.map((task) => [task.id, task]));
   const actorIntentions = intentions.filter((item) => lower(item.agent) === addressLower);
@@ -401,8 +436,19 @@ export const buildTodosResponse = (input: BuildTodosResponseInput): TodosRespons
       .map((item) => item.taskId)
   );
   const actorSubmittedTaskIds = new Set(actorSubmissions.map((item) => item.taskId));
+  const actorIntendedTaskIds = new Set(actorIntentions.map((item) => item.taskId));
 
   const computedItems: Record<TodoGroupType, TodoItemSummary[]> = {
+    targeted_task_mention: targetMentions
+      .filter((item) => lower(item.targetAgent) === addressLower)
+      .filter((item) => item.status === "OPEN")
+      .filter((item) => ACTIVE_TASK_STATUSES.has(item.taskStatus))
+      .filter((item) => {
+        const deadlineMs = toDateMs(item.taskDeadlineUtc);
+        return deadlineMs === null || deadlineMs > nowMs;
+      })
+      .filter((item) => !actorIntendedTaskIds.has(item.taskId))
+      .map((item) => toTargetMentionItem(item)),
     latest_rejected_submission_no_followup: latestActorSubmissions
       .filter(
         (item) =>

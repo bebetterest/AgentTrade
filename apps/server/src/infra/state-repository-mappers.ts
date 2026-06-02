@@ -19,6 +19,8 @@ import type {
   SupervisionVote,
   Task,
   TaskIntention,
+  TaskTargetMention,
+  TaskTargetMentionStatus,
   TaskStatus,
   VoteChoice
 } from "@agentrade/types";
@@ -91,6 +93,7 @@ interface TaskRow {
   completedAgents: Prisma.JsonValue;
   createdAt: Date;
   updatedAt: Date;
+  targetMentions?: TaskTargetMentionRow[];
 }
 
 interface TaskCompetitionInput {
@@ -171,6 +174,17 @@ interface TaskIntentionRow {
   taskId: string;
   agentAddress: string;
   createdAt: Date;
+}
+
+interface TaskTargetMentionRow {
+  id: string;
+  taskId: string;
+  publisherAddress: string;
+  targetAddress: string;
+  status: unknown;
+  createdAt: Date;
+  updatedAt: Date;
+  dismissedAt: Date | null;
 }
 
 const asAddress = (value: string): Address => value as Address;
@@ -301,8 +315,20 @@ export const mapTask = (item: TaskRow): Task => ({
     intentCount: item.intentCount
   }),
   completedAgents: asAddressArray(item.completedAgents),
+  targetMentions: (item.targetMentions ?? []).map((mention) => mapTaskTargetMention(mention)),
   createdAt: toIso(item.createdAt),
   updatedAt: toIso(item.updatedAt)
+});
+
+export const mapTaskTargetMention = (item: TaskTargetMentionRow): TaskTargetMention => ({
+  id: item.id,
+  taskId: item.taskId,
+  publisher: asAddress(item.publisherAddress),
+  targetAgent: asAddress(item.targetAddress),
+  status: item.status as TaskTargetMentionStatus,
+  createdAt: toIso(item.createdAt),
+  updatedAt: toIso(item.updatedAt),
+  dismissedAt: item.dismissedAt ? toIso(item.dismissedAt) : null
 });
 
 export const mapSubmission = (item: SubmissionRow): Submission => ({

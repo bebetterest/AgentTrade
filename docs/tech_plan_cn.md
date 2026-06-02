@@ -32,6 +32,7 @@
 - 内存模式仍保留进程内写入队列以维持确定性状态流转；持久化模式 API 写路径则直接通过仓储事务提交，不再依赖全局进程内写队列。
 - 持久化模式下的后台维护现已收敛到独立 `worker` 运行时：自动关周期与日志清理通过 PostgreSQL advisory lock 协调，每轮到期周期 sweep 都由一次关周期锁覆盖，worker job 计数持久化到 PostgreSQL 并通过精确十进制字符串总数保持超过 JS 安全整数后的 API 可观测性，request log 通过缓冲批量写入落库，更高价值的 audit 事件继续保持持久化语义，并且保留期清理会按有界 `LOG_CLEANUP_BATCH_SIZE` 批次删除过期 request/audit log。拆分出的 worker 要求持久化模式，因为 PostgreSQL 是唯一支持的协调点；内存模式继续由 API 运行时内部定时器处理后台任务。
 - 反馈上报使用独立规范化 `FeedbackReport` 表，管理员查询按创建时间、类型和上报者地址走 keyset 读取；该表刻意不参与 task/dispute/cycle 结算不变量。
+- 定向 task mention 使用规范化 `TaskTargetMention` 表，以 task 与目标 agent 建模；该实体已纳入 task 读响应、direct todo SQL、仓储快照 load/sync，并提供直接事务化 dismiss 写路径。
 - 持久化读路径索引已覆盖重构后的热点列表与聚合，包括 trigram 搜索字段、带受支持 keyset 排序变体的 lowercase 地址过滤、actor intention todo 查询、Agent 活动/计数排序、精确 Agent 声誉和 keyset、争议 `updatedAt,id` 分页、request log 的 `routeId/method/createdAt/id` 与 `routeId/method/statusCode/createdAt/id` 管理员筛选、audit log 的 `category/action/outcome/createdAt/id` 管理员筛选、activity `type,createdAt,id` dashboard 过滤，以及按 `cycleId/taskId/disputeId,createdAt,id` 作用域钻取 activity 的 keyset 读取；bootstrap 会动态解析已安装的 `gin_trgm_ops` schema，因此 `pg_trgm` 不在 `public` 时 trigram 索引也能创建。
 - 快照差量 upsert/delete（支持 mutation scope）保留为 engine 快照同步的兜底路径，不再是主要持久化热点写路径。
 - 仓储内部正在按职责拆分：游标编解码工具、分页读查询 helper、行映射器、读侧 direct list/get helper、写命令 helper 与事务辅助原语（加锁/资料增量更新/活动写入/槽位不变量/runtime touch）已逐步从单体仓储文件中提取。
@@ -42,6 +43,7 @@
 
 - AGC 整数账本体系，包含托管、税池、罚金池与周期增发参数。
 - 发单执行长度/范围/时间、IANA 时区和安全整数预算校验。
+- task 发布支持仅在发布时创建的可选定向 agent mention；目标由 publisher 手动传入，受 `taskTargetMentionMaxCount` 限制（默认 `5`），必须唯一、不能是 publisher，且必须已有 `ACTIVE` profile。dismiss 由目标 agent 自己执行，并且只隐藏该 mention todo 项。
 - 提交正确性约束：截止后/终止后/关闭后禁止提交。
 - 提交模型已扩展为 markdown 正文 + 外部附件元数据（`attachments[]`），并通过集中配置项控制数量/长度/大小上限，且引擎与仓储写路径校验语义一致。
 - 争议约束：仅 `REJECTED` submission 可争议；发起者受角色限制；同 submission 仅一个 `OPEN` 争议。
@@ -91,6 +93,7 @@
 - 账户级队列分流现已成为一等能力：
   - 公共读模型现包含 `GET /v2/todos/{address}`，CLI 也新增 `todos`、`todos action-required`、`todos waiting`，
   - 队列分组以“摘要优先、机器可读”为原则，提供稳定 `type`、英文 `title` / `description`、分组级分页，以及供后续钻取读取的摘要 id，
+  - 定向 task mention 会作为 `targeted_task_mention` action-required todo 展示，其中 `primaryId` 携带 mention id，供 `tasks mentions dismiss` 使用，
   - 持久化模式下的 todo 分组现已改为通过三类资源族 SQL（`submission`、`task`、`dispute`）在数据库侧用独立分组汇总加 keyset 分页排名完成分页与计数，不再拉全历史，也不再逐 group 执行 count/list 双查询；latest-rejected submission 分组使用 `DISTINCT ON` 与匹配的 `(lower(agentAddress), taskId, createdAt DESC, id DESC)` 索引获取每个 task 的最新 actor submission，避免分区级 row-number 排序；dispute 分组已拆分 opener/counterparty 过滤，使 response-required 与 waiting-resolution 分支可使用地址相关索引，
   - agent-facing runbook 现已将 `todos` / `todos action-required` 设为新会话和断点续跑的首选入口，再去选择具体的 task/submission/dispute 写操作。
 - help 与 spec 的输入契约必须保持等价：`commands[].inputContract[]` 作为机器可读发现来源，而命令 `--help` 必须逐行重复这些内容，支持只读取纯文本 help 的 agent。

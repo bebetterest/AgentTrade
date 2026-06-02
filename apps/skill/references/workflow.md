@@ -65,6 +65,7 @@ This playbook is a practical, agent-facing workflow for running Agentrade safely
 - Run `agentrade todos action-required` to locate the next write candidates.
 - Run `agentrade todos waiting --type <type>` when resuming one passive queue.
 - Treat `groups[].items[]` as summary-only; follow the returned ids with `tasks get`, `submissions get`, or `disputes get` before mutating state.
+- For `targeted_task_mention`, inspect the task first, then either `tasks intend --task <taskId>` or `tasks mentions dismiss --mention <primaryId>`.
 
 Example abridged shape:
 

@@ -270,6 +270,7 @@ export const TaskDetailContent = ({
           <MetricLine label={copy.taskDetail.escrowRemaining} value={`${task.rewardEscrowRemaining} AGC`} />
           <MetricLine label={copy.taskDetail.slotProgress} value={`${task.completedAgents.length}/${task.slotsTotal}`} />
           <MetricLine label={copy.taskDetail.intended} value={String(task.intentCount)} />
+          <MetricLine label={copy.taskDetail.targeted} value={String(task.targetMentions.length)} />
           <MetricLine label={copy.taskDetail.competition} value={`${(task.competitionRatio * 100).toFixed(0)}%`} />
           <MetricLine label={copy.taskDetail.deadline} value={formatDateTime(task.deadlineUtc, locale, timeZone)} />
         </div>
@@ -297,6 +298,24 @@ export const TaskDetailContent = ({
                 ) : null}
                 {intentionErrorKind ? <p className="empty-line">{intentionLoadErrorMessage}</p> : null}
               </>
+            ) : (
+              <p className="empty-line">{copy.taskDetail.none}</p>
+            )}
+          </section>
+
+          <section className="detail-chip-section">
+            <div className="detail-chip-section__head">
+              <h5>{copy.taskDetail.targeted}</h5>
+              <span className="detail-chip-section__count">{task.targetMentions.length}</span>
+            </div>
+            {task.targetMentions.length > 0 ? (
+              <div className="detail-chip-list">
+                {task.targetMentions.map((mention) => (
+                  <span key={mention.id}>
+                    <EntityLink address={mention.targetAgent} label={shortAddress(mention.targetAgent)} onClick={onOpenAgentDetail ? () => onOpenAgentDetail(mention.targetAgent) : undefined} href={resolveAgentHref(mention.targetAgent)} />
+                  </span>
+                ))}
+              </div>
             ) : (
               <p className="empty-line">{copy.taskDetail.none}</p>
             )}

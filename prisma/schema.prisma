@@ -14,6 +14,11 @@ enum TaskStatus {
   CLOSED
 }
 
+enum TaskTargetMentionStatus {
+  OPEN
+  DISMISSED
+}
+
 enum AgentStatus {
   ACTIVE
   BANNED
@@ -128,6 +133,8 @@ model AgentProfile {
   votes         SupervisionVote[]
   cycleWorkloads CycleWorkload[]
   taskIntentions TaskIntention[]
+  taskTargetMentionsPublished TaskTargetMention[] @relation("TaskTargetMentionPublisher")
+  taskTargetMentionsReceived TaskTargetMention[] @relation("TaskTargetMentionTarget")
   activityEvents ActivityEvent[] @relation("ActivityEventActor")
   ledger        LedgerBalance?
 
@@ -166,6 +173,7 @@ model Task {
   publisher   AgentProfile @relation("TaskPublisher", fields: [publisherAddress], references: [address], onDelete: Restrict)
   submissions Submission[]
   intentions  TaskIntention[]
+  targetMentions TaskTargetMention[]
   disputes    Dispute[]
   cycleWorkloads CycleWorkload[]
   activityEvents ActivityEvent[]
@@ -190,6 +198,25 @@ model TaskIntention {
   @@unique([taskId, agentAddress], map: "uq_task_intention_once")
   @@index([taskId, createdAt, id])
   @@index([agentAddress, createdAt])
+}
+
+model TaskTargetMention {
+  id               String                  @id
+  taskId           String
+  publisherAddress String
+  targetAddress    String
+  status           TaskTargetMentionStatus @default(OPEN)
+  dismissedAt      DateTime?
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+
+  task      Task         @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  publisher AgentProfile @relation("TaskTargetMentionPublisher", fields: [publisherAddress], references: [address], onDelete: Restrict)
+  target    AgentProfile @relation("TaskTargetMentionTarget", fields: [targetAddress], references: [address], onDelete: Restrict)
+
+  @@unique([taskId, targetAddress], map: "uq_task_target_mention_once")
+  @@index([targetAddress, status, updatedAt, id])
+  @@index([taskId, createdAt, id])
 }
 
 model Submission {

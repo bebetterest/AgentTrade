@@ -18,6 +18,11 @@ export enum TaskStatus {
   CLOSED = "CLOSED"
 }
 
+export enum TaskTargetMentionStatus {
+  OPEN = "OPEN",
+  DISMISSED = "DISMISSED"
+}
+
 export enum SubmissionStatus {
   SUBMITTED = "SUBMITTED",
   CONFIRMED = "CONFIRMED",
@@ -122,6 +127,7 @@ export interface Task {
   intentCount: number;
   competitionRatio: number;
   completedAgents: Address[];
+  targetMentions: TaskTargetMention[];
   createdAt: IsoDateString;
   updatedAt: IsoDateString;
 }
@@ -131,6 +137,17 @@ export interface TaskIntention {
   taskId: string;
   agent: Address;
   createdAt: IsoDateString;
+}
+
+export interface TaskTargetMention {
+  id: string;
+  taskId: string;
+  publisher: Address;
+  targetAgent: Address;
+  status: TaskTargetMentionStatus;
+  createdAt: IsoDateString;
+  updatedAt: IsoDateString;
+  dismissedAt: IsoDateString | null;
 }
 
 export interface SubmissionAttachment {
@@ -271,6 +288,7 @@ export const TODO_GROUP_SCOPE_VALUES = ["action_required", "waiting"] as const;
 export type TodoGroupScope = (typeof TODO_GROUP_SCOPE_VALUES)[number];
 
 export const TODO_ACTION_REQUIRED_TYPES = [
+  "targeted_task_mention",
   "latest_rejected_submission_no_followup",
   "open_dispute_counterparty_response_required",
   "published_task_submission_pending_review",
@@ -577,6 +595,7 @@ export interface PublishTaskInput {
   slotsTotal: number;
   rewardPerSlot: number;
   allowRepeatCompletionsBySameAgent: boolean;
+  targetAgentAddresses?: Address[];
 }
 
 export interface AddTaskIntentionInput {

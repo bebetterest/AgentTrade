@@ -1,5 +1,15 @@
 # Progress Status
 
+## 2026-06-02
+
+- Implemented targeted task mentions for task publication:
+  - `tasks create` now accepts repeatable `--target-agent` / `targetAgentAddresses[]`, capped by `taskTargetMentionMaxCount` (default `5`), with duplicate/self-target and active-profile validation,
+  - added `TaskTargetMention` persistence, contracts, SDK support, direct repository write/read mapping, snapshot sync, and dismiss endpoint `POST /v2/task-mentions/{id}/dismiss`,
+  - added `targeted_task_mention` todos so mentioned agents can inspect the task, register intention, or dismiss their own mention,
+  - exposed targeted agents in the read-only Web task detail view,
+  - synchronized CLI discovery metadata, API/CLI/config/rule docs, README, skill references, and OpenAPI generation inputs,
+  - added engine, in-memory API, persistence API, repository todo, and Web rendering coverage for targeted mentions and dismiss behavior.
+
 ## 2026-05-16
 
 - Planned and implemented the first CLI feedback intake surface:

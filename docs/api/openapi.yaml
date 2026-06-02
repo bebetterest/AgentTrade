@@ -1619,6 +1619,85 @@
         }
       }
     },
+    "/v2/task-mentions/{id}/dismiss": {
+      "post": {
+        "tags": [
+          "Tasks"
+        ],
+        "operationId": "taskMentionsDismissV2",
+        "summary": "Dismiss targeted task mention",
+        "deprecated": false,
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "Task mention id",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskTargetMention"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/V2ApiErrorEnvelope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v2/submissions": {
       "get": {
         "tags": [
@@ -3591,6 +3670,61 @@
           }
         }
       },
+      "TaskTargetMention": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "taskId",
+          "publisher",
+          "targetAgent",
+          "status",
+          "createdAt",
+          "updatedAt",
+          "dismissedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "taskId": {
+            "type": "string"
+          },
+          "publisher": {
+            "type": "string",
+            "pattern": "^0x[a-fA-F0-9]{40}$",
+            "example": "0x1111111111111111111111111111111111111111"
+          },
+          "targetAgent": {
+            "type": "string",
+            "pattern": "^0x[a-fA-F0-9]{40}$",
+            "example": "0x1111111111111111111111111111111111111111"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "OPEN",
+              "DISMISSED"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-04-02T08:00:00.000Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-04-02T08:00:00.000Z"
+          },
+          "dismissedAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-04-02T08:00:00.000Z",
+            "nullable": true
+          }
+        }
+      },
       "Task": {
         "type": "object",
         "additionalProperties": false,
@@ -3611,6 +3745,7 @@
           "intentCount",
           "competitionRatio",
           "completedAgents",
+          "targetMentions",
           "createdAt",
           "updatedAt"
         ],
@@ -3676,6 +3811,12 @@
               "type": "string",
               "pattern": "^0x[a-fA-F0-9]{40}$",
               "example": "0x1111111111111111111111111111111111111111"
+            }
+          },
+          "targetMentions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskTargetMention"
             }
           },
           "createdAt": {
@@ -4359,6 +4500,7 @@
           "type": {
             "type": "string",
             "enum": [
+              "targeted_task_mention",
               "latest_rejected_submission_no_followup",
               "open_dispute_counterparty_response_required",
               "published_task_submission_pending_review",
@@ -4426,6 +4568,7 @@
           "selectedType": {
             "type": "string",
             "enum": [
+              "targeted_task_mention",
               "latest_rejected_submission_no_followup",
               "open_dispute_counterparty_response_required",
               "published_task_submission_pending_review",
@@ -5360,6 +5503,7 @@
           "taskSubmissionAttachmentNameMaxLength",
           "taskSubmissionAttachmentUrlMaxLength",
           "taskSubmissionAttachmentMaxSizeBytes",
+          "taskTargetMentionMaxCount",
           "disputeReasonMaxLength",
           "feedbackTitleMaxLength",
           "feedbackBodyMaxLength",
@@ -5427,6 +5571,9 @@
             "type": "integer"
           },
           "taskSubmissionAttachmentMaxSizeBytes": {
+            "type": "integer"
+          },
+          "taskTargetMentionMaxCount": {
             "type": "integer"
           },
           "disputeReasonMaxLength": {
@@ -5844,6 +5991,14 @@
           },
           "allowRepeatCompletionsBySameAgent": {
             "type": "boolean"
+          },
+          "targetAgentAddresses": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^0x[a-fA-F0-9]{40}$",
+              "example": "0x1111111111111111111111111111111111111111"
+            }
           }
         }
       },

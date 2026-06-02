@@ -9,6 +9,7 @@ import {
   DisputeStatus,
   SubmissionStatus,
   TaskStatus,
+  TaskTargetMentionStatus,
   VoteChoice,
   type ActivityEvent,
   type Address,
@@ -23,7 +24,8 @@ import {
   type Submission,
   type SupervisionVote,
   type Task,
-  type TaskIntention
+  type TaskIntention,
+  type TaskTargetMention
 } from "@agentrade/types";
 import { nanoid } from "nanoid";
 import { clampReputation, allocateIntegerPool, computeSupervisorVoteWeight, computeTaxAmount, computeTerminationPenalty } from "./helpers.js";
@@ -90,6 +92,7 @@ export interface EngineStateSnapshot {
   disputeResolutionMeta?: DisputeResolutionMetaRecord[];
   disputeRollbackHistory?: DisputeRollbackHistoryRecord[];
   intentions?: TaskIntention[];
+  targetMentions?: TaskTargetMention[];
   latestSubmissionByTaskAndAgent: Array<[string, string]>;
   banSourceDisputeByPublisher?: Array<[Address, string]>;
 }
@@ -111,6 +114,7 @@ export class AgentradeEngine {
   private activities = new Map<string, ActivityEvent>();
   private disputeRollbackHistory: DisputeRollbackHistoryRecord[] = [];
   private taskIntentions = new Map<string, TaskIntention>();
+  private taskTargetMentions = new Map<string, TaskTargetMention>();
   private latestSubmissionByTaskAndAgent = new Map<string, string>();
   private banSourceDisputeByPublisher = new Map<Address, string>();
   private activeCycleId!: string;
@@ -172,6 +176,7 @@ export class AgentradeEngine {
       disputeResolutionMeta: [...this.disputeResolutionMeta.values()],
       disputeRollbackHistory: this.disputeRollbackHistory.map((item) => this.cloneJson(item)),
       intentions: [...this.taskIntentions.values()],
+      targetMentions: [...this.taskTargetMentions.values()],
       latestSubmissionByTaskAndAgent: [...this.latestSubmissionByTaskAndAgent.entries()],
       banSourceDisputeByPublisher: [...this.banSourceDisputeByPublisher.entries()]
     };
@@ -298,6 +303,7 @@ export class AgentradeEngine {
     slotsTotal: number;
     rewardPerSlot: number;
     allowRepeatCompletionsBySameAgent: boolean;
+    targetAgentAddresses?: Address[];
   }): Task {
     this.requireActiveAgentForWrite(input.publisher);
     const normalizedTitle = input.title.trim();
@@ -369,6 +375,42 @@ export class AgentradeEngine {
         400
       );
     }
+    const targetAgentAddresses = input.targetAgentAddresses ?? [];
+    if (targetAgentAddresses.length > this.config.taskTargetMentionMaxCount) {
+      throw new DomainError(
+        "INVALID_TASK_TARGET_MENTIONS",
+        `targetAgentAddresses must contain <= ${this.config.taskTargetMentionMaxCount} items`,
+        400
+      );
+    }
+    const seenTargetAddresses = new Set<string>();
+    const targetProfilesByLower = new Map(
+      [...this.profiles.values()].map((profile) => [profile.address.toLowerCase(), profile])
+    );
+    const resolvedTargetAgentAddresses: Address[] = [];
+    for (const targetAddress of targetAgentAddresses) {
+      const normalizedTarget = targetAddress.toLowerCase();
+      if (seenTargetAddresses.has(normalizedTarget)) {
+        throw new DomainError(
+          "INVALID_TASK_TARGET_MENTIONS",
+          "targetAgentAddresses must not contain duplicates",
+          400
+        );
+      }
+      seenTargetAddresses.add(normalizedTarget);
+      if (normalizedTarget === input.publisher.toLowerCase()) {
+        throw new DomainError("INVALID_TASK_TARGET_MENTIONS", "publisher cannot target itself", 400);
+      }
+      const targetProfile = targetProfilesByLower.get(normalizedTarget);
+      if (!targetProfile || targetProfile.status !== AgentStatus.ACTIVE) {
+        throw new DomainError(
+          "TASK_TARGET_AGENT_NOT_FOUND",
+          "target agents must exist and be active",
+          400
+        );
+      }
+      resolvedTargetAgentAddresses.push(targetProfile.address);
+    }
     const totalReward = input.slotsTotal * input.rewardPerSlot;
     if (!Number.isSafeInteger(totalReward) || totalReward <= 0) {
       throw new DomainError(
@@ -417,9 +459,23 @@ export class AgentradeEngine {
       intentCount: 0,
       competitionRatio: 0,
       completedAgents: [],
+      targetMentions: [],
       createdAt: timestamp,
       updatedAt: timestamp
     };
+    task.targetMentions = resolvedTargetAgentAddresses.map((targetAddress) => ({
+      id: nanoid(),
+      taskId: task.id,
+      publisher: input.publisher,
+      targetAgent: targetAddress,
+      status: TaskTargetMentionStatus.OPEN,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      dismissedAt: null
+    }));
+    for (const mention of task.targetMentions) {
+      this.taskTargetMentions.set(mention.id, mention);
+    }
     this.tasks.set(task.id, task);
     const publisherProfile = this.requireAgent(input.publisher);
     publisherProfile.stats.tasksPublished += 1;
@@ -431,6 +487,31 @@ export class AgentradeEngine {
       actor: input.publisher
     });
     return task;
+  }
+
+  dismissTaskTargetMention(mentionId: string, targetAgent: Address): TaskTargetMention {
+    this.requireActiveAgentForWrite(targetAgent);
+    const mention = this.taskTargetMentions.get(mentionId);
+    if (!mention) {
+      throw new DomainError("TASK_MENTION_NOT_FOUND", `Task mention ${mentionId} not found`, 404);
+    }
+    if (mention.targetAgent.toLowerCase() !== targetAgent.toLowerCase()) {
+      throw new DomainError("FORBIDDEN", "only the targeted agent can dismiss this task mention", 403);
+    }
+    if (mention.status === TaskTargetMentionStatus.DISMISSED) {
+      return mention;
+    }
+    const now = this.nowIso();
+    mention.status = TaskTargetMentionStatus.DISMISSED;
+    mention.dismissedAt = now;
+    mention.updatedAt = now;
+    const task = this.tasks.get(mention.taskId);
+    if (task) {
+      task.targetMentions = task.targetMentions.map((item) =>
+        item.id === mention.id ? mention : item
+      );
+    }
+    return mention;
   }
 
   addTaskIntention(taskId: string, agent: Address): TaskIntention {
@@ -1892,7 +1973,15 @@ export class AgentradeEngine {
       ])
     );
     this.balances = new Map(snapshot.balances.map((item) => [item.address, item]));
-    this.tasks = new Map(snapshot.tasks.map((item) => [item.id, item]));
+    this.tasks = new Map(
+      snapshot.tasks.map((item) => [
+        item.id,
+        {
+          ...item,
+          targetMentions: Array.isArray(item.targetMentions) ? item.targetMentions : []
+        }
+      ])
+    );
     this.submissions = new Map(
       snapshot.submissions.map((item) => [
         item.id,
@@ -1927,6 +2016,13 @@ export class AgentradeEngine {
     this.taskIntentions = new Map(
       (snapshot.intentions ?? []).map((item) => [`${item.taskId}:${item.agent}`, item])
     );
+    const restoredMentions =
+      snapshot.targetMentions ??
+      [...this.tasks.values()].flatMap((task) => task.targetMentions ?? []);
+    this.taskTargetMentions = new Map(restoredMentions.map((item) => [item.id, item]));
+    for (const task of this.tasks.values()) {
+      task.targetMentions = restoredMentions.filter((item) => item.taskId === task.id);
+    }
     this.latestSubmissionByTaskAndAgent = new Map(snapshot.latestSubmissionByTaskAndAgent);
     this.banSourceDisputeByPublisher = new Map(snapshot.banSourceDisputeByPublisher ?? []);
     this.activeCycleId = snapshot.activeCycleId;

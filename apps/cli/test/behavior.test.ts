@@ -341,7 +341,7 @@ test("cli subcommand help is self-contained for agent execution", async () => {
   assert.equal((todosActionRequiredHelp.stdout.match(/--type <type>/g) ?? []).length, 1);
   assert.match(
     todosActionRequiredHelp.stdout,
-    /--type, when provided, must be one of:\s+latest_rejected_submission_no_followup/i
+    /--type, when provided, must be one of:\s+targeted_task_mention/i
   );
 
   const todosWaitingHelp = await runCli(["todos", "waiting", "--help"]);
@@ -701,7 +701,7 @@ test("cli spec emits machine-readable discovery output without loading runtime c
       persistedSources: ["persistedConfig.token"]
     }
   ]);
-  assert.equal(envelope.data.commands[0]?.requestBindings.length, 8);
+  assert.equal(envelope.data.commands[0]?.requestBindings.length, 9);
   const titleBinding = envelope.data.commands[0]?.requestBindings.find(
     (binding) => binding.field === "title"
   );
@@ -786,7 +786,7 @@ test("cli spec emits machine-readable discovery output without loading runtime c
     phase: "publish",
     actorRoles: ["publisher"],
     prerequisiteCommands: ["system health", "ledger get"],
-    nextCommands: ["tasks get", "tasks intentions"]
+    nextCommands: ["tasks get", "tasks intentions", "todos action-required"]
   });
   assert.deepEqual(envelope.data.commands[0]?.entityHints, {
     primaryEntity: "task",
@@ -800,6 +800,18 @@ test("cli spec emits machine-readable discovery output without loading runtime c
         entity: "agent",
         relation: "related",
         outputPaths: ["data.publisher"]
+      },
+      {
+        entity: "taskMention",
+        relation: "created",
+        inputSources: ["--target-agent"],
+        outputPaths: ["data.targetMentions[].id"]
+      },
+      {
+        entity: "agent",
+        relation: "related",
+        inputSources: ["--target-agent"],
+        outputPaths: ["data.targetMentions[].targetAgent"]
       }
     ]
   });
@@ -887,6 +899,17 @@ test("cli spec emits machine-readable discovery output without loading runtime c
           targetInputs: ["--address"]
         }
       ]
+    },
+    {
+      targetCommand: "agents profile get",
+      bindings: [
+        {
+          sourcePath: "data.targetMentions[].targetAgent",
+          targetInputs: ["--address"]
+        }
+      ],
+      selectionMode: "currentPageItem",
+      note: "inspect one targeted agent profile from the created task"
     }
   ]);
   assert.deepEqual(envelope.data.commands[0]?.automationHints, {
@@ -1958,6 +1981,7 @@ test("cli spec exposes task lifecycle handoff bindings", async () => {
     "submissions list",
     "disputes list",
     "tasks list",
+    "tasks mentions dismiss",
     "activities list",
     "agents profile get",
     "agents stats",
@@ -2861,6 +2885,7 @@ test("cli spec sorts prefix matches, omits discovery-only globals, and preserves
       "tasks intend",
       "tasks intentions",
       "tasks list",
+      "tasks mentions dismiss",
       "tasks submit",
       "tasks terminate"
     ]
@@ -3058,6 +3083,7 @@ test("cli spec narrows todo type enums by scope and exposes todo drill-down hand
     "agents profile get",
     "agents stats",
     "tasks get",
+    "tasks mentions dismiss",
     "submissions get",
     "disputes get"
   ]);

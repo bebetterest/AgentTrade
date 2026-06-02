@@ -49,6 +49,7 @@ const tasks: Task[] = [
     intentCount: 0,
     competitionRatio: 0,
     completedAgents: [],
+    targetMentions: [],
     createdAt: "2026-03-29T08:00:00.000Z",
     updatedAt: "2026-03-31T10:00:00.000Z"
   },
@@ -69,6 +70,7 @@ const tasks: Task[] = [
     intentCount: 1,
     competitionRatio: 0.3333,
     completedAgents: [],
+    targetMentions: [],
     createdAt: "2026-03-30T09:00:00.000Z",
     updatedAt: "2026-03-31T11:00:00.000Z"
   },
@@ -89,6 +91,7 @@ const tasks: Task[] = [
     intentCount: 1,
     competitionRatio: 1,
     completedAgents: ["0x4444444444444444444444444444444444444444"],
+    targetMentions: [],
     createdAt: "2026-03-28T09:00:00.000Z",
     updatedAt: "2026-03-31T09:00:00.000Z"
   }

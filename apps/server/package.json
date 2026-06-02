@@ -13,8 +13,8 @@
     "start:worker": "node dist/src/worker.js",
     "test": "vitest run",
     "test:non-db": "vitest run test/config.runtime.spec.ts test/helpers.spec.ts test/engine.spec.ts test/rate-limit.spec.ts test/contracts.spec.ts test/config.spec.ts test/observability.spec.ts test/api.spec.ts",
-    "test:db": "vitest run --no-file-parallelism --maxWorkers=1 --minWorkers=1 test/repository.spec.ts && vitest run --no-file-parallelism --maxWorkers=1 --minWorkers=1 test/persistence-api.spec.ts",
-    "test:stress": "vitest run --no-file-parallelism --maxWorkers=1 --minWorkers=1 test/stress.persistence.spec.ts",
+    "test:db": "vitest run --no-file-parallelism --maxWorkers=1 test/repository.spec.ts && vitest run --no-file-parallelism --maxWorkers=1 test/persistence-api.spec.ts",
+    "test:stress": "vitest run --no-file-parallelism --maxWorkers=1 test/stress.persistence.spec.ts",
     "lint": "tsc -p tsconfig.json --noEmit",
     "prisma:generate": "prisma generate --schema ../../prisma/schema.prisma"
   },
@@ -37,6 +37,6 @@
     "@types/node": "^22.13.10",
     "prisma": "^6.19.2",
     "tsx": "^4.19.3",
-    "vitest": "^3.0.7"
+    "vitest": "^4.1.8"
   }
 }
